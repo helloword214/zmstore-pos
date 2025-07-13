@@ -22,7 +22,8 @@ export async function getSession(request: Request) {
   return sessionStorage.getSession(cookie);
 }
 
-export async function commitSession(
+// commitSession returns string synchronously, so no async here
+export function commitSession(
   session: ReturnType<typeof sessionStorage.getSession>
 ) {
   return sessionStorage.commitSession(session);
