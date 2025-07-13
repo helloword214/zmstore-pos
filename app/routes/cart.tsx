@@ -13,6 +13,7 @@ import { getSession, commitSession } from "~/utils/session.server";
 type CartItem = { id: number; quantity: number };
 
 const maxQuantity = 99;
+const fractions = [0, 0.25, 0.5, 0.75];
 
 export const loader: LoaderFunction = async ({ request }) => {
   const session = await getSession(request);
@@ -41,9 +42,12 @@ export const action: ActionFunction = async ({ request }) => {
 
   const actionType = formData.get("action");
   const productId = Number(formData.get("productId"));
+  const quantityRaw = formData.get("quantity");
+  const quantity = quantityRaw ? Number(quantityRaw) : undefined;
 
   let cart: CartItem[] = session.get("cart") || [];
-  console.log("[Action] Incoming:", { actionType, productId, cart });
+
+  const minQuantity = 0.25;
 
   if (actionType === "add") {
     const existing = cart.find((item) => item.id === productId);
@@ -57,19 +61,46 @@ export const action: ActionFunction = async ({ request }) => {
       cart = [...cart, { id: productId, quantity: 1 }];
     }
   } else if (actionType === "increment") {
-    cart = cart.map((item) =>
-      item.id === productId
-        ? { ...item, quantity: Math.min(item.quantity + 1, maxQuantity) }
-        : item
-    );
+    cart = cart.map((item) => {
+      if (item.id !== productId) return item;
+
+      let newQuantity = 0;
+      if (item.quantity < 1) {
+        newQuantity = Math.min(item.quantity + 0.25, 1);
+      } else {
+        newQuantity = Math.min(item.quantity + 1, maxQuantity);
+      }
+
+      return { ...item, quantity: newQuantity };
+    });
   } else if (actionType === "decrement") {
     cart = cart
-      .map((item) =>
-        item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
-      )
-      .filter((item) => item.quantity > 0);
+      .map((item) => {
+        if (item.id !== productId) return item;
+
+        let newQuantity = 0;
+        if (item.quantity <= 1) {
+          newQuantity = item.quantity - 0.25;
+        } else {
+          newQuantity = item.quantity - 1;
+        }
+
+        return { ...item, quantity: newQuantity };
+      })
+      .filter((item) => item.quantity >= minQuantity);
   } else if (actionType === "remove") {
     cart = cart.filter((item) => item.id !== productId);
+  } else if (actionType === "update") {
+    if (
+      quantity === undefined ||
+      quantity < minQuantity ||
+      quantity > maxQuantity
+    ) {
+      return json({ error: "Invalid quantity" }, { status: 400 });
+    }
+    cart = cart.map((item) =>
+      item.id === productId ? { ...item, quantity } : item
+    );
   } else if (actionType === "checkout") {
     if (cart.length === 0) {
       return json({ error: "Cart is empty" }, { status: 400 });
@@ -171,10 +202,15 @@ export default function CartPage() {
           <ul className="space-y-5">
             {cart.map((item) => {
               const isMaxed = item.quantity >= maxQuantity;
+
+              const wholePart = Math.floor(item.quantity);
+              const fractionPart = +(item.quantity - wholePart).toFixed(2);
+              const showFractionSelector = wholePart >= 1;
+
               return (
                 <li
                   key={item.id}
-                  className="flex justify-between items-center border p-5 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+                  className="flex flex-col sm:flex-row justify-between items-start sm:items-center border p-5 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
                 >
                   <div>
                     <div className="font-semibold text-lg">{item.name}</div>
@@ -182,10 +218,47 @@ export default function CartPage() {
                       ₱{item.price.toFixed(2)} per {item.unit}
                     </div>
                     <div className="mt-1 text-sm text-gray-700">
-                      Quantity: {item.quantity}
+                      Quantity: {item.quantity.toFixed(2)}
                     </div>
+
+                    {/* Fraction selector only if whole part >=1 */}
+                    {showFractionSelector && (
+                      <div className="mt-2 flex space-x-2">
+                        {fractions.map((f) => (
+                          <Form method="post" key={f}>
+                            <input
+                              type="hidden"
+                              name="productId"
+                              value={item.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="quantity"
+                              value={wholePart + f}
+                            />
+                            <button
+                              type="submit"
+                              name="action"
+                              value="update"
+                              className={`px-2 py-1 border rounded ${
+                                fractionPart === f
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-gray-200"
+                              }`}
+                              aria-label={`Set quantity to ${wholePart + f}`}
+                            >
+                              {f === 0 ? "0%" : `+${f * 100}%`}
+                            </button>
+                          </Form>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <Form method="post" className="flex items-center gap-2">
+
+                  <Form
+                    method="post"
+                    className="flex items-center gap-2 mt-4 sm:mt-0"
+                  >
                     <input type="hidden" name="productId" value={item.id} />
 
                     <button
@@ -194,6 +267,7 @@ export default function CartPage() {
                       value="decrement"
                       className="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
                       aria-label={`Decrease quantity of ${item.name}`}
+                      disabled={item.quantity <= 0.25}
                     >
                       -
                     </button>
