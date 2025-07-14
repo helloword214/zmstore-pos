@@ -35,7 +35,7 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       await db.product.delete({ where: { id: deleteId } });
       console.log("✅ Product deleted:", deleteId);
-      return json({ success: true });
+      return json({ success: true, action: "deleted" });
     } catch (error) {
       console.error("❌ Delete failed", error);
       return json({ error: "Failed to delete product." }, { status: 500 });
@@ -128,7 +128,7 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       });
       console.log("[✏️ Product Updated]:", updated);
-      return json({ success: true });
+      return json({ success: true, action: "updated" });
     } catch (error) {
       console.error("❌ Update failed", error);
       return json({ error: "Update failed." }, { status: 500 });
@@ -155,7 +155,7 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   console.log("[✅ Product Saved]:", newProduct);
-  return json({ success: true });
+  return json({ success: true, action: "created" });
 }
 
 export default function ProductsPage() {
@@ -168,13 +168,26 @@ export default function ProductsPage() {
   const [categories] = useState(loaderData.categories);
   const [brands] = useState(loaderData.brands);
 
-  const fetcher = useFetcher<{ success?: boolean; error?: string }>();
+  const actionFetcher = useFetcher<{
+    success?: boolean;
+    error?: string;
+    action?: "created" | "updated" | "deleted";
+  }>();
+
+  const listFetcher = useFetcher<{ products: ProductWithDetails[] }>();
+
+  useEffect(() => {
+    if (listFetcher.data?.products) {
+      setProducts(listFetcher.data.products);
+    }
+  }, [listFetcher.data]);
 
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
 
   const unitOptions = [
@@ -193,6 +206,18 @@ export default function ProductsPage() {
     "tab",
     "capsule",
   ];
+
+  const handleOpenModal = () => {
+    if (formRef.current) {
+      formRef.current.reset();
+    }
+    setFormData({});
+    setStep(1);
+    setErrors({});
+    setSuccessMsg("");
+    setErrorMsg("");
+    setShowModal(true);
+  };
 
   const handleInput = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -235,31 +260,62 @@ export default function ProductsPage() {
     setStep(1);
     setShowModal(true);
   };
+  useEffect(() => {
+    const data = actionFetcher.data;
+
+    if (!data) return;
+
+    const { success, error, action } = data;
+
+    if (success) {
+      const msgMap = {
+        created: "✅ Product successfully saved.",
+        updated: "✏️ Product successfully updated.",
+        deleted: "🗑️ Product deleted successfully.",
+      };
+
+      setSuccessMsg(msgMap[action || "created"] || "✅ Operation completed.");
+      setErrorMsg("");
+
+      setTimeout(() => {
+        setShowModal(false);
+        setFormData({});
+        setStep(1);
+        setErrors({});
+        if (formRef.current) formRef.current.reset();
+      }, 300);
+
+      listFetcher.load("/products/api");
+      actionFetcher.data = undefined;
+    }
+
+    if (error) {
+      setErrorMsg(error);
+      setSuccessMsg("");
+      setTimeout(() => {
+        actionFetcher.data = undefined;
+      }, 300);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionFetcher.data, listFetcher]);
 
   useEffect(() => {
-    if (fetcher.data?.success) {
-      setSuccessMsg("Product successfully added.");
-      setFormData({});
-      setShowModal(false);
-
-      // 🔁 Fetch updated products from loader
-      fetch("/products")
-        .then((res) => res.json())
-        .then((data) => setProducts(data.products));
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg("");
+        setErrorMsg("");
+      }, 3000);
+      return () => clearTimeout(timer);
     }
-  }, [fetcher.data]);
+  }, [successMsg, errorMsg]);
 
   return (
     <main className="p-6 max-w-6xl mx-auto">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">🛒 Product List</h1>
         <button
-          onClick={() => {
-            setShowModal(true);
-            setStep(1);
-            setSuccessMsg("");
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          onClick={handleOpenModal}
+          className="flex round items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
         >
           ➕ Add Product
         </button>
@@ -268,6 +324,12 @@ export default function ProductsPage() {
       {successMsg && (
         <div className="mt-4 p-3 bg-green-100 text-green-700 rounded">
           ✅ {successMsg}
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
+          ❌ {errorMsg}
         </div>
       )}
 
@@ -323,35 +385,37 @@ export default function ProductsPage() {
                         ? `${product.stock} pcs – ${product.packingSize} per ${product.unit}`
                         : "—"}
                     </td>
-                    <td className="p-3 space-x-2">
-                      <button
-                        onClick={() => handleEdit(product)}
-                        className="bg-yellow-400 text-white px-2 py-1 rounded text-xs"
-                      >
-                        ✏️ Edit
-                      </button>
-                      <fetcher.Form method="post">
-                        <input
-                          type="hidden"
-                          name="deleteId"
-                          value={product.id}
-                        />
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
                         <button
-                          type="submit"
-                          className="bg-red-600 text-white px-2 py-1 rounded text-xs"
-                          onClick={(e) => {
-                            if (
-                              !confirm(
-                                "Are you sure you want to delete this product?"
-                              )
-                            ) {
-                              e.preventDefault();
-                            }
-                          }}
+                          onClick={() => handleEdit(product)}
+                          className="bg-yellow-400 text-white px-2 py-1 rounded text-xs"
                         >
-                          🗑 Delete
+                          ✏️ Edit
                         </button>
-                      </fetcher.Form>
+                        <actionFetcher.Form method="post">
+                          <input
+                            type="hidden"
+                            name="deleteId"
+                            value={product.id}
+                          />
+                          <button
+                            type="submit"
+                            className="bg-red-600 text-white px-2 py-1 rounded text-xs"
+                            onClick={(e) => {
+                              if (
+                                !confirm(
+                                  "Are you sure you want to delete this product?"
+                                )
+                              ) {
+                                e.preventDefault();
+                              }
+                            }}
+                          >
+                            🗑 Delete
+                          </button>
+                        </actionFetcher.Form>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -371,7 +435,7 @@ export default function ProductsPage() {
               ×
             </button>
 
-            <fetcher.Form
+            <actionFetcher.Form
               method="post"
               ref={formRef}
               className="space-y-4"
@@ -580,12 +644,14 @@ export default function ProductsPage() {
                       className="bg-green-600 text-white px-4 py-2 rounded"
                       onClick={(e) => {
                         console.log("[🧪 SUBMIT CLICKED]");
-                        if (
-                          !confirm(
-                            "Are you sure you want to save this product?"
-                          )
-                        ) {
-                          e.preventDefault();
+                        if (formData.id) {
+                          if (
+                            !confirm(
+                              "Are you sure you want to update this product?"
+                            )
+                          ) {
+                            e.preventDefault();
+                          }
                         }
                       }}
                     >
@@ -594,7 +660,7 @@ export default function ProductsPage() {
                   </div>
                 </>
               )}
-            </fetcher.Form>
+            </actionFetcher.Form>
           </div>
         </div>
       )}

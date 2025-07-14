@@ -1,4 +1,3 @@
-import React from "react";
 import type { Product } from "@prisma/client";
 import {
   json,
@@ -10,7 +9,7 @@ import { useLoaderData, Form } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { getSession, commitSession } from "~/utils/session.server";
 
-type CartItem = { id: number; quantity: number };
+type CartItem = { id: number; quantity: number; discount?: number };
 
 const maxQuantity = 99;
 const minQuantity = 0.25;
@@ -25,7 +24,11 @@ export const loader: LoaderFunction = async ({ request }) => {
     .map((item) => {
       const product = products.find((p) => p.id === item.id);
       if (!product) return null;
-      return { ...product, quantity: item.quantity };
+      return {
+        ...product,
+        quantity: item.quantity,
+        discount: item.discount || 0,
+      };
     })
     .filter(Boolean);
 
@@ -39,7 +42,9 @@ export const action: ActionFunction = async ({ request }) => {
   const actionType = formData.get("action");
   const productId = Number(formData.get("productId"));
   const quantityRaw = formData.get("quantity");
+  const discountRaw = formData.get("discount");
   const quantity = quantityRaw ? Number(quantityRaw) : undefined;
+  const discount = discountRaw ? Number(discountRaw) : undefined;
 
   let cart: CartItem[] = session.get("cart") || [];
 
@@ -85,6 +90,13 @@ export const action: ActionFunction = async ({ request }) => {
     cart = cart.map((item) =>
       item.id === productId ? { ...item, quantity } : item
     );
+  } else if (actionType === "set-discount") {
+    if (discount === undefined || discount < 0) {
+      return json({ error: "Invalid discount" }, { status: 400 });
+    }
+    cart = cart.map((item) =>
+      item.id === productId ? { ...item, discount } : item
+    );
   } else if (actionType === "checkout") {
     if (cart.length === 0) {
       return json({ error: "Cart is empty" }, { status: 400 });
@@ -96,7 +108,8 @@ export const action: ActionFunction = async ({ request }) => {
 
     const total = cart.reduce((sum, item) => {
       const product = products.find((p) => p.id === item.id);
-      return sum + (product?.price ?? 0) * item.quantity;
+      const price = (product?.price ?? 0) - (item.discount ?? 0);
+      return sum + price * item.quantity;
     }, 0);
 
     await db.sale.create({
@@ -106,7 +119,9 @@ export const action: ActionFunction = async ({ request }) => {
           create: cart.map((item) => ({
             productId: item.id,
             quantity: item.quantity,
-            price: products.find((p) => p.id === item.id)?.price ?? 0,
+            price:
+              (products.find((p) => p.id === item.id)?.price ?? 0) -
+              (item.discount ?? 0),
           })),
         },
       },
@@ -127,10 +142,13 @@ export const action: ActionFunction = async ({ request }) => {
 export default function CartPage() {
   const { products, cart } = useLoaderData<{
     products: Product[];
-    cart: (Product & { quantity: number })[];
+    cart: (Product & { quantity: number; discount?: number })[];
   }>();
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const total = cart.reduce(
+    (sum, item) => sum + (item.price - (item.discount || 0)) * item.quantity,
+    0
+  );
 
   return (
     <main className="p-6 max-w-5xl mx-auto space-y-10">
@@ -173,7 +191,7 @@ export default function CartPage() {
         </table>
       </section>
 
-      {/* Cart List */}
+      {/* Cart Items */}
       <section>
         <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Cart</h2>
         {cart.length === 0 ? (
@@ -185,109 +203,140 @@ export default function CartPage() {
                 <tr className="bg-gray-100 text-left">
                   <th className="p-2 border">Qty</th>
                   <th className="p-2 border">Item</th>
-                  <th className="p-2 border">Unit Price</th>
+                  <th className="p-2 border">Price</th>
+                  <th className="p-2 border">Disc</th>
                   <th className="p-2 border">Total</th>
                   <th className="p-2 border">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {cart.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="p-2 border">{item.quantity.toFixed(2)}</td>
-                    <td className="p-2 border">{item.name}</td>
-                    <td className="p-2 border">₱{item.price.toFixed(2)}</td>
-                    <td className="p-2 border">
-                      ₱{(item.price * item.quantity).toFixed(2)}
-                    </td>
-                    <td className="p-2 border">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex gap-2">
-                          <Form method="post">
-                            <input
-                              type="hidden"
-                              name="productId"
-                              value={item.id}
-                            />
-                            <button
-                              type="submit"
-                              name="action"
-                              value="decrement"
-                              className="px-2 bg-gray-300 hover:bg-gray-400 rounded text-sm"
-                              disabled={item.quantity <= 0.25}
-                            >
-                              -
-                            </button>
-                          </Form>
-                          <Form method="post">
-                            <input
-                              type="hidden"
-                              name="productId"
-                              value={item.id}
-                            />
-                            <button
-                              type="submit"
-                              name="action"
-                              value="increment"
-                              className="px-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
-                              disabled={item.quantity >= maxQuantity}
-                            >
-                              +
-                            </button>
-                          </Form>
-                          <Form method="post">
-                            <input
-                              type="hidden"
-                              name="productId"
-                              value={item.id}
-                            />
-                            <button
-                              type="submit"
-                              name="action"
-                              value="remove"
-                              className="px-2 text-red-600 hover:text-red-800 text-sm"
-                            >
-                              🗑
-                            </button>
-                          </Form>
-                        </div>
+                {cart.map((item) => {
+                  const discounted =
+                    (item.price - (item.discount || 0)) * item.quantity;
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="p-2 border">{item.quantity.toFixed(2)}</td>
+                      <td className="p-2 border">{item.name}</td>
+                      <td className="p-2 border">₱{item.price.toFixed(2)}</td>
+                      <td className="p-2 border">
+                        ₱{(item.discount || 0).toFixed(2)}
+                        <Form method="post" className="mt-1">
+                          <input
+                            type="hidden"
+                            name="productId"
+                            value={item.id}
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            name="discount"
+                            defaultValue={item.discount || ""}
+                            className="w-20 text-xs border px-1 py-0.5 rounded mt-1"
+                          />
+                          <button
+                            type="submit"
+                            name="action"
+                            value="set-discount"
+                            className="mt-1 text-blue-600 text-xs hover:underline"
+                          >
+                            Set
+                          </button>
+                        </Form>
+                      </td>
+                      <td className="p-2 border font-semibold">
+                        ₱{discounted.toFixed(2)}
+                      </td>
+                      <td className="p-2 border">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <Form method="post">
+                              <input
+                                type="hidden"
+                                name="productId"
+                                value={item.id}
+                              />
+                              <button
+                                type="submit"
+                                name="action"
+                                value="decrement"
+                                className="px-2 bg-gray-300 hover:bg-gray-400 rounded text-sm"
+                                disabled={item.quantity <= 0.25}
+                              >
+                                -
+                              </button>
+                            </Form>
+                            <Form method="post">
+                              <input
+                                type="hidden"
+                                name="productId"
+                                value={item.id}
+                              />
+                              <button
+                                type="submit"
+                                name="action"
+                                value="increment"
+                                className="px-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                disabled={item.quantity >= maxQuantity}
+                              >
+                                +
+                              </button>
+                            </Form>
+                            <Form method="post">
+                              <input
+                                type="hidden"
+                                name="productId"
+                                value={item.id}
+                              />
+                              <button
+                                type="submit"
+                                name="action"
+                                value="remove"
+                                className="px-2 text-red-600 hover:text-red-800 text-sm"
+                              >
+                                🗑
+                              </button>
+                            </Form>
+                          </div>
 
-                        {/* Fractional quantity options */}
-                        <div className="flex gap-1 mt-1">
-                          {[0, 0.25, 0.5, 0.75].map((f) => {
-                            const whole = Math.floor(item.quantity);
-                            const newQty = +(whole + f).toFixed(2);
-                            return (
-                              <Form method="post" key={f}>
-                                <input
-                                  type="hidden"
-                                  name="productId"
-                                  value={item.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="quantity"
-                                  value={newQty}
-                                />
-                                <button
-                                  type="submit"
-                                  name="action"
-                                  value="update"
-                                  className={`px-2 py-0.5 text-xs border rounded ${
-                                    item.quantity === newQty
-                                      ? "bg-blue-600 text-white"
-                                      : "bg-gray-100 hover:bg-gray-200"
-                                  }`}
-                                >
-                                  {f === 0 ? "0" : `+${f}`}
-                                </button>
-                              </Form>
-                            );
-                          })}
+                          {/* Fraction buttons */}
+                          <div className="flex gap-1 mt-1">
+                            {[0, 0.25, 0.5, 0.75].map((f) => {
+                              const whole = Math.floor(item.quantity);
+                              const newQty = +(whole + f).toFixed(2);
+                              return (
+                                <Form method="post" key={f}>
+                                  <input
+                                    type="hidden"
+                                    name="productId"
+                                    value={item.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="quantity"
+                                    value={newQty}
+                                  />
+                                  <button
+                                    type="submit"
+                                    name="action"
+                                    value="update"
+                                    className={`px-2 py-0.5 text-xs border rounded ${
+                                      item.quantity === newQty
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 hover:bg-gray-200"
+                                    }`}
+                                  >
+                                    {f === 0 ? "0" : `+${f}`}
+                                  </button>
+                                </Form>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 

@@ -7,14 +7,38 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ────────────── PRODUCT ──────────────
 model Product {
-  id        Int        @id @default(autoincrement())
-  name      String
-  price     Float
-  unit      String
-  saleItems SaleItem[] // backrelation: all SaleItems referencing this Product
+  id             Int          @id @default(autoincrement())
+  name           String
+  price          Float
+  unit           String
+  saleItems      SaleItem[]
+
+  description     String?
+  stock           Float?
+  imageUrl        String?
+  imageTag        String?
+  packingSize     String?
+  expirationDate  DateTime?
+  replenishAt     DateTime?
+  originalPrice   Float?
+  marketPrice     Float?
+
+  categoryId  Int?
+  category    Category?    @relation(fields: [categoryId], references: [id])
+
+  brandId     Int?
+  brand       Brand?       @relation(fields: [brandId], references: [id])
+
+  productTags ProductTag[]
+  tags        Tag[]        @relation("ProductTags")
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt @default(now())
 }
 
+// ────────────── SALE ──────────────
 model Sale {
   id        Int        @id @default(autoincrement())
   createdAt DateTime   @default(now())
@@ -30,4 +54,38 @@ model SaleItem {
   productId Int
   quantity  Int
   price     Float
+}
+
+// ────────────── CATEGORY ──────────────
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[]
+  brands    Brand[]   // ✅ A category can have many brands
+}
+
+// ────────────── TAG ──────────────
+model Tag {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  productTags ProductTag[]
+  products    Product[]    @relation("ProductTags")
+}
+
+model ProductTag {
+  product   Product @relation(fields: [productId], references: [id])
+  productId Int
+  tag       Tag     @relation(fields: [tagId], references: [id])
+  tagId     Int
+
+  @@id([productId, tagId])
+}
+
+// ────────────── BRAND ──────────────
+model Brand {
+  id         Int       @id @default(autoincrement())
+  name       String    @unique
+  categoryId Int?      // ✅ Optional to support generic or uncategorized brands
+  category   Category? @relation(fields: [categoryId], references: [id])
+  products   Product[]
 }
