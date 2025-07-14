@@ -167,7 +167,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState(loaderData.products);
   const [categories] = useState(loaderData.categories);
   const [brands] = useState(loaderData.brands);
-
+  const [searchTerm, setSearchTerm] = useState("");
   const actionFetcher = useFetcher<{
     success?: boolean;
     error?: string;
@@ -292,6 +292,7 @@ export default function ProductsPage() {
     if (error) {
       setErrorMsg(error);
       setSuccessMsg("");
+      setSearchTerm(""); // clear search so fresh product list shows
       setTimeout(() => {
         actionFetcher.data = undefined;
       }, 300);
@@ -308,6 +309,17 @@ export default function ProductsPage() {
       return () => clearTimeout(timer);
     }
   }, [successMsg, errorMsg]);
+
+  const filteredProducts = (products || []).filter((p) => {
+    const search = searchTerm.trim().toLowerCase();
+    if (!search) return true; // no search = show all
+
+    return (
+      p.name?.toLowerCase().includes(search) ||
+      p.description?.toLowerCase().includes(search) ||
+      p.brand?.name?.toLowerCase().includes(search)
+    );
+  });
 
   return (
     <main className="p-6 max-w-6xl mx-auto">
@@ -334,7 +346,16 @@ export default function ProductsPage() {
       )}
 
       <div className="mt-6 overflow-auto border rounded bg-white">
-        {!products.length ? (
+        <div className="mt-4 flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="🔍 Search product name, description, brand..."
+            className="w-full max-w-sm p-2 border rounded"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        {!filteredProducts.length ? (
           <div className="text-gray-500 italic mt-6">
             No products available.
           </div>
@@ -358,7 +379,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
+                {filteredProducts.map((product) => (
                   <tr key={product.id} className="border-t">
                     <td className="text-black p-3">
                       {product.category?.name || "—"}
