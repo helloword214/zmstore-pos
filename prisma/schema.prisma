@@ -22,9 +22,11 @@ model Product {
   packingSize     String?
   expirationDate  DateTime?
   replenishAt     DateTime?
-  originalPrice   Float?
-  marketPrice     Float?
+  dealerPrice     Float?
+  srp             Float?
+  uses           String[]
 
+  
   categoryId  Int?
   category    Category?    @relation(fields: [categoryId], references: [id])
 

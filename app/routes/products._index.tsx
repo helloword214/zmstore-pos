@@ -57,8 +57,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const brandId = formData.get("brandId")?.toString();
   const brandName = formData.get("brandName")?.toString();
   const stock = parseFloat(formData.get("stock") as string);
-  const originalPrice = parseFloat(formData.get("originalPrice") as string);
-  const marketPrice = parseFloat(formData.get("marketPrice") as string);
+  const dealerPrice = parseFloat(formData.get("dealerPrice") as string);
+  const srp = parseFloat(formData.get("srp") as string);
   const packingSize = formData.get("packingSize")?.toString();
   const expirationDate = formData.get("expirationDate")?.toString();
   const replenishAt = formData.get("replenishAt")?.toString();
@@ -74,8 +74,8 @@ export async function action({ request }: ActionFunctionArgs) {
     brandId,
     brandName,
     stock,
-    originalPrice,
-    marketPrice,
+    dealerPrice,
+    srp,
     packingSize,
     expirationDate,
     replenishAt,
@@ -118,8 +118,8 @@ export async function action({ request }: ActionFunctionArgs) {
           categoryId: categoryId ? Number(categoryId) : undefined,
           brandId: resolvedBrandId,
           stock: isNaN(stock) ? undefined : stock,
-          originalPrice: isNaN(originalPrice) ? undefined : originalPrice,
-          marketPrice: isNaN(marketPrice) ? undefined : marketPrice,
+          dealerPrice: isNaN(dealerPrice) ? undefined : dealerPrice,
+          srp: isNaN(srp) ? undefined : srp,
           packingSize,
           expirationDate: expirationDate ? new Date(expirationDate) : undefined,
           replenishAt: replenishAt ? new Date(replenishAt) : undefined,
@@ -144,8 +144,8 @@ export async function action({ request }: ActionFunctionArgs) {
       categoryId: categoryId ? Number(categoryId) : undefined,
       brandId: resolvedBrandId,
       stock: isNaN(stock) ? undefined : stock,
-      originalPrice: isNaN(originalPrice) ? undefined : originalPrice,
-      marketPrice: isNaN(marketPrice) ? undefined : marketPrice,
+      dealerPrice: isNaN(dealerPrice) ? undefined : dealerPrice,
+      srp: isNaN(srp) ? undefined : srp,
       packingSize,
       expirationDate: expirationDate ? new Date(expirationDate) : undefined,
       replenishAt: replenishAt ? new Date(replenishAt) : undefined,
@@ -244,8 +244,8 @@ export default function ProductsPage() {
       brandId: product.brandId?.toString() || "",
       brandName: product.brand?.name || "",
       stock: product.stock?.toString() || "",
-      originalPrice: product.originalPrice?.toString() || "",
-      marketPrice: product.marketPrice?.toString() || "",
+      dealerPrice: product.dealerPrice?.toString() || "",
+      srp: product.srp?.toString() || "",
       packingSize: product.packingSize || "",
       expirationDate: product.expirationDate
         ? product.expirationDate.toISOString().slice(0, 10)
@@ -581,19 +581,19 @@ export default function ProductsPage() {
                     onChange={handleInput}
                   />
                   <input
-                    name="originalPrice"
+                    name="dealerPrice"
                     type="number"
-                    placeholder="Original Price"
+                    placeholder="Dealer Price"
                     className="w-full p-2 border rounded"
-                    value={formData.originalPrice || ""}
+                    value={formData.dealerPrice || ""}
                     onChange={handleInput}
                   />
                   <input
-                    name="marketPrice"
+                    name="srp"
                     type="number"
-                    placeholder="Market Price"
+                    placeholder="SRP"
                     className="w-full p-2 border rounded"
-                    value={formData.marketPrice || ""}
+                    value={formData.srp || ""}
                     onChange={handleInput}
                   />
                   <input
