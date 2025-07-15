@@ -12,7 +12,10 @@ type ProductWithDetails = Product & {
 
 export async function loader() {
   const [products, categories, brands] = await Promise.all([
-    db.product.findMany({ include: { category: true, brand: true } }),
+    db.product.findMany({
+      include: { category: true, brand: true },
+      orderBy: { createdAt: "desc" },
+    }),
     db.category.findMany(),
     db.brand.findMany(),
   ]);
@@ -22,141 +25,142 @@ export async function loader() {
   return json({ products, categories, brands });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
-  const formData = await request.formData();
-  console.log("[📤 Incoming formData]:");
-  for (const [key, value] of formData.entries()) {
-    console.log(`  ${key}: ${value}`);
-  }
+export const action = async ({ request }: ActionFunctionArgs) => {
+  try {
+    const formData = await request.formData();
 
-  // 🗑️ DELETE logic
-  if (formData.get("deleteId")) {
-    const deleteId = Number(formData.get("deleteId"));
-    try {
-      await db.product.delete({ where: { id: deleteId } });
-      console.log("✅ Product deleted:", deleteId);
-      return json({ success: true, action: "deleted" });
-    } catch (error) {
-      console.error("❌ Delete failed", error);
-      return json({ error: "Failed to delete product." }, { status: 500 });
+    const id = formData.get("id")?.toString();
+    const name = formData.get("name")?.toString() || "";
+    const price = parseFloat(formData.get("price")?.toString() || "0");
+    const unit = formData.get("unit")?.toString() || "";
+
+    const categoryId = formData.get("categoryId")?.toString();
+    const brandId = formData.get("brandId")?.toString();
+    const brandName = formData.get("brandName")?.toString();
+
+    const stock = parseFloat(formData.get("stock")?.toString() || "0");
+    const dealerPrice = parseFloat(
+      formData.get("dealerPrice")?.toString() || "0"
+    );
+    const srp = parseFloat(formData.get("srp")?.toString() || "0");
+
+    const packingSize = formData.get("packingSize")?.toString();
+    const expirationDate = formData.get("expirationDate")?.toString();
+    const replenishAt = formData.get("replenishAt")?.toString();
+
+    const imageTag = formData.get("imageTag")?.toString();
+    const imageUrl = formData.get("imageUrl")?.toString();
+    const description = formData.get("description")?.toString();
+    const uses =
+      formData.get("uses")?.toString()?.split(",").filter(Boolean) || [];
+    const target =
+      formData.get("target")?.toString()?.split(",").filter(Boolean) || [];
+
+    let resolvedBrandId: number | undefined = brandId
+      ? Number(brandId)
+      : undefined;
+
+    if (!resolvedBrandId && brandName) {
+      const existingBrand = await db.brand.findFirst({
+        where: {
+          name: brandName,
+          ...(categoryId && { categoryId: Number(categoryId) }),
+        },
+      });
+
+      if (existingBrand) {
+        return json(
+          {
+            success: false,
+            error: `Brand "${brandName}" already exists. Please select it from the dropdown.`,
+            field: "brandName",
+          },
+          { status: 400 }
+        );
+      }
+
+      const newBrand = await db.brand.create({
+        data: {
+          name: brandName,
+          ...(categoryId && {
+            category: { connect: { id: Number(categoryId) } },
+          }),
+        },
+      });
+
+      resolvedBrandId = newBrand.id;
     }
-  }
 
-  // 🧠 Extract all shared fields
-  const id = formData.get("id")?.toString(); // 🆔 Edit mode check
-  const name = formData.get("name")?.toString();
-  const price = parseFloat(formData.get("price") as string);
-  const unit = formData.get("unit")?.toString();
-
-  if (!name || isNaN(price) || !unit) {
-    console.error("[❌ Missing fields]", { name, price, unit });
-    return json({ error: "Required fields missing." }, { status: 400 });
-  }
-
-  const categoryId = formData.get("categoryId")?.toString();
-  const brandId = formData.get("brandId")?.toString();
-  const brandName = formData.get("brandName")?.toString();
-  const stock = parseFloat(formData.get("stock") as string);
-  const dealerPrice = parseFloat(formData.get("dealerPrice") as string);
-  const srp = parseFloat(formData.get("srp") as string);
-  const packingSize = formData.get("packingSize")?.toString();
-  const expirationDate = formData.get("expirationDate")?.toString();
-  const replenishAt = formData.get("replenishAt")?.toString();
-  const imageTag = formData.get("imageTag")?.toString();
-  const imageUrl = formData.get("imageUrl")?.toString();
-
-  console.log("[🔍 Will Save Product with]", {
-    id,
-    name,
-    price,
-    unit,
-    categoryId,
-    brandId,
-    brandName,
-    stock,
-    dealerPrice,
-    srp,
-    packingSize,
-    expirationDate,
-    replenishAt,
-    imageTag,
-    imageUrl,
-  });
-
-  // 🧠 Resolve brand
-  let resolvedBrandId: number | undefined = undefined;
-  if (brandName && brandName.trim()) {
-    const existing = await db.brand.findFirst({
-      where: {
-        name: brandName.trim(),
-        categoryId: categoryId ? Number(categoryId) : undefined,
-      },
-    });
-    resolvedBrandId = existing
-      ? existing.id
-      : (
-          await db.brand.create({
-            data: {
-              name: brandName.trim(),
-              categoryId: categoryId ? Number(categoryId) : undefined,
-            },
-          })
-        ).id;
-  } else if (brandId) {
-    resolvedBrandId = Number(brandId);
-  }
-
-  // ✏️ UPDATE if ID exists
-  if (id) {
-    try {
-      const updated = await db.product.update({
+    if (id) {
+      await db.product.update({
         where: { id: Number(id) },
         data: {
           name,
           price,
           unit,
-          categoryId: categoryId ? Number(categoryId) : undefined,
-          brandId: resolvedBrandId,
-          stock: isNaN(stock) ? undefined : stock,
-          dealerPrice: isNaN(dealerPrice) ? undefined : dealerPrice,
-          srp: isNaN(srp) ? undefined : srp,
+          category: categoryId
+            ? { connect: { id: Number(categoryId) } }
+            : undefined,
+          brand: resolvedBrandId
+            ? { connect: { id: resolvedBrandId } }
+            : undefined,
+          stock,
+          dealerPrice,
+          srp,
           packingSize,
           expirationDate: expirationDate ? new Date(expirationDate) : undefined,
           replenishAt: replenishAt ? new Date(replenishAt) : undefined,
           imageTag,
           imageUrl,
+          description,
+          uses,
+          target,
         },
       });
-      console.log("[✏️ Product Updated]:", updated);
-      return json({ success: true, action: "updated" });
-    } catch (error) {
-      console.error("❌ Update failed", error);
-      return json({ error: "Update failed." }, { status: 500 });
+
+      return json({ success: true, message: "Product updated successfully." });
+    } else {
+      await db.product.create({
+        data: {
+          name,
+          price,
+          unit,
+          category: categoryId
+            ? { connect: { id: Number(categoryId) } }
+            : undefined,
+          brand: resolvedBrandId
+            ? { connect: { id: resolvedBrandId } }
+            : undefined,
+          stock,
+          dealerPrice,
+          srp,
+          packingSize,
+          expirationDate: expirationDate ? new Date(expirationDate) : undefined,
+          replenishAt: replenishAt ? new Date(replenishAt) : undefined,
+          imageTag,
+          imageUrl,
+          description,
+          uses,
+          target,
+        },
+      });
+
+      return json({ success: true, message: "Product created successfully." });
     }
+  } catch (error: any) {
+    console.error("[❌ Product save error]:", error);
+    return json(
+      {
+        success: false,
+        error:
+          error.code === "P2002"
+            ? "Duplicate entry. This product or brand already exists."
+            : "Something went wrong while saving the product.",
+      },
+      { status: 500 }
+    );
   }
-
-  // ➕ CREATE if no ID
-  const newProduct = await db.product.create({
-    data: {
-      name,
-      price,
-      unit,
-      categoryId: categoryId ? Number(categoryId) : undefined,
-      brandId: resolvedBrandId,
-      stock: isNaN(stock) ? undefined : stock,
-      dealerPrice: isNaN(dealerPrice) ? undefined : dealerPrice,
-      srp: isNaN(srp) ? undefined : srp,
-      packingSize,
-      expirationDate: expirationDate ? new Date(expirationDate) : undefined,
-      replenishAt: replenishAt ? new Date(replenishAt) : undefined,
-      imageTag,
-      imageUrl,
-    },
-  });
-
-  console.log("[✅ Product Saved]:", newProduct);
-  return json({ success: true, action: "created" });
-}
+};
 
 export default function ProductsPage() {
   const loaderData = useLoaderData<{
@@ -200,11 +204,18 @@ export default function ProductsPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useState<Record<string, string>>({
+    target: "", // ✅ ensure this is always a string
+    uses: "", // ✅ same for uses
+  });
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterBrand, setFilterBrand] = useState("");
+  const [filterTarget, setFilterTarget] = useState("");
 
   const unitOptions = [
     "vial",
@@ -241,16 +252,6 @@ export default function ProductsPage() {
     >
   ) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const validateStep = () => {
-    const stepFields = step === 1 ? ["name", "price", "unit"] : [];
-    const newErrors: Record<string, string> = {};
-    stepFields.forEach((field) => {
-      if (!formData[field]) newErrors[field] = "Required";
-    });
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleEdit = (product: ProductWithDetails) => {
@@ -334,20 +335,28 @@ export default function ProductsPage() {
       const timer = setTimeout(() => {
         setSuccessMsg("");
         setErrorMsg("");
-      }, 3000);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [successMsg, errorMsg]);
 
   const filteredProducts = (products || []).filter((p) => {
     const search = searchTerm.trim().toLowerCase();
-    if (!search) return true; // no search = show all
 
-    return (
+    const matchesSearch =
+      !search ||
       p.name?.toLowerCase().includes(search) ||
       p.description?.toLowerCase().includes(search) ||
-      p.brand?.name?.toLowerCase().includes(search)
-    );
+      p.brand?.name?.toLowerCase().includes(search);
+
+    const matchesCategory =
+      !filterCategory || p.categoryId?.toString() === filterCategory;
+
+    const matchesBrand = !filterBrand || p.brandId?.toString() === filterBrand;
+
+    const matchesTarget = !filterTarget || p.target?.includes(filterTarget);
+
+    return matchesSearch && matchesCategory && matchesBrand && matchesTarget;
   });
 
   return (
@@ -384,6 +393,58 @@ export default function ProductsPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <div className="my-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Category Filter */}
+          <select
+            className="p-2 border rounded"
+            value={filterCategory}
+            onChange={(e) => {
+              setFilterCategory(e.target.value);
+              setFilterBrand(""); // reset brand when category changes
+            }}
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Brand Filter */}
+          <select
+            className="p-2 border rounded"
+            value={filterBrand}
+            onChange={(e) => setFilterBrand(e.target.value)}
+          >
+            <option value="">All Brands</option>
+            {brands
+              .filter(
+                (b) =>
+                  !filterCategory || b.categoryId?.toString() === filterCategory
+              )
+              .map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+          </select>
+
+          {/* Target Filter */}
+          <select
+            className="p-2 border rounded"
+            value={filterTarget}
+            onChange={(e) => setFilterTarget(e.target.value)}
+          >
+            <option value="">All Targets</option>
+            {targetOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {!filteredProducts.length ? (
           <div className="text-gray-500 italic mt-6">
             No products available.
@@ -517,7 +578,11 @@ export default function ProductsPage() {
                   <h3 className="text-lg font-semibold text-gray-700 mb-4">
                     Step 1: Basic Info
                   </h3>
-
+                  {errorMsg && (
+                    <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                      {errorMsg}
+                    </div>
+                  )}
                   <div className="mb-4">
                     <label htmlFor="name" className="block font-medium mb-1">
                       Product Name
@@ -525,13 +590,15 @@ export default function ProductsPage() {
                     <input
                       name="name"
                       className={`w-full p-2 border rounded ${
-                        errors.name && "border-red-500"
+                        errors.name ? "border-red-500" : "border-gray-300"
                       }`}
                       placeholder="Name"
                       value={formData.name || ""}
                       onChange={handleInput}
-                      required
                     />
+                    {errors.name && (
+                      <p className="text-sm text-red-500 mt-1">{errors.name}</p>
+                    )}
                   </div>
 
                   <div className="mb-4">
@@ -542,13 +609,17 @@ export default function ProductsPage() {
                       name="price"
                       type="number"
                       className={`w-full p-2 border rounded ${
-                        errors.price && "border-red-500"
+                        errors.price ? "border-red-500" : "border-gray-300"
                       }`}
                       placeholder="Price"
                       value={formData.price || ""}
                       onChange={handleInput}
-                      required
                     />
+                    {errors.price && (
+                      <p className="text-sm text-red-500 mt-1">
+                        {errors.price}
+                      </p>
+                    )}
                   </div>
 
                   <div className="mb-4">
@@ -558,11 +629,10 @@ export default function ProductsPage() {
                     <select
                       name="unit"
                       className={`w-full p-2 border rounded ${
-                        errors.unit && "border-red-500"
+                        errors.unit ? "border-red-500" : "border-gray-300"
                       }`}
                       value={formData.unit || ""}
                       onChange={handleInput}
-                      required
                     >
                       <option value="">-- Unit --</option>
                       {unitOptions.map((u) => (
@@ -571,6 +641,9 @@ export default function ProductsPage() {
                         </option>
                       ))}
                     </select>
+                    {errors.unit && (
+                      <p className="text-sm text-red-500 mt-1">{errors.unit}</p>
+                    )}
                   </div>
 
                   <div className="mb-4">
@@ -596,7 +669,10 @@ export default function ProductsPage() {
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="brandId" className="block font-medium mb-1">
+                    <label
+                      htmlFor="brandId"
+                      className="block font-medium mb-1 text bg-orange-400"
+                    >
                       Brand
                     </label>
                     <select
@@ -617,7 +693,7 @@ export default function ProductsPage() {
                   <div className="mb-6">
                     <label
                       htmlFor="brandName"
-                      className="block font-medium mb-1"
+                      className="block font-medium mb-1 text-orange-700"
                     >
                       Or New Brand
                     </label>
@@ -633,8 +709,71 @@ export default function ProductsPage() {
                   <div className="text-right">
                     <button
                       type="button"
-                      onClick={() => validateStep() && setStep(2)}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
+                      onClick={async (e) => {
+                        e.preventDefault();
+
+                        // ✅ Validate required fields first
+                        const requiredFields = ["name", "price", "unit"];
+                        const newErrors: Record<string, string> = {};
+
+                        requiredFields.forEach((field) => {
+                          if (!formData[field]?.trim()) {
+                            newErrors[field] = `${
+                              field[0].toUpperCase() + field.slice(1)
+                            } is required`;
+                          }
+                        });
+
+                        setErrors(newErrors);
+                        if (Object.keys(newErrors).length > 0) return; // ⛔ Block if any validation error
+
+                        const brandName = formData.brandName?.trim();
+                        const categoryId = formData.categoryId;
+
+                        // ✅ If dropdown brand is selected, skip check
+                        if (formData.brandId) {
+                          setErrorMsg("");
+                          setStep(2);
+                          return;
+                        }
+
+                        if (brandName) {
+                          const checkData = new FormData();
+                          checkData.append("brandName", brandName);
+                          if (categoryId)
+                            checkData.append("categoryId", categoryId);
+
+                          try {
+                            const res = await fetch("/brand/check", {
+                              method: "POST",
+                              body: checkData,
+                            });
+
+                            const result = await res.json();
+                            console.log("[🔎 Brand Check Result]:", result);
+
+                            if (result.exists) {
+                              setErrorMsg(
+                                `Brand "${brandName}" already exists in this category.`
+                              );
+                              return;
+                            }
+
+                            setErrorMsg("");
+                            setStep(2); // ✅ Proceed to next step
+                          } catch (err) {
+                            console.error("[❌ Brand Check Error]:", err);
+                            setErrorMsg(
+                              "Could not verify brand. Please try again."
+                            );
+                          }
+                        } else {
+                          setErrorMsg(
+                            "Please select a brand or enter a new one."
+                          );
+                        }
+                      }}
                     >
                       Next
                     </button>
