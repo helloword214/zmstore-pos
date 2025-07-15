@@ -226,6 +226,8 @@ export default function ProductsPage() {
     uses: "", // ✅ same for uses
   });
 
+  const itemsPerPage = 10;
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -233,6 +235,12 @@ export default function ProductsPage() {
   const [filterCategory, setFilterCategory] = useState("");
   const [filterBrand, setFilterBrand] = useState("");
   const [filterTarget, setFilterTarget] = useState("");
+  const [filterUses, setFilterUses] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCategory, filterBrand, filterTarget, filterUses]);
 
   const unitOptions = [
     "vial",
@@ -373,8 +381,23 @@ export default function ProductsPage() {
 
     const matchesTarget = !filterTarget || p.target?.includes(filterTarget);
 
-    return matchesSearch && matchesCategory && matchesBrand && matchesTarget;
+    const matchesUses =
+      filterUses.length === 0 ||
+      (p.uses && filterUses.every((u) => p.uses.includes(u)));
+
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesBrand &&
+      matchesTarget &&
+      matchesUses
+    );
   });
+
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <main className="p-6 max-w-6xl mx-auto">
@@ -460,9 +483,41 @@ export default function ProductsPage() {
               </option>
             ))}
           </select>
+
+          {/* Target Uses */}
+          <fieldset className="border p-2 rounded">
+            <legend className="font-semibold mb-1 text-gray-700">Uses</legend>
+            <div className="flex flex-wrap gap-2">
+              {[
+                "Vitamins",
+                "Pain Relief",
+                "Antibiotic",
+                "Dewormer",
+                "Supplement",
+              ].map((use) => (
+                <label
+                  key={use}
+                  className="flex items-center gap-1 bg-orange-600 px-2 py-1 rounded text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    value={use}
+                    checked={filterUses.includes(use)}
+                    onChange={(e) => {
+                      const updated = e.target.checked
+                        ? [...filterUses, use]
+                        : filterUses.filter((u) => u !== use);
+                      setFilterUses(updated);
+                    }}
+                  />
+                  {use}
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </div>
 
-        {!filteredProducts.length ? (
+        {!paginatedProducts.length ? (
           <div className="text-gray-500 italic mt-6">
             No products available.
           </div>
@@ -488,7 +543,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {paginatedProducts.map((product) => (
                   <tr key={product.id} className="border-t">
                     <td className="text-black p-3">{product.id || "—"}</td>
                     <td className="text-black p-3 font-medium">
@@ -553,6 +608,50 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
+            <div className="flex justify-center items-center mt-4 gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+                disabled={currentPage === 1}
+              >
+                Prev
+              </button>
+
+              {Array.from(
+                { length: Math.ceil(filteredProducts.length / itemsPerPage) },
+                (_, i) => (
+                  <button
+                    key={i + 1}
+                    onClick={() => setCurrentPage(i + 1)}
+                    className={`px-3 py-1 border rounded ${
+                      currentPage === i + 1
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-black"
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                )
+              )}
+
+              <button
+                onClick={() =>
+                  setCurrentPage((prev) =>
+                    Math.min(
+                      prev + 1,
+                      Math.ceil(filteredProducts.length / itemsPerPage)
+                    )
+                  )
+                }
+                className="px-3 py-1 border rounded disabled:opacity-50"
+                disabled={
+                  currentPage ===
+                  Math.ceil(filteredProducts.length / itemsPerPage)
+                }
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
