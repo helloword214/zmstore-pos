@@ -167,6 +167,17 @@ export default function ProductsPage() {
   const [products, setProducts] = useState(loaderData.products);
   const [categories] = useState(loaderData.categories);
   const [brands] = useState(loaderData.brands);
+  const targetOptions = [
+    "Human",
+    "Dog",
+    "Cat",
+    "Poultry",
+    "Livestock",
+    "Bird",
+    "Plant",
+    "Other",
+  ];
+
   const [searchTerm, setSearchTerm] = useState("");
   const actionFetcher = useFetcher<{
     success?: boolean;
@@ -178,7 +189,12 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (listFetcher.data?.products) {
-      setProducts(listFetcher.data.products);
+      const sorted = [...listFetcher.data.products].sort((a, b) => {
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+      setProducts(sorted);
     }
   }, [listFetcher.data]);
 
@@ -220,7 +236,9 @@ export default function ProductsPage() {
   };
 
   const handleInput = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -237,29 +255,40 @@ export default function ProductsPage() {
 
   const handleEdit = (product: ProductWithDetails) => {
     setFormData({
-      name: product.name,
-      price: product.price.toString(),
-      unit: product.unit,
+      id: product.id?.toString() || "",
+      name: product.name || "",
+      price: typeof product.price === "number" ? product.price.toString() : "",
+      unit: product.unit || "",
       categoryId: product.categoryId?.toString() || "",
       brandId: product.brandId?.toString() || "",
       brandName: product.brand?.name || "",
-      stock: product.stock?.toString() || "",
-      dealerPrice: product.dealerPrice?.toString() || "",
-      srp: product.srp?.toString() || "",
+      stock: typeof product.stock === "number" ? product.stock.toString() : "",
+      dealerPrice:
+        typeof product.dealerPrice === "number"
+          ? product.dealerPrice.toString()
+          : "",
+      srp: typeof product.srp === "number" ? product.srp.toString() : "",
       packingSize: product.packingSize || "",
       expirationDate: product.expirationDate
-        ? product.expirationDate.toISOString().slice(0, 10)
+        ? new Date(product.expirationDate).toISOString().slice(0, 10)
         : "",
       replenishAt: product.replenishAt
         ? new Date(product.replenishAt).toISOString().slice(0, 10)
         : "",
       imageTag: product.imageTag || "",
       imageUrl: product.imageUrl || "",
-      id: product.id.toString(), // You'll use this to detect update
+      description: product.description || "",
+      uses: product.uses?.join(",") || "",
+      target: product.target?.join(",") || "",
     });
+
     setStep(1);
     setShowModal(true);
+    setErrors({});
+    setSuccessMsg("");
+    setErrorMsg("");
   };
+
   useEffect(() => {
     const data = actionFetcher.data;
 
@@ -364,15 +393,17 @@ export default function ProductsPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-100 text-left">
                 <tr>
+                  <th className="p-3 font-semibold text-orange-500">I.D</th>
+                  <th className="p-3 font-semibold text-orange-500">Name</th>
                   <th className="p-3 font-semibold text-orange-500">
                     Category
                   </th>
-                  <th className="p-3 font-semibold text-orange-500">Name</th>
                   <th className="p-3 font-semibold text-orange-500">Price</th>
                   <th className="p-3 font-semibold text-orange-500">
                     Packing Size
                   </th>
                   <th className="p-3 font-semibold text-orange-500">Stocks</th>
+                  <th className="p-3 font-semibold text-orange-500">Target</th>
                   <th className="p-3 font-semibold  text-orange-500">
                     Actions
                   </th>
@@ -381,9 +412,7 @@ export default function ProductsPage() {
               <tbody>
                 {filteredProducts.map((product) => (
                   <tr key={product.id} className="border-t">
-                    <td className="text-black p-3">
-                      {product.category?.name || "—"}
-                    </td>
+                    <td className="text-black p-3">{product.id || "—"}</td>
                     <td className="text-black p-3 font-medium">
                       {product.name}{" "}
                       {product.brand?.name ? (
@@ -391,6 +420,9 @@ export default function ProductsPage() {
                           ({product.brand.name})
                         </span>
                       ) : null}
+                    </td>
+                    <td className="text-black p-3">
+                      {product.category?.name || "—"}
                     </td>
                     <td className="p-3 text-black">
                       {typeof product.price === "number" &&
@@ -406,6 +438,7 @@ export default function ProductsPage() {
                         ? `${product.stock} pcs – ${product.packingSize} per ${product.unit}`
                         : "—"}
                     </td>
+                    <td className="text-black p-3">{product.target || "—"}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <button
@@ -469,88 +502,139 @@ export default function ProductsPage() {
             >
               <div className="flex justify-between items-center mb-2">
                 <h2 className="text-lg font-semibold">
-                  {step === 1 ? "Step 1: Basic Info" : "Step 2: Extra Info"}
+                  {step === 1
+                    ? "Step 1: Basic Info"
+                    : step === 2
+                    ? "Step 2: Stock & Packaging"
+                    : "Step 3: Description & Tags"}
                 </h2>
-                <span className="text-sm text-gray-500">Step {step} of 2</span>
+                <span className="text-sm text-gray-500">Step {step} of 3</span>
               </div>
 
+              {/* Step 1: Basic Info */}
               {step === 1 && (
                 <>
-                  <input
-                    name="name"
-                    placeholder="Name"
-                    className={`w-full p-2 border rounded ${
-                      errors.name && "border-red-500"
-                    }`}
-                    value={formData.name || ""}
-                    onChange={handleInput}
-                    required
-                  />
-                  <input
-                    name="price"
-                    type="number"
-                    placeholder="Price"
-                    className={`w-full p-2 border rounded ${
-                      errors.price && "border-red-500"
-                    }`}
-                    value={formData.price || ""}
-                    onChange={handleInput}
-                    required
-                  />
-                  <select
-                    name="unit"
-                    className={`w-full p-2 border rounded ${
-                      errors.unit && "border-red-500"
-                    }`}
-                    value={formData.unit || ""}
-                    onChange={handleInput}
-                    required
-                  >
-                    <option value="">-- Unit --</option>
-                    {unitOptions.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    name="categoryId"
-                    className="w-full p-2 border rounded"
-                    value={formData.categoryId || ""}
-                    onChange={handleInput}
-                  >
-                    <option value="">-- Category --</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    name="brandId"
-                    className="w-full p-2 border rounded"
-                    value={formData.brandId || ""}
-                    onChange={handleInput}
-                  >
-                    <option value="">-- Brand --</option>
-                    {brands.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    name="brandName"
-                    placeholder="Or new brand..."
-                    className="w-full p-2 border rounded"
-                    value={formData.brandName || ""}
-                    onChange={handleInput}
-                  />
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                    Step 1: Basic Info
+                  </h3>
+
+                  <div className="mb-4">
+                    <label htmlFor="name" className="block font-medium mb-1">
+                      Product Name
+                    </label>
+                    <input
+                      name="name"
+                      className={`w-full p-2 border rounded ${
+                        errors.name && "border-red-500"
+                      }`}
+                      placeholder="Name"
+                      value={formData.name || ""}
+                      onChange={handleInput}
+                      required
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="price" className="block font-medium mb-1">
+                      Price
+                    </label>
+                    <input
+                      name="price"
+                      type="number"
+                      className={`w-full p-2 border rounded ${
+                        errors.price && "border-red-500"
+                      }`}
+                      placeholder="Price"
+                      value={formData.price || ""}
+                      onChange={handleInput}
+                      required
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="unit" className="block font-medium mb-1">
+                      Unit
+                    </label>
+                    <select
+                      name="unit"
+                      className={`w-full p-2 border rounded ${
+                        errors.unit && "border-red-500"
+                      }`}
+                      value={formData.unit || ""}
+                      onChange={handleInput}
+                      required
+                    >
+                      <option value="">-- Unit --</option>
+                      {unitOptions.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="categoryId"
+                      className="block font-medium mb-1"
+                    >
+                      Category
+                    </label>
+                    <select
+                      name="categoryId"
+                      className="w-full p-2 border rounded"
+                      value={formData.categoryId || ""}
+                      onChange={handleInput}
+                    >
+                      <option value="">-- Category --</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="brandId" className="block font-medium mb-1">
+                      Brand
+                    </label>
+                    <select
+                      name="brandId"
+                      className="w-full p-2 border rounded"
+                      value={formData.brandId || ""}
+                      onChange={handleInput}
+                    >
+                      <option value="">-- Brand --</option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mb-6">
+                    <label
+                      htmlFor="brandName"
+                      className="block font-medium mb-1"
+                    >
+                      Or New Brand
+                    </label>
+                    <input
+                      name="brandName"
+                      className="w-full p-2 border rounded"
+                      placeholder="Enter new brand..."
+                      value={formData.brandName || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
                   <div className="text-right">
                     <button
                       type="button"
                       onClick={() => validateStep() && setStep(2)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
                     >
                       Next
                     </button>
@@ -558,121 +642,325 @@ export default function ProductsPage() {
                 </>
               )}
 
+              {/* Step 2: Stock & Packaging */}
               {step === 2 && (
                 <>
-                  {/* ✅ Hidden fields to preserve Step 1 values */}
-                  <input
-                    type="hidden"
-                    name="name"
-                    value={formData.name || ""}
-                  />
-                  <input
-                    type="hidden"
-                    name="price"
-                    value={formData.price || ""}
-                  />
-                  <input
-                    type="hidden"
-                    name="unit"
-                    value={formData.unit || ""}
-                  />
-                  <input
-                    type="hidden"
-                    name="categoryId"
-                    value={formData.categoryId || ""}
-                  />
-                  <input
-                    type="hidden"
-                    name="brandId"
-                    value={formData.brandId || ""}
-                  />
-                  <input
-                    type="hidden"
-                    name="brandName"
-                    value={formData.brandName || ""}
-                  />
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                    Step 2: Stock & Packaging
+                  </h3>
 
-                  {/* Step 2 visible fields */}
-                  <input
-                    name="stock"
-                    type="number"
-                    placeholder="Stock"
-                    className="w-full p-2 border rounded"
-                    value={formData.stock || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="dealerPrice"
-                    type="number"
-                    placeholder="Dealer Price"
-                    className="w-full p-2 border rounded"
-                    value={formData.dealerPrice || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="srp"
-                    type="number"
-                    placeholder="SRP"
-                    className="w-full p-2 border rounded"
-                    value={formData.srp || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="packingSize"
-                    placeholder="Packing Size"
-                    className="w-full p-2 border rounded"
-                    value={formData.packingSize || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="expirationDate"
-                    type="date"
-                    className="w-full p-2 border rounded"
-                    value={formData.expirationDate || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="replenishAt"
-                    type="date"
-                    className="w-full p-2 border rounded"
-                    value={formData.replenishAt || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="imageTag"
-                    placeholder="Image Tag"
-                    className="w-full p-2 border rounded"
-                    value={formData.imageTag || ""}
-                    onChange={handleInput}
-                  />
-                  <input
-                    name="imageUrl"
-                    placeholder="Image URL"
-                    className="w-full p-2 border rounded"
-                    value={formData.imageUrl || ""}
-                    onChange={handleInput}
-                  />
+                  <input type="hidden" name="id" value={formData.id || ""} />
+
+                  {[
+                    "name",
+                    "price",
+                    "unit",
+                    "categoryId",
+                    "brandId",
+                    "brandName",
+                  ].map((key) => (
+                    <input
+                      key={key}
+                      type="hidden"
+                      name={key}
+                      value={formData[key] || ""}
+                    />
+                  ))}
+
+                  <div className="mb-4">
+                    <label htmlFor="stock" className="block font-medium mb-1">
+                      Stock
+                    </label>
+                    <input
+                      name="stock"
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      placeholder="Stock"
+                      value={formData.stock || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="dealerPrice"
+                      className="block font-medium mb-1"
+                    >
+                      Dealer Price
+                    </label>
+                    <input
+                      name="dealerPrice"
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      placeholder="Dealer Price"
+                      value={formData.dealerPrice || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="srp" className="block font-medium mb-1">
+                      SRP
+                    </label>
+                    <input
+                      name="srp"
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      placeholder="Suggested Retail Price"
+                      value={formData.srp || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="packingSize"
+                      className="block font-medium mb-1"
+                    >
+                      Packing Size
+                    </label>
+                    <input
+                      name="packingSize"
+                      className="w-full p-2 border rounded"
+                      placeholder="e.g. 100ml / 50kg"
+                      value={formData.packingSize || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="epiationDate"
+                      className="block font-medium mb-1"
+                    >
+                      Expiration Date
+                    </label>
+                    <input
+                      name="expirationDate"
+                      type="date"
+                      className="w-full p-2 border rounded"
+                      value={formData.expirationDate || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label
+                      htmlFor="replenishAt"
+                      className="block font-medium mb-1"
+                    >
+                      Replenish At
+                    </label>
+                    <input
+                      name="replenishAt"
+                      type="date"
+                      className="w-full p-2 border rounded"
+                      value={formData.replenishAt || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
                   <div className="flex justify-between">
                     <button
                       type="button"
                       onClick={() => setStep(1)}
-                      className="bg-gray-400 text-white px-4 py-2 rounded"
+                      className="bg-gray-500 text-white px-4 py-2 rounded shadow"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Step 3: Description & Tags */}
+              {step === 3 && (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                    Step 3: Description & Tags
+                  </h3>
+
+                  {/* Hidden fields to preserve Step 1 & 2 values */}
+                  {[
+                    "id",
+                    "name",
+                    "price",
+                    "unit",
+                    "categoryId",
+                    "brandId",
+                    "brandName",
+                    "stock",
+                    "dealerPrice",
+                    "srp",
+                    "packingSize",
+                    "expirationDate",
+                    "replenishAt",
+                  ].map((key) => (
+                    <input
+                      key={key}
+                      type="hidden"
+                      name={key}
+                      value={formData[key] || ""}
+                    />
+                  ))}
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="description"
+                      className="block font-medium mb-1"
+                    >
+                      Description
+                    </label>
+                    <textarea
+                      name="description"
+                      placeholder="Enter description..."
+                      className="w-full p-2 border rounded"
+                      value={formData.description || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <fieldset className="mb-4">
+                    <legend className="font-semibold mb-2">Uses</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Vitamins",
+                        "Pain Relief",
+                        "Antibiotic",
+                        "Dewormer",
+                        "Supplement",
+                      ].map((use) => {
+                        const selected = formData.uses
+                          ?.split(",")
+                          .includes(use);
+                        return (
+                          <label
+                            key={use}
+                            className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              name="uses"
+                              value={use}
+                              checked={selected}
+                              onChange={(e) => {
+                                const current = formData.uses?.split(",") || [];
+                                const updated = e.target.checked
+                                  ? [...current, use]
+                                  : current.filter((val) => val !== use);
+                                setFormData({
+                                  ...formData,
+                                  uses: updated.join(","),
+                                });
+                              }}
+                            />
+                            {use}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                  <input
+                    type="hidden"
+                    name="uses"
+                    value={formData.uses || ""}
+                  />
+
+                  <fieldset className="mb-4">
+                    <legend className="font-semibold mb-2">For (Target)</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {targetOptions.map((t) => {
+                        const selected = formData.target
+                          ?.split(",")
+                          .includes(t);
+                        return (
+                          <label
+                            key={t}
+                            className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              name="target"
+                              value={t}
+                              checked={selected}
+                              onChange={(e) => {
+                                const current =
+                                  formData.target?.split(",") || [];
+                                const updated = e.target.checked
+                                  ? [...current, t]
+                                  : current.filter((val) => val !== t);
+                                setFormData({
+                                  ...formData,
+                                  target: updated.join(","),
+                                });
+                              }}
+                            />
+                            {t}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                  <input
+                    type="hidden"
+                    name="target"
+                    value={formData.target || ""}
+                  />
+
+                  <div className="mb-4">
+                    <label htmlFor="nameTag" className="block font-medium mb-1">
+                      Image Tag
+                    </label>
+                    <input
+                      name="imageTag"
+                      className="w-full p-2 border rounded"
+                      placeholder="e.g. vitamins_icon"
+                      value={formData.imageTag || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label
+                      htmlFor="imageUrl"
+                      className="block font-medium mb-1"
+                    >
+                      Image URL
+                    </label>
+                    <input
+                      name="imageUrl"
+                      className="w-full p-2 border rounded"
+                      placeholder="https://example.com/image.jpg"
+                      value={formData.imageUrl || ""}
+                      onChange={handleInput}
+                    />
+                  </div>
+
+                  <div className="flex justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      className="bg-gray-500 text-white px-4 py-2 rounded shadow"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
-                      className="bg-green-600 text-white px-4 py-2 rounded"
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow"
                       onClick={(e) => {
-                        console.log("[🧪 SUBMIT CLICKED]");
-                        if (formData.id) {
-                          if (
-                            !confirm(
-                              "Are you sure you want to update this product?"
-                            )
-                          ) {
-                            e.preventDefault();
-                          }
+                        if (
+                          formData.id &&
+                          !confirm(
+                            "Are you sure you want to update this product?"
+                          )
+                        ) {
+                          e.preventDefault();
                         }
                       }}
                     >

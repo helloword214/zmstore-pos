@@ -25,6 +25,7 @@ model Product {
   dealerPrice     Float?
   srp             Float?
   uses           String[]
+  target        String[]
 
   
   categoryId  Int?
