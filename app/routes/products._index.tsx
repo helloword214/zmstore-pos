@@ -29,6 +29,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const formData = await request.formData();
 
+    const deleteId = formData.get("deleteId")?.toString();
+    if (deleteId) {
+      await db.product.delete({
+        where: { id: Number(deleteId) },
+      });
+
+      return json({ success: true, action: "deleted" });
+    }
+
     const id = formData.get("id")?.toString();
     const name = formData.get("name")?.toString() || "";
     const price = parseFloat(formData.get("price")?.toString() || "0");
@@ -118,7 +127,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      return json({ success: true, message: "Product updated successfully." });
+      return json({
+        success: true,
+        action: "updated",
+        message: "Product updated successfully.",
+      });
     } else {
       await db.product.create({
         data: {
@@ -145,7 +158,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      return json({ success: true, message: "Product created successfully." });
+      return json({
+        success: true,
+        action: "created",
+        message: "Product created successfully.",
+      });
     }
   } catch (error: any) {
     console.error("[❌ Product save error]:", error);
