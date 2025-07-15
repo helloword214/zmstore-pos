@@ -10,6 +10,8 @@ import { SelectInput } from "~/components/ui/SelectInput";
 import { Button } from "~/components/ui/Button";
 import { Textarea } from "~/components/ui/Textarea";
 import { TagCheckbox } from "~/components/ui/TagCheckbox";
+import { ProductTable } from "~/components/ui/ProductTable";
+import { Pagination } from "~/components/ui/Pagination";
 
 // Type
 type ProductWithDetails = Product & {
@@ -430,70 +432,101 @@ export default function ProductsPage() {
         </div>
       )}
 
-      <div className="mt-6 overflow-auto border rounded bg-white">
-        <div className="mt-4 flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="🔍 Search product name, description, brand..."
-            className="w-full max-w-sm p-2 border rounded"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div className="my-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Category Filter */}
-          <select
-            className="p-2 border rounded"
-            value={filterCategory}
-            onChange={(e) => {
-              setFilterCategory(e.target.value);
-              setFilterBrand(""); // reset brand when category changes
-            }}
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+      <div className="mt-6 overflow-auto border rounded bg-white p-7">
+        <div className="mt-6 border rounded-xl bg-white p-4 shadow-sm mb-7">
+          {/* Search Input */}
+          <div className="mb-4">
+            <label
+              htmlFor="Search"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Search
+            </label>
+            <TextInput
+              placeholder="🔍 Search product name, description, brand..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full max-w-md"
+            />
+          </div>
 
-          {/* Brand Filter */}
-          <select
-            className="p-2 border rounded"
-            value={filterBrand}
-            onChange={(e) => setFilterBrand(e.target.value)}
-          >
-            <option value="">All Brands</option>
-            {brands
-              .filter(
-                (b) =>
-                  !filterCategory || b.categoryId?.toString() === filterCategory
-              )
-              .map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-          </select>
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Category */}
+            <div>
+              <label
+                htmlFor="category"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Category
+              </label>
+              <SelectInput
+                value={filterCategory}
+                onChange={(e) => {
+                  setFilterCategory(e.target.value);
+                  setFilterBrand("");
+                }}
+                options={[
+                  { label: "All Categories", value: "" },
+                  ...categories.map((c) => ({
+                    label: c.name,
+                    value: c.id,
+                  })),
+                ]}
+              />
+            </div>
 
-          {/* Target Filter */}
-          <select
-            className="p-2 border rounded"
-            value={filterTarget}
-            onChange={(e) => setFilterTarget(e.target.value)}
-          >
-            <option value="">All Targets</option>
-            {targetOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            {/* Brand */}
+            <div>
+              <label
+                htmlFor="brand"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Brand
+              </label>
+              <SelectInput
+                value={filterBrand}
+                onChange={(e) => setFilterBrand(e.target.value)}
+                options={[
+                  { label: "All Brands", value: "" },
+                  ...brands
+                    .filter(
+                      (b) =>
+                        !filterCategory ||
+                        b.categoryId?.toString() === filterCategory
+                    )
+                    .map((b) => ({
+                      label: b.name,
+                      value: b.id,
+                    })),
+                ]}
+              />
+            </div>
 
-          {/* Target Uses */}
-          <fieldset className="border p-2 rounded">
-            <legend className="font-semibold mb-1 text-gray-700">Uses</legend>
+            {/* Target */}
+            <div>
+              <label
+                htmlFor="target"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Target
+              </label>
+              <SelectInput
+                value={filterTarget}
+                onChange={(e) => setFilterTarget(e.target.value)}
+                options={[
+                  { label: "All Targets", value: "" },
+                  ...targetOptions.map((t) => ({
+                    label: t,
+                    value: t,
+                  })),
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Uses Tags */}
+          <FormSection title="Uses" bordered>
             <div className="flex flex-wrap gap-2">
               {[
                 "Vitamins",
@@ -502,26 +535,21 @@ export default function ProductsPage() {
                 "Dewormer",
                 "Supplement",
               ].map((use) => (
-                <label
+                <TagCheckbox
                   key={use}
-                  className="flex items-center gap-1 bg-orange-600 px-2 py-1 rounded text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    value={use}
-                    checked={filterUses.includes(use)}
-                    onChange={(e) => {
-                      const updated = e.target.checked
-                        ? [...filterUses, use]
-                        : filterUses.filter((u) => u !== use);
-                      setFilterUses(updated);
-                    }}
-                  />
-                  {use}
-                </label>
+                  label={use}
+                  value={use}
+                  checked={filterUses.includes(use)}
+                  onChange={(e) => {
+                    const updated = e.target.checked
+                      ? [...filterUses, use]
+                      : filterUses.filter((u) => u !== use);
+                    setFilterUses(updated);
+                  }}
+                />
               ))}
             </div>
-          </fieldset>
+          </FormSection>
         </div>
 
         {!paginatedProducts.length ? (
@@ -529,226 +557,33 @@ export default function ProductsPage() {
             No products available.
           </div>
         ) : (
-          <div className="mt-6 overflow-auto border rounded bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-100 text-left">
-                <tr>
-                  <th className="p-3 font-semibold text-orange-500">I.D</th>
-                  <th className="p-3 font-semibold text-orange-500">Name</th>
-                  <th className="p-3 font-semibold text-orange-500">
-                    Category
-                  </th>
-                  <th className="p-3 font-semibold text-orange-500">Price</th>
-                  <th className="p-3 font-semibold text-orange-500">
-                    Packing Size
-                  </th>
-                  <th className="p-3 font-semibold text-orange-500">Stocks</th>
-                  <th className="p-3 font-semibold text-orange-500">Target</th>
-                  <th className="p-3 font-semibold  text-orange-500">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedProducts.map((product) => (
-                  <tr key={product.id} className="border-t">
-                    <td className="text-black p-3">
-                      {product.imageUrl && (
-                        <img
-                          src={product.imageUrl}
-                          alt={product.name}
-                          className="w-8 h-8 object-cover rounded"
-                        />
-                      )}
-                    </td>
-                    <td className="text-black p-3 font-medium">
-                      {product.name}{" "}
-                      {product.brand?.name ? (
-                        <span className="text-gray-500">
-                          ({product.brand.name})
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="text-black p-3">
-                      {product.category?.name || "—"}
-                    </td>
-                    <td className="p-3 text-black">
-                      {typeof product.price === "number" &&
-                      !isNaN(product.price)
-                        ? `₱${product.price.toFixed(2)} / ${product.unit}`
-                        : "—"}
-                    </td>
-                    <td className="text-black p-3">
-                      {product.packingSize || "—"}
-                    </td>
-                    <td className="text-black p-3">
-                      {product.stock && product.packingSize && product.unit
-                        ? `${product.stock} pcs – ${product.packingSize} per ${product.unit}`
-                        : "—"}
-                    </td>
-                    <td className="text-black p-3">{product.target || "—"}</td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(product)}
-                          className="bg-yellow-400 text-white px-2 py-1 rounded text-xs"
-                        >
-                          ✏️ Edit
-                        </button>
-                        <actionFetcher.Form method="post">
-                          <input
-                            type="hidden"
-                            name="deleteId"
-                            value={product.id}
-                          />
-                          <button
-                            type="submit"
-                            className="bg-red-600 text-white px-2 py-1 rounded text-xs"
-                            onClick={(e) => {
-                              if (
-                                !confirm(
-                                  "Are you sure you want to delete this product?"
-                                )
-                              ) {
-                                e.preventDefault();
-                              }
-                            }}
-                          >
-                            🗑 Delete
-                          </button>
-                        </actionFetcher.Form>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="flex items-center gap-2 mt-4">
-              <label htmlFor="itemsPerPage" className="text-sm font-medium">
-                Show:
-              </label>
-              <select
-                id="itemsPerPage"
-                className="p-2 border rounded"
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
-                  setCurrentPage(1); // reset to first page
-                }}
-              >
-                {[10, 20, 50, 100].map((n) => (
-                  <option key={n} value={n}>
-                    {n} per page
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex justify-center items-center mt-4 gap-2 flex-wrap">
-              <button
-                onClick={() => setCurrentPage(1)}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-                disabled={currentPage === 1}
-              >
-                ⏮ First
-              </button>
-
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-                disabled={currentPage === 1}
-              >
-                Prev
-              </button>
-
-              {/* Smart numbered buttons */}
-              {(() => {
-                const totalPages = Math.ceil(
-                  filteredProducts.length / itemsPerPage
-                );
-                const pages = [];
-                const maxButtons = 5;
-                const start = Math.max(
-                  1,
-                  currentPage - Math.floor(maxButtons / 2)
-                );
-                const end = Math.min(totalPages, start + maxButtons - 1);
-
-                if (start > 1) {
-                  pages.push(
-                    <span key="start-ellipsis" className="px-2">
-                      ...
-                    </span>
-                  );
-                }
-
-                for (let i = start; i <= end; i++) {
-                  pages.push(
-                    <button
-                      key={i}
-                      onClick={() => setCurrentPage(i)}
-                      className={`px-3 py-1 border rounded ${
-                        currentPage === i
-                          ? "bg-blue-500 text-white"
-                          : "bg-white text-black"
-                      }`}
-                    >
-                      {i}
-                    </button>
-                  );
-                }
-
-                if (end < totalPages) {
-                  pages.push(
-                    <span key="end-ellipsis" className="px-2">
-                      ...
-                    </span>
-                  );
-                }
-
-                return pages;
-              })()}
-
-              <button
-                onClick={() =>
-                  setCurrentPage((prev) =>
-                    Math.min(
-                      prev + 1,
-                      Math.ceil(filteredProducts.length / itemsPerPage)
-                    )
-                  )
-                }
-                className="px-3 py-1 border rounded disabled:opacity-50"
-                disabled={
-                  currentPage ===
-                  Math.ceil(filteredProducts.length / itemsPerPage)
-                }
-              >
-                Next
-              </button>
-
-              <button
-                onClick={() =>
-                  setCurrentPage(
-                    Math.ceil(filteredProducts.length / itemsPerPage)
-                  )
-                }
-                className="px-3 py-1 border rounded disabled:opacity-50"
-                disabled={
-                  currentPage ===
-                  Math.ceil(filteredProducts.length / itemsPerPage)
-                }
-              >
-                ⏭ Last
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 text-center mt-2">
-              Page {currentPage} of{" "}
-              {Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage))}
-            </p>
-          </div>
+          <ProductTable
+            products={paginatedProducts}
+            onEdit={handleEdit}
+            onDelete={(id) => {
+              const form = new FormData();
+              form.append("deleteId", id.toString());
+              actionFetcher.submit(form, { method: "post" });
+            }}
+          />
         )}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredProducts.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
+
+        <SelectInput
+          label="Items per page"
+          value={itemsPerPage}
+          onChange={(e) => {
+            setItemsPerPage(Number(e.target.value));
+            setCurrentPage(1); // Optional reset
+          }}
+          options={[10, 20, 50].map((n) => ({ label: `${n}`, value: n }))}
+          className="max-w-[180px]"
+        />
       </div>
 
       {showModal && (

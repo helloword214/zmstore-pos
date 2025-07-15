@@ -34,7 +34,9 @@ export function SelectInput({
         )}
         {...props}
       >
-        <option value="">-- Select --</option>
+        {!options.some((opt) => opt.value === "") && (
+          <option value="">-- Select --</option>
+        )}
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
