@@ -226,7 +226,7 @@ export default function ProductsPage() {
     uses: "", // ✅ same for uses
   });
 
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
@@ -608,7 +608,37 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
-            <div className="flex justify-center items-center mt-4 gap-2">
+
+            <div className="flex items-center gap-2 mt-4">
+              <label htmlFor="itemsPerPage" className="text-sm font-medium">
+                Show:
+              </label>
+              <select
+                id="itemsPerPage"
+                className="p-2 border rounded"
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1); // reset to first page
+                }}
+              >
+                {[10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n} per page
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-center items-center mt-4 gap-2 flex-wrap">
+              <button
+                onClick={() => setCurrentPage(1)}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+                disabled={currentPage === 1}
+              >
+                ⏮ First
+              </button>
+
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 className="px-3 py-1 border rounded disabled:opacity-50"
@@ -617,22 +647,53 @@ export default function ProductsPage() {
                 Prev
               </button>
 
-              {Array.from(
-                { length: Math.ceil(filteredProducts.length / itemsPerPage) },
-                (_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`px-3 py-1 border rounded ${
-                      currentPage === i + 1
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-black"
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                )
-              )}
+              {/* Smart numbered buttons */}
+              {(() => {
+                const totalPages = Math.ceil(
+                  filteredProducts.length / itemsPerPage
+                );
+                const pages = [];
+                const maxButtons = 5;
+                const start = Math.max(
+                  1,
+                  currentPage - Math.floor(maxButtons / 2)
+                );
+                const end = Math.min(totalPages, start + maxButtons - 1);
+
+                if (start > 1) {
+                  pages.push(
+                    <span key="start-ellipsis" className="px-2">
+                      ...
+                    </span>
+                  );
+                }
+
+                for (let i = start; i <= end; i++) {
+                  pages.push(
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i)}
+                      className={`px-3 py-1 border rounded ${
+                        currentPage === i
+                          ? "bg-blue-500 text-white"
+                          : "bg-white text-black"
+                      }`}
+                    >
+                      {i}
+                    </button>
+                  );
+                }
+
+                if (end < totalPages) {
+                  pages.push(
+                    <span key="end-ellipsis" className="px-2">
+                      ...
+                    </span>
+                  );
+                }
+
+                return pages;
+              })()}
 
               <button
                 onClick={() =>
@@ -651,7 +712,26 @@ export default function ProductsPage() {
               >
                 Next
               </button>
+
+              <button
+                onClick={() =>
+                  setCurrentPage(
+                    Math.ceil(filteredProducts.length / itemsPerPage)
+                  )
+                }
+                className="px-3 py-1 border rounded disabled:opacity-50"
+                disabled={
+                  currentPage ===
+                  Math.ceil(filteredProducts.length / itemsPerPage)
+                }
+              >
+                ⏭ Last
+              </button>
             </div>
+            <p className="text-sm text-gray-500 text-center mt-2">
+              Page {currentPage} of{" "}
+              {Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage))}
+            </p>
           </div>
         )}
       </div>
