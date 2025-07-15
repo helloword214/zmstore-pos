@@ -16,6 +16,7 @@
     "@remix-run/node": "^2.16.8",
     "@remix-run/react": "^2.16.8",
     "@remix-run/serve": "^2.16.8",
+    "clsx": "^2.1.1",
     "isbot": "^4.1.0",
     "prisma": "^6.11.1",
     "react": "^18.2.0",

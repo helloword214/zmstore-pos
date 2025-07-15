@@ -3,6 +3,13 @@ import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useFetcher } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { db } from "~/utils/db.server";
+import { FormSection } from "~/components/ui/FormSection";
+import { FormGroupRow } from "~/components/ui/FormGroupRow";
+import { TextInput } from "~/components/TextInput";
+import { SelectInput } from "~/components/ui/SelectInput";
+import { Button } from "~/components/ui/Button";
+import { Textarea } from "~/components/ui/Textarea";
+import { TagCheckbox } from "~/components/ui/TagCheckbox";
 
 // Type
 type ProductWithDetails = Product & {
@@ -545,7 +552,15 @@ export default function ProductsPage() {
               <tbody>
                 {paginatedProducts.map((product) => (
                   <tr key={product.id} className="border-t">
-                    <td className="text-black p-3">{product.id || "—"}</td>
+                    <td className="text-black p-3">
+                      {product.imageUrl && (
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="w-8 h-8 object-cover rounded"
+                        />
+                      )}
+                    </td>
                     <td className="text-black p-3 font-medium">
                       {product.name}{" "}
                       {product.brand?.name ? (
@@ -771,145 +786,95 @@ export default function ProductsPage() {
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <>
-                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                    Step 1: Basic Info
-                  </h3>
-                  {errorMsg && (
-                    <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
-                      {errorMsg}
-                    </div>
-                  )}
-                  <div className="mb-4">
-                    <label htmlFor="name" className="block font-medium mb-1">
-                      Product Name
-                    </label>
-                    <input
-                      name="name"
-                      className={`w-full p-2 border rounded ${
-                        errors.name ? "border-red-500" : "border-gray-300"
-                      }`}
-                      placeholder="Name"
-                      value={formData.name || ""}
-                      onChange={handleInput}
-                    />
-                    {errors.name && (
-                      <p className="text-sm text-red-500 mt-1">{errors.name}</p>
+                  <FormSection
+                    title="Step 1: Basic Info"
+                    description="Enter the basic product information."
+                    bordered
+                  >
+                    {errorMsg && (
+                      <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                        {errorMsg}
+                      </div>
                     )}
-                  </div>
 
-                  <div className="mb-4">
-                    <label htmlFor="price" className="block font-medium mb-1">
-                      Price
-                    </label>
-                    <input
-                      name="price"
-                      type="number"
-                      className={`w-full p-2 border rounded ${
-                        errors.price ? "border-red-500" : "border-gray-300"
-                      }`}
-                      placeholder="Price"
-                      value={formData.price || ""}
-                      onChange={handleInput}
-                    />
-                    {errors.price && (
-                      <p className="text-sm text-red-500 mt-1">
-                        {errors.price}
-                      </p>
-                    )}
-                  </div>
+                    <FormGroupRow>
+                      <TextInput
+                        name="name"
+                        label="Product Name"
+                        placeholder="Name"
+                        value={formData.name || ""}
+                        onChange={handleInput}
+                        error={errors.name}
+                      />
+                      <TextInput
+                        name="price"
+                        label="Price"
+                        type="number"
+                        placeholder="Price"
+                        value={formData.price || ""}
+                        onChange={handleInput}
+                        error={errors.price}
+                      />
+                    </FormGroupRow>
 
-                  <div className="mb-4">
-                    <label htmlFor="unit" className="block font-medium mb-1">
-                      Unit
-                    </label>
-                    <select
-                      name="unit"
-                      className={`w-full p-2 border rounded ${
-                        errors.unit ? "border-red-500" : "border-gray-300"
-                      }`}
-                      value={formData.unit || ""}
-                      onChange={handleInput}
-                    >
-                      <option value="">-- Unit --</option>
-                      {unitOptions.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.unit && (
-                      <p className="text-sm text-red-500 mt-1">{errors.unit}</p>
-                    )}
-                  </div>
+                    <FormGroupRow>
+                      <SelectInput
+                        name="unit"
+                        label="Unit"
+                        value={formData.unit || ""}
+                        onChange={handleInput}
+                        options={[
+                          { label: "-- Unit --", value: "" },
+                          ...unitOptions.map((u) => ({ label: u, value: u })),
+                        ]}
+                        error={errors.unit}
+                      />
+                      <SelectInput
+                        name="categoryId"
+                        label="Category"
+                        value={formData.categoryId || ""}
+                        onChange={handleInput}
+                        options={[
+                          { label: "-- Category --", value: "" },
+                          ...categories.map((c) => ({
+                            label: c.name,
+                            value: c.id,
+                          })),
+                        ]}
+                      />
+                    </FormGroupRow>
 
-                  <div className="mb-4">
-                    <label
-                      htmlFor="categoryId"
-                      className="block font-medium mb-1"
-                    >
-                      Category
-                    </label>
-                    <select
-                      name="categoryId"
-                      className="w-full p-2 border rounded"
-                      value={formData.categoryId || ""}
-                      onChange={handleInput}
-                    >
-                      <option value="">-- Category --</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="mb-4">
-                    <label
-                      htmlFor="brandId"
-                      className="block font-medium mb-1 text bg-orange-400"
-                    >
-                      Brand
-                    </label>
-                    <select
-                      name="brandId"
-                      className="w-full p-2 border rounded"
-                      value={formData.brandId || ""}
-                      onChange={handleInput}
-                    >
-                      <option value="">-- Brand --</option>
-                      {brands.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="mb-6">
-                    <label
-                      htmlFor="brandName"
-                      className="block font-medium mb-1 text-orange-700"
-                    >
-                      Or New Brand
-                    </label>
-                    <input
-                      name="brandName"
-                      className="w-full p-2 border rounded"
-                      placeholder="Enter new brand..."
-                      value={formData.brandName || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
+                    <FormGroupRow>
+                      <SelectInput
+                        name="brandId"
+                        label="Brand"
+                        value={formData.brandId || ""}
+                        onChange={handleInput}
+                        options={[
+                          { label: "-- Brand --", value: "" },
+                          ...brands.map((b) => ({
+                            label: b.name,
+                            value: b.id,
+                          })),
+                        ]}
+                      />
+                      <TextInput
+                        name="brandName"
+                        label="Or New Brand"
+                        placeholder="Enter new brand..."
+                        value={formData.brandName || ""}
+                        onChange={handleInput}
+                      />
+                    </FormGroupRow>
+                  </FormSection>
 
                   <div className="text-right">
-                    <button
+                    <Button
                       type="button"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
                       onClick={async (e) => {
                         e.preventDefault();
 
-                        // ✅ Validate required fields first
+                        // ✅ Validation
                         const requiredFields = ["name", "price", "unit"];
                         const newErrors: Record<string, string> = {};
 
@@ -922,12 +887,11 @@ export default function ProductsPage() {
                         });
 
                         setErrors(newErrors);
-                        if (Object.keys(newErrors).length > 0) return; // ⛔ Block if any validation error
+                        if (Object.keys(newErrors).length > 0) return;
 
                         const brandName = formData.brandName?.trim();
                         const categoryId = formData.categoryId;
 
-                        // ✅ If dropdown brand is selected, skip check
                         if (formData.brandId) {
                           setErrorMsg("");
                           setStep(2);
@@ -957,7 +921,7 @@ export default function ProductsPage() {
                             }
 
                             setErrorMsg("");
-                            setStep(2); // ✅ Proceed to next step
+                            setStep(2);
                           } catch (err) {
                             console.error("[❌ Brand Check Error]:", err);
                             setErrorMsg(
@@ -972,7 +936,7 @@ export default function ProductsPage() {
                       }}
                     >
                       Next
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -980,136 +944,95 @@ export default function ProductsPage() {
               {/* Step 2: Stock & Packaging */}
               {step === 2 && (
                 <>
-                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                    Step 2: Stock & Packaging
-                  </h3>
+                  <FormSection
+                    title="Step 2: Stock & Packaging"
+                    description="Enter quantity, pricing, and packaging information."
+                    bordered
+                  >
+                    {/* Hidden fields to preserve step 1 data */}
+                    <input type="hidden" name="id" value={formData.id || ""} />
+                    {[
+                      "name",
+                      "price",
+                      "unit",
+                      "categoryId",
+                      "brandId",
+                      "brandName",
+                    ].map((key) => (
+                      <input
+                        key={key}
+                        type="hidden"
+                        name={key}
+                        value={formData[key] || ""}
+                      />
+                    ))}
 
-                  <input type="hidden" name="id" value={formData.id || ""} />
+                    <FormGroupRow>
+                      <TextInput
+                        name="stock"
+                        label="Stock"
+                        type="number"
+                        placeholder="Stock"
+                        value={formData.stock || ""}
+                        onChange={handleInput}
+                      />
+                      <TextInput
+                        name="dealerPrice"
+                        label="Dealer Price"
+                        type="number"
+                        placeholder="Dealer Price"
+                        value={formData.dealerPrice || ""}
+                        onChange={handleInput}
+                      />
+                    </FormGroupRow>
 
-                  {[
-                    "name",
-                    "price",
-                    "unit",
-                    "categoryId",
-                    "brandId",
-                    "brandName",
-                  ].map((key) => (
-                    <input
-                      key={key}
-                      type="hidden"
-                      name={key}
-                      value={formData[key] || ""}
-                    />
-                  ))}
+                    <FormGroupRow>
+                      <TextInput
+                        name="srp"
+                        label="SRP"
+                        type="number"
+                        placeholder="Suggested Retail Price"
+                        value={formData.srp || ""}
+                        onChange={handleInput}
+                      />
+                      <TextInput
+                        name="packingSize"
+                        label="Packing Size"
+                        placeholder="e.g. 100ml / 50kg"
+                        value={formData.packingSize || ""}
+                        onChange={handleInput}
+                      />
+                    </FormGroupRow>
 
-                  <div className="mb-4">
-                    <label htmlFor="stock" className="block font-medium mb-1">
-                      Stock
-                    </label>
-                    <input
-                      name="stock"
-                      type="number"
-                      className="w-full p-2 border rounded"
-                      placeholder="Stock"
-                      value={formData.stock || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
+                    <FormGroupRow>
+                      <TextInput
+                        name="expirationDate"
+                        label="Expiration Date"
+                        type="date"
+                        value={formData.expirationDate || ""}
+                        onChange={handleInput}
+                      />
+                      <TextInput
+                        name="replenishAt"
+                        label="Replenish At"
+                        type="date"
+                        value={formData.replenishAt || ""}
+                        onChange={handleInput}
+                      />
+                    </FormGroupRow>
+                  </FormSection>
 
-                  <div className="mb-4">
-                    <label
-                      htmlFor="dealerPrice"
-                      className="block font-medium mb-1"
-                    >
-                      Dealer Price
-                    </label>
-                    <input
-                      name="dealerPrice"
-                      type="number"
-                      className="w-full p-2 border rounded"
-                      placeholder="Dealer Price"
-                      value={formData.dealerPrice || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
-
-                  <div className="mb-4">
-                    <label htmlFor="srp" className="block font-medium mb-1">
-                      SRP
-                    </label>
-                    <input
-                      name="srp"
-                      type="number"
-                      className="w-full p-2 border rounded"
-                      placeholder="Suggested Retail Price"
-                      value={formData.srp || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
-
-                  <div className="mb-4">
-                    <label
-                      htmlFor="packingSize"
-                      className="block font-medium mb-1"
-                    >
-                      Packing Size
-                    </label>
-                    <input
-                      name="packingSize"
-                      className="w-full p-2 border rounded"
-                      placeholder="e.g. 100ml / 50kg"
-                      value={formData.packingSize || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
-
-                  <div className="mb-4">
-                    <label
-                      htmlFor="epiationDate"
-                      className="block font-medium mb-1"
-                    >
-                      Expiration Date
-                    </label>
-                    <input
-                      name="expirationDate"
-                      type="date"
-                      className="w-full p-2 border rounded"
-                      value={formData.expirationDate || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
-
-                  <div className="mb-6">
-                    <label
-                      htmlFor="replenishAt"
-                      className="block font-medium mb-1"
-                    >
-                      Replenish At
-                    </label>
-                    <input
-                      name="replenishAt"
-                      type="date"
-                      className="w-full p-2 border rounded"
-                      value={formData.replenishAt || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
-
-                  <div className="flex justify-between">
-                    <button
+                  <div className="flex justify-between mt-4">
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setStep(1)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded shadow"
                     >
-                      Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStep(3)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
-                    >
-                      Next
-                    </button>
+                      ← Back
+                    </Button>
+                    <Button type="button" onClick={() => setStep(3)}>
+                      Next →
+                    </Button>
                   </div>
                 </>
               )}
@@ -1117,71 +1040,60 @@ export default function ProductsPage() {
               {/* Step 3: Description & Tags */}
               {step === 3 && (
                 <>
-                  <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                    Step 3: Description & Tags
-                  </h3>
+                  <FormSection
+                    title="Step 3: Description & Tags"
+                    description="Write a product description, select applicable uses and targets, and upload an image."
+                    bordered
+                  >
+                    {/* Hidden fields to preserve Step 1 & 2 values */}
+                    {[
+                      "id",
+                      "name",
+                      "price",
+                      "unit",
+                      "categoryId",
+                      "brandId",
+                      "brandName",
+                      "stock",
+                      "dealerPrice",
+                      "srp",
+                      "packingSize",
+                      "expirationDate",
+                      "replenishAt",
+                    ].map((key) => (
+                      <input
+                        key={key}
+                        type="hidden"
+                        name={key}
+                        value={formData[key] || ""}
+                      />
+                    ))}
 
-                  {/* Hidden fields to preserve Step 1 & 2 values */}
-                  {[
-                    "id",
-                    "name",
-                    "price",
-                    "unit",
-                    "categoryId",
-                    "brandId",
-                    "brandName",
-                    "stock",
-                    "dealerPrice",
-                    "srp",
-                    "packingSize",
-                    "expirationDate",
-                    "replenishAt",
-                  ].map((key) => (
-                    <input
-                      key={key}
-                      type="hidden"
-                      name={key}
-                      value={formData[key] || ""}
-                    />
-                  ))}
-
-                  <div className="mb-4">
-                    <label
-                      htmlFor="description"
-                      className="block font-medium mb-1"
-                    >
-                      Description
-                    </label>
-                    <textarea
+                    <Textarea
                       name="description"
+                      label="Description"
                       placeholder="Enter description..."
-                      className="w-full p-2 border rounded"
                       value={formData.description || ""}
                       onChange={handleInput}
                     />
-                  </div>
 
-                  <fieldset className="mb-4">
-                    <legend className="font-semibold mb-2">Uses</legend>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Vitamins",
-                        "Pain Relief",
-                        "Antibiotic",
-                        "Dewormer",
-                        "Supplement",
-                      ].map((use) => {
-                        const selected = formData.uses
-                          ?.split(",")
-                          .includes(use);
-                        return (
-                          <label
-                            key={use}
-                            className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded text-sm"
-                          >
-                            <input
-                              type="checkbox"
-                              name="uses"
+                    {/* Uses tags */}
+                    <FormSection title="Uses">
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          "Vitamins",
+                          "Pain Relief",
+                          "Antibiotic",
+                          "Dewormer",
+                          "Supplement",
+                        ].map((use) => {
+                          const selected = formData.uses
+                            ?.split(",")
+                            .includes(use);
+                          return (
+                            <TagCheckbox
+                              key={use}
+                              label={use}
                               value={use}
                               checked={selected}
                               onChange={(e) => {
@@ -1195,33 +1107,27 @@ export default function ProductsPage() {
                                 });
                               }}
                             />
-                            {use}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-                  <input
-                    type="hidden"
-                    name="uses"
-                    value={formData.uses || ""}
-                  />
+                          );
+                        })}
+                      </div>
+                    </FormSection>
+                    <input
+                      type="hidden"
+                      name="uses"
+                      value={formData.uses || ""}
+                    />
 
-                  <fieldset className="mb-4">
-                    <legend className="font-semibold mb-2">For (Target)</legend>
-                    <div className="flex flex-wrap gap-2">
-                      {targetOptions.map((t) => {
-                        const selected = formData.target
-                          ?.split(",")
-                          .includes(t);
-                        return (
-                          <label
-                            key={t}
-                            className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded text-sm"
-                          >
-                            <input
-                              type="checkbox"
-                              name="target"
+                    {/* Target tags */}
+                    <FormSection title="Target">
+                      <div className="flex flex-wrap gap-2">
+                        {targetOptions.map((t) => {
+                          const selected = formData.target
+                            ?.split(",")
+                            .includes(t);
+                          return (
+                            <TagCheckbox
+                              key={t}
+                              label={t}
                               value={t}
                               checked={selected}
                               onChange={(e) => {
@@ -1236,58 +1142,45 @@ export default function ProductsPage() {
                                 });
                               }}
                             />
-                            {t}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-                  <input
-                    type="hidden"
-                    name="target"
-                    value={formData.target || ""}
-                  />
-
-                  <div className="mb-4">
-                    <label htmlFor="nameTag" className="block font-medium mb-1">
-                      Image Tag
-                    </label>
+                          );
+                        })}
+                      </div>
+                    </FormSection>
                     <input
-                      name="imageTag"
-                      className="w-full p-2 border rounded"
-                      placeholder="e.g. vitamins_icon"
-                      value={formData.imageTag || ""}
-                      onChange={handleInput}
+                      type="hidden"
+                      name="target"
+                      value={formData.target || ""}
                     />
-                  </div>
 
-                  <div className="mb-6">
-                    <label
-                      htmlFor="imageUrl"
-                      className="block font-medium mb-1"
-                    >
-                      Image URL
-                    </label>
-                    <input
-                      name="imageUrl"
-                      className="w-full p-2 border rounded"
-                      placeholder="https://example.com/image.jpg"
-                      value={formData.imageUrl || ""}
-                      onChange={handleInput}
-                    />
-                  </div>
+                    <FormGroupRow>
+                      <TextInput
+                        name="imageTag"
+                        label="Image Tag"
+                        placeholder="e.g. vitamins_icon"
+                        value={formData.imageTag || ""}
+                        onChange={handleInput}
+                      />
+                      <TextInput
+                        name="imageUrl"
+                        label="Image URL"
+                        placeholder="https://example.com/image.jpg"
+                        value={formData.imageUrl || ""}
+                        onChange={handleInput}
+                      />
+                    </FormGroupRow>
+                  </FormSection>
 
-                  <div className="flex justify-between">
-                    <button
+                  <div className="flex justify-between mt-4">
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setStep(2)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded shadow"
                     >
-                      Back
-                    </button>
-                    <button
+                      ← Back
+                    </Button>
+                    <Button
                       type="submit"
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow"
+                      variant="primary"
                       onClick={(e) => {
                         if (
                           formData.id &&
@@ -1300,7 +1193,7 @@ export default function ProductsPage() {
                       }}
                     >
                       Save
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
