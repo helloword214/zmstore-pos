@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { db } from "~/utils/db.server";
 import { FormSection } from "~/components/ui/FormSection";
 import { FormGroupRow } from "~/components/ui/FormGroupRow";
-import { TextInput } from "~/components/TextInput";
+import { TextInput } from "~/components/ui/TextInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { Button } from "~/components/ui/Button";
 import { Textarea } from "~/components/ui/Textarea";
 import { TagCheckbox } from "~/components/ui/TagCheckbox";
 import { ProductTable } from "~/components/ui/ProductTable";
 import { Pagination } from "~/components/ui/Pagination";
+import { CurrencyInput } from "~/components/ui/CurrencyInput";
 
 // Type
 type ProductWithDetails = Product & {
@@ -79,9 +80,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       : undefined;
 
     if (!resolvedBrandId && brandName) {
+      if (!categoryId) {
+        return json(
+          {
+            success: false,
+            error: "Please select a category to register the brand.",
+            field: "categoryId",
+          },
+          { status: 400 }
+        );
+      }
+
+      const normalizedBrandName = brandName.trim().toLowerCase();
+
       const existingBrand = await db.brand.findFirst({
         where: {
-          name: brandName,
+          name: {
+            equals: normalizedBrandName,
+            mode: "insensitive",
+          },
           ...(categoryId && { categoryId: Number(categoryId) }),
         },
       });
@@ -99,7 +116,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       const newBrand = await db.brand.create({
         data: {
-          name: brandName,
+          name: brandName.trim(),
           ...(categoryId && {
             category: { connect: { id: Number(categoryId) } },
           }),
@@ -285,7 +302,13 @@ export default function ProductsPage() {
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     >
   ) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    const cleanedValue = ["price", "srp", "dealerPrice"].includes(name)
+      ? value.replace(/[^0-9.]/g, "")
+      : value;
+
+    setFormData((prev) => ({ ...prev, [name]: cleanedValue }));
   };
 
   const handleEdit = (product: ProductWithDetails) => {
@@ -641,10 +664,10 @@ export default function ProductsPage() {
                         onChange={handleInput}
                         error={errors.name}
                       />
-                      <TextInput
+
+                      <CurrencyInput
                         name="price"
                         label="Price"
-                        type="number"
                         placeholder="Price"
                         value={formData.price || ""}
                         onChange={handleInput}
@@ -811,10 +834,10 @@ export default function ProductsPage() {
                         value={formData.stock || ""}
                         onChange={handleInput}
                       />
-                      <TextInput
+
+                      <CurrencyInput
                         name="dealerPrice"
                         label="Dealer Price"
-                        type="number"
                         placeholder="Dealer Price"
                         value={formData.dealerPrice || ""}
                         onChange={handleInput}
@@ -822,14 +845,14 @@ export default function ProductsPage() {
                     </FormGroupRow>
 
                     <FormGroupRow>
-                      <TextInput
+                      <CurrencyInput
                         name="srp"
                         label="SRP"
-                        type="number"
                         placeholder="Suggested Retail Price"
                         value={formData.srp || ""}
                         onChange={handleInput}
                       />
+
                       <TextInput
                         name="packingSize"
                         label="Packing Size"
