@@ -28,7 +28,7 @@ export function SelectInput({
         className={clsx(
           "w-full p-2 border rounded shadow-sm transition",
           error
-            ? "border-red-500 bg-red-50"
+            ? "border-red-500 bg-red-50 text-gray-800"
             : "border-gray-300 focus:border-blue-500",
           className
         )}

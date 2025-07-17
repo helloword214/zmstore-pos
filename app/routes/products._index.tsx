@@ -252,7 +252,7 @@ export default function ProductsPage() {
     uses: "", // ✅ same for uses
   });
 
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const itemsPerPage = 10;
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
@@ -596,17 +596,6 @@ export default function ProductsPage() {
           itemsPerPage={itemsPerPage}
           onPageChange={setCurrentPage}
         />
-
-        <SelectInput
-          label="Items per page"
-          value={itemsPerPage}
-          onChange={(e) => {
-            setItemsPerPage(Number(e.target.value));
-            setCurrentPage(1); // Optional reset
-          }}
-          options={[10, 20, 50].map((n) => ({ label: `${n}`, value: n }))}
-          className="max-w-[180px]"
-        />
       </div>
 
       {showModal && (
@@ -699,6 +688,7 @@ export default function ProductsPage() {
                             value: c.id,
                           })),
                         ]}
+                        error={errors.categoryId}
                       />
                     </FormGroupRow>
 
@@ -733,14 +723,32 @@ export default function ProductsPage() {
                         e.preventDefault();
 
                         // ✅ Validation
-                        const requiredFields = ["name", "price", "unit"];
+                        const requiredFields = [
+                          "name",
+                          "price",
+                          "unit",
+                          "categoryId",
+                        ];
                         const newErrors: Record<string, string> = {};
 
+                        const fieldLabels: Record<string, string> = {
+                          name: "Product Name",
+                          price: "Price",
+                          unit: "Unit",
+                          categoryId: "Category",
+                        };
+
                         requiredFields.forEach((field) => {
-                          if (!formData[field]?.trim()) {
-                            newErrors[field] = `${
-                              field[0].toUpperCase() + field.slice(1)
-                            } is required`;
+                          const value = formData[field];
+
+                          const isEmpty =
+                            value === undefined ||
+                            value === null ||
+                            (typeof value === "string" && value.trim() === "");
+
+                          if (isEmpty) {
+                            const label = fieldLabels[field] || field;
+                            newErrors[field] = `${label} is required`;
                           }
                         });
 

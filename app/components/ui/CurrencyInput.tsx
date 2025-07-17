@@ -46,7 +46,7 @@ export function CurrencyInput({
         name={name}
         placeholder={placeholder}
         className={`w-full p-2 border rounded ${
-          error ? "border-red-500 bg-red-50" : "border-gray-300"
+          error ? "border-red-500 bg-red-50 text-gray-800" : "border-gray-300"
         }`}
         value={
           isFocused
