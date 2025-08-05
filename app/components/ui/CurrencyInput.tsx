@@ -37,7 +37,10 @@ export function CurrencyInput({
   return (
     <div className="mb-4">
       {label && (
-        <label htmlFor={name} className="block text-sm font-medium mb-1">
+        <label
+          htmlFor={name}
+          className="block text-sm font-medium mb-1 text-gray-700"
+        >
           {label}
         </label>
       )}
@@ -45,8 +48,10 @@ export function CurrencyInput({
         type="text"
         name={name}
         placeholder={placeholder}
-        className={`w-full p-2 border rounded ${
-          error ? "border-red-500 bg-red-50 text-gray-800" : "border-gray-300"
+        className={`w-full p-2 border rounded text-gray-800 ${
+          error
+            ? "border-red-500 bg-red-50"
+            : "border-gray-300 bg-white focus:border-blue-500 focus:outline-none"
         }`}
         value={
           isFocused

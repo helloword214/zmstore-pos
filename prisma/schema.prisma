@@ -7,41 +7,44 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ────────────── PRODUCT ──────────────
 model Product {
-  id             Int          @id @default(autoincrement())
-  name           String
-  price          Float
-  unit           String
-  saleItems      SaleItem[]
-
-  description     String?
-  stock           Float?
-  imageUrl        String?
-  imageTag        String?
-  packingSize     String?
-  expirationDate  DateTime?
-  replenishAt     DateTime?
-  dealerPrice     Float?
-  srp             Float?
-  uses           String[]
-  target        String[]
-
-  
-  categoryId  Int?
-  category    Category?    @relation(fields: [categoryId], references: [id])
-
-  brandId     Int?
-  brand       Brand?       @relation(fields: [brandId], references: [id])
-
-  productTags ProductTag[]
-  tags        Tag[]        @relation("ProductTags")
-
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt @default(now())
+  id                 Int                 @id @default(autoincrement())
+  name               String
+  price              Float
+  categoryId         Int?
+  createdAt          DateTime            @default(now())
+  description        String?
+  imageUrl           String?
+  stock              Float?
+  updatedAt          DateTime            @default(now()) @updatedAt
+  brandId            Int?
+  expirationDate     DateTime?
+  imageTag           String?
+  replenishAt        DateTime?
+  dealerPrice        Float?
+  srp                Float?
+  allowPackSale      Boolean             @default(true)
+  barcode            String?             @unique
+  isActive           Boolean             @default(true)
+  minStock           Float?
+  packingStock       Int?
+  sku                String?             @unique
+  unitId             Int?
+  packingUnitId      Int?
+  locationId         Int?
+  packingSize        Float?
+  brand              Brand?              @relation(fields: [brandId], references: [id])
+  category           Category?           @relation(fields: [categoryId], references: [id])
+  location           Location?           @relation(fields: [locationId], references: [id])
+  packingUnit        PackingUnit?        @relation("PackingUnit", fields: [packingUnitId], references: [id])
+  unit               Unit?               @relation("RetailUnit", fields: [unitId], references: [id])
+  productIndications ProductIndication[]
+  productTags        ProductTag[]
+  productTargets     ProductTarget[]
+  saleItems          SaleItem[]
+  tags               Tag[]               @relation("ProductTags")
 }
 
-// ────────────── SALE ──────────────
 model Sale {
   id        Int        @id @default(autoincrement())
   createdAt DateTime   @default(now())
@@ -51,23 +54,23 @@ model Sale {
 
 model SaleItem {
   id        Int     @id @default(autoincrement())
-  sale      Sale    @relation(fields: [saleId], references: [id])
   saleId    Int
-  product   Product @relation(fields: [productId], references: [id])
   productId Int
   quantity  Int
   price     Float
+  product   Product @relation(fields: [productId], references: [id])
+  sale      Sale    @relation(fields: [saleId], references: [id])
 }
 
-// ────────────── CATEGORY ──────────────
 model Category {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  products  Product[]
-  brands    Brand[]   // ✅ A category can have many brands
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  brands      Brand[]
+  indications Indication[]
+  products    Product[]
+  targets     Target[]
 }
 
-// ────────────── TAG ──────────────
 model Tag {
   id          Int          @id @default(autoincrement())
   name        String       @unique
@@ -76,19 +79,78 @@ model Tag {
 }
 
 model ProductTag {
-  product   Product @relation(fields: [productId], references: [id])
   productId Int
-  tag       Tag     @relation(fields: [tagId], references: [id])
   tagId     Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id])
 
   @@id([productId, tagId])
 }
 
-// ────────────── BRAND ──────────────
 model Brand {
   id         Int       @id @default(autoincrement())
-  name       String    @unique
-  categoryId Int?      // ✅ Optional to support generic or uncategorized brands
+  name       String
+  categoryId Int?
   category   Category? @relation(fields: [categoryId], references: [id])
   products   Product[]
+
+  @@unique([name, categoryId])
+}
+
+model Indication {
+  id                 Int                 @id @default(autoincrement())
+  name               String
+  categoryId         Int
+  category           Category            @relation(fields: [categoryId], references: [id])
+  productIndications ProductIndication[]
+
+  @@unique([name, categoryId])
+}
+
+model ProductIndication {
+  productId    Int
+  indicationId Int
+  indication   Indication @relation(fields: [indicationId], references: [id], onDelete: Cascade)
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, indicationId])
+}
+
+model Target {
+  id         Int      @id @default(autoincrement())
+  name       String
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  productTargets ProductTarget[]
+
+  @@unique([name, categoryId])
+}
+
+
+model ProductTarget {
+  productId Int
+  targetId  Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  target    Target  @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([productId, targetId])
+}
+
+model Unit {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  retailFor Product[] @relation("RetailUnit")
+}
+
+model PackingUnit {
+  id         Int       @id @default(autoincrement())
+  name       String    @unique
+  packingFor Product[] @relation("PackingUnit")
+}
+
+model Location {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
 }

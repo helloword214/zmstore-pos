@@ -10,7 +10,9 @@ export function Textarea({ label, error, className, ...props }: Props) {
   return (
     <div className="mb-4">
       {label && (
-        <label className="block text-sm font-medium mb-1">{label}</label>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          {label}
+        </label>
       )}
       <textarea
         className={clsx(

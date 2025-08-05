@@ -1,0 +1,515 @@
+/*
+{ 
+  showModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative flex flex-col max-h-[90vh] ">
+        <button
+          onClick={() => setShowModal(false)}
+          className="absolute top-2 right-3 text-xl text-gray-600"
+        >
+          ×
+        </button>
+
+        <actionFetcher.Form
+          method="post"
+          ref={formRef}
+          className="space-y-4 overflow-y-auto flex-1 pr-2"
+          onSubmit={(e) => {
+            if (!confirm("Are you sure you want to save this product?")) {
+              e.preventDefault(); // cancel submission
+            }
+          }}
+        >
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold">
+              {step === 1
+                ? "Step 1: Basic Info"
+                : step === 2
+                ? "Step 2: Stock & Packaging"
+                : "Step 3: Description & Tags"}
+            </h2>
+            <span className="text-sm text-gray-500">Step {step} of 3</span>
+          </div>
+
+          {step === 1 && (
+            <>
+              <FormSection
+                title="Step 1: Basic Info"
+                description="Enter the basic product information."
+                bordered
+              >
+                {errorMsg && (
+                  <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                    {errorMsg}
+                  </div>
+                )}
+
+                <FormGroupRow>
+                  <TextInput
+                    name="name"
+                    label="Name"
+                    placeholder="Name"
+                    value={formData.name || ""}
+                    onChange={handleInput}
+                    error={errors.name}
+                    id="product-name"
+                    autoComplete="off"
+                  />
+
+                  <CurrencyInput
+                    name="price"
+                    label="Price"
+                    placeholder="Price"
+                    value={formData.price || ""}
+                    onChange={handleInput}
+                    error={errors.price}
+                  />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <SelectInput
+                    name="unit"
+                    label="Unit"
+                    value={formData.unit || ""}
+                    onChange={(val) =>
+                      setFormData((p) => ({ ...p, unit: String(val) }))
+                    }
+                    options={[
+                      {
+                        label: "-- Unit --",
+                        value: "",
+                        style: { color: "#888" },
+                      },
+                      ...unitOptions.map((u) => ({ label: u, value: u })),
+                    ]}
+                    error={errors.unit}
+                  />
+                  <SelectInput
+                    name="categoryId"
+                    label="Category"
+                    value={formData.categoryId || ""}
+                    onChange={(v) =>
+                      setFormData((p) => ({ ...p, categoryId: String(v) }))
+                    }
+                    options={[
+                      {
+                        label: "-- Category --",
+                        value: "",
+                        style: { color: "#888" },
+                      },
+                      ...categories.map((c) => ({
+                        label: c.name,
+                        value: c.id,
+                      })),
+                    ]}
+                    error={errors.categoryId}
+                  />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <ComboInput
+                    placeholder="brand"
+                    label="Brand"
+                    options={brands
+                      .filter(
+                        (b) =>
+                          !formData.categoryId ||
+                          String(b.categoryId) === formData.categoryId
+                      )
+                      .map((b) => ({
+                        label: b.name,
+                        value: b.id,
+                      }))}
+                    selectedId={formData.brandId || ""}
+                    customName={formData.brandName || ""}
+                    onSelect={({ selectedId, customName }) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        brandId: selectedId,
+                        brandName: customName,
+                      }));
+                    }}
+                    error={errors.brandName}
+                  />
+                  <input
+                    type="hidden"
+                    name="brandId"
+                    value={formData.brandId || ""}
+                  />
+                  <input
+                    type="hidden"
+                    name="brandName"
+                    value={formData.brandName || ""}
+                  />
+            
+                  <TextInput
+                    name="stock"
+                    label="Stock"
+                    type="number"
+                    placeholder="Stock"
+                    value={formData.stock || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+
+                <div className="text-right">
+                  <Button
+                    type="button"
+                    onClick={async (e) => {
+                      e.preventDefault();
+
+                      // ✅ Validation
+                      const requiredFields = [
+                        "name",
+                        "price",
+                        "unit",
+                        "categoryId",
+                      ];
+                      const newErrors: Record<string, string> = {};
+
+                      const fieldLabels: Record<string, string> = {
+                        name: "Product Name",
+                        price: "Price",
+                        unit: "Unit",
+                        categoryId: "Category",
+                      };
+
+                      requiredFields.forEach((field) => {
+                        const value = formData[field];
+                        const isEmpty =
+                          value === undefined ||
+                          value === null ||
+                          (typeof value === "string" && value.trim() === "");
+
+                        if (isEmpty) {
+                          const label = fieldLabels[field] || field;
+                          newErrors[field] = `${label} is required`;
+                        }
+                      });
+
+                      setErrors(newErrors);
+                      if (Object.keys(newErrors).length > 0) return;
+
+                      // New ComboInput-based logic
+                      const brandName = formData.brandName?.trim();
+                      const brandId = formData.brandId?.trim();
+                      const categoryId = formData.categoryId;
+
+                      if (brandId) {
+                        setErrorMsg("");
+                        setStep(2);
+                        return;
+                      }
+
+                      if (brandName) {
+                        // Check for duplicate brand in this category
+                        const checkData = new FormData();
+                        checkData.append("brandName", brandName);
+                        if (categoryId)
+                          checkData.append("categoryId", categoryId);
+
+                        try {
+                          const res = await fetch("/brand/check", {
+                            method: "POST",
+                            body: checkData,
+                          });
+
+                          const result = await res.json();
+                          if (result.exists) {
+                            setErrorMsg(
+                              `Brand "${brandName}" already exists in this category. Please select it from the dropdown.`
+                            );
+                            return;
+                          }
+
+                          setErrorMsg("");
+                          setStep(2);
+                        } catch (err) {
+                          setErrorMsg(
+                            "Could not verify brand. Please try again."
+                          );
+                        }
+                        return;
+                      }
+
+                      setErrorMsg(
+                        "Please select an existing brand or type to create a new one in the Brand field."
+                      );
+                    }}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </FormSection>
+            </>
+          )}
+
+         
+
+          {step === 2 && (
+            <>
+              <FormSection
+                title="Step 2: Stock & Packaging"
+                description="Enter quantity, pricing, and packaging information."
+                bordered
+              >
+          
+                <input type="hidden" name="id" value={formData.id || ""} />
+                {[
+                  "name",
+                  "price",
+                  "unit",
+                  "categoryId",
+                  "brandName",
+                  "brandId",
+                  "stock",
+                ].map((key) => (
+                  <input
+                    key={key}
+                    type="hidden"
+                    name={key}
+                    value={formData[key] || ""}
+                  />
+                ))}
+
+                <FormGroupRow>
+                  <CurrencyInput
+                    name="dealerPrice"
+                    label="Dealer Price"
+                    placeholder="Dealer Price"
+                    value={formData.dealerPrice || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <TextInput
+                    name="minStock"
+                    label="Min Stock"
+                    type="number"
+                    placeholder="Maintaining Stock"
+                    value={formData.minStock || ""}
+                    onChange={handleInput}
+                  />
+                  <TextInput
+                    name="location"
+                    label="Location"
+                    placeholder="Shelf / Rack"
+                    value={formData.location || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <TextInput
+                    name="barcode"
+                    label="Barcode"
+                    placeholder="Barcode"
+                    value={formData.barcode || ""}
+                    onChange={handleInput}
+                  />
+
+                  <TextInput
+                    label="SKU"
+                    name="sku"
+                    value={formData.sku || ""}
+                    onChange={handleInput}
+                    required
+                    placeholder="SKU"
+                    error={errors.sku}
+                  />
+                  <input type="hidden" name="sku" value={formData.sku || ""} />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <CurrencyInput
+                    name="srp"
+                    label="SRP"
+                    placeholder="Suggested Retail Price"
+                    value={formData.srp || ""}
+                    onChange={handleInput}
+                  />
+
+                  <TextInput
+                    name="packingSize"
+                    label="Packing Size"
+                    placeholder="e.g. 100ml / 50kg"
+                    value={formData.packingSize || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+
+                <FormGroupRow>
+                  <TextInput
+                    name="expirationDate"
+                    label="Expiration Date"
+                    type="date"
+                    value={formData.expirationDate || ""}
+                    onChange={handleInput}
+                  />
+                  <TextInput
+                    name="replenishAt"
+                    label="Replenish At"
+                    type="date"
+                    value={formData.replenishAt || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+                <div className="flex justify-between mt-4 flex-shrink-0">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setStep(1)}
+                  >
+                    ← Back
+                  </Button>
+                  <Button type="button" onClick={() => setStep(3)}>
+                    Next →
+                  </Button>
+                </div>
+              </FormSection>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <FormSection
+                title="Step 3: Description & Tags"
+                description="Write a product description, select applicable uses and targets, and upload an image."
+                bordered
+              >
+           
+                {[
+                  "id",
+                  "name",
+                  "price",
+                  "unit",
+                  "categoryId",
+                  "brandName",
+                  "brandId",
+                  "stock",
+                  "sku",
+                  "dealerPrice",
+                  "srp",
+                  "packingSize",
+                  "expirationDate",
+                  "replenishAt",
+                  "location",
+                  "minStock",
+                  "barcode",
+                ].map((key) => (
+                  <input
+                    key={key}
+                    type="hidden"
+                    name={key}
+                    value={formData[key] || ""}
+                  />
+                ))}
+
+                <Textarea
+                  name="description"
+                  label="Description"
+                  placeholder="Enter description..."
+                  value={formData.description || ""}
+                  onChange={handleInput}
+                />
+
+                <FormSection title="Indication">
+                  <MultiSelectInput
+                    name="indications"
+                    label="Indications (Uses)"
+                    options={indications.map((i) => ({
+                      label: i.name,
+                      value: String(i.id),
+                    }))}
+                    selected={selectedIndications}
+                    onChange={setSelectedIndications}
+                    onCustomInput={handleCustomIndication}
+                  />
+
+              
+                  {selectedIndications.map((ind) => (
+                    <input
+                      key={ind.value}
+                      type="hidden"
+                      name="indicationIds"
+                      value={ind.value}
+                    />
+                  ))}
+                </FormSection>
+
+           
+                <FormSection title="Target">
+     
+                  <MultiSelectInput
+                    name="target"
+                    label="Target Group"
+                    options={targets.map((t) => ({
+                      label: t.name,
+                      value: String(t.id),
+                    }))}
+                    selected={selectedTargets}
+                    onChange={setSelectedTargets}
+                    onCustomInput={handleCustomTarget}
+                  />
+
+                  {selectedTargets.map((item, idx) => (
+                    <input
+                      key={idx}
+                      type="hidden"
+                      name="targetIds"
+                      value={item.value}
+                    />
+                  ))}
+                </FormSection>
+
+                <FormGroupRow>
+                  <TextInput
+                    name="imageTag"
+                    label="Image Tag"
+                    placeholder="e.g. vitamins_icon"
+                    value={formData.imageTag || ""}
+                    onChange={handleInput}
+                  />
+                  <TextInput
+                    name="imageUrl"
+                    label="Image URL"
+                    placeholder="https://example.com/image.jpg"
+                    value={formData.imageUrl || ""}
+                    onChange={handleInput}
+                  />
+                </FormGroupRow>
+              </FormSection>
+
+              <div className="flex justify-between mt-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setStep(2)}
+                >
+                  ← Back
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  onClick={(e) => {
+                    if (
+                      formData.id &&
+                      !confirm("Are you sure you want to update this product?")
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            </>
+          )}
+        </actionFetcher.Form>
+      </div>
+    </div>
+  );
+}
+
+*/
