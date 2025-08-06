@@ -56,6 +56,53 @@ export function DeletableSelectInput({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (
+      highlightedIndex !== null &&
+      listRef.current &&
+      listRef.current.children[highlightedIndex]
+    ) {
+      (
+        listRef.current.children[highlightedIndex] as HTMLElement
+      ).scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightedIndex]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    setInputMode("keyboard");
+    if (!showDropdown) {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+        setShowDropdown(true);
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev === null || prev === options.length - 1 ? 0 : prev + 1
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev === null || prev === 0 ? options.length - 1 : prev - 1
+      );
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (highlightedIndex !== null) {
+        const opt = options[highlightedIndex];
+        if (opt) {
+          onChange?.(opt.value);
+          setShowDropdown(false);
+          setInputMode(null);
+        }
+      }
+    } else if (e.key === "Escape") {
+      setShowDropdown(false);
+      setInputMode(null);
+    }
+  };
+
   return (
     <div className="mb-4 relative" ref={wrapperRef}>
       {label && (
@@ -73,10 +120,13 @@ export function DeletableSelectInput({
           className
         )}
         onClick={() => setShowDropdown((prev) => !prev)}
+        onKeyDown={handleKeyDown}
         aria-haspopup="listbox"
         aria-expanded={showDropdown}
       >
-        <span>{displayValue || "-- Select --"}</span>
+        <span style={selectedOption?.style}>
+          {displayValue || "-- Select --"}
+        </span>
         <svg
           className={clsx("w-4 h-4 ml-2", showDropdown && "rotate-180")}
           fill="none"
@@ -95,8 +145,9 @@ export function DeletableSelectInput({
       {showDropdown && (
         <ul
           ref={listRef}
-          className="absolute mt-1 w-full max-h-48 overflow-auto z-10 text-sm bg-white border border-gray-300 shadow-md rounded text-gray-800 "
+          className="absolute mt-1 w-full max-h-48 overflow-auto z-10 text-sm bg-white border border-gray-300 shadow-md rounded text-gray-800"
           role="listbox"
+          onMouseLeave={() => setInputMode(null)}
         >
           {options.length === 0 && (
             <li className="px-3 py-2 text-gray-500 select-none">No options</li>
@@ -105,6 +156,7 @@ export function DeletableSelectInput({
             <li
               key={opt.value}
               role="option"
+              style={opt.style}
               aria-selected={String(opt.value) === String(value)}
               tabIndex={0}
               onClick={() => {
@@ -135,21 +187,23 @@ export function DeletableSelectInput({
                   : "hover:bg-blue-100"
               )}
             >
-              <span>{opt.label}</span>
+              <span className="truncate" style={opt.style}>
+                {opt.label}
+              </span>
               {deletableValues.map(String).includes(String(opt.value)) &&
                 onDeleteOption && (
                   <button
                     type="button"
-                    className="ml-2 text-red-500 hover:text-red-700"
+                    className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                    tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log("🧨 Delete", opt.value);
                       onDeleteOption(opt.value);
                     }}
                     onKeyDown={(e) => e.stopPropagation()}
                     aria-label={`Delete ${opt.label}`}
                   >
-                    x
+                    ❌
                   </button>
                 )}
             </li>

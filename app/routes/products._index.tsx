@@ -211,10 +211,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const newTargets = formData.getAll("newTargets") as string[];
   const decimals = (packingStockRaw.split(".")[1] || "").length;
 
-  //deletelocation
-
-  const locationIdToDelete = formData.get("locationId")?.toString();
+  //deletaion LOGIC
   const actionType = formData.get("_action")?.toString();
+
+  //delete ----- location
+  const locationIdToDelete = formData.get("locationId")?.toString();
 
   if (actionType === "delete-location") {
     if (!locationIdToDelete) {
@@ -254,7 +255,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  // 🔴 Unified numeric validation
+  // deletete  ---- brand logic
+
+  const brandIdToDelete = formData.get("brandId")?.toString();
+
+  if (actionType === "delete-brand" && brandIdToDelete) {
+    const id = Number(brandIdToDelete);
+
+    // Check if any product is using this brand
+    const productsUsingBrand = await db.product.count({
+      where: { brandId: id },
+    });
+
+    if (productsUsingBrand > 3) {
+      return json(
+        {
+          success: false,
+          error: `❌ Cannot delete brand: used by ${productsUsingBrand} product(s).`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Proceed to delete from DB
+    await db.brand.delete({ where: { id } });
+
+    return json({
+      success: true,
+      action: "delete-brand",
+    });
+  }
 
   // 🔐 Required field validation
   if (!name) {
@@ -585,14 +615,18 @@ export default function ProductsPage() {
 
   const targetOptions = targets.map((t) => t.name);
 
-  // nawala ito!!!
-
   // -fetcher for reloading after create/update/delete-
   const actionFetcher = useFetcher<{
     success?: boolean;
     error?: string;
     field?: string;
-    action?: "created" | "updated" | "deleted" | "toggled" | "delete-location";
+    action?:
+      | "created"
+      | "updated"
+      | "deleted"
+      | "toggled"
+      | "delete-location"
+      | "delete-brand";
     id?: number; //
   }>();
   const listFetcher = useFetcher<{ products: ProductWithDetails[] }>();
@@ -648,6 +682,7 @@ export default function ProductsPage() {
 
   //delete location
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
+  const [brandOptions, setBrandOptions] = useState<SelectOption[]>([]);
 
   const [customLocationName, setCustomLocationName] = useState("");
 
@@ -661,6 +696,16 @@ export default function ProductsPage() {
     [locationOptions]
   );
 
+  const getLabelFromValueBrand = useCallback(
+    (val: string | number): string => {
+      const found = brandOptions.find(
+        (opt) => String(opt.value) === String(val)
+      );
+      return found?.label || `Brand #${val}`;
+    },
+    [brandOptions]
+  );
+
   useEffect(() => {
     if (!locations || locations.length === 0) return;
 
@@ -671,6 +716,17 @@ export default function ProductsPage() {
       }))
     );
   }, [locations]);
+
+  useEffect(() => {
+    if (!brands || brands.length === 0) return;
+
+    setBrandOptions(
+      brands.map((b) => ({
+        label: b.name,
+        value: String(b.id),
+      }))
+    );
+  }, [brands]);
 
   // 🧠 When fetcher gets search result, update products and reset page only if search term changed
   useEffect(() => {
@@ -785,6 +841,7 @@ export default function ProductsPage() {
         deleted: "🗑️ Product deleted successfully.",
         toggled: "Product status updated!",
         "delete-location": "📍 Location deleted successfully.",
+        "delete-brand": "📍 Brand deleted successfully.",
       };
 
       setSuccessMsg(msgMap[action || "created"] || "✅ Operation completed.");
@@ -852,47 +909,68 @@ export default function ProductsPage() {
     formData.id, // primitive string or number
   ]);
 
-  //hande location delete
+  //hande location and brand delete logic
   useEffect(() => {
     const data = actionFetcher.data;
-    if (!data || data.action !== "delete-location" || !data.success) return;
+    if (!data || !data.success) return;
 
-    const deletedId = String(
-      (actionFetcher as any).submission?.formData.get("locationId")
-    );
+    const submission = (actionFetcher as any).submission;
 
-    const rawLabel = getLabelFromValue(deletedId);
-    const label =
-      typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
+    if (data.action === "delete-location") {
+      const deletedId = String(submission?.formData.get("locationId"));
+      const rawLabel = getLabelFromValue(deletedId); // from your utility
+      const label =
+        typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
 
-    setLocationOptions((prev) =>
-      prev.filter((opt) => String(opt.value) !== String(deletedId))
-    );
+      setLocationOptions((prev) =>
+        prev.filter((opt) => String(opt.value) !== deletedId)
+      );
 
-    if (formData.locationId === deletedId) {
-      setFormData((prev) => ({ ...prev, locationId: "" }));
+      if (formData.locationId === deletedId) {
+        setFormData((prev) => ({ ...prev, locationId: "" }));
+      }
+
+      if (customLocationName === deletedId) {
+        setCustomLocationName("");
+      }
+
+      setSuccessMsg(`Deleted "${label}" from the list.`);
+      setShowAlert(true);
+      return;
     }
 
-    if (customLocationName === deletedId) {
-      setCustomLocationName("");
-    }
+    if (data.action === "delete-brand") {
+      const deletedId = String(submission?.formData.get("brandId"));
 
-    setSuccessMsg(`Deleted "${label}" from the list.`);
-    setShowAlert(true);
-    console.log("💥 Deleted ID:", deletedId);
-    console.log("💡 FormData.locationId:", formData.locationId);
-    console.log("📍 CustomLocationName:", customLocationName);
+      const rawLabel = getLabelFromValueBrand(deletedId); // ✅ Reuse this
+      const label =
+        typeof rawLabel === "string" ? rawLabel : `Brand #${deletedId}`;
+
+      setBrandOptions((prev) =>
+        prev.filter((opt) => String(opt.value) !== deletedId)
+      );
+
+      if (formData.brandId === deletedId) {
+        setFormData((prev) => ({ ...prev, brandId: "" }));
+      }
+
+      setSuccessMsg(`Deleted "${label}" from the brand list.`);
+      setShowAlert(true);
+    }
   }, [
     actionFetcher.data,
-    actionFetcher, // ✅ now allowed since we use `submission`
-    customLocationName,
-    formData.locationId,
+    actionFetcher,
     getLabelFromValue,
     setLocationOptions,
+    setBrandOptions,
     setFormData,
     setCustomLocationName,
+    formData.locationId,
+    formData.brandId,
+    customLocationName,
     setSuccessMsg,
     setShowAlert,
+    getLabelFromValueBrand,
   ]);
 
   const userEditedSku = useRef(false);
@@ -1039,6 +1117,21 @@ export default function ProductsPage() {
     actionFetcher.submit(formData, { method: "post" });
   }
 
+  function handleDeleteBrand(valueToDelete: string | number) {
+    const label = getLabelFromValue(valueToDelete) || `Brand #${valueToDelete}`;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${label}"?`
+    );
+    if (!confirmDelete) return;
+
+    const formData = new FormData();
+    formData.append("_action", "delete-brand"); // 🔑 must match in action
+    formData.append("brandId", String(valueToDelete)); // 🔑 used in action
+
+    actionFetcher.submit(formData, { method: "post" });
+  }
+
   function handleEdit(p: ProductWithDetails) {
     const newFormData = {
       id: String(p.id ?? ""),
@@ -1165,7 +1258,7 @@ export default function ProductsPage() {
       {/* title + Add button */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight text-white mb-4">
-          🛒 Product List
+          🛒 Zaldy Merchandise <span className="text-sm"> Product List</span>
         </h1>
         <button
           onClick={handleOpenModal}
@@ -1179,6 +1272,7 @@ export default function ProductsPage() {
         {/* 🔍 Search + Filters: in one neat row on larger screens */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <TextInput
+            label="Search Bar"
             placeholder="🔍 Search product name, description, brand..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -1186,6 +1280,7 @@ export default function ProductsPage() {
           />
 
           <SelectInput
+            label="Category"
             name="category"
             value={filterCategory}
             onChange={(val) => {
@@ -1198,8 +1293,9 @@ export default function ProductsPage() {
             ]}
           />
 
-          <SelectInput
-            name="brand"
+          <DeletableSmartSelectInput
+            name="brandId"
+            label="Brand"
             value={filterBrand}
             onChange={(val) => setFilterBrand(String(val))}
             options={[
@@ -1210,8 +1306,13 @@ export default function ProductsPage() {
                     !filterCategory ||
                     b.categoryId?.toString() === filterCategory
                 )
-                .map((b) => ({ label: b.name, value: b.id })),
+                .map((b) => ({
+                  label: b.name,
+                  value: String(b.id),
+                })),
             ]}
+            onDeleteOption={handleDeleteBrand}
+            deletableValues={brands.map((b) => b.id)} // optional
           />
         </div>
         {/* 🎯 Target Filter as Radio Pills */}

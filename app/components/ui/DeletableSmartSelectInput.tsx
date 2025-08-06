@@ -5,6 +5,7 @@ import { DeletableSelectInput } from "./DeletableSelectInput";
 interface Option {
   label: string;
   value: string | number;
+  style?: React.CSSProperties;
 }
 
 interface Props {
@@ -54,17 +55,19 @@ export function DeletableSmartSelectInput({
   const isCustom = selectedOption === "__custom__";
 
   return (
-    <div className="mb-4">
+    <div className="">
       <DeletableSelectInput
         label={label}
         name={`${name}_select`}
         options={[
-          { label: "-- Select --", value: "" },
           ...options.map((opt) => ({
             label: opt.label,
             value: String(opt.value),
+            style: opt.style,
           })),
-          { label: customValueLabel, value: "__custom__" },
+          ...(onCustomInputChange && customValueLabel
+            ? [{ label: customValueLabel, value: "__custom__" }]
+            : []),
         ]}
         value={selectedOption}
         onChange={(val) => {
