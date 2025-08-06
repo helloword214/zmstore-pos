@@ -18,6 +18,7 @@ import { MultiSelectInput } from "~/components/ui/MultiSelectInput";
 import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
+import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
 
 import type {
   LoaderData,
@@ -286,6 +287,48 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  //delete inidcation
+
+  const indicationIdToDelete = formData.get("indicationId")?.toString();
+
+  if (actionType === "delete-indication" && indicationIdToDelete) {
+    const id = Number(indicationIdToDelete);
+
+    // Check if any product is using this indication
+    const productsUsingIndication = await db.productIndication.count({
+      where: { indicationId: id },
+    });
+
+    if (productsUsingIndication > 100) {
+      return json(
+        {
+          success: false,
+          error: `❌ Cannot delete indication: used by ${productsUsingIndication} product(s).`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Proceed to delete from DB
+    await db.indication.delete({ where: { id } });
+
+    return json({
+      success: true,
+      action: "delete-indication",
+    });
+  }
+
+  //delation target
+  const targetIdToDelete = formData.get("targetId")?.toString();
+
+  if (actionType === "delete-target" && targetIdToDelete) {
+    const id = Number(targetIdToDelete);
+
+    await db.target.delete({ where: { id } });
+
+    return json({ success: true, action: "delete-target" });
+  }
+
   // 🔐 Required field validation
   if (!name) {
     return json(
@@ -528,9 +571,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     if (id) {
       // ─ UPDATE ─ clear old joins, then recreate from the IDs
-
-      console.log("🧾 packingUnitId being saved:", packingUnitId);
-      console.log("🧾 packingUnit in commonData:", commonData.packingUnit);
       await db.product.update({
         where: { id: Number(id) },
         data: {
@@ -555,8 +595,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     } else {
       // ─ CREATE ─ just create with connections, no deleteMany
 
-      console.log("🧾 packingUnitId being saved:", packingUnitId);
-      console.log("🧾 packingUnit in commonData:", commonData.packingUnit);
       const createdProduct = await db.product.create({
         data: {
           ...commonData,
@@ -613,7 +651,18 @@ export default function ProductsPage() {
     { label: string; value: string }[]
   >([]);
 
-  const targetOptions = targets.map((t) => t.name);
+  const [targetOptions, setTargetOptions] = useState<
+    { label: string; value: string }[]
+  >([]);
+
+  const [indicationOptions, setIndicationOptions] = useState<
+    { label: string; value: string }[]
+  >([]);
+
+  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
+  const [brandOptions, setBrandOptions] = useState<SelectOption[]>([]);
+
+  const [customLocationName, setCustomLocationName] = useState("");
 
   // -fetcher for reloading after create/update/delete-
   const actionFetcher = useFetcher<{
@@ -640,6 +689,9 @@ export default function ProductsPage() {
     indication: "", // ✅ same for uses
     location: "",
   });
+  const [showManageIndication, setShowManageIndication] = useState(false);
+  const [showManageTarget, setShowManageTarget] = useState(false);
+
   const [showAlert, setShowAlert] = useState(false);
 
   // — Filters & Paging —
@@ -681,10 +733,6 @@ export default function ProductsPage() {
   });
 
   //delete location
-  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
-  const [brandOptions, setBrandOptions] = useState<SelectOption[]>([]);
-
-  const [customLocationName, setCustomLocationName] = useState("");
 
   const getLabelFromValue = useCallback(
     (val: string | number): string => {
@@ -727,6 +775,24 @@ export default function ProductsPage() {
       }))
     );
   }, [brands]);
+
+  useEffect(() => {
+    setIndicationOptions(
+      indications.map((ind) => ({
+        label: ind.name,
+        value: String(ind.id),
+      }))
+    );
+  }, [indications]);
+
+  useEffect(() => {
+    setTargetOptions(
+      targets.map((t) => ({
+        label: t.name,
+        value: t.name,
+      }))
+    );
+  }, [targets]);
 
   // 🧠 When fetcher gets search result, update products and reset page only if search term changed
   useEffect(() => {
@@ -1132,6 +1198,40 @@ export default function ProductsPage() {
     actionFetcher.submit(formData, { method: "post" });
   }
 
+  function handleDeleteIndication(valueToDelete: string | number) {
+    const label =
+      indicationOptions.find(
+        (opt) => String(opt.value) === String(valueToDelete)
+      )?.label || `Indication #${valueToDelete}`;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${label}"?`
+    );
+    if (!confirmDelete) return;
+
+    const formData = new FormData();
+    formData.append("_action", "delete-indication");
+    formData.append("indicationId", String(valueToDelete));
+
+    actionFetcher.submit(formData, { method: "post" });
+  }
+
+  function handleDeleteTarget(valueToDelete: string | number) {
+    const label =
+      targetOptions.find((t) => String(t.value) === String(valueToDelete))
+        ?.label || `Target #${valueToDelete}`;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${label}"?`
+    );
+    if (!confirmDelete) return;
+
+    const formData = new FormData();
+    formData.append("_action", "delete-target");
+    formData.append("targetId", String(valueToDelete));
+    actionFetcher.submit(formData, { method: "post" });
+  }
+
   function handleEdit(p: ProductWithDetails) {
     const newFormData = {
       id: String(p.id ?? ""),
@@ -1203,10 +1303,6 @@ export default function ProductsPage() {
     setErrorMsg("");
 
     setTimeout(() => {
-      console.log(
-        "🚀 Modal open — locationId should now be:",
-        newFormData.locationId
-      );
       setShowModal(true);
     }, 0);
   }
@@ -1318,17 +1414,24 @@ export default function ProductsPage() {
         {/* 🎯 Target Filter as Radio Pills */}
         <details className="group">
           <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 mb-2">
-            <span>🎯 Target Filter</span>
+            <span>
+              🎯 Target Filter{" "}
+              <button
+                type="button"
+                className="text-xs text-gray-500 ml-4 underline"
+                onClick={() => setShowManageTarget(true)}
+              >
+                ⚙️ Manage
+              </button>
+            </span>
+
             <span className="text-gray-500 group-open:rotate-180 transition-transform duration-200">
               ▼
             </span>
           </summary>
 
           <div className="flex flex-wrap gap-2 mt-2">
-            {[
-              { label: "All", value: "" },
-              ...targetOptions.map((t) => ({ label: t, value: t })),
-            ].map((option) => (
+            {[{ label: "All", value: "" }, ...targetOptions].map((option) => (
               <label
                 key={option.value}
                 className={clsx(
@@ -1351,11 +1454,29 @@ export default function ProductsPage() {
             ))}
           </div>
         </details>
+        {showManageTarget && (
+          <ManageOptionModal
+            title="Manage Targets"
+            options={targetOptions}
+            onDelete={handleDeleteTarget}
+            onClose={() => setShowManageTarget(false)}
+          />
+        )}
 
         {/* 🏷️ Indication Tags: limited height with scroll */}
         <details className="group">
           <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 mb-2">
-            <span>🏷️ Indication Filters</span>
+            <span>
+              🏷️ Indication Filters{" "}
+              <button
+                type="button"
+                onClick={() => setShowManageIndication(true)}
+                className="ml-4 text-xs text-gray-500 hover:text-gray-700 underline"
+                title="Manage Indications"
+              >
+                ⚙️Manage
+              </button>
+            </span>
             <span className="text-gray-500 group-open:rotate-180 transition-transform duration-200">
               ▼
             </span>
@@ -1378,6 +1499,15 @@ export default function ProductsPage() {
             ))}
           </div>
         </details>
+
+        {showManageIndication && (
+          <ManageOptionModal
+            title="Manage Indications"
+            options={indicationOptions}
+            onDelete={handleDeleteIndication}
+            onClose={() => setShowManageIndication(false)}
+          />
+        )}
 
         {/* 📦 Product Table */}
         <div ref={listRef}>
