@@ -8,6 +8,10 @@ import type {
   PackingUnit as PrismaPackingUnit,
 } from "@prisma/client";
 
+import type { Fetcher, FetcherWithComponents } from "@remix-run/react";
+
+export type FullFetcher<T> = FetcherWithComponents<T> & Fetcher<T>;
+
 // ✅ Aliases for consistency
 export type Brand = PrismaBrand;
 export type Category = { id: number; name: string };
@@ -48,4 +52,24 @@ export type LoaderData = {
   indications: Indication[];
   targets: Target[];
   locations: Location[];
+};
+
+export type SelectOption = {
+  label: string;
+  value: string | number;
+};
+
+export type ActionIntent =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "toggled"
+  | "delete-location"; // Extend as needed (e.g. delete-brand, etc.)
+
+export type ActionResponse = {
+  success?: boolean;
+  error?: string;
+  field?: string;
+  action?: ActionIntent;
+  id?: number;
 };

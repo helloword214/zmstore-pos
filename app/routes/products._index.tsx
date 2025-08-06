@@ -1,12 +1,12 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useFetcher } from "@remix-run/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { db } from "~/utils/db.server";
 import { FormSection } from "~/components/ui/FormSection";
 import { FormGroupRow } from "~/components/ui/FormGroupRow";
 import { TextInput } from "~/components/ui/TextInput";
 import { SelectInput } from "~/components/ui/SelectInput";
-import { SmartSelectInput } from "~/components/ui/SmartSelectInput";
+import { DeletableSmartSelectInput } from "~/components/ui/DeletableSmartSelectInput";
 import { Button } from "~/components/ui/Button";
 import { Textarea } from "~/components/ui/Textarea";
 import { TagCheckbox } from "~/components/ui/TagCheckbox";
@@ -19,7 +19,12 @@ import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 
-import type { LoaderData, ProductWithDetails, Brand } from "~/types";
+import type {
+  LoaderData,
+  ProductWithDetails,
+  Brand,
+  SelectOption,
+} from "~/types";
 
 // Define a LoaderData interface somewhere in this file (or import it)
 
@@ -205,6 +210,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const newIndications = formData.getAll("newIndications") as string[];
   const newTargets = formData.getAll("newTargets") as string[];
   const decimals = (packingStockRaw.split(".")[1] || "").length;
+
+  //deletelocation
+
+  const locationIdToDelete = formData.get("locationId")?.toString();
+  const actionType = formData.get("_action")?.toString();
+
+  if (actionType === "delete-location") {
+    if (!locationIdToDelete) {
+      return json(
+        { success: false, error: "❌ Missing location ID to delete." },
+        { status: 400 }
+      );
+    }
+
+    const id = Number(locationIdToDelete);
+    if (isNaN(id)) {
+      return json(
+        { success: false, error: "❌ Invalid location ID." },
+        { status: 400 }
+      );
+    }
+
+    const productsUsingLocation = await db.product.count({
+      where: { locationId: id },
+    });
+
+    if (productsUsingLocation > 3) {
+      return json(
+        {
+          success: false,
+          error: `❌ Cannot delete: used by ${productsUsingLocation} product(s). Limit is 3.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    await db.location.delete({ where: { id } });
+
+    return json({
+      success: true,
+      action: "delete-location",
+    });
+  }
 
   // 🔴 Unified numeric validation
 
@@ -544,7 +592,7 @@ export default function ProductsPage() {
     success?: boolean;
     error?: string;
     field?: string;
-    action?: "created" | "updated" | "deleted" | "toggled";
+    action?: "created" | "updated" | "deleted" | "toggled" | "delete-location";
     id?: number; //
   }>();
   const listFetcher = useFetcher<{ products: ProductWithDetails[] }>();
@@ -566,6 +614,7 @@ export default function ProductsPage() {
   const [filterBrand, setFilterBrand] = useState("");
   const [filterTarget, setFilterTarget] = useState("");
   const [filterIndications, setFilterIndications] = useState<string[]>([]);
+
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
   const fetcher = useFetcher<{ products: ProductWithDetails[] }>();
@@ -597,7 +646,31 @@ export default function ProductsPage() {
     filterIndications: [] as string[],
   });
 
-  //Location logic to stay
+  //delete location
+  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
+
+  const [customLocationName, setCustomLocationName] = useState("");
+
+  const getLabelFromValue = useCallback(
+    (val: string | number): string => {
+      const found = locationOptions.find(
+        (opt) => String(opt.value) === String(val)
+      );
+      return found?.label || `Location #${val}`;
+    },
+    [locationOptions]
+  );
+
+  useEffect(() => {
+    if (!locations || locations.length === 0) return;
+
+    setLocationOptions(
+      locations.map((loc) => ({
+        label: loc.name,
+        value: String(loc.id),
+      }))
+    );
+  }, [locations]);
 
   // 🧠 When fetcher gets search result, update products and reset page only if search term changed
   useEffect(() => {
@@ -711,6 +784,7 @@ export default function ProductsPage() {
         updated: "✏️ Product successfully updated.",
         deleted: "🗑️ Product deleted successfully.",
         toggled: "Product status updated!",
+        "delete-location": "📍 Location deleted successfully.",
       };
 
       setSuccessMsg(msgMap[action || "created"] || "✅ Operation completed.");
@@ -776,6 +850,49 @@ export default function ProductsPage() {
     brandsFetcher,
     listFetcher,
     formData.id, // primitive string or number
+  ]);
+
+  //hande location delete
+  useEffect(() => {
+    const data = actionFetcher.data;
+    if (!data || data.action !== "delete-location" || !data.success) return;
+
+    const deletedId = String(
+      (actionFetcher as any).submission?.formData.get("locationId")
+    );
+
+    const rawLabel = getLabelFromValue(deletedId);
+    const label =
+      typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
+
+    setLocationOptions((prev) =>
+      prev.filter((opt) => String(opt.value) !== String(deletedId))
+    );
+
+    if (formData.locationId === deletedId) {
+      setFormData((prev) => ({ ...prev, locationId: "" }));
+    }
+
+    if (customLocationName === deletedId) {
+      setCustomLocationName("");
+    }
+
+    setSuccessMsg(`Deleted "${label}" from the list.`);
+    setShowAlert(true);
+    console.log("💥 Deleted ID:", deletedId);
+    console.log("💡 FormData.locationId:", formData.locationId);
+    console.log("📍 CustomLocationName:", customLocationName);
+  }, [
+    actionFetcher.data,
+    actionFetcher, // ✅ now allowed since we use `submission`
+    customLocationName,
+    formData.locationId,
+    getLabelFromValue,
+    setLocationOptions,
+    setFormData,
+    setCustomLocationName,
+    setSuccessMsg,
+    setShowAlert,
   ]);
 
   const userEditedSku = useRef(false);
@@ -904,6 +1021,22 @@ export default function ProductsPage() {
     }
 
     setFormData((prev) => ({ ...prev, [name]: cleaned }));
+  }
+
+  function handleDeleteLocation(valueToDelete: string | number) {
+    const label =
+      getLabelFromValue(valueToDelete) || `Location #${valueToDelete}`;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${label}"?`
+    );
+    if (!confirmDelete) return;
+
+    const formData = new FormData();
+    formData.append("_action", "delete-location"); // 🔑 must match in action
+    formData.append("locationId", String(valueToDelete)); // 🔑 used in action
+
+    actionFetcher.submit(formData, { method: "post" });
   }
 
   function handleEdit(p: ProductWithDetails) {
@@ -1605,7 +1738,7 @@ export default function ProductsPage() {
                       value={formData.minStock || ""}
                       onChange={handleInput}
                     />
-                    <SmartSelectInput
+                    <DeletableSmartSelectInput
                       name="locationId"
                       label="Location"
                       value={formData.locationId}
@@ -1627,6 +1760,8 @@ export default function ProductsPage() {
                         label: l.name,
                         value: String(l.id),
                       }))}
+                      onDeleteOption={(val) => handleDeleteLocation(val)}
+                      deletableValues={locations.map((l) => l.id)}
                     />
 
                     <input

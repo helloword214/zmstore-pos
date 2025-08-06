@@ -33,9 +33,9 @@ model Product {
   packingUnitId      Int?
   locationId         Int?
   packingSize        Float?
-  brand              Brand?              @relation(fields: [brandId], references: [id])
+  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
   category           Category?           @relation(fields: [categoryId], references: [id])
-  location           Location?           @relation(fields: [locationId], references: [id])
+  location           Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
   packingUnit        PackingUnit?        @relation("PackingUnit", fields: [packingUnitId], references: [id])
   unit               Unit?               @relation("RetailUnit", fields: [unitId], references: [id])
   productIndications ProductIndication[]
