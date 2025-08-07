@@ -17,11 +17,17 @@ services:
       - "3000:3000"
     depends_on:
       - db
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@db:5432/zmstore"
-      SESSION_SECRET: "supersecretlol123"
+      NODE_ENV: production
     volumes:
       - .:/app
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npx prisma generate &&
+             npm run build &&
+             npx remix-serve build/server/index.js"
 
 volumes:
   postgres_data:
