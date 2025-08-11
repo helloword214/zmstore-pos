@@ -50,8 +50,19 @@ export type LoaderData = {
   units: Unit[]; // Retail units (e.g. kg, capsule)
   packingUnits: PackingUnit[]; // Containers (e.g. sack, bottle)
   indications: Indication[];
-  targets: Target[];
+  targets: {
+    id: number;
+    name: string;
+    categoryId: number | null;
+    brandId: number | null;
+  }[];
   locations: Location[];
+  targetsForFilter: {
+    id: number;
+    name: string;
+    categoryId: number | null;
+    brandId: number | null;
+  }[];
 };
 
 export type SelectOption = {

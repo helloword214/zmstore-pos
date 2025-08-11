@@ -1,6 +1,13 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useFetcher } from "@remix-run/react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import type {
+  LoaderData,
+  ProductWithDetails,
+  Brand,
+  SelectOption,
+} from "~/types";
+import type React from "react";
 import { db } from "~/utils/db.server";
 import { FormSection } from "~/components/ui/FormSection";
 import { FormGroupRow } from "~/components/ui/FormGroupRow";
@@ -19,13 +26,7 @@ import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
-
-import type {
-  LoaderData,
-  ProductWithDetails,
-  Brand,
-  SelectOption,
-} from "~/types";
+// === END Imports ===
 
 // Define a LoaderData interface somewhere in this file (or import it)
 
@@ -95,10 +96,18 @@ export async function loader() {
       id: pi.indication.id,
       name: pi.indication.name,
     })),
-    targets: p.productTargets.map((pt) => ({
-      id: pt.target.id,
-      name: pt.target.name,
-    })),
+    targets: (() => {
+      const seen = new Set<string>();
+      return p.productTargets
+        .map((pt) => pt.target)
+        .filter((t) => {
+          const key = t.name.trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((t) => ({ id: t.id, name: t.name }));
+    })(),
   }));
 
   const targetsForFilter: {
@@ -739,7 +748,21 @@ export default function ProductsPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
+  const { targets: targetsForFilter } = useLoaderData<LoaderData>();
+
   //-------Effects ----------------------------------------------------------
+
+  const modalTargetOptions = useMemo(() => {
+    const cId = formData.categoryId || "";
+    const bId = formData.brandId || "";
+    return targetsForFilter
+      .filter(
+        (t) =>
+          (!cId || String(t.categoryId ?? "") === cId) &&
+          (!bId || String(t.brandId ?? "") === bId)
+      )
+      .map((t) => ({ label: t.name, value: String(t.id) }));
+  }, [targetsForFilter, formData.categoryId, formData.brandId]);
 
   // Unified product list updater
   // note: 🔁 Track last search term to avoid unnecessary page reset
@@ -2193,10 +2216,7 @@ export default function ProductsPage() {
                     <MultiSelectInput
                       name="target"
                       label="Target"
-                      options={targets.map((t) => ({
-                        label: t.name,
-                        value: String(t.id),
-                      }))}
+                      options={modalTargetOptions}
                       selected={selectedTargets}
                       onChange={setSelectedTargets}
                       onCustomInput={handleCustomTarget}
