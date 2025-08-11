@@ -39,7 +39,7 @@ export async function loader() {
     units,
     packingUnits,
     indications,
-    targets,
+
     locations,
   ] = await Promise.all([
     db.product.findMany({
@@ -73,17 +73,6 @@ export async function loader() {
 
   console.log("[📦 Loaded products]:", products.length);
 
-  const uniqueTargetNames: { id: number; name: string }[] = [];
-
-  const seen = new Set<string>();
-
-  for (const t of targets) {
-    if (!seen.has(t.name)) {
-      uniqueTargetNames.push({ id: t.id, name: t.name });
-      seen.add(t.name);
-    }
-  }
-
   // Flatten the join tables into simple name arrays
   const productsWithDetails = products.map((p) => ({
     ...p,
@@ -111,6 +100,35 @@ export async function loader() {
     })),
   }));
 
+  const targetsForFilter: {
+    id: number;
+    name: string;
+    categoryId: number | null;
+    brandId: number | null;
+  }[] = [];
+
+  const seen = new Set<string>();
+
+  for (const p of productsWithDetails) {
+    const cId = p.categoryId ?? null;
+    const bId = p.brandId ?? null;
+
+    for (const t of p.targets ?? []) {
+      const key = `${t.name.trim().toLowerCase()}::${cId ?? "null"}::${
+        bId ?? "null"
+      }`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      targetsForFilter.push({
+        id: t.id,
+        name: t.name,
+        categoryId: cId,
+        brandId: bId,
+      });
+    }
+  }
+
   return json({
     products: productsWithDetails,
     categories,
@@ -118,7 +136,7 @@ export async function loader() {
     units, // ✅ retail units (e.g. kg, capsule)
     packingUnits, // ✅ containers (e.g. sack, bottle)
     indications,
-    targets: uniqueTargetNames,
+    targets: targetsForFilter,
     locations,
   });
 }
@@ -786,13 +804,32 @@ export default function ProductsPage() {
   }, [indications]);
 
   useEffect(() => {
-    setTargetOptions(
-      targets.map((t) => ({
-        label: t.name,
-        value: t.name,
-      }))
-    );
-  }, [targets]);
+    // 1) filter targets by selected Category + Brand
+    const filtered = targets.filter((t: any) => {
+      const okCat =
+        !filterCategory || String(t.categoryId ?? "") === filterCategory;
+      const okBr = !filterBrand || String(t.brandId ?? "") === filterBrand;
+      return okCat && okBr;
+    });
+
+    // 2) dedupe by name (case-insensitive)
+    const seen = new Set<string>();
+    const opts = filtered
+      .filter((t: any) => {
+        const key = t.name.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((t: any) => ({ label: t.name, value: String(t.id) }));
+
+    setTargetOptions(opts);
+
+    // 3) clear selection if no longer valid
+    if (filterTarget && !opts.some((o) => o.value === filterTarget)) {
+      setFilterTarget("");
+    }
+  }, [targets, filterCategory, filterBrand, filterTarget]);
 
   // 🧠 When fetcher gets search result, update products and reset page only if search term changed
   useEffect(() => {
@@ -1176,11 +1213,11 @@ export default function ProductsPage() {
     );
     if (!confirmDelete) return;
 
-    const formData = new FormData();
-    formData.append("_action", "delete-location"); // 🔑 must match in action
-    formData.append("locationId", String(valueToDelete)); // 🔑 used in action
+    const payLoad = new FormData();
+    payLoad.append("_action", "delete-location"); // 🔑 must match in action
+    payLoad.append("locationId", String(valueToDelete)); // 🔑 used in action
 
-    actionFetcher.submit(formData, { method: "post" });
+    actionFetcher.submit(payLoad, { method: "post" });
   }
 
   function handleDeleteBrand(valueToDelete: string | number) {
@@ -1191,11 +1228,11 @@ export default function ProductsPage() {
     );
     if (!confirmDelete) return;
 
-    const formData = new FormData();
-    formData.append("_action", "delete-brand"); // 🔑 must match in action
-    formData.append("brandId", String(valueToDelete)); // 🔑 used in action
+    const payLoad = new FormData();
+    payLoad.append("_action", "delete-brand"); // 🔑 must match in action
+    payLoad.append("brandId", String(valueToDelete)); // 🔑 used in action
 
-    actionFetcher.submit(formData, { method: "post" });
+    actionFetcher.submit(payLoad, { method: "post" });
   }
 
   function handleDeleteIndication(valueToDelete: string | number) {
@@ -1209,11 +1246,11 @@ export default function ProductsPage() {
     );
     if (!confirmDelete) return;
 
-    const formData = new FormData();
-    formData.append("_action", "delete-indication");
-    formData.append("indicationId", String(valueToDelete));
+    const payLoad = new FormData();
+    payLoad.append("_action", "delete-indication");
+    payLoad.append("indicationId", String(valueToDelete));
 
-    actionFetcher.submit(formData, { method: "post" });
+    actionFetcher.submit(payLoad, { method: "post" });
   }
 
   function handleDeleteTarget(valueToDelete: string | number) {
@@ -1226,10 +1263,10 @@ export default function ProductsPage() {
     );
     if (!confirmDelete) return;
 
-    const formData = new FormData();
-    formData.append("_action", "delete-target");
-    formData.append("targetId", String(valueToDelete));
-    actionFetcher.submit(formData, { method: "post" });
+    const payLoad = new FormData();
+    payLoad.append("_action", "delete-target");
+    payLoad.append("targetId", String(valueToDelete));
+    actionFetcher.submit(payLoad, { method: "post" });
   }
 
   function handleEdit(p: ProductWithDetails) {
@@ -1333,7 +1370,10 @@ export default function ProductsPage() {
     const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
 
     const okTg =
-      !filterTarget || (p.targets ?? []).some((t) => t.name === filterTarget); // ✅ updated
+      !filterTarget ||
+      (p.targets ?? []).some(
+        (t) => String(t.id) === filterTarget || t.name === filterTarget // fallback
+      );
 
     const okUse =
       filterIndications.length === 0 ||
