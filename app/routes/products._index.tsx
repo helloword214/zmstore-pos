@@ -38,9 +38,10 @@ export async function loader() {
     brands,
     units,
     packingUnits,
-    indications,
-
-    locations,
+    indications, // ✅ include this // //
+    ,
+    // / ← skip db.target.findMany() result (keep position)
+    locations, // ✅ now this matches db.location.findMany()
   ] = await Promise.all([
     db.product.findMany({
       include: {
@@ -703,10 +704,12 @@ export default function ProductsPage() {
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<Record<string, string>>({
-    target: "", // ✅ ensure this is always a string
-    indication: "", // ✅ same for uses
+    target: "",
+    indication: "",
     location: "",
+    locationId: "",
   });
+
   const [showManageIndication, setShowManageIndication] = useState(false);
   const [showManageTarget, setShowManageTarget] = useState(false);
 
@@ -795,13 +798,33 @@ export default function ProductsPage() {
   }, [brands]);
 
   useEffect(() => {
-    setIndicationOptions(
-      indications.map((ind) => ({
-        label: ind.name,
-        value: String(ind.id),
-      }))
+    // Filter products by current Category + Brand
+    const filteredProducts = products.filter((p) => {
+      const okCat =
+        !filterCategory || String(p.categoryId ?? "") === filterCategory;
+      const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
+      return okCat && okBr;
+    });
+
+    // Build unique indication options from those products
+    const seen = new Set<string>();
+    const opts = filteredProducts
+      .flatMap((p) => p.indications ?? [])
+      .filter((i) => {
+        const key = String(i.id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((i) => ({ label: i.name, value: String(i.id) }));
+
+    setIndicationOptions(opts);
+
+    // Drop selected indications that no longer exist under the filters
+    setFilterIndications((prev) =>
+      prev.filter((v) => opts.some((o) => o.value === v))
     );
-  }, [indications]);
+  }, [products, filterCategory, filterBrand]);
 
   useEffect(() => {
     // 1) filter targets by selected Category + Brand
