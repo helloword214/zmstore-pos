@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useFetcher, useRevalidator } from "@remix-run/react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
@@ -68,7 +69,32 @@ type FormDataShape = {
   isActive?: BoolStr;
 };
 
-// Type
+const INITIAL_FORM: FormDataShape = Object.freeze({
+  name: "",
+  unitId: "",
+  categoryId: "",
+  brandId: "",
+  brandName: "",
+  allowPackSale: "false",
+  isActive: "true",
+  packingSize: "",
+  packingUnitId: "",
+  srp: "",
+  dealerPrice: "",
+  price: "",
+  packingStock: "",
+  stock: "",
+  barcode: "",
+  sku: "",
+  expirationDate: "",
+  replenishAt: "",
+  minStock: "",
+  locationId: "",
+  customLocationName: "",
+  imageTag: "",
+  imageUrl: "",
+  description: "",
+});
 
 export async function loader() {
   const [
@@ -704,6 +730,8 @@ export default function ProductsPage() {
     locations,
   } = useLoaderData<LoaderData>();
 
+  // top of the file, module scope (outside the component)
+
   const revalidator = useRevalidator();
 
   // — State & Options —
@@ -1087,6 +1115,7 @@ export default function ProductsPage() {
 
   // Hoist stable snapshots so we don't depend on the whole fetcher
   const afData = actionFetcher.data;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const afSubmission = (actionFetcher as any)?.submission as
     | { formData?: FormData }
     | undefined;
@@ -1131,6 +1160,13 @@ export default function ProductsPage() {
       setErrorMsg("");
       setShowAlert(true);
 
+      //reset form
+      if (action === "created") {
+        setSelectedIndications([]);
+        setSelectedTargets([]);
+        setFormData(INITIAL_FORM);
+      }
+
       // Optimistic delete (and STOP — no revalidate here to avoid flicker)
       if (action === "delete-product" || action === "deleted") {
         if (submittedId) {
@@ -1162,6 +1198,7 @@ export default function ProductsPage() {
         setTimeout(() => {
           setShowModal(false);
           setFormData({});
+          setFormData(INITIAL_FORM);
           setStep(1);
           setErrors({});
           formRef.current?.reset();
@@ -1199,6 +1236,7 @@ export default function ProductsPage() {
     const data = actionFetcher.data;
     if (!data || !data.success) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const submission = (actionFetcher as any).submission;
     const form = submission?.formData;
     const action =
@@ -1299,6 +1337,13 @@ export default function ProductsPage() {
       locationId: "", // default or preserved value, not full reset
       // add default fields here as needed
     });
+
+    // 🔑 clear multi-selects so nothing carries over
+    setSelectedIndications([]);
+    setSelectedTargets([]);
+
+    // 🔑 reset the form data for a brand-new product
+    setFormData(INITIAL_FORM);
 
     setStep(1);
     setErrors({});
