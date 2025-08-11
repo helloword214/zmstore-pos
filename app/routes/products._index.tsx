@@ -1,12 +1,7 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useFetcher } from "@remix-run/react";
+import { useLoaderData, useFetcher, useRevalidator } from "@remix-run/react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import type {
-  LoaderData,
-  ProductWithDetails,
-  Brand,
-  SelectOption,
-} from "~/types";
+import type { LoaderData, ProductWithDetails, Brand } from "~/types";
 import type React from "react";
 import { db } from "~/utils/db.server";
 import { FormSection } from "~/components/ui/FormSection";
@@ -70,6 +65,7 @@ type FormDataShape = {
   target?: string;
   indication?: string;
   location?: string;
+  isActive?: BoolStr;
 };
 
 // Type
@@ -708,6 +704,8 @@ export default function ProductsPage() {
     locations,
   } = useLoaderData<LoaderData>();
 
+  const revalidator = useRevalidator();
+
   // — State & Options —
   const [products, setProducts] =
     useState<ProductWithDetails[]>(initialProducts);
@@ -728,9 +726,6 @@ export default function ProductsPage() {
   const [indicationOptions, setIndicationOptions] = useState<
     { label: string; value: string }[]
   >([]);
-
-  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
-  const [brandOptions, setBrandOptions] = useState<SelectOption[]>([]);
 
   const [customLocationName, setCustomLocationName] = useState("");
 
@@ -756,6 +751,7 @@ export default function ProductsPage() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<FormDataShape>({
     allowPackSale: "false",
+    isActive: "true",
     target: "",
     indication: "",
     location: "",
@@ -792,6 +788,49 @@ export default function ProductsPage() {
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
   //-------Effects ----------------------------------------------------------
+
+  const [localLocations, setLocalLocations] = useState(locations);
+  useEffect(() => setLocalLocations(locations), [locations]);
+
+  // Full unfiltered list
+  const brandOptions = useMemo(
+    () => brands.map((b) => ({ label: b.name, value: String(b.id) })),
+    [brands]
+  );
+  const locationOptions = useMemo(
+    () => localLocations.map((l) => ({ label: l.name, value: String(l.id) })),
+    [localLocations]
+  );
+
+  // Filtered for the top-of-page Brand FILTER (uses filterCategory)
+  const brandOptionsForFilter = useMemo(() => {
+    const list = filterCategory
+      ? brands.filter((b) => String(b.categoryId ?? "") === filterCategory)
+      : brands;
+    return list.map((b) => ({ label: b.name, value: String(b.id) }));
+  }, [brands, filterCategory]);
+
+  // Filtered for the MODAL brand combo (uses formData.categoryId)
+  const brandOptionsForForm = useMemo(() => {
+    const list = formData.categoryId
+      ? brands.filter(
+          (b) => String(b.categoryId ?? "") === String(formData.categoryId)
+        )
+      : brands;
+
+    // optional: sort & dedupe by name
+    const seen = new Set<string>();
+    return list
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter((b) => {
+        const key = b.name.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((b) => ({ label: b.name, value: String(b.id) }));
+  }, [brands, formData.categoryId]);
 
   const modalTargetOptions = useMemo(() => {
     const cId = formData.categoryId || "";
@@ -838,6 +877,26 @@ export default function ProductsPage() {
 
     return Array.from(byName.values());
   }, [targets, formData.categoryId, formData.brandId, selectedTargets]);
+  // All indications (optionally filtered by the top-of-page Category filter)
+  const manageIndicationOptions = useMemo(() => {
+    const source = filterCategory
+      ? indications.filter((i) => String(i.categoryId ?? "") === filterCategory)
+      : indications;
+
+    // mark which ones are in use (so you can warn/block deletion)
+    const usedIds = new Set(
+      products.flatMap((p) => (p.indications ?? []).map((i) => String(i.id)))
+    );
+
+    return source
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((i) => ({
+        label: usedIds.has(String(i.id)) ? `${i.name} • in use` : i.name,
+        value: String(i.id),
+        // if your modal supports disabling, you can add: disabled: usedIds.has(String(i.id))
+      }));
+  }, [indications, filterCategory, products]);
 
   // Unified product list updater
   // note: 🔁 Track last search term to avoid unnecessary page reset
@@ -872,28 +931,6 @@ export default function ProductsPage() {
     },
     [brandOptions]
   );
-
-  useEffect(() => {
-    if (!locations || locations.length === 0) return;
-
-    setLocationOptions(
-      locations.map((loc) => ({
-        label: loc.name,
-        value: String(loc.id),
-      }))
-    );
-  }, [locations]);
-
-  useEffect(() => {
-    if (!brands || brands.length === 0) return;
-
-    setBrandOptions(
-      brands.map((b) => ({
-        label: b.name,
-        value: String(b.id),
-      }))
-    );
-  }, [brands]);
 
   useEffect(() => {
     // Filter products by current Category + Brand
@@ -1013,10 +1050,6 @@ export default function ProductsPage() {
     return () => clearTimeout(timeout);
   }, [currentPage]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterCategory, filterBrand, filterTarget, filterIndications]);
-
   // Handle create/update/delete feedback:
 
   const formRef = useRef<HTMLFormElement>(null);
@@ -1052,60 +1085,98 @@ export default function ProductsPage() {
     brands,
   ]);
 
-  // Handle create/update/delete feedback: dito may chnages
-  useEffect(() => {
-    const data = actionFetcher.data;
-    if (!data) return;
-    const { success, error, action, field } = data;
+  // Hoist stable snapshots so we don't depend on the whole fetcher
+  const afData = actionFetcher.data;
+  const afSubmission = (actionFetcher as any)?.submission as
+    | { formData?: FormData }
+    | undefined;
 
-    if (success) {
-      const msgMap = {
+  // Remix sometimes exposes formData directly instead of submission
+  const submittedForm: FormData | undefined =
+    afSubmission?.formData ?? (actionFetcher as any)?.formData;
+
+  // Prevent duplicate handling (StrictMode / re-renders)
+  const lastHandledRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!afData) return;
+
+    const action =
+      (afData.action as string) ?? String(submittedForm?.get("_action") ?? "");
+    const submittedId = String(
+      afData.id ??
+        submittedForm?.get("id") ??
+        submittedForm?.get("deleteId") ??
+        ""
+    );
+
+    // Build a small signature for this result and skip if we've already handled it
+    const signature = `${action}|${submittedId}|${
+      afData.success ? "ok" : afData.error ? "err" : ""
+    }`;
+    if (lastHandledRef.current === signature) return;
+    lastHandledRef.current = signature;
+
+    if (afData.success) {
+      const msgMap: Record<string, string> = {
         created: "✅ Product successfully saved.",
         updated: "✏️ Product successfully updated.",
         deleted: "🗑️ Product deleted successfully.",
+        "delete-product": "🗑️ Product deleted successfully.",
         toggled: "Product status updated!",
         "delete-location": "📍 Location deleted successfully.",
         "delete-brand": "📍 Brand deleted successfully.",
       };
-
-      setSuccessMsg(msgMap[action || "created"] || "✅ Operation completed.");
+      setSuccessMsg(msgMap[action] || "✅ Operation completed.");
       setErrorMsg("");
       setShowAlert(true);
 
-      // 🔶 Highlight logic here:
-      if (formData.id) {
-        // Updated product
-        setHighlightId(Number(formData.id));
-      } else if (data.id) {
-        // Newly created product (from action response)
-        setHighlightId(Number(data.id));
+      // Optimistic delete (and STOP — no revalidate here to avoid flicker)
+      if (action === "delete-product" || action === "deleted") {
+        if (submittedId) {
+          setProducts((prev) =>
+            prev.filter((p) => String(p.id) !== submittedId)
+          );
+        }
+        // Optionally revalidate after a short delay if you want extra safety:
+        // setTimeout(() => revalidator.revalidate(), 200);
+        return;
       }
 
-      // Reset highlight after 3 seconds
+      // For create/update/toggle, pull fresh list
+      if (
+        action === "created" ||
+        action === "updated" ||
+        action === "toggled"
+      ) {
+        revalidator.revalidate();
+      }
+
+      // Highlight fallback if server didn't return a product
+      if (formData.id) setHighlightId(Number(formData.id));
+      else if (afData.id) setHighlightId(Number(afData.id));
       setTimeout(() => setHighlightId(null), 3000);
 
-      setTimeout(() => {
-        setShowModal(false);
-        setFormData({});
-        setStep(1);
-        setErrors({});
-        if (formRef.current) formRef.current.reset();
-      }, 1600);
+      // Close modal only when saving/updating
+      if (action === "created" || action === "updated") {
+        setTimeout(() => {
+          setShowModal(false);
+          setFormData({});
+          setStep(1);
+          setErrors({});
+          formRef.current?.reset();
+        }, 300);
+      }
 
-      listFetcher.load("/products");
-      brandsFetcher.load("/brands/api");
-      actionFetcher.data = undefined;
-
-      setTimeout(() => {
-        setShowAlert(false);
-        actionFetcher.data = undefined;
-      }, 2000);
+      setTimeout(() => setShowAlert(false), 2000);
+      return;
     }
 
-    if (error) {
+    // Error branch
+    if (afData.error) {
+      const { field, error } = afData as any;
       if (field) {
         setErrors((prev) => ({ ...prev, [field]: error }));
-
         const el = document.querySelector(`[name="${field}"]`);
         if (el && "scrollIntoView" in el) {
           (el as HTMLElement).scrollIntoView({
@@ -1114,24 +1185,14 @@ export default function ProductsPage() {
           });
         }
       } else {
-        setErrorMsg(error);
-        setShowAlert(true); // 👈 show error
+        setErrorMsg(afData.error);
+        setShowAlert(true);
         setTimeout(() => setShowAlert(false), 2500);
       }
       setSuccessMsg("");
       setSearchTerm("");
-
-      setTimeout(() => {
-        actionFetcher.data = undefined;
-      }, 300);
     }
-  }, [
-    actionFetcher, // entire fetcher object
-    actionFetcher.data, // specifically tracks data changes
-    brandsFetcher,
-    listFetcher,
-    formData.id, // primitive string or number
-  ]);
+  }, [afData, submittedForm, revalidator, formData.id]);
 
   //hande location and brand delete logic
   useEffect(() => {
@@ -1139,15 +1200,30 @@ export default function ProductsPage() {
     if (!data || !data.success) return;
 
     const submission = (actionFetcher as any).submission;
+    const form = submission?.formData;
+    const action =
+      (data.action as string) ?? String(form?.get("_action") ?? "");
+
+    // ✅ Only remove from products when a product was deleted
+    if (action === "delete-product" || action === "deleted") {
+      const deletedId = String(form?.get("id") ?? data.id ?? "");
+      if (deletedId) {
+        setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId));
+      }
+      return;
+    }
 
     if (data.action === "delete-location") {
       const deletedId = String(submission?.formData.get("locationId"));
+      if (deletedId) {
+        setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId)); // ✅ instant UI
+      }
       const rawLabel = getLabelFromValue(deletedId); // from your utility
       const label =
         typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
 
-      setLocationOptions((prev) =>
-        prev.filter((opt) => String(opt.value) !== deletedId)
+      setLocalLocations((prev) =>
+        prev.filter((l) => String(l.id) !== deletedId)
       );
 
       if (formData.locationId === deletedId) {
@@ -1170,9 +1246,7 @@ export default function ProductsPage() {
       const label =
         typeof rawLabel === "string" ? rawLabel : `Brand #${deletedId}`;
 
-      setBrandOptions((prev) =>
-        prev.filter((opt) => String(opt.value) !== deletedId)
-      );
+      setBrands((prev) => prev.filter((b) => String(b.id) !== deletedId));
 
       if (formData.brandId === deletedId) {
         setFormData((prev) => ({ ...prev, brandId: "" }));
@@ -1185,8 +1259,6 @@ export default function ProductsPage() {
     actionFetcher.data,
     actionFetcher,
     getLabelFromValue,
-    setLocationOptions,
-    setBrandOptions,
     setFormData,
     setCustomLocationName,
     formData.locationId,
@@ -1196,6 +1268,27 @@ export default function ProductsPage() {
     setShowAlert,
     getLabelFromValueBrand,
   ]);
+
+  // It guards the modal so when the user changes Category, any previously picked Brand that no longer belongs to that category is cleared. That prevents submitting an invalid pair.
+
+  useEffect(() => {
+    if (!formData.brandId) return; // nothing to validate if no brand selected
+
+    const brandIdStr = String(formData.brandId);
+    const catIdStr = String(formData.categoryId ?? "");
+
+    const stillValid = brands.some(
+      (b) =>
+        String(b.id) === brandIdStr &&
+        (!catIdStr || String(b.categoryId ?? "") === catIdStr)
+    );
+
+    if (!stillValid) {
+      setFormData((prev) => ({ ...prev, brandId: "", brandName: "" }));
+      // (optional) also clear targets, since they depend on brand/category:
+      setSelectedTargets([]);
+    }
+  }, [formData.categoryId, formData.brandId, brands, setFormData]);
 
   const userEditedSku = useRef(false);
 
@@ -1213,6 +1306,17 @@ export default function ProductsPage() {
     setErrorMsg("");
     setShowModal(true);
   }
+
+  //ito yung force na magload as initial yung product data natin
+  useEffect(() => {
+    // keep any sort you want here
+    setProducts(
+      [...initialProducts].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+    );
+  }, [initialProducts]);
 
   //multiselectinput indication logic
   async function handleCustomIndication(
@@ -1342,7 +1446,8 @@ export default function ProductsPage() {
   }
 
   function handleDeleteBrand(valueToDelete: string | number) {
-    const label = getLabelFromValue(valueToDelete) || `Brand #${valueToDelete}`;
+    const label =
+      getLabelFromValueBrand(valueToDelete) || `Brand #${valueToDelete}`;
 
     const confirmDelete = window.confirm(
       `Are you sure you want to delete "${label}"?`
@@ -1416,6 +1521,7 @@ export default function ProductsPage() {
       "imageTag",
       "imageUrl",
       "description",
+      "isActive",
     ];
     return (
       <>
@@ -1464,7 +1570,7 @@ export default function ProductsPage() {
           ? p.location.name
           : "",
       barcode: p.barcode ?? "",
-      isActive: p.isActive ? "true" : "false",
+      isActive: toBoolStr(p.isActive),
       allowPackSale: toBoolStr(p.allowPackSale),
     };
     console.log("🧪 Editing product:", {
@@ -1593,17 +1699,8 @@ export default function ProductsPage() {
             value={filterBrand}
             onChange={(val) => setFilterBrand(String(val))}
             options={[
-              { label: "All Brands", value: "", style: { color: "#888" } },
-              ...brands
-                .filter(
-                  (b) =>
-                    !filterCategory ||
-                    b.categoryId?.toString() === filterCategory
-                )
-                .map((b) => ({
-                  label: b.name,
-                  value: String(b.id),
-                })),
+              { label: "All Brands", value: "", style: { color: "#888" } }, // ✅ your styled item stays
+              ...brandOptionsForFilter, // ✅ memoized list
             ]}
             onDeleteOption={handleDeleteBrand}
             deletableValues={brands.map((b) => b.id)} // optional
@@ -1701,7 +1798,7 @@ export default function ProductsPage() {
         {showManageIndication && (
           <ManageOptionModal
             title="Manage Indications"
-            options={indicationOptions}
+            options={manageIndicationOptions}
             onDelete={handleDeleteIndication}
             onClose={() => setShowManageIndication(false)}
           />
@@ -1719,7 +1816,9 @@ export default function ProductsPage() {
               onEdit={handleEdit}
               onDelete={(id) => {
                 const form = new FormData();
-                form.append("deleteId", id.toString());
+                form.append("_action", "delete-product");
+                form.append("id", String(id));
+                form.append("deleteId", String(id));
                 actionFetcher.submit(form, { method: "post" });
               }}
               highlightId={highlightId}
@@ -1839,13 +1938,7 @@ export default function ProductsPage() {
                     <ComboInput
                       placeholder="Brand"
                       label="Brand"
-                      options={brands
-                        .filter(
-                          (b) =>
-                            !formData.categoryId ||
-                            String(b.categoryId) === formData.categoryId
-                        )
-                        .map((b) => ({ label: b.name, value: b.id }))}
+                      options={brandOptionsForForm}
                       selectedId={formData.brandId || ""}
                       customName={formData.brandName || ""}
                       onSelect={({ selectedId, customName }) => {
@@ -2009,7 +2102,7 @@ export default function ProductsPage() {
                   bordered
                 >
                   {/* Hidden fields from Step 1 */}
-                  <input type="hidden" name="id" value={formData.id || ""} />
+
                   <CarryOverHiddenFields data={formData} />
                   {/* ✅ Always visible */}
                   <FormGroupRow>
@@ -2048,12 +2141,6 @@ export default function ProductsPage() {
                           })),
                         ]}
                         error={errors.packingUnitId}
-                      />
-
-                      <input
-                        type="hidden"
-                        name="packingUnitId"
-                        value={formData.packingUnitId || ""}
                       />
                     </div>
                   </FormGroupRow>
@@ -2180,23 +2267,17 @@ export default function ProductsPage() {
                         }))
                       }
                       customValueLabel="Other"
-                      options={locations.map((l) => ({
-                        label: l.name,
-                        value: String(l.id),
-                      }))}
+                      options={locationOptions}
                       onDeleteOption={(val) => handleDeleteLocation(val)}
-                      deletableValues={locations.map((l) => l.id)}
+                      deletableValues={locationOptions.map((o) =>
+                        Number(o.value)
+                      )}
                     />
 
                     <input
                       type="hidden"
                       name="customLocationName"
                       value={formData.customLocationName || ""}
-                    />
-                    <input
-                      type="hidden"
-                      name="locationId"
-                      value={formData.locationId || ""}
                     />
                   </FormGroupRow>
 
