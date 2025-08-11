@@ -30,6 +30,48 @@ import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
 
 // Define a LoaderData interface somewhere in this file (or import it)
 
+type BoolStr = "true" | "false";
+
+type FormDataShape = {
+  id?: string;
+
+  // Step 1
+  name?: string;
+  unitId?: string;
+  categoryId?: string;
+  brandId?: string;
+  brandName?: string;
+  allowPackSale?: "true" | "false";
+
+  // Step 2
+  packingSize?: string;
+  packingUnitId?: string;
+  srp?: string;
+  dealerPrice?: string;
+  price?: string; // retail price (if allowPackSale)
+  packingStock?: string; // retail stock (if allowPackSale)
+  stock?: string; // whole units stock
+  barcode?: string;
+  sku?: string;
+  expirationDate?: string;
+  replenishAt?: string;
+  minStock?: string;
+
+  // Location (combo with custom)
+  locationId?: string;
+  customLocationName?: string;
+
+  // Step 3
+  description?: string;
+  imageTag?: string;
+  imageUrl?: string;
+
+  // legacy keys (safe to keep as blanks)
+  target?: string;
+  indication?: string;
+  location?: string;
+};
+
 // Type
 
 export async function loader() {
@@ -229,12 +271,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // ** NEW **: parse multi-value fields
   const indicationIds = (formData.getAll("indicationIds") as string[])
-    .map((s) => parseInt(s, 10))
-    .filter(Boolean);
+    .map(Number)
+    .filter((n) => !isNaN(n));
 
   const targetIds = (formData.getAll("targetIds") as string[])
-    .map((s) => parseInt(s, 10))
-    .filter(Boolean);
+    .map(Number)
+    .filter((n) => !isNaN(n));
 
   const newIndications = formData.getAll("newIndications") as string[];
   const newTargets = formData.getAll("newTargets") as string[];
@@ -712,7 +754,8 @@ export default function ProductsPage() {
   // - modal & Form state -
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState<Record<string, string>>({
+  const [formData, setFormData] = useState<FormDataShape>({
+    allowPackSale: "false",
     target: "",
     indication: "",
     location: "",
@@ -748,21 +791,53 @@ export default function ProductsPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
-  const { targets: targetsForFilter } = useLoaderData<LoaderData>();
-
   //-------Effects ----------------------------------------------------------
 
   const modalTargetOptions = useMemo(() => {
     const cId = formData.categoryId || "";
     const bId = formData.brandId || "";
-    return targetsForFilter
-      .filter(
-        (t) =>
-          (!cId || String(t.categoryId ?? "") === cId) &&
-          (!bId || String(t.brandId ?? "") === bId)
-      )
-      .map((t) => ({ label: t.name, value: String(t.id) }));
-  }, [targetsForFilter, formData.categoryId, formData.brandId]);
+
+    // 1) filter by current Cat/Brand
+    const filtered = targets.filter((t: any) => {
+      const okCat = !cId || String(t.categoryId ?? "") === cId;
+      const okBr = !bId || String((t as any).brandId ?? "") === bId; // brandId optional-safe
+      return okCat && okBr;
+    });
+
+    // 2) prefer already-selected IDs when names collide
+    const selectedIds = new Set(
+      (selectedTargets ?? []).map((s) => String(s.value))
+    );
+
+    // 3) dedupe by name (case-insensitive)
+    const byName = new Map<string, { label: string; value: string }>();
+
+    // sort for determinism: name asc, id asc
+    filtered.sort(
+      (a: any, b: any) => a.name.localeCompare(b.name) || a.id - b.id
+    );
+
+    for (const t of filtered) {
+      const key = t.name.trim().toLowerCase();
+      const candidate = { label: t.name, value: String(t.id) };
+
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, candidate);
+        continue;
+      }
+
+      // If the candidate is selected but existing isn't, prefer the candidate
+      const candSelected = selectedIds.has(candidate.value);
+      const existSelected = selectedIds.has(existing.value);
+      if (candSelected && !existSelected) {
+        byName.set(key, candidate);
+      }
+      // else keep the existing (first seen) entry
+    }
+
+    return Array.from(byName.values());
+  }, [targets, formData.categoryId, formData.brandId, selectedTargets]);
 
   // Unified product list updater
   // note: 🔁 Track last search term to avoid unnecessary page reset
@@ -1315,6 +1390,43 @@ export default function ProductsPage() {
     actionFetcher.submit(payLoad, { method: "post" });
   }
 
+  function CarryOverHiddenFields({ data }: { data: FormDataShape }) {
+    const keys: (keyof FormDataShape)[] = [
+      "id",
+      "name",
+      "unitId",
+      "categoryId",
+      "brandId",
+      "brandName",
+      "sku",
+      "locationId",
+      "customLocationName",
+      "allowPackSale",
+      "packingSize",
+      "packingUnitId",
+      "srp",
+      "dealerPrice",
+      "price",
+      "packingStock",
+      "stock",
+      "barcode",
+      "expirationDate",
+      "replenishAt",
+      "minStock",
+      "imageTag",
+      "imageUrl",
+      "description",
+    ];
+    return (
+      <>
+        {keys.map((k) => (
+          <input key={k} type="hidden" name={k} value={data[k] ?? ""} />
+        ))}
+      </>
+    );
+  }
+  const toBoolStr = (b?: boolean): BoolStr => (b ? "true" : "false");
+
   function handleEdit(p: ProductWithDetails) {
     const newFormData = {
       id: String(p.id ?? ""),
@@ -1353,7 +1465,7 @@ export default function ProductsPage() {
           : "",
       barcode: p.barcode ?? "",
       isActive: p.isActive ? "true" : "false",
-      allowPackSale: p.allowPackSale ? "true" : "false",
+      allowPackSale: toBoolStr(p.allowPackSale),
     };
     console.log("🧪 Editing product:", {
       locationId: p.locationId,
@@ -1639,9 +1751,16 @@ export default function ProductsPage() {
               ref={formRef}
               className="space-y-4 overflow-y-auto flex-1 pr-2 min-h-[500px]"
               onSubmit={(e) => {
-                if (!confirm("Are you sure you want to save this product?")) {
+                if (!confirm("Save this product?")) {
                   e.preventDefault();
+                  return;
                 }
+                const fd = new FormData(e.currentTarget as HTMLFormElement);
+                console.groupCollapsed("🧾 Form submit payload");
+                for (const [k, v] of fd.entries()) {
+                  console.log(k, "→", v);
+                }
+                console.groupEnd();
               }}
             >
               <div className="flex justify-between items-center mb-2">
@@ -1756,9 +1875,9 @@ export default function ProductsPage() {
                       name="allowPackSale"
                       checked={formData.allowPackSale === "true"}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          allowPackSale: String(e.target.checked), // ✅ Ensure string type
+                        setFormData((p) => ({
+                          ...p,
+                          allowPackSale: e.target.checked ? "true" : "false",
                         }))
                       }
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded"
@@ -1767,11 +1886,7 @@ export default function ProductsPage() {
                       Sell per kilo (e.g. bigas/feeds/pet-food)
                     </span>
                   </div>
-                  <input
-                    type="hidden"
-                    name="allowPackSale"
-                    value={formData.allowPackSale || "false"} // ✅ Ensure hidden value is present
-                  />
+
                   <p className="text-xs text-gray-500 mt-1">
                     Don’t check this if your product is sold as a whole unit
                     only (e.g., tank, sack, bottle).
@@ -1783,11 +1898,18 @@ export default function ProductsPage() {
                       onClick={async (e) => {
                         e.preventDefault();
 
-                        const requiredFields = ["name", "unitId", "categoryId"];
+                        const requiredFields = [
+                          "name",
+                          "unitId",
+                          "categoryId",
+                        ] as const;
+
                         const newErrors: Record<string, string> = {};
-                        const fieldLabels: Record<string, string> = {
+                        type RequiredKey = (typeof requiredFields)[number];
+
+                        const fieldLabels: Record<RequiredKey, string> = {
                           name: "Product Name",
-                          unit: "Unit",
+                          unitId: "Unit",
                           categoryId: "Category",
                         };
 
@@ -1888,22 +2010,7 @@ export default function ProductsPage() {
                 >
                   {/* Hidden fields from Step 1 */}
                   <input type="hidden" name="id" value={formData.id || ""} />
-                  {[
-                    "name",
-                    "unitId",
-                    "categoryId",
-                    "brandId",
-                    "brandName",
-                    "locationId",
-                  ].map((key) => (
-                    <input
-                      key={key}
-                      type="hidden"
-                      name={key}
-                      value={formData[key] || ""}
-                    />
-                  ))}
-
+                  <CarryOverHiddenFields data={formData} />
                   {/* ✅ Always visible */}
                   <FormGroupRow>
                     {/* Packing Size */}
@@ -2058,7 +2165,7 @@ export default function ProductsPage() {
                     <DeletableSmartSelectInput
                       name="locationId"
                       label="Location"
-                      value={formData.locationId}
+                      value={formData.locationId || ""}
                       onChange={(val) =>
                         setFormData((prev) => ({
                           ...prev,
@@ -2110,9 +2217,11 @@ export default function ProductsPage() {
                           "packingUnitId",
                           "srp",
                           "dealerPrice",
-                        ];
+                        ] as const;
+                        type RequiredKey = (typeof requiredFields)[number];
+
                         const newErrors: Record<string, string> = {};
-                        const fieldLabels: Record<string, string> = {
+                        const fieldLabels: Record<RequiredKey, string> = {
                           packingSize: "Packing Size",
                           packingUnitId: "Packing Unit",
                           srp: "Whole Unit Price",
@@ -2151,37 +2260,7 @@ export default function ProductsPage() {
                   description="Write a product description, select uses and targets, and upload an image."
                   bordered
                 >
-                  {[
-                    "id",
-                    "name",
-                    "unitId",
-                    "price",
-                    "dealerPrice",
-                    "srp",
-                    "stock",
-                    "packingStock",
-                    "categoryId",
-                    "brandName",
-                    "brandId",
-                    "sku",
-                    "packingSize",
-                    "barcode",
-                    "expirationDate",
-                    "replenishAt",
-                    "locationId",
-                    "customLocationName",
-                    "minStock",
-                    "packingUnitId",
-                    "allowPackSale",
-                  ].map((key) => (
-                    <input
-                      key={key}
-                      type="hidden"
-                      name={key}
-                      value={formData[key] || ""}
-                    />
-                  ))}
-
+                  <CarryOverHiddenFields data={formData} />
                   <Textarea
                     name="description"
                     label="Description"
@@ -2202,14 +2281,18 @@ export default function ProductsPage() {
                       onChange={setSelectedIndications}
                       onCustomInput={handleCustomIndication}
                     />
-                    {selectedIndications.map((ind) => (
-                      <input
-                        key={ind.value}
-                        type="hidden"
-                        name="indicationIds"
-                        value={ind.value}
-                      />
-                    ))}
+                    {selectedIndications.length === 0 ? (
+                      <input type="hidden" name="indicationIds" value="" />
+                    ) : (
+                      selectedIndications.map((ind) => (
+                        <input
+                          key={ind.value}
+                          type="hidden"
+                          name="indicationIds"
+                          value={ind.value}
+                        />
+                      ))
+                    )}
                   </FormSection>
 
                   <FormSection title="Target Group">
@@ -2221,14 +2304,18 @@ export default function ProductsPage() {
                       onChange={setSelectedTargets}
                       onCustomInput={handleCustomTarget}
                     />
-                    {selectedTargets.map((item, idx) => (
-                      <input
-                        key={idx}
-                        type="hidden"
-                        name="targetIds"
-                        value={item.value}
-                      />
-                    ))}
+                    {selectedTargets.length === 0 ? (
+                      <input type="hidden" name="targetIds" value="" />
+                    ) : (
+                      selectedTargets.map((t) => (
+                        <input
+                          key={t.value}
+                          type="hidden"
+                          name="targetIds"
+                          value={t.value}
+                        />
+                      ))
+                    )}
                   </FormSection>
 
                   <FormGroupRow>
