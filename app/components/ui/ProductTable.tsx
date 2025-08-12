@@ -234,6 +234,30 @@ export function ProductTable({
                     >
                       🗑
                     </Button>
+                    {product.allowPackSale &&
+                      (product.packingSize ?? 0) > 0 &&
+                      (product.stock ?? 0) > 0 && (
+                        <Button
+                          variant="ghost"
+                          className="text-xs border px-2 py-1 text-gray-600 hover:bg-gray-100"
+                          onClick={() => {
+                            const packsStr = window.prompt(
+                              "Open how many whole packs?",
+                              "1"
+                            );
+                            if (!packsStr) return;
+
+                            const fd = new FormData();
+                            fd.append("_action", "open-pack");
+                            fd.append("id", String(product.id));
+                            fd.append("packs", packsStr);
+                            actionFetcher.submit(fd, { method: "post" });
+                          }}
+                          title="Move one or more whole packs into retail stock"
+                        >
+                          🥡
+                        </Button>
+                      )}
                   </div>
                 </td>
               </tr>

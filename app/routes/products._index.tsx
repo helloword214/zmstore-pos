@@ -311,6 +311,72 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json({ success: true, action: "delete-product", id: Number(idStr) });
   }
 
+  if (actionType === "open-pack") {
+    const idStr = formData.get("id")?.toString();
+    const packsStr = formData.get("packs")?.toString() || "1";
+    const packs = Math.max(1, Math.floor(Number(packsStr || "1")));
+
+    if (!idStr || !Number.isFinite(packs) || packs <= 0) {
+      return json(
+        { success: false, error: "Invalid unpack request." },
+        { status: 400 }
+      );
+    }
+
+    const id = Number(idStr);
+    const prod = await db.product.findUnique({
+      where: { id },
+      select: {
+        stock: true,
+        packingSize: true,
+        allowPackSale: true,
+        packingStock: true,
+      },
+    });
+    if (!prod)
+      return json(
+        { success: false, error: "Product not found." },
+        { status: 404 }
+      );
+    if (!prod.allowPackSale) {
+      return json(
+        { success: false, error: "Retail sale not enabled for this product." },
+        { status: 400 }
+      );
+    }
+    if (!prod.packingSize || prod.packingSize <= 0) {
+      return json(
+        { success: false, error: "Packing size is not set." },
+        { status: 400 }
+      );
+    }
+    if (prod.stock == null || prod.stock < packs) {
+      return json(
+        { success: false, error: "Not enough whole stock to open." },
+        { status: 400 }
+      );
+    }
+
+    // keep two-decimal precision
+    const incrementBy = Math.round(packs * prod.packingSize * 100) / 100;
+
+    await db.product.update({
+      where: { id },
+      data: {
+        stock: { decrement: packs },
+        packingStock: { increment: incrementBy },
+      },
+    });
+
+    return json({
+      success: true,
+      action: "open-pack",
+      id,
+      packs,
+      added: incrementBy,
+    });
+  }
+
   if (actionType === "delete-location") {
     if (!locationIdToDelete) {
       return json(
@@ -1192,6 +1258,35 @@ export default function ProductsPage() {
     if (lastHandledRef.current === signature) return;
     lastHandledRef.current = signature;
 
+    if (action === "open-pack") {
+      const openedId = Number(submittedId);
+      const packs = Math.max(
+        1,
+        Math.floor(Number(submittedForm?.get("packs") || "1"))
+      );
+
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== openedId) return p;
+          const packSize = Number(p.packingSize ?? 0);
+          const add = Math.round(packs * packSize * 100) / 100;
+          return {
+            ...p,
+            stock: Math.max(0, (p.stock ?? 0) - packs),
+            packingStock: Number(((p.packingStock ?? 0) + add).toFixed(2)),
+          };
+        })
+      );
+
+      setSuccessMsg(`Unpacked ${packs} → retail stock`);
+      setShowAlert(true);
+      setTimeout(() => setShowAlert(false), 1500);
+
+      // optional safety refresh:
+      // setTimeout(() => revalidator.revalidate(), 200);
+      return;
+    }
+
     if (afData.success) {
       const msgMap: Record<string, string> = {
         created: "✅ Product successfully saved.",
@@ -1201,7 +1296,9 @@ export default function ProductsPage() {
         toggled: "Product status updated!",
         "delete-location": "📍 Location deleted successfully.",
         "delete-brand": "📍 Brand deleted successfully.",
+        "open-pack": "↘︎ Opened stock to retail.",
       };
+
       setSuccessMsg(msgMap[action] || "✅ Operation completed.");
       setErrorMsg("");
       setShowAlert(true);
