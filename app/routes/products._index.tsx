@@ -220,22 +220,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const toggleId = formData.get("toggleId");
   const newIsActive = formData.get("isActive");
 
-  if (toggleId && newIsActive !== null) {
-    await db.product.update({
-      where: { id: Number(toggleId) },
-      data: { isActive: newIsActive === "true" },
-    });
-
-    return json({ success: true, action: "toggled" });
-  }
-
-  // Delete flow
-  const deleteId = formData.get("deleteId")?.toString();
-  if (deleteId) {
-    await db.product.delete({ where: { id: Number(deleteId) } });
-    return json({ success: true, action: "deleted" });
-  }
-
   // Common fields
   const id = formData.get("id")?.toString();
   const name = formData.get("name")?.toString().trim() || "";
@@ -292,16 +276,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     generateSKU({ category: categoryNameFromDb, brand: brandName, name });
 
   // ** NEW **: parse multi-value fields
-  const indicationIds = (formData.getAll("indicationIds") as string[])
+  const indicationIdsRaw = (formData.getAll("indicationIds") as string[])
     .map(Number)
     .filter((n) => !isNaN(n));
 
-  const targetIds = (formData.getAll("targetIds") as string[])
+  const targetIdsRaw = (formData.getAll("targetIds") as string[])
     .map(Number)
     .filter((n) => !isNaN(n));
 
   const newIndications = formData.getAll("newIndications") as string[];
   const newTargets = formData.getAll("newTargets") as string[];
+
   const decimals = (packingStockRaw.split(".")[1] || "").length;
 
   //deletaion LOGIC
@@ -309,6 +294,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   //delete ----- location
   const locationIdToDelete = formData.get("locationId")?.toString();
+
+  if (actionType === "delete-product") {
+    const idStr =
+      formData.get("id")?.toString() ?? formData.get("deleteId")?.toString();
+
+    if (!idStr) {
+      return json(
+        { success: false, error: "Missing product id." },
+        { status: 400 }
+      );
+    }
+
+    await db.product.delete({ where: { id: Number(idStr) } });
+
+    return json({ success: true, action: "delete-product", id: Number(idStr) });
+  }
 
   if (actionType === "delete-location") {
     if (!locationIdToDelete) {
@@ -348,6 +349,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  if (toggleId && newIsActive !== null) {
+    await db.product.update({
+      where: { id: Number(toggleId) },
+      data: { isActive: newIsActive === "true" },
+    });
+
+    return json({ success: true, action: "toggled" });
+  }
   // deletete  ---- brand logic
 
   const brandIdToDelete = formData.get("brandId")?.toString();
@@ -631,6 +640,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  const indicationIds = Array.from(
+    new Set([...indicationIdsRaw, ...createdIndicationIds])
+  );
+  const targetIds = Array.from(new Set([...targetIdsRaw, ...createdTargetIds]));
+
   // Build the shared data object
   const commonData = {
     name,
@@ -797,6 +811,7 @@ export default function ProductsPage() {
   const [filterBrand, setFilterBrand] = useState("");
   const [filterTarget, setFilterTarget] = useState("");
   const [filterIndications, setFilterIndications] = useState<string[]>([]);
+  const [filterLocation, setFilterLocation] = useState("");
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
@@ -814,6 +829,25 @@ export default function ProductsPage() {
   // ---  ui / ux  ----
   const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
+
+  //refference
+  const userEditedPrice = useRef(false);
+  const userEditedRetailStock = useRef(false);
+  const userEditedSku = useRef(false);
+
+  const onPriceChange: React.ChangeEventHandler<
+    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  > = (e) => {
+    userEditedPrice.current = true;
+    handleInput(e);
+  };
+
+  const onRetailStockChange: React.ChangeEventHandler<
+    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  > = (e) => {
+    userEditedRetailStock.current = true;
+    handleInput(e);
+  };
 
   //-------Effects ----------------------------------------------------------
 
@@ -936,6 +970,7 @@ export default function ProductsPage() {
     filterBrand: "",
     filterTarget: "",
     filterIndications: [] as string[],
+    filterLocation: "",
   });
 
   //delete location
@@ -966,7 +1001,10 @@ export default function ProductsPage() {
       const okCat =
         !filterCategory || String(p.categoryId ?? "") === filterCategory;
       const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
-      return okCat && okBr;
+      const okLoc =
+        !filterLocation ||
+        String(p.location?.id ?? p.locationId ?? "") === filterLocation;
+      return okCat && okBr && okLoc;
     });
 
     // Build unique indication options from those products
@@ -987,7 +1025,7 @@ export default function ProductsPage() {
     setFilterIndications((prev) =>
       prev.filter((v) => opts.some((o) => o.value === v))
     );
-  }, [products, filterCategory, filterBrand]);
+  }, [products, filterCategory, filterBrand, filterLocation]);
 
   useEffect(() => {
     // 1) filter targets by selected Category + Brand
@@ -1045,6 +1083,7 @@ export default function ProductsPage() {
     const changed =
       prev.filterCategory !== filterCategory ||
       prev.filterBrand !== filterBrand ||
+      prev.filterLocation !== filterLocation ||
       prev.filterTarget !== filterTarget ||
       JSON.stringify(prev.filterIndications) !==
         JSON.stringify(filterIndications);
@@ -1054,11 +1093,18 @@ export default function ProductsPage() {
       prevFiltersRef.current = {
         filterCategory,
         filterBrand,
+        filterLocation,
         filterTarget,
         filterIndications,
       };
     }
-  }, [filterCategory, filterBrand, filterTarget, filterIndications]);
+  }, [
+    filterCategory,
+    filterBrand,
+    filterLocation,
+    filterTarget,
+    filterIndications,
+  ]);
 
   // when brands api returns fresh data:
   useEffect(() => {
@@ -1252,25 +1298,40 @@ export default function ProductsPage() {
     }
 
     if (data.action === "delete-location") {
-      const deletedId = String(submission?.formData.get("locationId"));
-      if (deletedId) {
-        setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId)); // ✅ instant UI
-      }
-      const rawLabel = getLabelFromValue(deletedId); // from your utility
+      const deletedId = String(submission?.formData.get("locationId") ?? "");
+      if (!deletedId) return;
+
+      const rawLabel = getLabelFromValue(deletedId);
       const label =
         typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
 
+      // 1) Remove the location from the options
       setLocalLocations((prev) =>
         prev.filter((l) => String(l.id) !== deletedId)
       );
 
+      // 2) If the table filter was using this location, clear it
+      if (filterLocation === deletedId) setFilterLocation("");
+
+      // 3) If the modal currently has this location selected, clear it
       if (formData.locationId === deletedId) {
         setFormData((prev) => ({ ...prev, locationId: "" }));
       }
 
-      if (customLocationName === deletedId) {
-        setCustomLocationName("");
-      }
+      // 4) (optional) make product rows consistent in UI
+      setProducts((prev) =>
+        prev.map((p) => {
+          const pLocId = String(p.location?.id ?? p.locationId ?? "");
+          if (pLocId !== deletedId) return p;
+
+          // keep shape but null-out the location fields
+          return {
+            ...p,
+            locationId: null, // not undefined
+            location: null, // not undefined
+          } as ProductWithDetails;
+        })
+      );
 
       setSuccessMsg(`Deleted "${label}" from the list.`);
       setShowAlert(true);
@@ -1305,6 +1366,7 @@ export default function ProductsPage() {
     setSuccessMsg,
     setShowAlert,
     getLabelFromValueBrand,
+    filterLocation,
   ]);
 
   // It guards the modal so when the user changes Category, any previously picked Brand that no longer belongs to that category is cleared. That prevents submitting an invalid pair.
@@ -1328,10 +1390,10 @@ export default function ProductsPage() {
     }
   }, [formData.categoryId, formData.brandId, brands, setFormData]);
 
-  const userEditedSku = useRef(false);
-
   function handleOpenModal() {
     formRef.current?.reset();
+    userEditedPrice.current = false;
+    userEditedRetailStock.current = false;
 
     setFormData({
       locationId: "", // default or preserved value, not full reset
@@ -1362,6 +1424,56 @@ export default function ProductsPage() {
       )
     );
   }, [initialProducts]);
+
+  //auto recompute price in retail
+  useEffect(() => {
+    if (formData.allowPackSale !== "true") return;
+
+    const srp = parseFloat(formData.srp ?? "");
+    const packSize = parseFloat(formData.packingSize ?? "");
+
+    const canPrice =
+      Number.isFinite(srp) && Number.isFinite(packSize) && packSize > 0;
+    const canStock = Number.isFinite(packSize) && packSize > 0;
+
+    setFormData((prev) => {
+      // work only from prev so we don't need price/packingStock in deps
+      let changed = false;
+      const next = { ...prev };
+
+      // Retail Price (auto)
+      if (!userEditedPrice.current) {
+        if (canPrice) {
+          const computed = (Math.round((srp / packSize) * 100) / 100).toFixed(
+            2
+          );
+          if ((prev.price ?? "") !== computed) {
+            next.price = computed;
+            changed = true;
+          }
+        } else if ((prev.price ?? "") !== "") {
+          next.price = "";
+          changed = true;
+        }
+      }
+
+      // Retail Stock (auto)
+      if (!userEditedRetailStock.current) {
+        if (canStock) {
+          const computedStock = String(packSize);
+          if ((prev.packingStock ?? "") !== computedStock) {
+            next.packingStock = computedStock;
+            changed = true;
+          }
+        } else if ((prev.packingStock ?? "") !== "") {
+          next.packingStock = "";
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [formData.allowPackSale, formData.srp, formData.packingSize]);
 
   //multiselectinput indication logic
   async function handleCustomIndication(
@@ -1448,6 +1560,9 @@ export default function ProductsPage() {
   ) {
     const { name, value } = e.target;
 
+    if (name === "price") userEditedPrice.current = true;
+    if (name === "packingStock") userEditedRetailStock.current = true;
+
     const cleaned = [
       "price",
       "srp",
@@ -1467,6 +1582,8 @@ export default function ProductsPage() {
       "packingStock",
       "minStock",
     ];
+
+    if (disallowNegative.includes(name) && parseFloat(cleaned) < 0) return;
     if (disallowNegative.includes(name) && parseFloat(cleaned) < 0) {
       return; // Skip setting negative value
     }
@@ -1579,6 +1696,9 @@ export default function ProductsPage() {
   const toBoolStr = (b?: boolean): BoolStr => (b ? "true" : "false");
 
   function handleEdit(p: ProductWithDetails) {
+    userEditedPrice.current = true;
+    userEditedRetailStock.current = true;
+
     const newFormData = {
       id: String(p.id ?? ""),
       name: p.name ?? "",
@@ -1678,6 +1798,10 @@ export default function ProductsPage() {
 
     const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
 
+    const productLocId = p.location?.id ?? p.locationId;
+    const okLoc =
+      !filterLocation || String(productLocId ?? "") === filterLocation;
+
     const okTg =
       !filterTarget ||
       (p.targets ?? []).some(
@@ -1690,7 +1814,7 @@ export default function ProductsPage() {
         (p.indications ?? []).some((i) => i.name === u)
       ); // ✅ updated
 
-    return okSearch && okCat && okBr && okTg && okUse;
+    return okSearch && okCat && okBr && okLoc && okTg && okUse;
   });
 
   const paginatedProducts = filteredProducts.slice(
@@ -1749,6 +1873,19 @@ export default function ProductsPage() {
             ]}
             onDeleteOption={handleDeleteBrand}
             deletableValues={brands.map((b) => b.id)} // optional
+          />
+
+          <DeletableSmartSelectInput
+            name="locationFilter"
+            label="Location"
+            value={filterLocation}
+            onChange={(val) => setFilterLocation(String(val))}
+            options={[
+              { label: "All Locations", value: "", style: { color: "#888" } },
+              ...locationOptions, // from your useMemo(localLocations)
+            ]}
+            onDeleteOption={handleDeleteLocation}
+            deletableValues={localLocations.map((l) => l.id)}
           />
         </div>
         {/* 🎯 Target Filter as Radio Pills */}
@@ -2220,7 +2357,7 @@ export default function ProductsPage() {
                         label="Retail Price"
                         placeholder="₱0.00"
                         value={formData.price || ""}
-                        onChange={handleInput}
+                        onChange={onPriceChange}
                         error={errors.price}
                       />
                       <TextInput
@@ -2229,7 +2366,7 @@ export default function ProductsPage() {
                         type="number"
                         placeholder="e.g. 4 (kilos)"
                         value={formData.packingStock || ""}
-                        onChange={handleInput}
+                        onChange={onRetailStockChange}
                         error={errors.packingStock}
                       />
                     </FormGroupRow>
@@ -2407,41 +2544,49 @@ export default function ProductsPage() {
                       onChange={setSelectedIndications}
                       onCustomInput={handleCustomIndication}
                     />
-                    {selectedIndications.length === 0 ? (
-                      <input type="hidden" name="indicationIds" value="" />
-                    ) : (
-                      selectedIndications.map((ind) => (
-                        <input
-                          key={ind.value}
-                          type="hidden"
-                          name="indicationIds"
-                          value={ind.value}
-                        />
-                      ))
-                    )}
+
+                    {/* Presence flag so the action knows this field was shown */}
+                    <input
+                      type="hidden"
+                      name="indicationIds_present"
+                      value="1"
+                    />
+
+                    {/* Only send real IDs (deduped) */}
+                    {Array.from(
+                      new Set(selectedIndications.map((ind) => ind.value))
+                    ).map((id) => (
+                      <input
+                        key={id}
+                        type="hidden"
+                        name="indicationIds"
+                        value={id}
+                      />
+                    ))}
                   </FormSection>
 
                   <FormSection title="Target Group">
                     <MultiSelectInput
                       name="target"
                       label="Target"
-                      options={modalTargetOptions}
+                      options={modalTargetOptions} // ✅ unchanged
                       selected={selectedTargets}
                       onChange={setSelectedTargets}
                       onCustomInput={handleCustomTarget}
                     />
-                    {selectedTargets.length === 0 ? (
-                      <input type="hidden" name="targetIds" value="" />
-                    ) : (
-                      selectedTargets.map((t) => (
-                        <input
-                          key={t.value}
-                          type="hidden"
-                          name="targetIds"
-                          value={t.value}
-                        />
-                      ))
-                    )}
+
+                    {/* tell the server this field was included */}
+                    <input type="hidden" name="targetIds_present" value="1" />
+
+                    {/* only send IDs if any are selected */}
+                    {selectedTargets.map((t) => (
+                      <input
+                        key={t.value}
+                        type="hidden"
+                        name="targetIds"
+                        value={t.value}
+                      />
+                    ))}
                   </FormSection>
 
                   <FormGroupRow>
