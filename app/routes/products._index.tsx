@@ -915,6 +915,8 @@ export default function ProductsPage() {
     handleInput(e);
   };
 
+  const round2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+
   //-------Effects ----------------------------------------------------------
 
   const [localLocations, setLocalLocations] = useState(locations);
@@ -1571,6 +1573,45 @@ export default function ProductsPage() {
       return changed ? next : prev;
     });
   }, [formData.allowPackSale, formData.srp, formData.packingSize]);
+
+  function recomputeRetailPrice() {
+    if (formData.allowPackSale !== "true") return;
+
+    const srp = parseFloat(formData.srp ?? "");
+    const packSize = parseFloat(formData.packingSize ?? "");
+
+    if (!Number.isFinite(srp) || srp <= 0) {
+      setErrors((prev) => ({
+        ...prev,
+        srp: "Enter a valid Whole Unit Price first.",
+      }));
+      return;
+    }
+    if (!Number.isFinite(packSize) || packSize <= 0) {
+      setErrors((prev) => ({
+        ...prev,
+        packingSize: "Enter a valid Packing Size first.",
+      }));
+      return;
+    }
+
+    const computed = round2(srp / packSize);
+
+    // mark as “user took control” so any auto-effect won’t overwrite it
+    if (typeof userEditedPrice?.current !== "undefined") {
+      userEditedPrice.current = true;
+    }
+
+    setErrors((prev) => ({ ...prev, price: "" }));
+    setFormData((prev) => ({ ...prev, price: computed }));
+  }
+
+  const canRecomputeRetailPrice =
+    formData.allowPackSale === "true" &&
+    Number.isFinite(parseFloat(formData.srp ?? "")) &&
+    parseFloat(formData.srp ?? "") > 0 &&
+    Number.isFinite(parseFloat(formData.packingSize ?? "")) &&
+    parseFloat(formData.packingSize ?? "") > 0;
 
   //multiselectinput indication logic
   async function handleCustomIndication(
@@ -2449,14 +2490,27 @@ export default function ProductsPage() {
                   {/* 🛒 Retail-specific Fields */}
                   {formData.allowPackSale === "true" && (
                     <FormGroupRow>
-                      <CurrencyInput
-                        name="price"
-                        label="Retail Price"
-                        placeholder="₱0.00"
-                        value={formData.price || ""}
-                        onChange={onPriceChange}
-                        error={errors.price}
-                      />
+                      <div className="w-full">
+                        <div className="grid items-center justify-between mb-2">
+                          <CurrencyInput
+                            name="price"
+                            label="Retail Price"
+                            placeholder="₱0.00"
+                            value={formData.price || ""}
+                            onChange={onPriceChange}
+                            error={errors.price}
+                          />
+                          <button
+                            type="button"
+                            onClick={recomputeRetailPrice}
+                            disabled={!canRecomputeRetailPrice}
+                            className="text-gray-700 text-xs border px-1 py-0.5 rounded disabled:opacity-50"
+                            title="Recompute = Whole Unit Price ÷ Packing Size"
+                          >
+                            ↻ Recompute Retail Price
+                          </button>
+                        </div>
+                      </div>
                       <TextInput
                         name="packingStock"
                         label="Retail Stock"
