@@ -1338,8 +1338,18 @@ export default function ProductsPage() {
         action === "updated" ||
         action === "toggled"
       ) {
+        if (!submittedForm) {
+          revalidator.revalidate();
+          // highlight if server gave us an id
+          if (afData.id) {
+            setHighlightId(Number(afData.id));
+            setTimeout(() => setHighlightId(null), 3000);
+          }
+          return;
+        }
         const f = submittedForm!;
         // prefer server id if provided
+
         const patchedId =
           Number(afData.id ?? f.get("id") ?? f.get("deleteId") ?? 0) || 0;
 
