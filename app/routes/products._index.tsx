@@ -96,6 +96,10 @@ const INITIAL_FORM: FormDataShape = Object.freeze({
   description: "",
 });
 
+type SortBy = "recent" | "name-asc" | "price-asc" | "price-desc" | "stock-asc";
+
+type StatusFilter = "all" | "active" | "inactive";
+
 export async function loader() {
   const [
     products,
@@ -136,8 +140,6 @@ export async function loader() {
       orderBy: { name: "asc" },
     }), // ✅ fetch locations
   ]);
-
-  console.log("[📦 Loaded products]:", products.length);
 
   // Flatten the join tables into simple name arrays
   const productsWithDetails = products.map((p) => ({
@@ -819,6 +821,8 @@ export default function ProductsPage() {
     useState<ProductWithDetails[]>(initialProducts);
   const [brands, setBrands] = useState<Brand[]>(initialBrands);
 
+  // state
+
   const [selectedIndications, setSelectedIndications] = useState<
     { label: string; value: string }[]
   >([]);
@@ -851,6 +855,7 @@ export default function ProductsPage() {
       | "delete-brand";
     id?: number; //
   }>();
+
   const listFetcher = useFetcher<{ products: ProductWithDetails[] }>();
   const brandsFetcher = useFetcher<{ brands: Brand[] }>();
 
@@ -886,6 +891,9 @@ export default function ProductsPage() {
   const filteredIndications = indications.filter(
     (ind) => !filterCategory || ind.categoryId === Number(filterCategory)
   );
+
+  const [sortBy, setSortBy] = useState<SortBy>("recent");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
 
   // — Messages & Errors —
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -1039,6 +1047,7 @@ export default function ProductsPage() {
     filterTarget: "",
     filterIndications: [] as string[],
     filterLocation: "",
+    filterStatus: "all" as StatusFilter,
   });
 
   //delete location
@@ -1125,13 +1134,12 @@ export default function ProductsPage() {
 
   // 🧠 When fetcher gets search result, update products and reset page only if search term changed
   useEffect(() => {
-    if (fetcher.data?.products) {
-      setProducts(fetcher.data.products);
-
-      if (searchTerm !== prevSearchTermRef.current) {
-        setCurrentPage(1);
-        prevSearchTermRef.current = searchTerm;
-      }
+    if (!fetcher.data?.products) return;
+    if (searchTerm.trim() === "") return; // guard
+    setProducts(fetcher.data.products);
+    if (searchTerm !== prevSearchTermRef.current) {
+      setCurrentPage(1);
+      prevSearchTermRef.current = searchTerm;
     }
   }, [fetcher.data, searchTerm]);
 
@@ -1164,6 +1172,7 @@ export default function ProductsPage() {
         filterLocation,
         filterTarget,
         filterIndications,
+        filterStatus,
       };
     }
   }, [
@@ -1172,6 +1181,7 @@ export default function ProductsPage() {
     filterLocation,
     filterTarget,
     filterIndications,
+    filterStatus,
   ]);
 
   // when brands api returns fresh data:
@@ -1323,7 +1333,57 @@ export default function ProductsPage() {
         // setTimeout(() => revalidator.revalidate(), 200);
         return;
       }
+      if (
+        action === "created" ||
+        action === "updated" ||
+        action === "toggled"
+      ) {
+        const f = submittedForm!;
+        // prefer server id if provided
+        const patchedId =
+          Number(afData.id ?? f.get("id") ?? f.get("deleteId") ?? 0) || 0;
 
+        // build a safe, partial patch from the submitted form
+        const patch = {
+          id: patchedId,
+          name: String(f.get("name") ?? ""),
+          price: f.get("price") != null ? Number(f.get("price")) : undefined,
+          srp: f.get("srp") != null ? Number(f.get("srp")) : undefined,
+          dealerPrice:
+            f.get("dealerPrice") != null
+              ? Number(f.get("dealerPrice"))
+              : undefined,
+          stock: f.get("stock") != null ? Number(f.get("stock")) : undefined,
+          packingStock:
+            f.get("packingStock") != null
+              ? Number(f.get("packingStock"))
+              : undefined,
+          packingSize:
+            f.get("packingSize") != null
+              ? Number(f.get("packingSize"))
+              : undefined,
+          allowPackSale: String(f.get("allowPackSale")) === "true",
+          isActive: String(f.get("isActive") ?? "true") === "true",
+          barcode: String(f.get("barcode") ?? ""),
+          sku: String(f.get("sku") ?? ""),
+          description: String(f.get("description") ?? ""),
+          // keep existing relations/labels (brand/category/unit/etc.) as-is
+        } as Partial<ProductWithDetails> & { id: number };
+
+        setProducts((prev) => {
+          if (!patch.id) return prev;
+          const idx = prev.findIndex((p) => p.id === patch.id);
+          if (idx === -1) {
+            revalidator.revalidate();
+            return prev;
+            // created: insert at top (recent first)
+          }
+
+          const next = prev.slice();
+          next[idx] = { ...prev[idx], ...patch };
+          return next;
+        });
+      }
       // For create/update/toggle, pull fresh list
       if (
         action === "created" ||
@@ -1377,13 +1437,15 @@ export default function ProductsPage() {
   }, [afData, submittedForm, revalidator, formData.id]);
 
   //hande location and brand delete logic
+
   useEffect(() => {
     const data = actionFetcher.data;
     if (!data || !data.success) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const submission = (actionFetcher as any).submission;
-    const form = submission?.formData;
+    const submission = (actionFetcher as any)?.submission;
+    const form: FormData | undefined =
+      submission?.formData ?? (actionFetcher as any)?.formData;
     const action =
       (data.action as string) ?? String(form?.get("_action") ?? "");
 
@@ -1397,7 +1459,7 @@ export default function ProductsPage() {
     }
 
     if (data.action === "delete-location") {
-      const deletedId = String(submission?.formData.get("locationId") ?? "");
+      const deletedId = String(form?.get("locationId") ?? ""); //
       if (!deletedId) return;
 
       const rawLabel = getLabelFromValue(deletedId);
@@ -1438,15 +1500,15 @@ export default function ProductsPage() {
     }
 
     if (data.action === "delete-brand") {
-      const deletedId = String(submission?.formData.get("brandId"));
+      const deletedBrandId = String(form?.get("brandId") ?? "");
 
-      const rawLabel = getLabelFromValueBrand(deletedId); // ✅ Reuse this
+      const rawLabel = getLabelFromValueBrand(deletedBrandId); // ✅ Reuse this
       const label =
-        typeof rawLabel === "string" ? rawLabel : `Brand #${deletedId}`;
+        typeof rawLabel === "string" ? rawLabel : `Brand #${deletedBrandId}`;
 
-      setBrands((prev) => prev.filter((b) => String(b.id) !== deletedId));
+      setBrands((prev) => prev.filter((b) => String(b.id) !== deletedBrandId));
 
-      if (formData.brandId === deletedId) {
+      if (formData.brandId === deletedBrandId) {
         setFormData((prev) => ({ ...prev, brandId: "" }));
       }
 
@@ -1515,14 +1577,15 @@ export default function ProductsPage() {
 
   //ito yung force na magload as initial yung product data natin
   useEffect(() => {
-    // keep any sort you want here
     setProducts(
       [...initialProducts].sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
     );
-  }, [initialProducts]);
+    // run once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   //auto recompute price in retail
   useEffect(() => {
@@ -1876,10 +1939,7 @@ export default function ProductsPage() {
       isActive: toBoolStr(p.isActive),
       allowPackSale: toBoolStr(p.allowPackSale),
     };
-    console.log("🧪 Editing product:", {
-      locationId: p.locationId,
-      location: p.location,
-    });
+
     setFormData(newFormData);
 
     // ✅ Set indication and target multiselect
@@ -1922,6 +1982,22 @@ export default function ProductsPage() {
     }
   }, [successMsg, errorMsg]);
 
+  const priceForSort = (p: ProductWithDetails) => {
+    const srp = Number(p.srp ?? 0);
+    const retail = Number(p.price ?? 0);
+    return srp > 0 ? srp : retail > 0 ? retail : Number.POSITIVE_INFINITY;
+  };
+
+  const totalRetailAvailability = (p: ProductWithDetails) => {
+    const stock = Number(p.stock ?? 0);
+    const packSize = Number(p.packingSize ?? 0);
+    const retailStock = Number(p.packingStock ?? 0);
+    if (p.allowPackSale && packSize > 0) {
+      return stock * packSize + retailStock;
+    }
+    return stock; // fallback
+  };
+
   const filteredProducts = products.filter((p) => {
     const s = searchTerm.trim().toLowerCase();
 
@@ -1952,83 +2028,248 @@ export default function ProductsPage() {
         (p.indications ?? []).some((i) => i.name === u)
       ); // ✅ updated
 
-    return okSearch && okCat && okBr && okLoc && okTg && okUse;
+    const okStatus =
+      filterStatus === "all" ||
+      (filterStatus === "active" && p.isActive) ||
+      (filterStatus === "inactive" && !p.isActive);
+
+    return okSearch && okCat && okBr && okLoc && okTg && okUse && okStatus;
   });
 
-  const paginatedProducts = filteredProducts.slice(
+  const sortedProducts = useMemo(() => {
+    const arr = [...filteredProducts];
+    switch (sortBy) {
+      case "price-asc":
+        arr.sort((a, b) => priceForSort(a) - priceForSort(b));
+        break;
+      case "price-desc":
+        arr.sort((a, b) => priceForSort(b) - priceForSort(a));
+        break;
+      case "name-asc":
+        arr.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "stock-asc": // lowest stock first
+        arr.sort((a, b) => {
+          const av = totalRetailAvailability(a) - totalRetailAvailability(b);
+          if (av !== 0) return av;
+          return a.name.localeCompare(b.name);
+        });
+        break;
+      case "recent":
+      default:
+        arr.sort(
+          (a, b) =>
+            new Date(b.createdAt as any).getTime() -
+            new Date(a.createdAt as any).getTime()
+        );
+        break;
+    }
+    return arr;
+  }, [filteredProducts, sortBy]);
+
+  const paginatedProducts = sortedProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
   return (
-    <main className="min-h-screen bg-slate-900 text-white px-4 py-8">
+    <main className="min-h-screen bg-slate-900 text-white px-3 sm:px-4 py-6 sm:py-8">
       {/* title + Add button */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-4">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-between items-start sm:items-center">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
           🛒 Zaldy Merchandise <span className="text-sm"> Product List</span>
         </h1>
         <button
+          type="button"
           onClick={handleOpenModal}
-          className="flex round items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 px-3 sm:px-4 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 transition
+             hover:from-blue-500 hover:to-blue-600 hover:shadow-md active:translate-y-px
+             focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          aria-label="Add Product"
         >
-          ➕ Add Product
+          <svg
+            className="h-5 w-5 -ml-0.5 sm:ml-0 transition-transform group-hover:scale-110"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 5v14M5 12h14"
+            />
+          </svg>
+          <span className="font-medium">Add Product</span>
         </button>
       </div>
+
       {/* Filter panel */}
-      <div className="mt-6 rounded-2xl bg-white p-6 shadow-lg space-y-5">
-        {/* 🔍 Search + Filters: in one neat row on larger screens */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <TextInput
-            label="Search Bar"
-            placeholder="🔍 Search product name, description, brand..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full md:col-span-2 border border-gray-300 shadow-sm"
-          />
+      <div className="mt-4 sm:mt-6 rounded-2xl bg-white p-4 sm:p-6 shadow-lg space-y-4 sm:space-y-5">
+        {/* Row 1: Search (wide) + Sort (right) */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-end">
+          <div className="md:col-span-8">
+            <TextInput
+              label="Search"
+              placeholder="🔍 Search product name, description, brand..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full border border-gray-300 shadow-sm"
+            />
+          </div>
 
-          <SelectInput
-            label="Category"
-            name="category"
-            value={filterCategory}
-            onChange={(val) => {
-              setFilterCategory(String(val));
-              setFilterBrand("");
-            }}
-            options={[
-              { label: "All Categories", value: "", style: { color: "#888" } },
-              ...categories.map((c) => ({ label: c.name, value: c.id })),
-            ]}
-          />
-
-          <DeletableSmartSelectInput
-            name="brandId"
-            label="Brand"
-            value={filterBrand}
-            onChange={(val) => setFilterBrand(String(val))}
-            options={[
-              { label: "All Brands", value: "", style: { color: "#888" } }, // ✅ your styled item stays
-              ...brandOptionsForFilter, // ✅ memoized list
-            ]}
-            onDeleteOption={handleDeleteBrand}
-            deletableValues={brands.map((b) => b.id)} // optional
-          />
-
-          <DeletableSmartSelectInput
-            name="locationFilter"
-            label="Location"
-            value={filterLocation}
-            onChange={(val) => setFilterLocation(String(val))}
-            options={[
-              { label: "All Locations", value: "", style: { color: "#888" } },
-              ...locationOptions, // from your useMemo(localLocations)
-            ]}
-            onDeleteOption={handleDeleteLocation}
-            deletableValues={localLocations.map((l) => l.id)}
-          />
+          <div className="md:col-span-4">
+            <SelectInput
+              label="Sort"
+              name="sortBy"
+              value={sortBy}
+              onChange={(v) => setSortBy(v as SortBy)}
+              options={[
+                { label: "Recent", value: "recent" },
+                { label: "A → Z", value: "name-asc" },
+                { label: "Price: Low → High", value: "price-asc" },
+                { label: "Price: High → Low", value: "price-desc" },
+                { label: "Stock: Lowest First", value: "stock-asc" },
+              ]}
+            />
+          </div>
         </div>
-        {/* 🎯 Target Filter as Radio Pills */}
+
+        {/* Divider */}
+        <div className="h-px bg-gray-200" />
+
+        {/* Row 2: Category / Brand / Location / Status */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-start">
+          <div className="md:col-span-3">
+            <SelectInput
+              label="Category"
+              name="category"
+              value={filterCategory}
+              onChange={(val) => {
+                setFilterCategory(String(val));
+                setFilterBrand("");
+              }}
+              options={[
+                {
+                  label: "All Categories",
+                  value: "",
+                  style: { color: "#888" },
+                },
+                ...categories.map((c) => ({ label: c.name, value: c.id })),
+              ]}
+            />
+          </div>
+
+          <div className="md:col-span-3">
+            <DeletableSmartSelectInput
+              name="brandId"
+              label="Brand"
+              value={filterBrand}
+              onChange={(val) => setFilterBrand(String(val))}
+              options={[
+                { label: "All Brands", value: "", style: { color: "#888" } },
+                ...brandOptionsForFilter,
+              ]}
+              onDeleteOption={handleDeleteBrand}
+              deletableValues={brands.map((b) => b.id)}
+            />
+          </div>
+
+          <div className="md:col-span-3">
+            <DeletableSmartSelectInput
+              name="locationFilter"
+              label="Location"
+              value={filterLocation}
+              onChange={(val) => setFilterLocation(String(val))}
+              options={[
+                { label: "All Locations", value: "", style: { color: "#888" } },
+                ...locationOptions,
+              ]}
+              onDeleteOption={handleDeleteLocation}
+              deletableValues={localLocations.map((l) => l.id)}
+            />
+          </div>
+
+          <fieldset className="md:col-span-3">
+            <legend className="text-sm font-medium text-gray-700 mb-2">
+              Status
+            </legend>
+
+            <div className="inline-flex flex-wrap gap-2">
+              {[
+                { label: "All", value: "all" as const, dot: "bg-blue-500" },
+                {
+                  label: "Active",
+                  value: "active" as const,
+                  dot: "bg-green-500",
+                },
+                {
+                  label: "Inactive",
+                  value: "inactive" as const,
+                  dot: "bg-red-500",
+                },
+              ].map((opt) => {
+                const selected = filterStatus === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={[
+                      "relative cursor-pointer select-none",
+                      "px-3 py-2 rounded-lg border text-sm",
+                      "flex items-center gap-2 transition",
+                      "hover:border-gray-300 active:scale-[0.98] focus-within:ring-2 focus-within:ring-offset-1",
+                      selected
+                        ? "bg-white shadow-sm ring-2 ring-offset-1 border-transparent " +
+                          (opt.value === "active"
+                            ? "ring-green-500"
+                            : opt.value === "inactive"
+                            ? "ring-red-500"
+                            : "ring-blue-500")
+                        : "bg-gray-50 border-gray-200 text-gray-700",
+                    ].join(" ")}
+                  >
+                    <input
+                      type="radio"
+                      name="status"
+                      value={opt.value}
+                      className="sr-only peer"
+                      checked={selected}
+                      onChange={() => setFilterStatus(opt.value)}
+                    />
+                    <span
+                      className={[
+                        "h-2.5 w-2.5 rounded-full",
+                        selected ? opt.dot : "bg-gray-300",
+                      ].join(" ")}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className={
+                        selected
+                          ? "font-semibold " +
+                            (opt.value === "active"
+                              ? "text-green-700"
+                              : opt.value === "inactive"
+                              ? "text-red-700"
+                              : "text-blue-700")
+                          : "text-gray-700"
+                      }
+                    >
+                      {opt.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        </div>
+
+        {/* Divider */}
+        <div className="h-px bg-gray-200" />
+
+        {/* 🎯 Target Filter (collapsible) */}
         <details className="group">
-          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 mb-2">
+          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700">
             <span>
               🎯 Target Filter{" "}
               <button
@@ -2039,13 +2280,12 @@ export default function ProductsPage() {
                 ⚙️ Manage
               </button>
             </span>
-
             <span className="text-gray-500 group-open:rotate-180 transition-transform duration-200">
               ▼
             </span>
           </summary>
 
-          <div className="flex flex-wrap gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-3">
             {[{ label: "All", value: "" }, ...targetOptions].map((option) => (
               <label
                 key={option.value}
@@ -2069,6 +2309,7 @@ export default function ProductsPage() {
             ))}
           </div>
         </details>
+
         {showManageTarget && (
           <ManageOptionModal
             title="Manage Targets"
@@ -2078,9 +2319,12 @@ export default function ProductsPage() {
           />
         )}
 
-        {/* 🏷️ Indication Tags: limited height with scroll */}
+        {/* Divider */}
+        <div className="h-px bg-gray-200" />
+
+        {/* 🏷️ Indication Filters (collapsible) */}
         <details className="group">
-          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 mb-2">
+          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700">
             <span>
               🏷️ Indication Filters{" "}
               <button
@@ -2097,7 +2341,7 @@ export default function ProductsPage() {
             </span>
           </summary>
 
-          <div className="flex flex-wrap gap-2 max-h-[150px] overflow-y-auto pr-1 pb-2 mt-2">
+          <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto pr-1 pb-2 mt-3 -mr-1">
             {filteredIndications.map((ind) => (
               <TagCheckbox
                 key={ind.id}
@@ -2131,36 +2375,43 @@ export default function ProductsPage() {
               No products available.
             </div>
           ) : (
-            <ProductTable
-              products={paginatedProducts}
-              onEdit={handleEdit}
-              onDelete={(id) => {
-                const form = new FormData();
-                form.append("_action", "delete-product");
-                form.append("id", String(id));
-                form.append("deleteId", String(id));
-                actionFetcher.submit(form, { method: "post" });
-              }}
-              highlightId={highlightId}
-              actionFetcher={actionFetcher}
-            />
+            <div className="overflow-x-auto -mx-3 sm:mx-0">
+              <div className="min-w-[340px] sm:min-w-[720px]">
+                <ProductTable
+                  products={paginatedProducts}
+                  onEdit={handleEdit}
+                  onDelete={(id) => {
+                    const form = new FormData();
+                    form.append("_action", "delete-product");
+                    form.append("id", String(id));
+                    form.append("deleteId", String(id));
+                    actionFetcher.submit(form, { method: "post" });
+                  }}
+                  highlightId={highlightId}
+                  actionFetcher={actionFetcher}
+                />
+              </div>
+            </div>
           )}
 
-          <Pagination
-            currentPage={currentPage}
-            totalItems={filteredProducts.length}
-            itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage}
-          />
+          <div className="mt-3 sm:mt-4">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedProducts.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </div>
       </div>
+
       {/* Modal: Step 1 / 2 / 3 */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-800 bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg relative flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-slate-800/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl p-4 sm:p-6 shadow-lg relative flex flex-col sm:max-w-lg">
             <button
               onClick={() => setShowModal(false)}
-              className="absolute top-2 right-3 text-xl text-gray-600"
+              className="absolute top-3 right-3 text-2xl sm:text-xl text-gray-600"
             >
               ×
             </button>
@@ -2168,7 +2419,7 @@ export default function ProductsPage() {
             <actionFetcher.Form
               method="post"
               ref={formRef}
-              className="space-y-4 overflow-y-auto flex-1 pr-2 min-h-[500px]"
+              className="space-y-4 overflow-y-auto flex-1 pr-1 sm:pr-2 min-h-[500px]"
               onSubmit={(e) => {
                 if (!confirm("Save this product?")) {
                   e.preventDefault();
@@ -2190,7 +2441,9 @@ export default function ProductsPage() {
                     ? "Step 2: Stock & Pricing"
                     : "Step 3: Description & Tags"}
                 </h2>
-                <span className="text-sm text-gray-500">Step {step} of 3</span>
+                <span className="text-xs sm:text-sm text-gray-500">
+                  Step {step} of 3
+                </span>
               </div>
 
               {/* STEP 1: BASIC INFO */}
@@ -2199,6 +2452,7 @@ export default function ProductsPage() {
                   title="Step 1: Basic Info"
                   description="Enter the basic product information."
                   bordered
+                  className="space-y-3 sm:space-y-4"
                 >
                   {errorMsg && (
                     <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
