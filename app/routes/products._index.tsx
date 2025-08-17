@@ -3237,44 +3237,52 @@ export default function ProductsPage() {
                     ))}
                   </FormSection>
                   <FormGroupRow>
-                    <TextInput
-                      name="imageTag"
-                      label="Image Tag"
-                      placeholder="e.g. vitamins_icon"
-                      value={formData.imageTag || ""}
-                      onChange={handleInput}
-                    />
-                    <label
-                      htmlFor="imageFile"
-                      className="block text-sm font-medium text-gray-700"
-                    >
-                      Upload Image
-                    </label>
-                    {previewUrl || formData.imageUrl ? (
-                      <img
-                        src={previewUrl || formData.imageUrl!}
-                        alt="Preview"
-                        className="mt-2 h-24 w-24 rounded object-cover border"
+                    <div className="w-full">
+                      <label
+                        htmlFor="imageFile"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        Upload Image
+                      </label>
+
+                      {/* Preview on top */}
+                      <div className="mt-2">
+                        {previewUrl || formData.imageUrl ? (
+                          <img
+                            src={previewUrl || formData.imageUrl!}
+                            alt="Preview"
+                            className="h-24 w-24 rounded object-cover border"
+                          />
+                        ) : (
+                          <div className="h-24 w-24 rounded border border-dashed grid place-items-center text-xs text-gray-400">
+                            No image
+                          </div>
+                        )}
+                      </div>
+
+                      {/* File chooser below */}
+                      <input
+                        key={fileInputKey}
+                        id="imageFile"
+                        type="file"
+                        name="imageFile"
+                        accept="image/*"
+                        capture="environment"
+                        className="mt-3 block w-full text-sm"
+                        aria-describedby="imageHelp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (previewUrl) URL.revokeObjectURL(previewUrl);
+                          setPreviewUrl(
+                            file ? URL.createObjectURL(file) : null
+                          );
+                        }}
                       />
-                    ) : null}
-                    <input
-                      key={fileInputKey}
-                      id="imageFile"
-                      type="file"
-                      name="imageFile"
-                      accept="image/*"
-                      capture="environment"
-                      className="mt-1 block w-full text-sm"
-                      aria-describedby="imageHelp"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (previewUrl) URL.revokeObjectURL(previewUrl);
-                        setPreviewUrl(file ? URL.createObjectURL(file) : null);
-                      }}
-                    />
-                    <p id="imageHelp" className="text-xs text-gray-500 mt-1">
-                      PNG/JPG/WEBP. Large photos are auto-optimized on upload.
-                    </p>
+
+                      <p id="imageHelp" className="text-xs text-gray-500 mt-1">
+                        PNG/JPG/WEBP. Large photos are auto-optimized on upload.
+                      </p>
+                    </div>
                   </FormGroupRow>
 
                   <div className="flex justify-between mt-4">
