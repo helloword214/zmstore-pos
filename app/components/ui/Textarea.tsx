@@ -16,7 +16,7 @@ export function Textarea({ label, error, className, ...props }: Props) {
       )}
       <textarea
         className={clsx(
-          "w-full p-2 border rounded shadow-sm transition resize-none",
+          "w-full p-2 border rounded shadow-sm transition resize-none text-gray-500",
           error
             ? "border-red-500 bg-red-50"
             : "border-gray-300 focus:border-blue-500",

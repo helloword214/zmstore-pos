@@ -265,11 +265,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const minStock = formData.get("minStock")
     ? parseFloat(formData.get("minStock")!.toString())
     : undefined;
-  const locationIdRaw = formData.get("locationId")?.toString().trim();
-  const isCustom = locationIdRaw === "__custom__";
-  const customLocationName = isCustom
-    ? formData.get("customLocationName")?.toString().trim()
-    : undefined;
+  const locRaw = (formData.get("locationId") ?? "").toString().trim();
+  const customLocationName = (formData.get("customLocationName") ?? "")
+    .toString()
+    .trim();
   const isActive = formData.get("isActive")?.toString() !== "false"; // default true
   const allowPackSale = formData.get("allowPackSale") === "true";
   const sku = formData.get("sku")?.toString().trim() || "";
@@ -658,24 +657,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
     resolvedBrandId = nb.id;
   }
-
-  let resolvedLocationId: number | undefined = locationIdRaw
-    ? parseInt(locationIdRaw)
-    : undefined;
-
-  if (customLocationName && !resolvedLocationId) {
-    const existingLocation = await db.location.findFirst({
+  let resolvedLocationId: number | null = null;
+  const isNumericId = /^\d+$/.test(locRaw);
+  if (customLocationName && (locRaw === "__custom__" || !isNumericId)) {
+    // create-or-get by name (case-insensitive)
+    const existing = await db.location.findFirst({
       where: { name: { equals: customLocationName, mode: "insensitive" } },
     });
-
-    if (existingLocation) {
-      resolvedLocationId = existingLocation.id;
-    } else {
-      const newLocation = await db.location.create({
-        data: { name: customLocationName },
-      });
-      resolvedLocationId = newLocation.id;
-    }
+    const loc =
+      existing ??
+      (await db.location.create({ data: { name: customLocationName } }));
+    resolvedLocationId = loc.id;
+  } else if (isNumericId) {
+    resolvedLocationId = Number(locRaw);
+  } else {
+    resolvedLocationId = null;
   }
 
   const createdIndicationIds: number[] = [];
@@ -732,10 +728,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     minStock,
     isActive,
     allowPackSale,
-    location: resolvedLocationId
-      ? { connect: { id: resolvedLocationId } }
-      : undefined,
-
+    location:
+      resolvedLocationId != null
+        ? { connect: { id: resolvedLocationId } }
+        : undefined,
     unit: unitId ? { connect: { id: unitId } } : undefined,
     category: categoryId ? { connect: { id: categoryId } } : undefined,
     packingUnit: packingUnitId ? { connect: { id: packingUnitId } } : undefined,
@@ -745,23 +741,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     if (id) {
       // ─ UPDATE ─ clear old joins, then recreate from the IDs
+
+      const indIds = [
+        ...new Set(
+          [...(indicationIds ?? []), ...(createdIndicationIds ?? [])].map(
+            Number
+          )
+        ),
+      ];
+      const tgtIds = [
+        ...new Set(
+          [...(targetIds ?? []), ...(createdTargetIds ?? [])].map(Number)
+        ),
+      ];
+
       await db.product.update({
         where: { id: Number(id) },
         data: {
           ...commonData,
           productIndications: {
-            deleteMany: {},
-            create: [...indicationIds, ...createdIndicationIds].map(
-              (indId) => ({
-                indication: { connect: { id: indId } },
-              })
-            ),
+            deleteMany: {}, // scoped to this product
+            create: indIds.map((indId) => ({
+              indication: { connect: { id: indId } },
+            })),
           },
           productTargets: {
             deleteMany: {},
-            create: [...targetIds, ...createdTargetIds].map((tId) => ({
-              target: { connect: { id: tId } },
-            })),
+            create: tgtIds.map((tId) => ({ target: { connect: { id: tId } } })),
           },
         },
       });
@@ -1350,34 +1356,48 @@ export default function ProductsPage() {
         const f = submittedForm!;
         // prefer server id if provided
 
+        const asNumber = (v: FormDataEntryValue | null) => {
+          if (v == null) return undefined;
+          const s = String(v).trim();
+          if (s === "") return undefined;
+          const n = Number(s);
+          return Number.isFinite(n) ? n : undefined;
+        };
+
+        const asBoolIfPresent = (name: string): boolean | undefined => {
+          if (!f.has(name)) return undefined;
+          return String(f.get(name)) === "true";
+        };
+
+        const asStringIfPresent = (name: string): string | undefined => {
+          if (!f.has(name)) return undefined;
+          return String(f.get(name) ?? "");
+        };
+
         const patchedId =
           Number(afData.id ?? f.get("id") ?? f.get("deleteId") ?? 0) || 0;
 
         // build a safe, partial patch from the submitted form
         const patch = {
           id: patchedId,
-          name: String(f.get("name") ?? ""),
-          price: f.get("price") != null ? Number(f.get("price")) : undefined,
-          srp: f.get("srp") != null ? Number(f.get("srp")) : undefined,
-          dealerPrice:
-            f.get("dealerPrice") != null
-              ? Number(f.get("dealerPrice"))
-              : undefined,
-          stock: f.get("stock") != null ? Number(f.get("stock")) : undefined,
-          packingStock:
-            f.get("packingStock") != null
-              ? Number(f.get("packingStock"))
-              : undefined,
-          packingSize:
-            f.get("packingSize") != null
-              ? Number(f.get("packingSize"))
-              : undefined,
-          allowPackSale: String(f.get("allowPackSale")) === "true",
-          isActive: String(f.get("isActive") ?? "true") === "true",
-          barcode: String(f.get("barcode") ?? ""),
-          sku: String(f.get("sku") ?? ""),
-          description: String(f.get("description") ?? ""),
-          // keep existing relations/labels (brand/category/unit/etc.) as-is
+          // text fields guarded so we don't blank them on actions that didn't submit them
+          name: asStringIfPresent("name"),
+          barcode: asStringIfPresent("barcode"),
+          sku: asStringIfPresent("sku"),
+          description: asStringIfPresent("description"),
+
+          // numbers (undefined if missing/blank)
+          price: asNumber(f.get("price")),
+          srp: asNumber(f.get("srp")),
+          dealerPrice: asNumber(f.get("dealerPrice")),
+          stock: asNumber(f.get("stock")),
+          packingStock: asNumber(f.get("packingStock")),
+          packingSize: asNumber(f.get("packingSize")),
+          minStock: asNumber(f.get("minStock")),
+
+          // booleans only if present
+          allowPackSale: asBoolIfPresent("allowPackSale"),
+          isActive: asBoolIfPresent("isActive"),
         } as Partial<ProductWithDetails> & { id: number };
 
         setProducts((prev) => {
@@ -1506,6 +1526,8 @@ export default function ProductsPage() {
 
       setSuccessMsg(`Deleted "${label}" from the list.`);
       setShowAlert(true);
+      // auto-dismiss toast for delete-location
+      setTimeout(() => setShowAlert(false), 1500);
       return;
     }
 
@@ -1524,6 +1546,8 @@ export default function ProductsPage() {
 
       setSuccessMsg(`Deleted "${label}" from the brand list.`);
       setShowAlert(true);
+      // auto-dismiss toast for delete-brand
+      setTimeout(() => setShowAlert(false), 1500);
     }
   }, [
     actionFetcher.data,
@@ -1585,7 +1609,7 @@ export default function ProductsPage() {
     setShowModal(true);
   }
 
-  //ito yung force na magload as initial yung product data natin
+  // keep local table in sync whenever the loader revalidates
   useEffect(() => {
     setProducts(
       [...initialProducts].sort(
@@ -1593,9 +1617,7 @@ export default function ProductsPage() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
     );
-    // run once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialProducts]);
 
   //auto recompute price in retail
   useEffect(() => {
