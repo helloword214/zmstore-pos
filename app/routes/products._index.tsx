@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, type ActionFunctionArgs } from "@remix-run/node";
+import { storage } from "~/utils/storage.server";
 import { useLoaderData, useFetcher, useRevalidator } from "@remix-run/react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { LoaderData, ProductWithDetails, Brand } from "~/types";
@@ -22,6 +23,7 @@ import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
+
 // === END Imports ===
 
 // Define a LoaderData interface somewhere in this file (or import it)
@@ -214,6 +216,7 @@ export async function loader() {
     indications,
     targets: targetsForFilter,
     locations,
+    maxImageMB: Number(process.env.MAX_IMAGE_MB ?? 5),
   });
 }
 
@@ -259,7 +262,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const expiration = formData.get("expirationDate")?.toString();
   const replenishAt = formData.get("replenishAt")?.toString();
   const imageTag = formData.get("imageTag")?.toString().trim();
-  const imageUrl = formData.get("imageUrl")?.toString().trim();
+  const imageUrlInput = formData.get("imageUrl")?.toString().trim();
+  const imageFile = formData.get("imageFile") as File | null;
   const description = formData.get("description")?.toString();
   const barcode = formData.get("barcode")?.toString() || undefined;
   const minStock = formData.get("minStock")
@@ -271,6 +275,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .trim();
   const isActive = formData.get("isActive")?.toString() !== "false"; // default true
   const allowPackSale = formData.get("allowPackSale") === "true";
+
+  // if updating, load existing imageUrl so we can clean up on replace
+  const existingProduct = id
+    ? await db.product.findUnique({
+        where: { id: Number(id) },
+        select: { imageUrl: true, imageKey: true },
+      })
+    : null;
+
+  let finalImageUrl: string | undefined = imageUrlInput || undefined;
+  let finalImageKey: string | undefined;
+
+  //for image size checking helper
+  const parseMb = (v: string | undefined, fallback: number) => {
+    const n = Number.parseFloat(v ?? "");
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+
   const sku = formData.get("sku")?.toString().trim() || "";
   const finalSku =
     sku ||
@@ -310,6 +332,70 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await db.product.delete({ where: { id: Number(idStr) } });
 
     return json({ success: true, action: "delete-product", id: Number(idStr) });
+  }
+
+  if (imageFile && imageFile.size > 0) {
+    // accept any image/* and process on server
+
+    const { default: sharp } = await import("sharp"); // server-only import
+
+    if (!String(imageFile.type || "").startsWith("image/")) {
+      return json(
+        { success: false, error: "File must be an image." },
+        { status: 400 }
+      );
+    }
+
+    const MAX_MB = parseMb(process.env.MAX_UPLOAD_MB, 20);
+    const maxBytes = Math.max(1, Math.floor(MAX_MB * 1024 * 1024));
+
+    const fileSize = Number(imageFile.size) || 0;
+    console.log(
+      "[upload] name=%s type=%s size=%dB limit=%dB (%dMB)",
+      (imageFile as any).name,
+      imageFile.type,
+      fileSize,
+      maxBytes,
+      MAX_MB
+    );
+
+    if (fileSize > maxBytes) {
+      return json(
+        {
+          success: false,
+          error: `Image too large (>${MAX_MB}MB). Received ${fileSize} bytes.`,
+        },
+        { status: 400 }
+      );
+    }
+    try {
+      const input = Buffer.from(await imageFile.arrayBuffer());
+      const webp = await sharp(input)
+        .rotate()
+        .resize({
+          width: 1920,
+          height: 1920,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 82 })
+        .toBuffer();
+      const saved = await storage.saveBuffer(webp, {
+        ext: "webp",
+        contentType: "image/webp",
+      });
+      finalImageUrl = saved.url;
+      finalImageKey = saved.key;
+      console.log(
+        `[upload] saved ${saved.key} (${saved.size}B) → ${saved.url}`
+      );
+    } catch (e) {
+      console.error("[image] processing failed:", e);
+      return json(
+        { success: false, error: "Failed to process image." },
+        { status: 400 }
+      );
+    }
   }
 
   if (actionType === "open-pack") {
@@ -723,7 +809,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     expirationDate: expiration ? new Date(expiration) : undefined,
     replenishAt: replenishAt ? new Date(replenishAt) : undefined,
     imageTag,
-    imageUrl,
+    imageUrl: finalImageUrl,
+    imageKey: finalImageKey,
     description,
     minStock,
     isActive,
@@ -771,7 +858,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         },
       });
-      return json({ success: true, action: "updated" });
+
+      // 🧹 If image was replaced, delete old local file (post-update for safety)
+      if (
+        finalImageUrl &&
+        existingProduct?.imageUrl &&
+        existingProduct.imageUrl !== finalImageUrl
+      ) {
+        const oldKey =
+          existingProduct.imageKey ??
+          (existingProduct.imageUrl.startsWith("/uploads/")
+            ? existingProduct.imageUrl.slice("/uploads/".length)
+            : undefined);
+        if (oldKey) {
+          try {
+            await storage.delete(oldKey);
+          } catch (e) {
+            console.warn("delete old image failed", e);
+          }
+        }
+      }
+      return json({
+        success: true,
+        action: "updated",
+        id: Number(id),
+        imageUrl: finalImageUrl,
+      });
     } else {
       // ─ CREATE ─ just create with connections, no deleteMany
 
@@ -793,7 +905,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      return json({ success: true, action: "created", id: createdProduct.id });
+      return json({
+        success: true,
+        action: "created",
+        id: createdProduct.id,
+        imageUrl: finalImageUrl,
+      });
     }
   } catch (err: any) {
     console.error("[❌ Product action error]:", err);
@@ -847,6 +964,9 @@ export default function ProductsPage() {
 
   const [customLocationName, setCustomLocationName] = useState("");
 
+  const [formKey, setFormKey] = useState(0);
+  const [fileInputKey, setFileInputKey] = useState(0);
+
   // -fetcher for reloading after create/update/delete-
   const actionFetcher = useFetcher<{
     success?: boolean;
@@ -881,6 +1001,8 @@ export default function ProductsPage() {
   const [showManageTarget, setShowManageTarget] = useState(false);
 
   const [showAlert, setShowAlert] = useState(false);
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // — Filters & Paging —
   const [searchTerm, setSearchTerm] = useState("");
@@ -935,6 +1057,13 @@ export default function ProductsPage() {
 
   const [localLocations, setLocalLocations] = useState(locations);
   useEffect(() => setLocalLocations(locations), [locations]);
+
+  //prevent memory leak on image Add preview state + cleanup:
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   useEffect(() => {
     setBrands(initialBrands);
@@ -1194,6 +1323,14 @@ export default function ProductsPage() {
     filterStatus,
   ]);
 
+  // Clear when modal closes (any close path)
+  function handleCloseModal() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setFileInputKey((k) => k + 1); // reset <input type="file">
+    setShowModal(false);
+  }
+
   // when brands api returns fresh data:
   useEffect(() => {
     if (brandsFetcher.data?.brands) {
@@ -1335,6 +1472,7 @@ export default function ProductsPage() {
       };
 
       setSuccessMsg(msgMap[action] || "✅ Operation completed.");
+
       setErrorMsg("");
 
       //reset form
@@ -1342,6 +1480,10 @@ export default function ProductsPage() {
         setSelectedIndications([]);
         setSelectedTargets([]);
         setFormData(INITIAL_FORM);
+      }
+
+      if ((afData as any)?.imageUrl) {
+        console.log("✅ Image uploaded →", (afData as any).imageUrl);
       }
 
       // Optimistic delete (and STOP — no revalidate here to avoid flicker)
@@ -1414,6 +1556,9 @@ export default function ProductsPage() {
           // booleans only if present
           allowPackSale: asBoolIfPresent("allowPackSale"),
           isActive: asBoolIfPresent("isActive"),
+
+          //image
+          imageUrl: (afData as any)?.imageUrl ?? asStringIfPresent("imageUrl"),
         } as Partial<ProductWithDetails> & { id: number };
 
         setProducts((prev) => {
@@ -1635,19 +1780,29 @@ export default function ProductsPage() {
   }, [formData.categoryId, formData.brandId, brands, setFormData]);
 
   function handleOpenModal() {
+    // reset native form
     formRef.current?.reset();
+
+    // clear “user edited” flags
     userEditedPrice.current = false;
     userEditedRetailStock.current = false;
+
+    // clear preview + free blob URL
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
 
     setFormData({
       locationId: "", // default or preserved value, not full reset
       // add default fields here as needed
     });
 
-    // 🔑 clear multi-selects so nothing carries over
+    // remount the form and the file input ONCE
+    setFormKey((k) => k + 1);
+    setFileInputKey((k) => k + 1);
+
+    // brand-new form state
     setSelectedIndications([]);
     setSelectedTargets([]);
-
     // 🔑 reset the form data for a brand-new product
     setFormData(INITIAL_FORM);
 
@@ -1655,6 +1810,7 @@ export default function ProductsPage() {
     setErrors({});
     setSuccessMsg("");
     setErrorMsg("");
+
     setShowModal(true);
   }
 
@@ -1963,7 +2119,6 @@ export default function ProductsPage() {
       "replenishAt",
       "minStock",
       "imageTag",
-      "imageUrl",
       "description",
       "isActive",
     ];
@@ -2498,7 +2653,7 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-slate-800/60 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl p-4 sm:p-6 shadow-lg relative flex flex-col sm:max-w-lg">
             <button
-              onClick={() => setShowModal(false)}
+              onClick={handleCloseModal}
               className="absolute top-3 right-3 text-2xl sm:text-xl text-gray-600"
             >
               ×
@@ -2506,7 +2661,9 @@ export default function ProductsPage() {
 
             <actionFetcher.Form
               method="post"
+              key={formKey}
               ref={formRef}
+              encType="multipart/form-data"
               className="space-y-4 overflow-y-auto flex-1 pr-1 sm:pr-2 min-h-[500px]"
               onSubmit={(e) => {
                 if (!confirm("Save this product?")) {
@@ -3024,7 +3181,6 @@ export default function ProductsPage() {
                     value={formData.description || ""}
                     onChange={handleInput}
                   />
-
                   <FormSection title="Indications (Uses)">
                     <MultiSelectInput
                       name="indications"
@@ -3057,7 +3213,6 @@ export default function ProductsPage() {
                       />
                     ))}
                   </FormSection>
-
                   <FormSection title="Target Group">
                     <MultiSelectInput
                       name="target"
@@ -3081,7 +3236,6 @@ export default function ProductsPage() {
                       />
                     ))}
                   </FormSection>
-
                   <FormGroupRow>
                     <TextInput
                       name="imageTag"
@@ -3090,13 +3244,37 @@ export default function ProductsPage() {
                       value={formData.imageTag || ""}
                       onChange={handleInput}
                     />
-                    <TextInput
-                      name="imageUrl"
-                      label="Image URL"
-                      placeholder="https://example.com/image.jpg"
-                      value={formData.imageUrl || ""}
-                      onChange={handleInput}
+                    <label
+                      htmlFor="imageFile"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Upload Image
+                    </label>
+                    {previewUrl || formData.imageUrl ? (
+                      <img
+                        src={previewUrl || formData.imageUrl!}
+                        alt="Preview"
+                        className="mt-2 h-24 w-24 rounded object-cover border"
+                      />
+                    ) : null}
+                    <input
+                      key={fileInputKey}
+                      id="imageFile"
+                      type="file"
+                      name="imageFile"
+                      accept="image/*"
+                      capture="environment"
+                      className="mt-1 block w-full text-sm"
+                      aria-describedby="imageHelp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (previewUrl) URL.revokeObjectURL(previewUrl);
+                        setPreviewUrl(file ? URL.createObjectURL(file) : null);
+                      }}
                     />
+                    <p id="imageHelp" className="text-xs text-gray-500 mt-1">
+                      PNG/JPG/WEBP. Large photos are auto-optimized on upload.
+                    </p>
                   </FormGroupRow>
 
                   <div className="flex justify-between mt-4">

@@ -1,6 +1,5 @@
 import type {
   Indication,
-  Target,
   Product as PrismaProduct,
   Brand as PrismaBrand,
   Location as PrismaLocation,
@@ -63,6 +62,7 @@ export type LoaderData = {
     categoryId: number | null;
     brandId: number | null;
   }[];
+  maxImageMB: number;
 };
 
 export type SelectOption = {
