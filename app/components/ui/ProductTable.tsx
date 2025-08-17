@@ -105,7 +105,7 @@ export function ProductTable({
     <>
       <div className="hidden sm:block overflow-auto rounded-xl border bg-surface max-h-[70vh]">
         <table className="min-w-full text-sm font-sans">
-          <thead className="sticky top-0 z-10 bg-white dark:bg-surface-dark shadow-sm border-b text-left">
+          <thead className="sticky top-0 z-0 bg-white dark:bg-surface-dark shadow-sm border-b text-left">
             <tr className="text-xs text-gray-600 uppercase tracking-wider font-heading">
               <th className="p-2 hidden sm:table-cell">ID</th>
               <th className="p-2">Name (Brand)</th>

@@ -936,6 +936,10 @@ export default function ProductsPage() {
   const [localLocations, setLocalLocations] = useState(locations);
   useEffect(() => setLocalLocations(locations), [locations]);
 
+  useEffect(() => {
+    setBrands(initialBrands);
+  }, [initialBrands]);
+
   // Full unfiltered list
   const brandOptions = useMemo(
     () => brands.map((b) => ({ label: b.name, value: String(b.id) })),
@@ -1256,6 +1260,7 @@ export default function ProductsPage() {
 
   // Prevent duplicate handling (StrictMode / re-renders)
   const lastHandledRef = useRef<string>("");
+  const lastDeleteDataRef = useRef<any>(null);
 
   useEffect(() => {
     if (!afData) return;
@@ -1275,6 +1280,18 @@ export default function ProductsPage() {
     }`;
     if (lastHandledRef.current === signature) return;
     lastHandledRef.current = signature;
+
+    // Skip all delete actions here — handled in the dedicated delete-effect
+    if (
+      action === "delete-product" ||
+      action === "deleted" ||
+      action === "delete-location" ||
+      action === "delete-brand" ||
+      action === "delete-indication" ||
+      action === "delete-target"
+    ) {
+      return;
+    }
 
     if (action === "open-pack") {
       const openedId = Number(submittedId);
@@ -1319,7 +1336,6 @@ export default function ProductsPage() {
 
       setSuccessMsg(msgMap[action] || "✅ Operation completed.");
       setErrorMsg("");
-      setShowAlert(true);
 
       //reset form
       if (action === "created") {
@@ -1471,6 +1487,8 @@ export default function ProductsPage() {
   useEffect(() => {
     const data = actionFetcher.data;
     if (!data || !data.success) return;
+    if (lastDeleteDataRef.current === data) return;
+    lastDeleteDataRef.current = data;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const submission = (actionFetcher as any)?.submission;
@@ -1479,12 +1497,29 @@ export default function ProductsPage() {
     const action =
       (data.action as string) ?? String(form?.get("_action") ?? "");
 
+    const dedupeKey =
+      action === "delete-brand"
+        ? `del:brand|${String(data.id ?? form?.get("brandId") ?? "")}`
+        : action === "delete-location"
+        ? `del:location|${String(form?.get("locationId") ?? "")}`
+        : action === "delete-product"
+        ? `del:product|${String(form?.get("id") ?? data.id ?? "")}`
+        : action === "delete-indication"
+        ? `del:indication|${String(form?.get("indicationId") ?? "")}`
+        : action === "delete-target"
+        ? `del:target|${String(form?.get("targetId") ?? "")}`
+        : "";
+    if (dedupeKey) {
+      if (lastHandledRef.current === dedupeKey) return;
+      lastHandledRef.current = dedupeKey;
+    }
     // ✅ Only remove from products when a product was deleted
     if (action === "delete-product" || action === "deleted") {
       const deletedId = String(form?.get("id") ?? data.id ?? "");
       if (deletedId) {
         setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId));
       }
+      setSuccessMsg("🗑️ Product deleted successfully.");
       return;
     }
 
@@ -1525,14 +1560,12 @@ export default function ProductsPage() {
       );
 
       setSuccessMsg(`Deleted "${label}" from the list.`);
-      setShowAlert(true);
-      // auto-dismiss toast for delete-location
-      setTimeout(() => setShowAlert(false), 1500);
+      setTimeout(() => revalidator.revalidate(), 150);
       return;
     }
 
     if (data.action === "delete-brand") {
-      const deletedBrandId = String(form?.get("brandId") ?? "");
+      const deletedBrandId = String(data.id ?? form?.get("brandId") ?? "");
 
       const rawLabel = getLabelFromValueBrand(deletedBrandId); // ✅ Reuse this
       const label =
@@ -1543,11 +1576,24 @@ export default function ProductsPage() {
       if (formData.brandId === deletedBrandId) {
         setFormData((prev) => ({ ...prev, brandId: "" }));
       }
+      // if current table filter uses this brand, clear it
+      if (filterBrand === deletedBrandId) setFilterBrand("");
+
+      // make product rows consistent in UI (remove brand ref)
+      setProducts((prev) =>
+        prev.map((p) => {
+          const pBrandId = String(p.brand?.id ?? p.brandId ?? "");
+          if (pBrandId !== deletedBrandId) return p;
+          return {
+            ...p,
+            brandId: null,
+            brand: null,
+          } as ProductWithDetails;
+        })
+      );
 
       setSuccessMsg(`Deleted "${label}" from the brand list.`);
-      setShowAlert(true);
-      // auto-dismiss toast for delete-brand
-      setTimeout(() => setShowAlert(false), 1500);
+      setTimeout(() => revalidator.revalidate(), 150);
     }
   }, [
     actionFetcher.data,
@@ -1562,6 +1608,9 @@ export default function ProductsPage() {
     setShowAlert,
     getLabelFromValueBrand,
     filterLocation,
+    filterBrand,
+    revalidator,
+    lastHandledRef,
   ]);
 
   // It guards the modal so when the user changes Category, any previously picked Brand that no longer belongs to that category is cleared. That prevents submitting an invalid pair.
@@ -2003,15 +2052,22 @@ export default function ProductsPage() {
     }, 0);
   }
 
-  // this one nawala
+  // Unified toast controller: show when message exists, auto-hide + clear
   useEffect(() => {
-    if (successMsg || errorMsg) {
-      const timer = setTimeout(() => {
-        setSuccessMsg("");
-        setErrorMsg("");
-      }, 1000);
-      return () => clearTimeout(timer);
+    // nothing to show -> ensure hidden
+    if (!successMsg && !errorMsg) {
+      setShowAlert(false);
+      return;
     }
+    // show toast immediately
+    setShowAlert(true);
+    // auto-close + clear after 1.5s
+    const timer = setTimeout(() => {
+      setShowAlert(false);
+      setSuccessMsg("");
+      setErrorMsg("");
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [successMsg, errorMsg]);
 
   const priceForSort = (p: ProductWithDetails) => {
