@@ -23,6 +23,7 @@ import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
+import { makeLocalEan13 } from "~/utils/barcode";
 
 // === END Imports ===
 
@@ -216,7 +217,7 @@ export async function loader() {
     indications,
     targets: targetsForFilter,
     locations,
-    maxImageMB: Number(process.env.MAX_IMAGE_MB ?? 5),
+    storeCode: process.env.STORE_CODE ?? "00",
   });
 }
 
@@ -933,6 +934,7 @@ export default function ProductsPage() {
     indications,
     targets,
     locations,
+    storeCode,
   } = useLoaderData<LoaderData>();
 
   // top of the file, module scope (outside the component)
@@ -1003,7 +1005,6 @@ export default function ProductsPage() {
   const [showAlert, setShowAlert] = useState(false);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
   // — Filters & Paging —
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -1325,9 +1326,32 @@ export default function ProductsPage() {
 
   // Clear when modal closes (any close path)
   function handleCloseModal() {
+    // 1) clear preview + file input
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    setFileInputKey((k) => k + 1); // reset <input type="file">
+    setFileInputKey((k) => k + 1);
+
+    // 2) reset native form
+    formRef.current?.reset();
+
+    // 3) reset controlled state
+    setFormData(INITIAL_FORM);
+    setSelectedIndications([]);
+    setSelectedTargets([]);
+    setErrors({});
+    setSuccessMsg("");
+    setErrorMsg("");
+    setStep(1);
+
+    // (optional) reset “user edited” refs
+    userEditedPrice.current = false;
+    userEditedRetailStock.current = false;
+    userEditedSku.current = false;
+
+    // 4) force a fresh <Form> mount so no stale values linger
+    setFormKey((k) => k + 1);
+
+    // 5) close
     setShowModal(false);
   }
 
@@ -1810,7 +1834,6 @@ export default function ProductsPage() {
     setErrors({});
     setSuccessMsg("");
     setErrorMsg("");
-
     setShowModal(true);
   }
 
@@ -3036,21 +3059,46 @@ export default function ProductsPage() {
 
                   {/* 🏷️ Inventory ID */}
                   <FormGroupRow>
-                    <TextInput
-                      name="barcode"
-                      label="Barcode"
-                      placeholder="Barcode"
-                      value={formData.barcode || ""}
-                      onChange={handleInput}
-                    />
-                    <TextInput
-                      name="sku"
-                      label="SKU"
-                      placeholder="Auto-generated or manual"
-                      value={formData.sku || ""}
-                      onChange={handleInput}
-                      error={errors.sku}
-                    />
+                    {/* BARCODE (left) */}
+                    <div className="w-full">
+                      <TextInput
+                        label="Barcode"
+                        name="barcode"
+                        placeholder="Auto-generated or manual"
+                        value={formData.barcode || ""}
+                        onChange={handleInput}
+                        error={errors.barcode}
+                      />
+                      {/* tiny inline helper under the input */}
+                      <div className="mt-1 flex items-center justify-between">
+                        <span className="text-[11px] text-gray-500">
+                          Generate a local EAN-13 if you don’t have one.
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[11px] text-blue-600 hover:underline"
+                          title="Generate in-store EAN-13"
+                          onClick={() => {
+                            const code = makeLocalEan13(storeCode);
+                            setFormData((p) => ({ ...p, barcode: code }));
+                          }}
+                        >
+                          Generate barcode
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SKU (right) */}
+                    <div className="w-full">
+                      <TextInput
+                        name="sku"
+                        label="SKU"
+                        placeholder="Auto-generated or manual"
+                        value={formData.sku || ""}
+                        onChange={handleInput}
+                        error={errors.sku}
+                      />
+                    </div>
                   </FormGroupRow>
 
                   {/* 📅 Dates */}

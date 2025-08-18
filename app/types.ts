@@ -63,6 +63,7 @@ export type LoaderData = {
     brandId: number | null;
   }[];
   maxImageMB: number;
+  storeCode: string;
 };
 
 export type SelectOption = {
