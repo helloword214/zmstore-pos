@@ -41,6 +41,32 @@ export function ProductTable({
     </div>
   );
 
+  const peso = (n?: number | null) =>
+    typeof n === "number" && isFinite(n) ? `₱${n.toFixed(2)}` : "—";
+
+  const Pill: React.FC<{
+    label: string;
+    tone?: "green" | "red" | "amber" | "gray";
+    value: React.ReactNode;
+    unit?: string;
+  }> = ({ label, tone = "gray", value, unit }) => (
+    <div
+      className={clsx(
+        "px-2.5 py-1.5 rounded-md border text-sm flex items-baseline gap-1.5 shrink-0",
+        tone === "green" && "bg-green-50 border-green-200 text-green-800",
+        tone === "red" && "bg-red-50 border-red-200 text-red-800",
+        tone === "amber" && "bg-amber-50 border-amber-200 text-amber-800",
+        tone === "gray" && "bg-gray-50 border-gray-200 text-gray-800"
+      )}
+    >
+      <span className="text-[11px] uppercase tracking-wide opacity-80">
+        {label}
+      </span>
+      <span className="font-semibold">{value}</span>
+      {unit && <span className="text-[11px] opacity-70">/ {unit}</span>}
+    </div>
+  );
+
   const [pending, setPending] = useState<{
     kind: "toggle" | null;
     id: number | null;
@@ -459,318 +485,421 @@ export function ProductTable({
       </div>
 
       {/* 🪟 CENTERED VIEW PANEL (modal) */}
-      {quickView && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
-            onClick={() => setQuickView(null)}
-            aria-hidden="true"
-          />
 
-          {/* centered panel */}
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="relative w-[92vw] max-w-[880px] bg-white text-gray-900 rounded-2xl shadow-2xl overflow-hidden"
-          >
-            {/* header */}
-            <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b">
-              <div className="min-w-0">
-                <div className="text-xs text-gray-500">#{quickView.id}</div>
-                <div className="font-semibold text-lg truncate">
-                  {quickView.name}
-                  {quickView.brand?.name && (
-                    <span className="ml-1 text-gray-500">
-                      ({quickView.brand.name})
-                    </span>
-                  )}
-                  <span
-                    className={clsx(
-                      "ml-2 text-xs px-2 py-0.5 rounded-full border",
-                      quickView.isActive
-                        ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-red-50 text-red-700 border-red-200"
-                    )}
-                  >
-                    {quickView.isActive ? "Active" : "Inactive"}
-                  </span>
-                </div>
-              </div>
-              <button
-                className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+      {quickView &&
+        (() => {
+          const cost = quickView.dealerPrice ?? null; // per whole pack/unit
+          const packSize = Number(quickView.packingSize ?? 0);
+          const srp = quickView.srp ?? null; // per whole pack/unit
+          const retail = quickView.allowPackSale
+            ? quickView.price ?? null
+            : null;
+
+          const floorRetail =
+            cost != null && packSize > 0 ? cost / packSize : null; // min allowed retail
+          const maxDiscAmount = srp != null && cost != null ? srp - cost : null;
+          const maxDiscPct =
+            srp && srp > 0 && maxDiscAmount != null
+              ? (maxDiscAmount / srp) * 100
+              : null;
+
+          const retailBelowFloor =
+            quickView.allowPackSale &&
+            floorRetail != null &&
+            retail != null &&
+            retail < floorRetail;
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              {/* backdrop */}
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
                 onClick={() => setQuickView(null)}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
+                aria-hidden="true"
+              />
 
-            {/* content (scrolls if tall) */}
-            <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto">
-              {/* Two-pane: image | details */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6">
-                {/* Left: Image */}
-                <div className="sm:col-span-3">
-                  <div className="w-full aspect-[1/1] rounded-xl overflow-hidden bg-gray-100 border flex items-center justify-center">
-                    {quickView.imageUrl ? (
-                      <img
-                        src={quickView.imageUrl}
-                        alt={quickView.name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="text-xs text-gray-400">No Image</span>
-                    )}
+              {/* centered panel */}
+              <div
+                role="dialog"
+                aria-modal="true"
+                className="relative w-[92vw] max-w-[880px] bg-white text-gray-900 rounded-2xl shadow-2xl overflow-hidden"
+              >
+                {/* header */}
+                <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b">
+                  <div className="min-w-0">
+                    <div className="text-xs text-gray-500">#{quickView.id}</div>
+                    <div className="font-semibold text-lg truncate">
+                      {quickView.name}
+                      {quickView.brand?.name && (
+                        <span className="ml-1 text-gray-500">
+                          ({quickView.brand.name})
+                        </span>
+                      )}
+                      <span
+                        className={clsx(
+                          "ml-2 text-xs px-2 py-0.5 rounded-full border",
+                          quickView.isActive
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-red-50 text-red-700 border-red-200"
+                        )}
+                      >
+                        {quickView.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                    onClick={() => setQuickView(null)}
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* Right: Fields grid (keep your existing blocks) */}
-                <div className="sm:col-span-9">
-                  {/* Block 1: Identity */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-                    <Field label="Brand">{quickView.brand?.name || "—"}</Field>
-                    <Field label="Category">
-                      {quickView.category?.name || "—"}
-                    </Field>
-                    <Field label="Unit">{quickView.unitName || "—"}</Field>
-                    <Field label="Location">
-                      {quickView.locationName || "—"}
-                    </Field>
-                  </div>
-                  <div className="h-px bg-gray-200 my-4 sm:my-5" />
-                  {/* Block 2: Packaging & Retail */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-                    <Field label="Packaging">
-                      {quickView.packingSize &&
-                      quickView.unitName &&
-                      quickView.packingUnitName
-                        ? `${quickView.packingSize} ${
-                            quickView.unitName.endsWith("s")
-                              ? quickView.unitName
-                              : quickView.unitName + "s"
-                          } / ${quickView.packingUnitName}`
-                        : "—"}
-                    </Field>
-                    <Field label="Allow Retail">
-                      {quickView.allowPackSale ? "Yes" : "No"}
-                    </Field>
-                    <Field label="Whole Unit Price">
-                      {quickView.srp != null
-                        ? `₱${quickView.srp.toFixed(2)} / ${
-                            quickView.packingUnitName || "unit"
-                          }`
-                        : "—"}
-                    </Field>
-                    <Field label="Retail Price">
-                      {quickView.allowPackSale && quickView.price != null
-                        ? `₱${quickView.price.toFixed(2)} / ${
-                            quickView.unitName || "unit"
-                          }`
-                        : "—"}
-                    </Field>
-                  </div>
-                  <div className="h-px bg-gray-200 my-4 sm:my-5" />
-                  {/* Block 3: Inventory */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-                    <Field label="Stock">
-                      {quickView.stock != null
-                        ? `${quickView.stock} ${
-                            quickView.packingUnitName || ""
-                          }`
-                        : "—"}
-                    </Field>
-                    <Field label="Retail Stock">
-                      {quickView.allowPackSale && quickView.packingStock != null
-                        ? `${quickView.packingStock} ${
-                            quickView.unitName || ""
-                          }`
-                        : "—"}
-                    </Field>
-                    <Field label="Min Stock">{quickView.minStock ?? "—"}</Field>
-                    <Field label="Replenish At">
-                      {quickView.replenishAt
-                        ? new Date(quickView.replenishAt)
-                            .toISOString()
-                            .slice(0, 10)
-                        : "—"}
-                    </Field>
-                  </div>
-                  <div className="h-px bg-gray-200 my-4 sm:my-5" />
-                  {/* Block 4: IDs */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-                    <Field label="Barcode">{quickView.barcode || "—"}</Field>
-                    <Field label="SKU">{quickView.sku || "—"}</Field>
-                    <Field label="Expiration">
-                      {quickView.expirationDate
-                        ? new Date(quickView.expirationDate)
-                            .toISOString()
-                            .slice(0, 10)
-                        : "—"}
-                    </Field>
-                    <div className="hidden xl:block" />
-                  </div>
-                  <div className="h-px bg-gray-200 my-4 sm:my-5" />
-                  {/* Block 5: Tags */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-[11px] font-medium text-gray-500 mb-1">
-                        Uses
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {quickView.indications?.length ? (
-                          quickView.indications.map((i) => (
-                            <span
-                              key={i.id}
-                              className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full"
-                            >
-                              {i.name}
-                            </span>
-                          ))
+                {/* content (scrolls if tall) */}
+                <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto">
+                  {/* Two-pane: image | details */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6">
+                    {/* Left: Image */}
+                    <div className="sm:col-span-3">
+                      <div className="w-full aspect-[1/1] rounded-xl overflow-hidden bg-gray-100 border flex items-center justify-center">
+                        {quickView.imageUrl ? (
+                          <img
+                            src={quickView.imageUrl}
+                            alt={quickView.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
                         ) : (
-                          <span className="text-gray-400 text-sm">—</span>
+                          <span className="text-xs text-gray-400">
+                            No Image
+                          </span>
                         )}
                       </div>
                     </div>
-                    <div>
-                      <div className="text-[11px] font-medium text-gray-500 mb-1">
-                        Targets
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {quickView.targets?.length ? (
-                          quickView.targets.map((t) => (
-                            <span
-                              key={t.id}
-                              className="inline-block bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full"
-                            >
-                              {t.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-gray-400 text-sm">—</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="h-px bg-gray-200 my-4 sm:my-5" />
-                  {/* Block 6: Description */}
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-500 mb-1">
-                      Description
-                    </div>
-                    <div className="text-gray-900 text-sm whitespace-pre-wrap break-words">
-                      {quickView.description || "—"}
-                    </div>
-                  </div>
-                  {/* Footer buttons */}+ {/* Footer actions */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
-                    {/* Left: destructive & utility */}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="danger"
-                        className="text-xs px-3 py-1.5"
-                        onClick={() => {
-                          if (!quickView) return;
-                          if (confirm("Delete this product permanently?")) {
-                            onDelete(quickView.id);
-                            setQuickView(null);
-                          }
-                        }}
-                      >
-                        🗑 Delete
-                      </Button>
 
-                      {quickView?.allowPackSale &&
-                        (quickView.packingSize ?? 0) > 0 &&
-                        (quickView.stock ?? 0) > 0 && (
+                    {/* Right: Fields grid (keep your existing blocks) */}
+                    <div className="sm:col-span-9">
+                      {/* Block 1: Identity */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+                        <Field label="Brand">
+                          {quickView.brand?.name || "—"}
+                        </Field>
+                        <Field label="Category">
+                          {quickView.category?.name || "—"}
+                        </Field>
+                        <Field label="Unit">{quickView.unitName || "—"}</Field>
+                        <Field label="Location">
+                          {quickView.locationName || "—"}
+                        </Field>
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 lg:gap-5">
+                        <div className="md:col-span-4">
+                          <Field label="Packaging">
+                            {quickView.packingSize &&
+                            quickView.unitName &&
+                            quickView.packingUnitName ? (
+                              `${quickView.packingSize} ${
+                                quickView.unitName.endsWith("s")
+                                  ? quickView.unitName
+                                  : quickView.unitName + "s"
+                              } / ${quickView.packingUnitName}`
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </Field>
+                        </div>
+
+                        <div className="md:col-span-3">
+                          <Field label="Allow Retail">
+                            {quickView.allowPackSale ? "Yes" : "No"}
+                          </Field>
+                        </div>
+
+                        {/* Keep this cell empty to align with the Pricing Rail below on small screens */}
+                        <div className="md:col-span-5 hidden md:block" />
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      {/* --- Pricing (compact & aligned) --- */}
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-gray-500">Pricing</div>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                          {/* Cost (per pack) */}
+                          <Pill
+                            label="Cost"
+                            tone="red"
+                            value={peso(cost)}
+                            unit={quickView.packingUnitName || "unit"}
+                          />
+
+                          {/* Floor Retail (only if retail is allowed) */}
+                          {quickView.allowPackSale && (
+                            <Pill
+                              label="Floor"
+                              tone="red"
+                              value={peso(floorRetail)}
+                              unit={quickView.unitName || "unit"}
+                            />
+                          )}
+
+                          {/* SRP (per pack) */}
+                          <Pill
+                            label="SRP"
+                            tone="green"
+                            value={peso(srp)}
+                            unit={quickView.packingUnitName || "unit"}
+                          />
+
+                          {/* Retail (per retail unit) */}
+                          {quickView.allowPackSale && (
+                            <Pill
+                              label="Retail"
+                              tone={retailBelowFloor ? "amber" : "green"}
+                              value={peso(retail)}
+                              unit={quickView.unitName || "unit"}
+                            />
+                          )}
+
+                          {/* Max Discount */}
+                          <Pill
+                            label="Max Disc"
+                            tone="amber"
+                            value={
+                              <>
+                                {peso(maxDiscAmount)}
+                                {maxDiscPct != null && (
+                                  <span className="text-[11px] opacity-70">
+                                    {" "}
+                                    ({maxDiscPct.toFixed(1)}%)
+                                  </span>
+                                )}
+                              </>
+                            }
+                          />
+                        </div>
+
+                        {/* Optional hint when retail is below floor */}
+                        {retailBelowFloor && (
+                          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 inline-block">
+                            Retail is below floor (cost ÷ pack size). You may be
+                            selling at a loss.
+                          </div>
+                        )}
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      {/* Block 3: Inventory */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+                        <Field label="Stock">
+                          {quickView.stock != null
+                            ? `${quickView.stock} ${
+                                quickView.packingUnitName || ""
+                              }`
+                            : "—"}
+                        </Field>
+                        <Field label="Retail Stock">
+                          {quickView.allowPackSale &&
+                          quickView.packingStock != null
+                            ? `${quickView.packingStock} ${
+                                quickView.unitName || ""
+                              }`
+                            : "—"}
+                        </Field>
+                        <Field label="Min Stock">
+                          {quickView.minStock ?? "—"}
+                        </Field>
+                        <Field label="Replenish At">
+                          {quickView.replenishAt
+                            ? new Date(quickView.replenishAt)
+                                .toISOString()
+                                .slice(0, 10)
+                            : "—"}
+                        </Field>
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      {/* Block 4: IDs */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+                        <Field label="Barcode">
+                          {quickView.barcode || "—"}
+                        </Field>
+                        <Field label="SKU">{quickView.sku || "—"}</Field>
+                        <Field label="Expiration">
+                          {quickView.expirationDate
+                            ? new Date(quickView.expirationDate)
+                                .toISOString()
+                                .slice(0, 10)
+                            : "—"}
+                        </Field>
+                        <div className="hidden xl:block" />
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      {/* Block 5: Tags */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[11px] font-medium text-gray-500 mb-1">
+                            Uses
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {quickView.indications?.length ? (
+                              quickView.indications.map((i) => (
+                                <span
+                                  key={i.id}
+                                  className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full"
+                                >
+                                  {i.name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-gray-400 text-sm">—</span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-medium text-gray-500 mb-1">
+                            Targets
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {quickView.targets?.length ? (
+                              quickView.targets.map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="inline-block bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full"
+                                >
+                                  {t.name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-gray-400 text-sm">—</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="h-px bg-gray-200 my-4 sm:my-5" />
+                      {/* Block 6: Description */}
+                      <div>
+                        <div className="text-[11px] font-medium text-gray-500 mb-1">
+                          Description
+                        </div>
+                        <div className="text-gray-900 text-sm whitespace-pre-wrap break-words">
+                          {quickView.description || "—"}
+                        </div>
+                      </div>
+                      {/* Footer buttons */}+ {/* Footer actions */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
+                        {/* Left: destructive & utility */}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="danger"
+                            className="text-xs px-3 py-1.5"
+                            onClick={() => {
+                              if (!quickView) return;
+                              if (confirm("Delete this product permanently?")) {
+                                onDelete(quickView.id);
+                                setQuickView(null);
+                              }
+                            }}
+                          >
+                            🗑 Delete
+                          </Button>
+
+                          {quickView?.allowPackSale &&
+                            (quickView.packingSize ?? 0) > 0 &&
+                            (quickView.stock ?? 0) > 0 && (
+                              <Button
+                                variant="ghost"
+                                className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100"
+                                onClick={() => {
+                                  if (!quickView) return;
+                                  const packsStr = window.prompt(
+                                    "Open how many whole packs?",
+                                    "1"
+                                  );
+                                  if (!packsStr) return;
+                                  const fd = new FormData();
+                                  fd.append("_action", "open-pack");
+                                  fd.append("id", String(quickView.id));
+                                  fd.append("packs", packsStr);
+                                  actionFetcher.submit(fd, { method: "post" });
+                                }}
+                                title="Move one or more whole packs into retail stock"
+                              >
+                                🥡 Open Packs
+                              </Button>
+                            )}
+                        </div>
+
+                        {/* Right: primary actions */}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:pointer-events-none"
+                            disabled={
+                              pending.kind === "toggle" &&
+                              pending.id === quickView?.id
+                            }
+                            onClick={() => {
+                              if (!quickView) return;
+                              if (pending.kind) return; // hard guard against double-click
+                              // optimistic flip for live color/badge
+                              setQuickView((prev) =>
+                                prev
+                                  ? { ...prev, isActive: !prev.isActive }
+                                  : prev
+                              );
+                              setPending({ kind: "toggle", id: quickView.id });
+
+                              const form = new FormData();
+                              form.append("toggleId", String(quickView.id));
+                              form.append(
+                                "isActive",
+                                String(!quickView.isActive)
+                              );
+                              actionFetcher.submit(form, { method: "post" });
+                            }}
+                            aria-busy={
+                              pending.kind === "toggle" &&
+                              pending.id === quickView?.id
+                            }
+                            title={
+                              quickView?.isActive ? "Deactivate" : "Activate"
+                            }
+                          >
+                            {pending.kind === "toggle" &&
+                            pending.id === quickView?.id
+                              ? "…"
+                              : quickView?.isActive
+                              ? "🔴 Deactivate"
+                              : "🟢 Activate"}
+                          </Button>
+
                           <Button
                             variant="ghost"
                             className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100"
                             onClick={() => {
                               if (!quickView) return;
-                              const packsStr = window.prompt(
-                                "Open how many whole packs?",
-                                "1"
-                              );
-                              if (!packsStr) return;
-                              const fd = new FormData();
-                              fd.append("_action", "open-pack");
-                              fd.append("id", String(quickView.id));
-                              fd.append("packs", packsStr);
-                              actionFetcher.submit(fd, { method: "post" });
+                              setQuickView(null);
+                              onEdit(quickView);
                             }}
-                            title="Move one or more whole packs into retail stock"
                           >
-                            🥡 Open Packs
+                            ✏️ Edit
                           </Button>
-                        )}
-                    </div>
 
-                    {/* Right: primary actions */}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:pointer-events-none"
-                        disabled={
-                          pending.kind === "toggle" &&
-                          pending.id === quickView?.id
-                        }
-                        onClick={() => {
-                          if (!quickView) return;
-                          if (pending.kind) return; // hard guard against double-click
-                          // optimistic flip for live color/badge
-                          setQuickView((prev) =>
-                            prev ? { ...prev, isActive: !prev.isActive } : prev
-                          );
-                          setPending({ kind: "toggle", id: quickView.id });
-
-                          const form = new FormData();
-                          form.append("toggleId", String(quickView.id));
-                          form.append("isActive", String(!quickView.isActive));
-                          actionFetcher.submit(form, { method: "post" });
-                        }}
-                        aria-busy={
-                          pending.kind === "toggle" &&
-                          pending.id === quickView?.id
-                        }
-                        title={quickView?.isActive ? "Deactivate" : "Activate"}
-                      >
-                        {pending.kind === "toggle" &&
-                        pending.id === quickView?.id
-                          ? "…"
-                          : quickView?.isActive
-                          ? "🔴 Deactivate"
-                          : "🟢 Activate"}
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100"
-                        onClick={() => {
-                          if (!quickView) return;
-                          setQuickView(null);
-                          onEdit(quickView);
-                        }}
-                      >
-                        ✏️ Edit
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100"
-                        onClick={() => setQuickView(null)}
-                      >
-                        Close
-                      </Button>
+                          <Button
+                            variant="ghost"
+                            className="text-xs border px-3 py-1.5 text-gray-600 hover:bg-gray-100"
+                            onClick={() => setQuickView(null)}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </>
   );
 }
