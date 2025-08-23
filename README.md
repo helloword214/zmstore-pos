@@ -38,3 +38,14 @@ Make sure to deploy the output of `npm run build`
 ## Styling
 
 This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever css framework you prefer. See the [Vite docs on css](https://vitejs.dev/guide/features.html#css) for more information.
+
+# POS App
+
+## Docs
+
+- [Business Plan](docs/POS_BusinessPlan.md)
+- [Order Flow](docs/POS_OrderFlow.md)
+- [Fulfillment](docs/POS_Fulfillment.md)
+- [Data Model](docs/POS_DataModel.md)
+- [Security & Permissions](docs/POS_Security.md)
+- [Change Log](docs/POS_ChangeLog.md)
