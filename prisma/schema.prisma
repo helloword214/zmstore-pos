@@ -44,6 +44,7 @@ model Product {
   productTargets     ProductTarget[]
   saleItems          SaleItem[]
   tags               Tag[]               @relation("ProductTags")
+  orderItems         OrderItem[]
 }
 
 model Sale {
@@ -154,3 +155,59 @@ model Location {
   name     String    @unique
   products Product[]
 }
+
+
+
+// ────────────── ORDER SLIP (Milestone 1) ──────────────
+
+model Order {
+  id                   Int           @id @default(autoincrement())
+  orderCode            String        @unique
+  status               OrderStatus   @default(UNPAID)
+
+  // Snapshot totals (no discounts yet)
+  subtotal             Float
+  totalBeforeDiscount  Float
+
+  // Slip meta
+  printCount           Int           @default(1)
+  printedAt            DateTime
+  expiryAt             DateTime
+  terminalId           String?
+
+  // Relations
+  items                OrderItem[]
+
+  // Timestamps
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([status])
+  @@index([expiryAt])
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  order      Order    @relation(fields: [orderId], references: [id])
+
+  // Keep link to product but also snapshot name/price for immutability
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id])
+
+  name       String
+  qty        Float    // allows 0.25, 0.5 kg etc.
+  unitPrice  Float
+  lineTotal  Float
+
+  @@index([orderId])
+}
+
+enum OrderStatus {
+  DRAFT
+  UNPAID
+  PAID
+  CANCELLED
+  VOIDED
+}
+

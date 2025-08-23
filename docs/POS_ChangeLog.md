@@ -54,7 +54,14 @@
 
 - Clarified ON_HOLD behavior: resolve within Fulfillment; only escalate to VOID (manager) if not resolvable. No return to cashier, no auto new order.
 
-## Current
+## 2025-08-23
 
 - Docs structure ready.
 - Next: Start coding Milestone 1 (Order Slip save & print).
+
+## current
+
+- **Added `Order` and `OrderItem` models** for Milestone 1 (Order Slip).
+- Defined snapshot fields (`name`, `unitPrice`) to preserve slip history even if products change later.
+- Added indexes on `status` and `expiryAt` to support cashier queue and cleanup jobs.
+- Added back-relation `orderItems` on `Product` model for analytics and queries.
