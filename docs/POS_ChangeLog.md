@@ -59,9 +59,17 @@
 - Docs structure ready.
 - Next: Start coding Milestone 1 (Order Slip save & print).
 
-## current
+## 2025-08-24
 
 - **Added `Order` and `OrderItem` models** for Milestone 1 (Order Slip).
 - Defined snapshot fields (`name`, `unitPrice`) to preserve slip history even if products change later.
 - Added indexes on `status` and `expiryAt` to support cashier queue and cleanup jobs.
 - Added back-relation `orderItems` on `Product` model for analytics and queries.
+
+## 2025-08-24
+
+- Implemented **POST `/orders.new`** to create `UNPAID` Order with snapshot items, `subtotal`, `totalBeforeDiscount`, and `expiryAt = printedAt + 24h`.
+- Added **GET `/orders/:id/slip`** printable page (QR, expiry badge, Reprint #n).
+- Added **POST `/orders/:id/slip`** with `_action=reprint` to increment `printCount` and update `printedAt` (expiry unchanged).
+- Updated **POS_OrderFlow.md** (API & Actions for Milestone 1).
+- Note: `printedAt` reflects most recent print; add `firstPrintedAt` later if needed.

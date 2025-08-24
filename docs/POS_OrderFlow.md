@@ -69,6 +69,40 @@
 }
 ```
 
+### API & Actions (Milestone 1)
+
+**Create Slip**
+
+- **POST** `/orders.new`
+- **Body (form):**
+  - `items` — JSON array of `{ id, name, qty, unitPrice }`
+  - `terminalId` — optional string (e.g., `"KIOSK-01"`)
+- **Validations:** cart not empty; `qty > 0`; `unitPrice ≥ 0`.
+- **Effect:** creates `Order` with `status=UNPAID`, saves snapshot items, sets `subtotal` & `totalBeforeDiscount`, sets `expiryAt = printedAt + 24h`.
+- **Redirect:** `302 → /orders/:id/slip`
+
+**Print Page**
+
+- **GET** `/orders/:id/slip`
+- Renders slip (order code + QR, items, totals, expiry, reprint count).
+- Shows **“EXPIRED”** badge if `expiryAt < now`.
+
+**Reprint**
+
+- **POST** `/orders/:id/slip` with `_action=reprint`
+- **Effect:** increments `printCount`, updates **`printedAt` to last print time** (note), **does not** change `expiryAt`, totals, or status.
+- **Note:** `printedAt` reflects the **most recent** print. If we need the first-print timestamp later, we will add `firstPrintedAt`.
+
+**State**
+
+- `DRAFT → UNPAID` on slip creation.
+- Reprints **do not** change state.
+
+**Errors**
+
+- 400: missing/invalid `items` payload
+- 404: order not found
+
 ## Milestone 2 — Cashier Queue & Scan
 
 - Cashier sees all UNPAID in queue (oldest first).

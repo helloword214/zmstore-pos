@@ -1,9 +1,9 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 
-export async function loader({}: LoaderFunctionArgs) {
+export const loader: LoaderFunction = async () => {
   const products = await db.product.findMany({
     select: { id: true, name: true, price: true },
     where: { isActive: true },
@@ -11,7 +11,7 @@ export async function loader({}: LoaderFunctionArgs) {
     take: 3,
   });
   return json({ products });
-}
+};
 
 export default function DevSlipTest() {
   const { products } = useLoaderData<typeof loader>();
