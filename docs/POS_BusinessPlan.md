@@ -34,6 +34,35 @@ Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (ri
 
 ## Milestones Applied
 
+### Milestone K1 — Kiosk UI (Tablet-First)
+
+**Scope (UI only, no discounts/payment yet)**
+
+- Tablet-first kiosk for item selection and cart building.
+- Category chips + search, product grid, sticky cart.
+- Qty rules: retail-allowed → step 0.25; pack-only → step 1.
+- “Print Order Slip” posts snapshot to `/orders.new`.
+
+**Out of scope (moved to later milestones)**
+
+- Discounts, promos, customer data, barcode scan, cashier lock/queue.
+
+**Why (business)**
+
+- Faster iteration: visualize flow before wiring deeper backend.
+- Reduces kiosk training time (big buttons, clear totals).
+- Aligns with “Slip first, cashier later” principle.
+
+**Acceptance (K1 v1)**
+
+- I can filter by category/search and add items.
+- I can change qty per rules and see subtotal update.
+- I can print an Order Slip from the cart.
+
+**Spec**
+
+- See `docs/POS_KioskUI.md` for layout, behaviors, and accessibility.
+
 ### Milestone 1 — Order Slip
 
 - Slip shows **totals before discounts**.
