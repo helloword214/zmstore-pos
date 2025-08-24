@@ -1,4 +1,4 @@
-import { createCookieSessionStorage } from "@remix-run/node";
+import { createCookieSessionStorage, type Session } from "@remix-run/node";
 
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
@@ -23,14 +23,11 @@ export async function getSession(request: Request) {
 }
 
 // commitSession returns string synchronously, so no async here
-export function commitSession(
-  session: ReturnType<typeof sessionStorage.getSession>
-) {
+// commitSession/destroySession accept a Session and return a Set-Cookie string (Promise<string>)
+export function commitSession(session: Session) {
   return sessionStorage.commitSession(session);
 }
 
-export async function destroySession(
-  session: ReturnType<typeof sessionStorage.getSession>
-) {
+export function destroySession(session: Session) {
   return sessionStorage.destroySession(session);
 }
