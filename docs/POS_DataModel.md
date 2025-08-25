@@ -96,6 +96,27 @@
 }
 
 
+#### Product pricing & stock semantics (UI integration)
+
+- `price Float?` — **retail per-unit** price (e.g., per kg or per pc).
+- `srp Float?` — **per-pack** price (e.g., per sack/tank). Used when selling packs.
+- `allowPackSale Boolean` — if `true`, kiosk shows retail price/stock and allows fractional quantities.
+- `unitId` / `packingUnitId` — display labels for retail unit vs pack unit (e.g., `kg` vs `tank`).
+- `packingSize Float?` — container size in retail units (e.g., `22` means 22 kg per tank). Shown as text only (`{packingSize} {unit} / {packingUnit}`); **not** used to compute a price in UI.
+- `stock Float?` — **retail stock** (loose) available (e.g., kg/pcs), shown only if `allowPackSale = true`.
+- `packingStock Int?` — **pack stock** (whole sacks/tanks), always shown.
+
+**Kiosk display rules**
+- Retail price shown only if `allowPackSale = true` and `price > 0`.
+- Pack price shown only if `srp > 0`.
+- Never compute a pack price from retail (no `price × packingSize`).
+- Stock row shows packs always; retail only when retail is allowed.
+- “Add” enables only when the corresponding price exists:
+  - Retail flow → requires `price`.
+  - Pack-only flow → requires `srp`.
+
+
+
 ## Milestone 2 — Cashier Queue
 
 - Lock fields: lockedById, lockedAt

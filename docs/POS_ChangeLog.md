@@ -73,3 +73,22 @@
 - Added **POST `/orders/:id/slip`** with `_action=reprint` to increment `printCount` and update `printedAt` (expiry unchanged).
 - Updated **POS_OrderFlow.md** (API & Actions for Milestone 1).
 - Note: `printedAt` reflects most recent print; add `firstPrintedAt` later if needed.
+
+### 2025-08-25 — Add Kiosk UI (tablet-first) spec
+
+- New: `docs/POS_KioskUI.md` outlining layout, grid, cart, interactions, sizing, and acceptance.
+- Noted current implementation deltas: single-column list, DB-driven prices, explicit pack/retail stock labels.
+
+### 2025-08-25 — Kiosk product card refresh (UI-only)
+
+- Switched to **single-column** list for kiosk products (tablet focus).
+- **Prices from DB only**:
+  - Retail price = `Product.price` (shown only if `allowPackSale = true`)
+  - Pack price = `Product.srp` (shown if set; **never** computed as `price × packingSize`)
+- **Stock labels** clarified:
+  - Packs = `Product.packingStock` + packing unit (always shown)
+  - Retail = `Product.stock` + unit (shown only if `allowPackSale = true`)
+- **Container info** shown as text: `packingSize unit / packingUnit` (e.g., `22 kg / tank`).
+- **Add** button is enabled only when the correct price exists:
+  - Retail items need `price` > 0
+  - Pack-only items need `srp` > 0
