@@ -1,11 +1,14 @@
 import type { LoaderFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useLoaderData } from "@remix-run/react";
+import { Form, useLoaderData, useRevalidator } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
 
+// ─────────────────────────────────────────────────────────────
+// Loader: fetch + normalize numerics, disable caching
+// ─────────────────────────────────────────────────────────────
 export const loader: LoaderFunction = async () => {
-  const [categories, products] = await Promise.all([
+  const [categories, rawProducts] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -15,35 +18,46 @@ export const loader: LoaderFunction = async () => {
       select: {
         id: true,
         name: true,
-        price: true,
-        srp: true,
+        price: true, // Decimal | number | string
+        srp: true, // Decimal | number | string
         allowPackSale: true,
-        packingStock: true,
-        packingSize: true,
-        stock: true,
-        minStock: true,
+        packingStock: true, // number | null
+        packingSize: true, // Decimal | number | string | null
+        stock: true, // Decimal | number | string | null
+        minStock: true, // Decimal | number | string | null
         categoryId: true,
         brand: { select: { id: true, name: true } },
         imageUrl: true,
-        unit: { select: { name: true } }, // RetailUnit
-        packingUnit: { select: { name: true } }, // PackingUnit
+        unit: { select: { name: true } }, // retail unit
+        packingUnit: { select: { name: true } }, // pack unit
       },
       orderBy: { name: "asc" },
       take: 300,
     }),
   ]);
-  return json({ categories, products });
+
+  const products = rawProducts.map((p) => ({
+    ...p,
+    price: p.price == null ? 0 : Number(p.price),
+    srp: p.srp == null ? 0 : Number(p.srp),
+    stock: p.stock == null ? null : Number(p.stock),
+    minStock: p.minStock == null ? null : Number(p.minStock),
+    packingSize: p.packingSize == null ? 0 : Number(p.packingSize),
+    packingStock: p.packingStock == null ? 0 : Number(p.packingStock),
+  }));
+
+  return json(
+    { categories, products },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 };
 
-type L = typeof loader;
-type ProductRow = ReturnType<L extends any ? L : never> extends Promise<infer T>
-  ? T extends { json(): any }
-    ? never
-    : never
-  : never; // (ignore; we’ll type inline below)
-
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
 export default function KioskPage() {
   const { categories, products } = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
 
   // UI state
   const [q, setQ] = React.useState("");
@@ -51,12 +65,22 @@ export default function KioskPage() {
   const [activeBrand, setActiveBrand] = React.useState<number | "">("");
 
   // cart: id -> item snapshot
-  const [cart, setCart] = React.useState<
-    Record<
-      number,
-      { id: number; name: string; unitPrice: number; qty: number; step: number }
-    >
-  >({});
+
+  type Mode = "retail" | "pack";
+  type CartItem = {
+    key: string;
+    id: number;
+    name: string;
+    mode: Mode;
+    unitLabel: string;
+    unitPrice: number;
+    qty: number;
+    step: number;
+  };
+  const makeKey = (id: number, mode: Mode) => `${id}:${mode}`;
+
+  // cart now keyed by id:mode
+  const [cart, setCart] = React.useState<Record<string, CartItem>>({});
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -88,19 +112,30 @@ export default function KioskPage() {
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [products, activeCat]);
 
-  const add = (p: (typeof products)[number]) => {
-    const price = getUnitPrice(p);
-    if (price === null) return; // no price set
-    const step = p.allowPackSale ? 0.25 : 1;
+  // cart ops
+  const add = (p: (typeof products)[number], mode: Mode) => {
+    const unitPrice = mode === "retail" ? Number(p.price) : Number(p.srp);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) return;
+
+    const step = mode === "retail" ? 0.25 : 1;
+    const unitLabel =
+      mode === "retail"
+        ? p.unit?.name ?? "unit"
+        : p.packingUnit?.name ?? "pack";
+    const key = makeKey(p.id, mode);
+
     setCart((prev) => {
-      const ex = prev[p.id];
+      const ex = prev[key];
       const nextQty = +(ex ? ex.qty + step : step).toFixed(2);
       return {
         ...prev,
-        [p.id]: {
+        [key]: {
+          key,
           id: p.id,
           name: p.name,
-          unitPrice: price,
+          mode,
+          unitLabel,
+          unitPrice,
           qty: nextQty,
           step,
         },
@@ -108,33 +143,33 @@ export default function KioskPage() {
     });
   };
 
-  const inc = (id: number) =>
+  const inc = (key: string) =>
     setCart((prev) => {
-      const ex = prev[id];
+      const ex = prev[key];
       if (!ex) return prev;
-      return { ...prev, [id]: { ...ex, qty: +(ex.qty + ex.step).toFixed(2) } };
+      return { ...prev, [key]: { ...ex, qty: +(ex.qty + ex.step).toFixed(2) } };
     });
 
-  const dec = (id: number) =>
+  const dec = (key: string) =>
     setCart((prev) => {
-      const ex = prev[id];
+      const ex = prev[key];
       if (!ex) return prev;
       const next = +(ex.qty - ex.step).toFixed(2);
       const copy = { ...prev };
-      if (next <= 0) delete copy[id];
-      else copy[id] = { ...ex, qty: next };
+      if (next <= 0) delete copy[key];
+      else copy[key] = { ...ex, qty: next };
       return copy;
     });
 
-  const setQty = (id: number, qty: number) =>
+  const setQty = (key: string, qty: number) =>
     setCart((prev) => {
-      const ex = prev[id];
+      const ex = prev[key];
       if (!ex) return prev;
       const clamped = Math.max(
         ex.step,
-        Math.min(99, Math.round(qty * 100) / 100)
+        Math.min(999, Math.round(qty * 100) / 100)
       );
-      return { ...prev, [id]: { ...ex, qty: clamped } };
+      return { ...prev, [key]: { ...ex, qty: clamped } };
     });
 
   const items = Object.values(cart);
@@ -143,6 +178,7 @@ export default function KioskPage() {
     items.map(({ id, name, qty, unitPrice }) => ({ id, name, qty, unitPrice }))
   );
 
+  // header clock
   const [clock, setClock] = React.useState(() =>
     new Date().toLocaleTimeString("en-PH", {
       hour: "2-digit",
@@ -165,16 +201,48 @@ export default function KioskPage() {
     return () => clearInterval(id);
   }, []);
 
-  function getUnitPrice(p: (typeof products)[number]) {
-    const srp = Number(p.srp);
-    const base = Number(p.price);
-    if (Number.isFinite(srp) && srp > 0) return srp; // prefer SRP if set
-    if (Number.isFinite(base) && base > 0) return base; // fallback to price
-    return null; // no price set
+  // revalidate on focus + light polling (keeps kiosk fresh)
+  React.useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") revalidator.revalidate();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") revalidator.revalidate();
+    }, 15000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      clearInterval(id);
+    };
+  }, [revalidator]);
+
+  // ── UI helpers for nicer buttons ──────────────────────────
+  const btnBase =
+    "inline-flex items-center gap-1 rounded-md border text-[12px] px-3 py-1.5 shadow-sm transition-colors";
+  const btnOutline =
+    "bg-white text-gray-800 border-gray-300 hover:bg-gray-50 active:bg-gray-100";
+  const btnDisabled =
+    "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed";
+  const priceChip =
+    "ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600";
+
+  function packAddLabel(p: {
+    packingUnit?: { name?: string } | null;
+    packingSize?: number | null;
+    unit?: { name?: string } | null;
+  }) {
+    const pu = p.packingUnit?.name?.trim() || "Pack";
+    const size = Number(p.packingSize ?? 0);
+    const u = p.unit?.name?.trim() || "unit";
+    return size > 0 ? `Add ${pu} (${size} ${u})` : `Add ${pu}`;
+  }
+  function retailAddLabel(p: { unit?: { name?: string } | null }) {
+    const u = p.unit?.name?.trim() || "unit";
+    return `Add by ${u}`;
   }
 
   return (
-    <main className="kiosk-wrapper min-h-screen bg-white text-gray-900 p-4 mx-auto max-w-[1200px] grid gap-4 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_380px] items-start overflow-x-hidden]">
+    <main className="kiosk-wrapper min-h-screen bg-white text-gray-900 p-4 mx-auto max-w-[1200px] grid gap-4 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_380px] items-start overflow-x-hidden">
       {/* HEADER */}
       <header className="md:col-span-3 sticky top-0 z-10 bg-white border-b border-gray-200 -m-4 mb-0 px-4">
         <div className="h-14 flex items-center justify-between">
@@ -304,39 +372,47 @@ export default function KioskPage() {
               // units & container
               const unit = p.unit?.name ?? "unit";
               const packUnit = p.packingUnit?.name ?? "pack";
-              const packSize = Number(p.packingSize ?? 0) || 0;
+              const packSize = Number(p.packingSize ?? 0);
 
-              // stocks: packs always; retail only when allowed
-              const retailStock = typeof p.stock === "number" ? p.stock : null; // loose (kg/pcs)
-              const packStock =
-                typeof p.packingStock === "number" ? p.packingStock : null; // whole packs
-              const minStock =
-                typeof p.minStock === "number" ? p.minStock : null;
+              // 🔄 DB meaning:
+              // - stock          = PACK COUNT (tanks/sacks)
+              // - packingStock   = RETAIL UNITS (kg/pcs)
+              const packStock = Number(p.stock ?? 0); // whole packs available
+              const retailStock = Number(p.packingStock ?? 0); // retail units available
 
-              // out/low flags
-              const isOut = (retailStock ?? 0) <= 0 && (packStock ?? 0) <= 0;
+              const price = Number(p.price ?? 0); // retail price per unit
+              const srp = Number(p.srp ?? 0); // price per pack
+              const minStock = p.minStock ?? null; // low retail threshold
+
+              // availability by channel
+              const retailAvailable =
+                !!p.allowPackSale && retailStock > 0 && price > 0;
+              const packAvailable = packStock > 0 && srp > 0;
+
+              // overall state
+              const isOut = !retailAvailable && !packAvailable;
               const isLowStock =
                 !isOut &&
-                ((packStock !== null && packStock <= 1) ||
+                ((packAvailable && packStock <= 1) ||
                   (p.allowPackSale &&
-                    retailStock !== null &&
-                    minStock !== null &&
+                    minStock != null &&
                     retailStock > 0 &&
                     retailStock <= minStock));
 
-              // DB-price rules (no manipulation):
-              // - retail price = p.price (only if allowPackSale)
-              // - pack price   = p.srp   (used by backend add() for pack-only items)
-              const hasRetailPrice = !!p.allowPackSale && Number(p.price) > 0;
-              const hasPackPrice = Number(p.srp) > 0;
+              // Add button targets retail if allowPackSale else pack
+              const addIsRetail = !!p.allowPackSale;
+              const canAdd = addIsRetail ? retailAvailable : packAvailable;
 
-              // can add? retail items need price; pack-only items need srp
-              const canAdd = p.allowPackSale ? hasRetailPrice : hasPackPrice;
+              // disable when out or already in cart
+              const cardDisabled = isOut || !!inCart;
 
               return (
                 <div
                   key={p.id}
-                  className="border border-gray-200 rounded-lg p-2 bg-white"
+                  className={`border border-gray-200 rounded-lg p-2 bg-white ${
+                    cardDisabled ? "opacity-60" : ""
+                  }`}
+                  aria-disabled={cardDisabled}
                 >
                   <div className="flex gap-2 items-start">
                     {/* Thumb */}
@@ -357,63 +433,50 @@ export default function KioskPage() {
 
                     {/* Content (name/brand, price, stock) */}
                     <div className="min-w-0 flex-1">
-                      {/* line 1: name/brand on left, badges on right */}
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm text-gray-900 truncate">
+                      {/* line 1: name + small inline tags */}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-medium text-sm text-gray-900 truncate">
                             {p.name}
-                          </div>
-                          {p.brand?.name && (
-                            <div className="text-[11px] text-gray-500 truncate">
-                              {p.brand.name}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 justify-self-end">
+                          </span>
                           {isLowStock && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                            <span
+                              className="flex-none text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200"
+                              title="Low stock"
+                            >
                               Low
                             </span>
                           )}
                           {isOut && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+                            <span
+                              className="flex-none text-[10px] px-1.5 py-0.5 rounded border bg-red-50 text-red-700 border-red-200"
+                              title="Out of stock"
+                            >
                               Out
                             </span>
                           )}
                         </div>
-                      </div>
-
-                      {/* line 2: price (retail only; no computed pack price) */}
-                      <div className="mt-1 text-[11px] text-gray-700 flex flex-wrap gap-x-3 gap-y-1 min-w-0">
-                        {hasRetailPrice && (
-                          <span className="truncate">
-                            <strong>{peso(Number(p.price))}</strong>
-                            <span className="text-gray-500"> / {unit}</span>
-                          </span>
-                        )}
-                        {Number(p.srp) > 0 && (
-                          <span className="truncate">
-                            <strong>{peso(Number(p.srp))}</strong>
-                            <span className="text-gray-500"> / {packUnit}</span>
-                          </span>
+                        {p.brand?.name && (
+                          <div className="text-[11px] text-gray-500 truncate">
+                            {p.brand.name}
+                          </div>
                         )}
                       </div>
-
-                      {/* line 3: stocks & container */}
+                      {/* line 2: stocks & container */}
                       <div className="mt-1 text-[11px] text-gray-700 flex flex-wrap items-center gap-2">
-                        {typeof packStock === "number" && (
-                          <span className="truncate">
-                            <strong>Stock:</strong> {Math.max(0, packStock)}{" "}
-                            {packUnit}
-                            {packStock === 1 ? "" : "s"}
-                          </span>
-                        )}
-                        {p.allowPackSale && typeof retailStock === "number" && (
+                        <span className="truncate">
+                          <strong>Stock:</strong> {Math.max(0, packStock)}{" "}
+                          {packUnit}
+                          {packStock === 1 ? "" : "s"}
+                        </span>
+
+                        {p.allowPackSale && (
                           <span className="text-gray-500 truncate">
                             <strong>Retail Stock:</strong>{" "}
                             {Math.max(0, +retailStock.toFixed(2))} {unit}
                           </span>
                         )}
+
                         {packSize > 0 &&
                           p.unit?.name &&
                           p.packingUnit?.name && (
@@ -421,73 +484,122 @@ export default function KioskPage() {
                               Container: {packSize} {unit} / {packUnit}
                             </span>
                           )}
+
+                        {/* Hints for partial empties */}
+                        {p.allowPackSale &&
+                          !retailAvailable &&
+                          packAvailable && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              Retail empty — open sack needed
+                            </span>
+                          )}
+                        {!packAvailable && retailAvailable && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                            Pack stock empty
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    {/* Controls (right) */}
-                    <div className="shrink-0">
-                      {!inCart ? (
-                        <button
-                          onClick={() => add(p)}
-                          disabled={
-                            isOut ||
-                            !canAdd ||
-                            (!p.allowPackSale && packSize <= 0)
-                          }
-                          className={`px-3 py-1.5 rounded text-[12px] ${
-                            isOut ||
-                            !canAdd ||
-                            (!p.allowPackSale && packSize <= 0)
-                              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                              : "bg-black text-white"
-                          }`}
-                        >
-                          {isOut ? "Out" : !canAdd ? "Set price" : "Add"}
-                        </button>
+                    {/* Controls (right) — allow adding BOTH modes (clean UI) */}
+                    <div className="shrink-0 flex flex-col items-end gap-1">
+                      {p.allowPackSale ? (
+                        <>
+                          {/* Retail Add */}
+                          {(() => {
+                            const inCartRetail = Boolean(
+                              cart[makeKey(p.id, "retail")]
+                            );
+                            const retailOk =
+                              retailStock > 0 && Number(p.price) > 0;
+                            const disabled = inCartRetail || !retailOk;
+                            const title = inCartRetail
+                              ? "Already in cart (retail)"
+                              : !retailOk
+                              ? "Retail unavailable (no stock/price)"
+                              : `Add by ${unit} at ${peso(Number(p.price))}`;
+                            return (
+                              <button
+                                onClick={() => add(p, "retail")}
+                                disabled={disabled}
+                                title={title}
+                                className={`${btnBase} ${
+                                  disabled ? btnDisabled : btnOutline
+                                }`}
+                              >
+                                <span>➕ {retailAddLabel(p)}</span>
+                                {Number(p.price) > 0 && (
+                                  <span className={priceChip}>
+                                    {peso(Number(p.price))}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })()}
+
+                          {/* Pack Add (outline pill + price chip) */}
+                          {(() => {
+                            const inCartPack = Boolean(
+                              cart[makeKey(p.id, "pack")]
+                            );
+                            const packOk = packStock > 0 && Number(p.srp) > 0;
+                            const disabled = inCartPack || !packOk;
+                            const title = inCartPack
+                              ? "Already in cart (pack)"
+                              : !packOk
+                              ? "Pack unavailable (no stock/price)"
+                              : `Add ${packUnit} at ${peso(Number(p.srp))}`;
+                            return (
+                              <button
+                                onClick={() => add(p, "pack")}
+                                disabled={disabled}
+                                title={title}
+                                className={`${btnBase} ${
+                                  disabled ? btnDisabled : btnOutline
+                                }`}
+                              >
+                                <span>➕ {packAddLabel(p)}</span>
+                                {Number(p.srp) > 0 && (
+                                  <span className={priceChip}>
+                                    {peso(Number(p.srp))}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })()}
+                        </>
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => dec(p.id)}
-                            disabled={isOut}
-                            className={`px-2.5 py-1.5 rounded ${
-                              isOut
-                                ? "bg-gray-100 text-gray-400"
-                                : "bg-gray-200"
-                            }`}
-                            aria-label="Decrease"
-                          >
-                            −
-                          </button>
-                          <input
-                            type="number"
-                            step={inCart.step}
-                            min={inCart.step}
-                            max={999}
-                            value={inCart.qty}
-                            onChange={(e) =>
-                              setQty(p.id, Number(e.target.value))
-                            }
-                            disabled={isOut}
-                            className={`w-16 text-sm border border-gray-300 rounded px-2 py-1 text-right ${
-                              isOut
-                                ? "bg-gray-50 text-gray-400"
-                                : "bg-white text-gray-900"
-                            }`}
-                            aria-label="Quantity"
-                          />
-                          <button
-                            onClick={() => inc(p.id)}
-                            disabled={isOut}
-                            className={`px-2.5 py-1.5 rounded ${
-                              isOut
-                                ? "bg-gray-100 text-gray-400"
-                                : "bg-gray-200"
-                            }`}
-                            aria-label="Increase"
-                          >
-                            +
-                          </button>
-                        </div>
+                        // Pack-only product
+                        // Pack-only product (outline pill + price chip)
+                        (() => {
+                          const inCartPack = Boolean(
+                            cart[makeKey(p.id, "pack")]
+                          );
+                          const packOk = packStock > 0 && Number(p.srp) > 0;
+                          const disabled = inCartPack || !packOk;
+                          const title = inCartPack
+                            ? "Already in cart"
+                            : !packOk
+                            ? "Pack unavailable (no stock/price)"
+                            : `Add ${packUnit} at ${peso(Number(p.srp))}`;
+                          return (
+                            <button
+                              onClick={() => add(p, "pack")}
+                              disabled={disabled}
+                              title={title}
+                              className={`${btnBase} ${
+                                disabled ? btnDisabled : btnOutline
+                              }`}
+                            >
+                              <span>➕ {packAddLabel(p)}</span>
+                              {Number(p.srp) > 0 && (
+                                <span className={priceChip}>
+                                  {peso(Number(p.srp))}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })()
                       )}
                     </div>
                   </div>
@@ -518,18 +630,24 @@ export default function KioskPage() {
             <div className="mt-2 space-y-2 max-h-[50vh] overflow-auto pr-1">
               {items.map((it) => (
                 <div
-                  key={it.id}
+                  key={it.key}
                   className="flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{it.name}</div>
+                    <div className="font-medium truncate">
+                      {it.name}{" "}
+                      <span className="text-[10px] uppercase text-gray-500">
+                        [{it.mode}]
+                      </span>
+                    </div>
                     <div className="text-xs text-gray-600">
-                      {it.qty} × {peso(it.unitPrice)}
+                      {it.qty} × {peso(it.unitPrice)}{" "}
+                      {it.mode === "retail" ? `/${it.unitLabel}` : ""}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => dec(it.id)}
+                      onClick={() => dec(it.key)}
                       className="px-2 rounded bg-gray-200 text-sm"
                     >
                       −
@@ -538,13 +656,13 @@ export default function KioskPage() {
                       type="number"
                       step={it.step}
                       min={it.step}
-                      max={99}
+                      max={999}
                       value={it.qty}
-                      onChange={(e) => setQty(it.id, Number(e.target.value))}
+                      onChange={(e) => setQty(it.key, Number(e.target.value))}
                       className="w-16 text-sm border border-gray-300 rounded px-2 py-1 bg-white text-gray-900"
                     />
                     <button
-                      onClick={() => inc(it.id)}
+                      onClick={() => inc(it.key)}
                       className="px-2 rounded bg-gray-200 text-sm"
                     >
                       +
@@ -553,7 +671,7 @@ export default function KioskPage() {
                       onClick={() =>
                         setCart((p) => {
                           const c = { ...p };
-                          delete c[it.id];
+                          delete c[it.key];
                           return c;
                         })
                       }
