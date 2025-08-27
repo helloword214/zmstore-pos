@@ -1,8 +1,17 @@
 import type { LoaderFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useLoaderData, useRevalidator } from "@remix-run/react";
+import {
+  useLoaderData,
+  useRevalidator,
+  useFetcher,
+  useNavigate,
+} from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
+
+type CreateSlipResp =
+  | { ok: true; id: number }
+  | { ok: false; errors: Array<{ id: number; mode?: string; reason: string }> };
 
 // ─────────────────────────────────────────────────────────────
 // Loader: fetch + normalize numerics, disable caching
@@ -59,6 +68,14 @@ export default function KioskPage() {
   const { categories, products } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
+  const createSlip = useFetcher<CreateSlipResp>();
+  const navigate = useNavigate();
+
+  const [errorOpen, setErrorOpen] = React.useState(false);
+
+  const [clientErrors, setClientErrors] = React.useState<
+    Array<{ id: number; mode?: string; reason: string }>
+  >([]);
   // UI state
   const [q, setQ] = React.useState("");
   const [activeCat, setActiveCat] = React.useState<number | "">("");
@@ -111,6 +128,13 @@ export default function KioskPage() {
     }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [products, activeCat]);
+
+  // Fast lookup for validation
+  const productById = React.useMemo(() => {
+    const map = new Map<number, (typeof products)[number]>();
+    for (const p of products) map.set(p.id, p);
+    return map;
+  }, [products]);
 
   // cart ops
   const add = (p: (typeof products)[number], mode: Mode) => {
@@ -174,10 +198,29 @@ export default function KioskPage() {
 
   const items = Object.values(cart);
   const subtotal = items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
+
+  // Ensure each cart line has a 'mode' ("retail" | "pack").
+  // If your cart items already store 'mode', this will include it.
   const payload = JSON.stringify(
-    items.map(({ id, name, qty, unitPrice }) => ({ id, name, qty, unitPrice }))
+    items.map(({ id, name, qty, unitPrice, mode }) => ({
+      id,
+      name,
+      qty,
+      unitPrice,
+      mode, // may be undefined for old carts; server will infer if missing
+    }))
   );
 
+  // Handle fetcher response: navigate on success; show modal on 400
+  React.useEffect(() => {
+    if (createSlip.state !== "idle" || !createSlip.data) return;
+    if (createSlip.data.ok === true) {
+      navigate(`/orders/${createSlip.data.id}/slip`, { replace: true });
+    } else {
+      setClientErrors([]); // server-side errors will be shown
+      setErrorOpen(true);
+    }
+  }, [createSlip.state, createSlip.data, navigate]);
   // header clock
   const [clock, setClock] = React.useState(() =>
     new Date().toLocaleTimeString("en-PH", {
@@ -239,6 +282,116 @@ export default function KioskPage() {
   function retailAddLabel(p: { unit?: { name?: string } | null }) {
     const u = p.unit?.name?.trim() || "unit";
     return `Add by ${u}`;
+  }
+
+  // ── Client-side preflight validation (mirrors server rules) ────────────────
+  function validateCartForSubmit(): Array<{
+    id: number;
+    mode?: "retail" | "pack";
+    reason: string;
+  }> {
+    const errs: Array<{
+      id: number;
+      mode?: "retail" | "pack";
+      reason: string;
+    }> = [];
+    const eps = 1e-6;
+    for (const line of items) {
+      const p = productById.get(line.id);
+      if (!p) {
+        errs.push({ id: line.id, reason: "Product no longer exists" });
+        continue;
+      }
+      const price = Number(p.price ?? 0);
+      const srp = Number(p.srp ?? 0);
+      const packStock = Number(p.stock ?? 0); // packs
+      const retailStock = Number(p.packingStock ?? 0); // retail units
+      if (line.mode === "retail") {
+        if (!p.allowPackSale) {
+          errs.push({ id: p.id, mode: "retail", reason: "Retail not allowed" });
+          continue;
+        }
+        if (!(price > 0)) {
+          errs.push({
+            id: p.id,
+            mode: "retail",
+            reason: "Retail price not set",
+          });
+        }
+        // qty multiple of 0.25
+        const q4 = Math.round(line.qty * 100) / 25; // 0.25 = 25/100
+        if (Math.abs(q4 - Math.round(q4)) > eps) {
+          errs.push({
+            id: p.id,
+            mode: "retail",
+            reason: "Retail qty must be a multiple of 0.25",
+          });
+        }
+        if (!(line.qty > 0)) {
+          errs.push({
+            id: p.id,
+            mode: "retail",
+            reason: "Retail qty must be > 0",
+          });
+        }
+        if (line.qty - retailStock > eps) {
+          errs.push({
+            id: p.id,
+            mode: "retail",
+            reason: `Retail qty exceeds stock (${retailStock})`,
+          });
+        }
+        if (Math.abs(line.unitPrice - price) > eps) {
+          errs.push({
+            id: p.id,
+            mode: "retail",
+            reason: "Retail price changed — refresh kiosk",
+          });
+        }
+      } else {
+        // PACK
+        if (!(srp > 0)) {
+          errs.push({ id: p.id, mode: "pack", reason: "Pack price not set" });
+        }
+        if (!Number.isInteger(line.qty)) {
+          errs.push({
+            id: p.id,
+            mode: "pack",
+            reason: "Pack qty must be an integer",
+          });
+        }
+        if (!(line.qty > 0)) {
+          errs.push({ id: p.id, mode: "pack", reason: "Pack qty must be > 0" });
+        }
+        if (line.qty > packStock) {
+          errs.push({
+            id: p.id,
+            mode: "pack",
+            reason: `Pack qty exceeds stock (${packStock})`,
+          });
+        }
+        if (Math.abs(line.unitPrice - srp) > eps) {
+          errs.push({
+            id: p.id,
+            mode: "pack",
+            reason: "Pack price changed — refresh kiosk",
+          });
+        }
+      }
+    }
+    return errs;
+  }
+
+  function handleCreateSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // Run preflight; if any errors, stop and show modal
+    const errs = validateCartForSubmit();
+    if (errs.length) {
+      e.preventDefault();
+      setClientErrors(errs);
+      setErrorOpen(true);
+    } else {
+      setClientErrors([]);
+    }
   }
 
   return (
@@ -367,8 +520,6 @@ export default function KioskPage() {
             style={{ maxHeight: "calc(100vh - 14rem)" }}
           >
             {filtered.map((p) => {
-              const inCart = cart[p.id];
-
               // units & container
               const unit = p.unit?.name ?? "unit";
               const packUnit = p.packingUnit?.name ?? "pack";
@@ -399,12 +550,8 @@ export default function KioskPage() {
                     retailStock > 0 &&
                     retailStock <= minStock));
 
-              // Add button targets retail if allowPackSale else pack
-              const addIsRetail = !!p.allowPackSale;
-              const canAdd = addIsRetail ? retailAvailable : packAvailable;
-
-              // disable when out or already in cart
-              const cardDisabled = isOut || !!inCart;
+              // Gray out whole card only when fully out of stock
+              const cardDisabled = isOut;
 
               return (
                 <div
@@ -692,16 +839,21 @@ export default function KioskPage() {
               <div className="font-semibold">{peso(subtotal)}</div>
             </div>
 
-            <Form method="post" action="/orders.new" className="mt-3">
+            <createSlip.Form
+              method="post"
+              action="/orders/new?respond=json"
+              className="mt-3"
+              onSubmit={handleCreateSubmit}
+            >
               <input type="hidden" name="items" value={payload} />
               <input type="hidden" name="terminalId" value="KIOSK-01" />
               <button
                 className="w-full py-2 rounded bg-black text-white text-sm"
-                disabled={items.length === 0}
+                disabled={items.length === 0 || createSlip.state !== "idle"}
               >
-                Print Order Slip
+                {createSlip.state !== "idle" ? "Printing…" : "Print Order Slip"}
               </button>
-            </Form>
+            </createSlip.Form>
           </>
         )}
       </aside>
@@ -711,6 +863,49 @@ export default function KioskPage() {
         Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust qty •
         Low stock badge legend coming next • v0.1
       </footer>
+      {/* Order creation errors (server validation) */}
+      {errorOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          {/* Backdrop as an interactive element to satisfy a11y + eslint */}
+          <button
+            type="button"
+            aria-label="Close modal"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setErrorOpen(false)}
+          />
+          <div
+            role="document"
+            className="relative w-full max-w-md rounded-lg bg-white shadow-lg p-4"
+          >
+            <div className="font-semibold mb-2">Can’t print slip</div>
+            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 max-h-64 overflow-auto">
+              {(clientErrors.length
+                ? clientErrors
+                : createSlip.data && createSlip.data.ok === false
+                ? createSlip.data.errors
+                : []
+              ).map((e, i) => (
+                <li key={i}>
+                  <span className="font-medium">Product #{e.id}</span>
+                  {e.mode ? ` (${e.mode})` : ""}: {e.reason}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={() => setErrorOpen(false)}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
