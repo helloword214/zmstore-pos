@@ -24,11 +24,21 @@ Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (ri
 
 ## Core Principles
 
-- **Kiosk**: Customer builds order, prints Order Slip (NO discounts).
+- **Kiosk**: Customer builds order, prints Order Slip (**no discounts**).
 - **Cashier**: Verifies order, applies discounts, collects payment.
 - **Receipt**: Only issued when order is `PAID`.
 - **Inventory**: Deducted only when `PAID`.
 - **Fulfillment**: Picking/Packing starts after payment.
+
+---
+
+## Data Terms (Kiosk/Inventory semantics)
+
+- `price` — **retail/unit price** (e.g., per kg / pc)
+- `srp` — **pack price** (e.g., per sack / tank)
+- `stock` — **pack count** on hand (sacks/tanks)
+- `packingStock` — **retail units** on hand (kg/pcs)
+- `allowPackSale` — retail is allowed (can sell by unit **and** by pack)
 
 ---
 
@@ -40,8 +50,17 @@ Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (ri
 
 - Tablet-first kiosk for item selection and cart building.
 - Category chips + search, product grid, sticky cart.
-- Qty rules: retail-allowed → step 0.25; pack-only → step 1.
-- “Print Order Slip” posts snapshot to `/orders.new`.
+- Qty rules: retail-allowed → step **0.25**; pack-only → step **1**.
+- **Mixed-mode orders** for eligible products: customer can add **Retail** and **Pack** for the **same product** in one slip.
+  - Cart lines are keyed by **product + mode**; slip uses snapshot `{id, name, qty, unitPrice}` per line.
+- **Unit-aware Add buttons**:
+  - Retail → **“Add by {unit}”** (uses `price`, step **0.25**)
+  - Pack → **“Add {packUnit} ({packSize} {unit})”** (uses `srp`, step **1**)
+- **Availability is per mode** (independent disable rules):
+  - Retail requires `packingStock > 0` **and** `price > 0`
+  - Pack requires `stock > 0` **and** `srp > 0`
+- **Low / Out** badges shown **inline beside the product name** for quick scanning.
+- “Print Order Slip” posts the cart to **`POST /orders/new`** (fetcher; JSON).
 
 **Out of scope (moved to later milestones)**
 
@@ -55,20 +74,57 @@ Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (ri
 
 **Acceptance (K1 v1)**
 
-- I can filter by category/search and add items.
-- I can change qty per rules and see subtotal update.
-- I can print an Order Slip from the cart.
+- [x] Filter by category/search and add items.
+- [x] Add **Retail and Pack** for the same product in one cart.
+- [x] Retail steps by **0.25**; Pack by **1**.
+- [x] Add buttons have **unit-aware labels**; disable per-mode when unavailable or already in cart.
+- [x] **Low/Out** badges appear beside product name.
+- [x] Can print an Order Slip from the cart.
 
 **Spec**
 
-- See `docs/POS_KioskUI.md` for layout, behaviors, and accessibility.
+- See `docs/POS_KioskUI.md` for layout, behaviors, accessibility.
+
+---
 
 ### Milestone 1 — Order Slip
 
 - Slip shows **totals before discounts**.
-- Discounts are not applied at kiosk.
-- Expiry: 24h by default.
+- Discounts are **not** applied at kiosk.
+- Expiry: **24h** by default.
 - Reprint allowed (`Reprint #n` footer).
+- **Note:** `items[]` may include **multiple lines with the same product `id`** when the customer buys both modes (Retail + Pack). Each line’s `unitPrice` reflects its mode.
+
+---
+
+### Milestone 1.1 — Server-side Slip Validation (mode-aware)
+
+**Why**  
+Kiosk data can go stale; server must clamp by **current DB** to keep slips valid.
+
+**What the server enforces (at `POST /orders/new`)**
+
+- Canonical mapping:
+  - `stock` = **pack count**, `packingStock` = **retail units**
+  - `price` = retail price, `srp` = pack price
+- **Retail line**
+  - `allowPackSale === true`
+  - `price > 0`
+  - `qty` multiple of **0.25**, and `qty ≤ packingStock`
+  - `unitPrice === price` (prevents stale/edited client price)
+- **Pack line**
+  - `srp > 0`
+  - `qty` is **integer**, and `qty ≤ stock`
+  - `unitPrice === srp`
+
+**Responses**
+
+- **Success** → creates `UNPAID` **Order** with `items` snapshots `{ name, unitPrice, qty, lineTotal, productId }`;  
+  returns JSON `{ ok: true, id }` to the kiosk fetcher (UI then navigates to `/orders/:id/slip`).
+- **Failure** → `400 { errors: [ { id, mode?, reason } ] }` and the kiosk shows a small modal.  
+  _No order is created when any line fails._
+
+---
 
 ### Milestone 2 — Cashier Queue & Scan
 
@@ -77,12 +133,16 @@ Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (ri
 - Cashier can apply discounts (senior, PWD, promo).
 - Manager PIN required for manual/override discounts.
 
+---
+
 ### Milestone 3 — Payment & Receipt
 
 - Payment methods: Cash, GCash, Card.
 - Split payments supported.
 - Change always returned in cash.
 - Official Receipt printed only when `PAID`.
+
+---
 
 ### Milestone 4 — Fulfillment
 

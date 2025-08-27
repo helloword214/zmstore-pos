@@ -103,6 +103,183 @@
 - 400: missing/invalid `items` payload
 - 404: order not found
 
+# API & Actions (Milestone 1) _Last updated: 2025-08-27_
+
+This document specifies the **Order Slip** APIs used by the Kiosk. It covers request/response formats, server-side validations, and state effects.
+
+---
+
+## Summary
+
+- **Create Slip:** `POST /orders/new`
+- **View Slip:** `GET /orders/:id/slip`
+- **Reprint Slip:** `POST /orders/:id/slip` with `_action=reprint`
+
+> The kiosk submits via Remix `fetcher` with `Accept: application/json`. When HTML navigation is desired, omit the JSON `Accept` header and the server will `302` redirect to the slip page.
+
+---
+
+## Create Slip
+
+**POST** `/orders/new`  
+Kiosk uses a Remix `fetcher` with `Accept: application/json` (or append `?respond=json`).
+
+### Purpose
+
+Create an `UNPAID` order from the kiosk cart. The server re-validates every cart line against **current DB state** to prevent stale prices/stock.
+
+### Request
+
+#### Content types accepted
+
+- `application/x-www-form-urlencoded` (Remix `<fetcher.Form>`)
+- `application/json`
+
+#### Body (form fields or JSON keys)
+
+- `terminalId` _(optional, string)_ — e.g., `"KIOSK-01"`
+- `items` _(required, array)_ — list of cart lines. Each line:
+
+  | Field       | Type                   | Required | Notes                                                             |
+  | ----------- | ---------------------- | -------- | ----------------------------------------------------------------- |
+  | `id`        | number                 | ✅       | Product ID                                                        |
+  | `name`      | string                 | ✅       | Snapshot of product name                                          |
+  | `qty`       | number                 | ✅       | Quantity (mode-dependent rules below)                             |
+  | `unitPrice` | number                 | ✅       | Snapshot unit price (must match DB’s current price for that mode) |
+  | `mode`      | `"retail"` or `"pack"` | ❌       | Optional; server can infer based on `unitPrice` vs `price`/`srp`  |
+
+#### Examples
+
+_Form (URL-encoded via `<fetcher.Form>`)_
+
+````json
+items=[{"id":123,"name":"RICE 25kg","qty":1,"unitPrice":1200,"mode":"pack"},{"id":123,"name":"RICE 25kg","qty":0.5,"unitPrice":48,"mode":"retail"}]&terminalId=KIOSK-01
+
+Server-side validation (fresh DB)
+
+    - Canonical mapping
+
+      1. stock = pack count (sacks / tanks)
+
+      2. packingStock = retail units (kg / pcs)
+
+      3. price = retail price (per unit)
+
+      4. srp = pack price (per pack)
+
+    - Retail line rules
+
+      1. allowPackSale === true
+
+      2. price > 0
+
+      3. qty multiple of 0.25 (e.g., 0.25, 0.5, 0.75, …)
+
+      4. qty ≤ packingStock
+
+      5. unitPrice === price (guards against stale or edited price)
+
+    - Pack line rules
+
+      1. srp > 0
+
+      2. qty is an integer (1, 2, 3, …)
+
+      3. qty ≤ stock
+
+      4. unitPrice === srp
+
+    - Mixed-mode allowed
+        The same product may appear twice (one retail line, one pack line).
+        Lines are evaluated independently against their respective stock buckets.
+
+# Effects on success
+
+    1. Creates an Order with:
+        - status: "UNPAID"
+        - subtotal and totalBeforeDiscount = subtotal
+        - printedAt = now
+        - expiryAt = printedAt + 24h
+        - printCount = 1
+        - terminalId (if provided)
+        - items.create[] for each valid line:
+            {
+                "name": "RICE 25kg",
+                "unitPrice": 1200,
+                "qty": 1,
+                "lineTotal": 1200,
+                "product": { "connect": { "id": 123 } }
+              }
+        Inventory is not deducted on slip creation. Deduction happens after Payment.
+
+# Response
+
+  1. JSON flow (when Accept: application/json or ?respond=json):
+      { "ok": true, "id": 987 }
+
+  2. Kiosk then navigates to /orders/987/slip.
+      HTML flow (no JSON Accept):
+        302 Found → /orders/:id/slip
+
+#Errors (no order created)
+
+  1. HTTP/400 with per-line error details:
+      {
+        "errors": [
+          { "id": 123, "mode": "retail", "reason": "Retail qty must be a multiple of 0.25" },
+          { "id": 456, "mode": "pack", "reason": "Pack stock insufficient (need 2, have 1)" },
+          { "id": 789, "reason": "Price changed, please refresh (client 48.00, current 50.00)" }
+        ]
+      }
+      The kiosk keeps the cart so the user can adjust/remove lines and retry.
+
+# View Slip
+
+  - GET /orders/:id/slip
+
+  - Renders a printable slip page:
+      > Order Code + QR/Barcode
+      > Line items (qty × price, line total)
+      > Subtotal & Total BEFORE discounts
+      > printedAt, printCount
+      > “EXPIRED” badge if expiryAt < now
+
+# Errors
+  - 404 if the order does not exist or is not visible to the branch/terminal.
+
+
+
+# Reprint Slip
+  1. POST /orders/:id/slip with _action=reprint
+    > Increments printCount
+    > Updates printedAt to the reprint time
+    > Does not change expiryAt, totals, or status
+    * printedAt represents the most recent print. If the first print timestamp is needed later, add a firstPrintedAt field.
+
+# State changes
+      DRAFT → UNPAID on slip creation
+      Reprints do not change state
+      Expired UNPAID → CANCELLED (no inventory movement)
+
+
+
+---
+
+# 📄 `docs/POS_Order_Flow.md` (delta)
+
+
+
+
+```md
+# POS Order Flow (Delta Update)
+
+- **Kiosk preflight validation** added before posting to `/orders/new`. Client checks the same rules the server enforces to avoid failed submissions.
+- Server remains the source of truth; it repeats validation to catch races (stock/price changed between load and submit).
+- No change to inventory rules: **inventory is deducted only when the order becomes `PAID`**.
+
+
+
+
 ## Milestone 2 — Cashier Queue & Scan
 
 - Cashier sees all UNPAID in queue (oldest first).
@@ -206,3 +383,6 @@ VOIDED_FF --> [*]
 HANDED_OVER --> [*]
 CANCELLED --> [*]
 VOIDED --> [*]
+
+items[] may contain multiple entries with the same id when the customer buys both Retail and Pack. Each line’s unitPrice reflects the mode.”
+````

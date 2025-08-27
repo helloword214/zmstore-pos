@@ -92,3 +92,24 @@
 - **Add** button is enabled only when the correct price exists:
   - Retail items need `price` > 0
   - Pack-only items need `srp` > 0
+
+## 2025-08-26
+
+- ✅ Fixed stock mapping in kiosk: `stock` = pack count; `packingStock` = retail units.
+- ✅ Allow mixed-mode adds for products with `allowPackSale = true` (retail + pack in one order).
+- UI: “Add by {unit}” and “Add {packUnit} ({packSize} {unit})” buttons with price chips.
+- UI: Low/Out badges moved inline beside product name.
+- Behavior: Product cards no longer dim when one mode is in cart; each mode disables independently.
+- Note: Cart lines keyed by `productId:mode`; steps = 0.25 (retail) / 1 (pack).
+- Next: server-side clamps (qty ≤ available stock per mode) before slip creation.
+
+## 2025-08-27
+
+- ✅ `/orders/new` now **server-validates** kiosk carts (mode-aware clamps).
+- Kiosk posts via **fetcher** to `/orders/new?respond=json`; shows a modal for per-item errors.
+- Validation rules:
+  - Retail: `allowPackSale`, `price > 0`, qty multiple of **0.25**, qty ≤ `packingStock`, client `unitPrice === price`.
+  - Pack: `srp > 0`, qty **integer**, qty ≤ `stock`, client `unitPrice === srp`.
+- Prisma: `Order.items.create[]` now includes `lineTotal` and `product: { connect: { id } }`.
+- Route naming fixed: **`orders.new.tsx` → `/orders/new`** (dot in filename maps to slash).
+- Result: successful create → `UNPAID` order, slip redirect; failure → JSON `{errors:[...]}` rendered in modal.
