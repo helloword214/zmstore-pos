@@ -2,7 +2,8 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useFetcher } from "@remix-run/react";
 import { db } from "~/utils/db.server";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { toCode39Svg } from "~/utils/orderBarcode";
 
 type ActionData = {
   ok: boolean;
@@ -67,6 +68,16 @@ export default function OrderSlipPage() {
     if (didReprint) window.print();
   }, [fetcher.data]);
 
+  // Copy order code (for cashier scan fallback)
+  const [copied, setCopied] = useState(false);
+  const copyCode = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(order.orderCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  }, [order.orderCode]);
+
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -77,9 +88,9 @@ export default function OrderSlipPage() {
     <div className="mx-auto max-w-md p-4 print:p-0">
       {/* Header */}
       <div className="text-center mb-2">
-        <div className="font-semibold">Your Store Name</div>
+        <div className="font-semibold text-white">Zaldy Merchandise</div>
         <div className="text-xs text-gray-600">
-          Branch • Address • 0912-345-6789
+          Poblacion East, Asingan, Pangasinan • 09199391932
         </div>
       </div>
 
@@ -105,14 +116,37 @@ export default function OrderSlipPage() {
           )}
         </div>
 
-        {/* Simple QR via external service (ok for v1). Replace later with local lib if needed. */}
-        <img
-          className="w-20 h-20"
-          alt="QR"
-          src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
-            order.orderCode
-          )}`}
-        />
+        {/* Code39 barcode + Copy + (optional) QR */}
+        <div className="flex flex-col items-end gap-2">
+          <div
+            className="rounded-md border border-gray-200 px-2 py-1 bg-white text-gray-900"
+            dangerouslySetInnerHTML={{
+              __html: toCode39Svg(order.orderCode, {
+                height: 56,
+                narrow: 2,
+                wide: 5,
+                margin: 6,
+                showText: true,
+              }),
+            }}
+          />
+          <button
+            type="button"
+            onClick={copyCode}
+            className="px-2.5 py-1 rounded-md border border-gray-300 text-xs text-gray-600"
+            aria-label="Copy order code"
+          >
+            {copied ? "Copied" : "Copy code"}
+          </button>
+          {/* Keep QR for now (optional) */}
+          <img
+            className="w-20 h-20"
+            alt="QR"
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+              order.orderCode
+            )}`}
+          />
+        </div>
       </div>
 
       {/* Items */}
@@ -120,7 +154,7 @@ export default function OrderSlipPage() {
         {order.items.map((it) => (
           <div key={it.id} className="flex text-sm py-1">
             <div className="flex-1">
-              <div className="font-medium">{it.name}</div>
+              <div className="font-medium text-gray-400">{it.name}</div>
               <div className="text-xs text-gray-600">
                 {it.qty} × {peso(it.unitPrice)}
               </div>
