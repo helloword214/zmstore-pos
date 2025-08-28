@@ -156,49 +156,54 @@ model Location {
   products Product[]
 }
 
-
-
 // ────────────── ORDER SLIP (Milestone 1) ──────────────
 
 model Order {
-  id                   Int           @id @default(autoincrement())
-  orderCode            String        @unique
-  status               OrderStatus   @default(UNPAID)
+  id        Int         @id @default(autoincrement())
+  orderCode String      @unique
+  status    OrderStatus @default(UNPAID)
 
   // Snapshot totals (no discounts yet)
-  subtotal             Float
-  totalBeforeDiscount  Float
+  subtotal            Float
+  totalBeforeDiscount Float
 
   // Slip meta
-  printCount           Int           @default(1)
-  printedAt            DateTime
-  expiryAt             DateTime
-  terminalId           String?
+  printCount Int      @default(1)
+  printedAt  DateTime
+  expiryAt   DateTime
+  terminalId String?
 
   // Relations
-  items                OrderItem[]
+  items OrderItem[]
 
   // Timestamps
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  // --- Cashier locking ---
+  lockedAt DateTime?
+  lockedBy String? // cashier code/email/name
+  lockNote String? // optional reason
+
+  @@index([status, expiryAt])
+  @@index([lockedAt])
   @@index([status])
   @@index([expiryAt])
 }
 
 model OrderItem {
-  id         Int      @id @default(autoincrement())
-  orderId    Int
-  order      Order    @relation(fields: [orderId], references: [id])
+  id      Int   @id @default(autoincrement())
+  orderId Int
+  order   Order @relation(fields: [orderId], references: [id])
 
   // Keep link to product but also snapshot name/price for immutability
-  productId  Int
-  product    Product  @relation(fields: [productId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
 
-  name       String
-  qty        Float    // allows 0.25, 0.5 kg etc.
-  unitPrice  Float
-  lineTotal  Float
+  name      String
+  qty       Float // allows 0.25, 0.5 kg etc.
+  unitPrice Float
+  lineTotal Float
 
   @@index([orderId])
 }
@@ -210,4 +215,3 @@ enum OrderStatus {
   CANCELLED
   VOIDED
 }
-
