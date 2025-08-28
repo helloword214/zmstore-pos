@@ -150,3 +150,40 @@ Kiosk data can go stale; server must clamp by **current DB** to keep slips valid
 - Pick Ticket prints after `PAID`.
 - Open Sack allowed during packing (convert sack → retail stock).
 - Abandoned orders marked `UNCLAIMED` after timeout.
+
+## 2025-08-28 — Cashier Flow (MVP) now live
+
+### Cashier Responsibilities
+
+- Open slip from queue (scan/type **Order Code** or click in list).
+- Order is **exclusively locked** to the cashier for **5 minutes** (TTL).
+- Verify items with customer; reprint slip if needed.
+- **Mark Paid (Cash)** — triggers inventory deduction (see below).
+- Release lock when stepping away (returns order to queue).
+
+### Locking (Why & How)
+
+- **Why**: Prevents two cashiers from handling the same order.
+- **How**: Claim lock by setting `lockedAt` + `lockedBy`.  
+  TTL = **5 minutes**; stale locks can be reclaimed from the queue.  
+  Releasing clears both fields.
+
+### Payment (MVP scope)
+
+- Current scope: **Cash** only; no discounts/split yet.
+- Server validates each line against **fresh product data**:
+  - **Retail line**: requires `allowPackSale`, `unitPrice === price`; deduct **retail units** from `packingStock`.
+  - **Pack line**: requires `unitPrice === srp`; deduct **pack count** from `stock`.
+- All deductions happen **inside a transaction** and the order becomes **PAID**.
+- On validation failure (price changed / insufficient stock): **no changes**; show per-line errors.
+
+### Inventory Timing (unchanged principle)
+
+- **Only deduct on `PAID`** (never on slip creation).
+- Slip reprints increment `printCount` and update `printedAt` (expiry unchanged).
+
+### Out of Scope (to be added next)
+
+- Discounts (senior/PWD/promo/manual + manager PIN).
+- Payment methods: **GCash**, **Card**, **Split**.
+- Receipt printing (official receipt) and numbering.

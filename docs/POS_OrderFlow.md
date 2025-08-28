@@ -280,36 +280,47 @@ Server-side validation (fresh DB)
 
 
 
-## Milestone 2 — Cashier Queue & Scan
+## Milestone 2 — Cashier Queue & Scan (Implemented)
 
-- Cashier sees all UNPAID in queue (oldest first).
-- Scan slip (QR/Barcode) → open order.
-- Lock order to 1 cashier at a time.
-- Cashier actions:
-  - Verify items with customer.
-  - Apply discounts (senior/PWD/promo/manual).
-  - Cancel order (with reason).
-  - Reprint slip.
+- **Queue page** (`/cashier`):
+  - Shows latest **UNPAID** orders (up to 50, newest first).
+  - Orders display **EXPIRED** and **LOCKED** badges.
+  - Open by **Order Code** (scanned/typed) or by clicking an order in the list.
 
-## Milestone 3 — Payment & Receipt
+- **Locking Rules**:
+  - When opened, order is **locked** (`lockedAt`, `lockedBy`).
+  - TTL = **5 minutes**. If no action, lock becomes **stale** and other cashiers may reclaim.
+  - Atomic claim: `updateMany` ensures only one cashier can lock at a time.
+  - Queue button is **disabled** when locked, tooltip shows `Locked by {cashier}`.
 
-- Payment methods: Cash, GCash, Card.
-- Split payments allowed.
-- Validation:
-  - Cannot underpay.
-  - Overpay → compute change.
-- On complete payment:
-  - Status = PAID.
-  - Deduct inventory.
-  - Assign receiptNo.
-  - Print Official Receipt.
-- Receipt fields:
-  - Merchant info
-  - Receipt No, Order Code
-  - Items (qty × name, unit price, discount, line total)
-  - Subtotal, Discounts, Grand Total
-  - Payment breakdown
-  - Change
+- **Cashier Actions**:
+  - **Reprint Slip** → increments `printCount`, updates `printedAt`.
+  - **Release** → clears `lockedAt`, `lockedBy`; order returns to queue.
+  - **Mark Paid (Cash)** → validates items, deducts stock, updates status to `PAID`.
+
+---
+
+## Milestone 3 — Payment & Receipt (MVP Partial)
+
+- **Implemented**:
+  - `_action=settlePayment` on `/cashier/:id`.
+  - Validates each order line against **current product data**:
+    - **Retail line**:
+      - `allowPackSale === true`
+      - `unitPrice === Product.price`
+      - Deducts from `packingStock`.
+    - **Pack line**:
+      - `unitPrice === Product.srp`
+      - Deducts from `stock`.
+    - If price mismatch or insufficient stock → error list returned.
+  - On success:
+    - Consolidates deductions across all lines.
+    - Deducts inventory inside a transaction.
+    - Updates order `status=PAID`.
+
+- **Not yet implemented**:
+  - Discounts, promos, split payments.
+  - Official receipt printing (only slip + paid notice shown).
 
 ## Milestone 4 — Fulfillment & Handover
 
@@ -335,7 +346,7 @@ DRAFT --> UNPAID: Print Order Slip
 state "UNPAID (Slip Waiting)" as UNPAID
 UNPAID: Order Slip (no discounts)\nHas expiryAt (e.g., 24h)
 UNPAID --> CANCELLED: Expired or cashier cancels\n(reason required)
-UNPAID --> UNPAID_LOCKED: Cashier opens (locks)
+UNPAID --> UNPAID_LOCKED: Cashier opens (lock 5m TTL)
 
 state "UNPAID (In‑Progress)" as UNPAID_LOCKED
 UNPAID_LOCKED --> UNPAID: Release lock / timeout

@@ -133,3 +133,108 @@
 - Staff IDs: pickedBy, packedBy, releasedBy
 - openSack logic logged separately
 ```
+
+## ✅ Implemented (2025-08-28) — Cashier Locking + Stock Canonicalization
+
+### Order (updates)
+
+- **Locking fields** (used by Cashier Queue & Order view):
+  - `lockedAt DateTime?`
+  - `lockedBy String?` // cashier code/name
+  - `lockNote String?` // optional reason
+- **Indexes** (support queue + locking lookups):
+  - `@@index([status, expiryAt])`
+  - `@@index([lockedAt])`
+  - `@@index([status])`
+  - `@@index([expiryAt])`
+
+**Semantics**
+
+- Opening an order in `/cashier` **claims a lock** by setting `lockedAt` & `lockedBy`.
+- Locks are **time-based** in app logic (TTL = **5 minutes**) — no extra DB column needed; staleness is computed as `now - lockedAt > TTL`.
+- Reprinting updates **`printedAt`** and increments **`printCount`**; does **not** change `expiryAt`.
+
+---
+
+### Product pricing & stock semantics — **Canonical Mapping (corrected)**
+
+> This replaces the earlier wording to match the code paths now in use.
+
+- `price Float?` — **retail per-unit** price (kg/pc).
+- `srp Float?` — **per-pack** price (sack/tank).
+- `allowPackSale Boolean` — enables retail selling (fractional qty).
+- `stock Float?` — **pack count on hand** (whole sacks/tanks).  
+  _Used when deducting **pack** sales._
+- `packingStock Int?` — **retail units on hand** (kg/pcs).  
+  _Used when deducting **retail** sales._
+- `unitId` / `packingUnitId` — display labels (e.g., `kg` vs `tank`).
+- `packingSize Float?` — container size in retail units (text only; never compute `srp = price × packingSize`).
+
+**Why this matters**
+
+- In **kiosk** and **cashier** flows, validation & deduction now rely on:
+  - **Retail lines** → compare against `price`, cap by `packingStock`, deduct from `packingStock`.
+  - **Pack lines** → compare against `srp`, cap by `stock`, deduct from `stock`.
+
+---
+
+### Inventory Deduction (Payment)
+
+- On `_action=settlePayment` (cashier page):
+  - Server **re-reads products**, infers each line’s mode by price equality, and validates stock.
+  - Consolidates line deltas **per product** and **deducts inside a transaction**:
+    - `stock = stock - packQty`
+    - `packingStock = packingStock - retailQty`
+  - Sets `Order.status = PAID`.
+  - If any line fails (price changed or insufficient stock) → **no changes**; returns per-line errors.
+
+---
+
+### OrderItem (reminder)
+
+- Snapshot fields remain the source of truth for the slip:
+  - `productId`, `name`, `qty`, `unitPrice`, `lineTotal`.
+- We **do not** yet persist a line `mode` column; mode is **inferred** by matching `unitPrice` to `price/srp`.  
+  _Optional future fields:_ `mode ENUM('RETAIL','PACK')`, `unitLabel TEXT`.
+
+---
+
+### Retention (no change)
+
+- Keep `UNPAID` orders ~30 days (TBD).  
+  Expired slips may be auto-cancelled and purged by a maintenance job.
+
+---
+
+### Prisma (current shape excerpt)
+
+```prisma
+model Order {
+  id        Int         @id @default(autoincrement())
+  orderCode String      @unique
+  status    OrderStatus @default(UNPAID)
+
+  subtotal            Float
+  totalBeforeDiscount Float
+
+  printCount Int      @default(1)
+  printedAt  DateTime
+  expiryAt   DateTime
+  terminalId String?
+
+  items     OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Cashier locking
+  lockedAt  DateTime?
+  lockedBy  String?
+  lockNote  String?
+
+  @@index([status, expiryAt])
+  @@index([lockedAt])
+  @@index([status])
+  @@index([expiryAt])
+}
+```

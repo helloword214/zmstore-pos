@@ -113,3 +113,33 @@
 - Prisma: `Order.items.create[]` now includes `lineTotal` and `product: { connect: { id } }`.
 - Route naming fixed: **`orders.new.tsx` → `/orders/new`** (dot in filename maps to slash).
 - Result: successful create → `UNPAID` order, slip redirect; failure → JSON `{errors:[...]}` rendered in modal.
+
+## 2025-08-28
+
+- ✅ **Cashier Queue & Scan (MVP) implemented**
+
+  - Route **`/cashier`**: shows latest **UNPAID** orders; open by **Order Code** or by **ID**.
+  - **Atomic locking** on open (`lockedAt`, `lockedBy`) with **TTL = 5 minutes**; stale locks auto-claimable.
+  - Queue badges: **EXPIRED**, **LOCKED**, and **Slip #n**.
+
+- ✅ **Cashier Order View**
+
+  - Route **`/cashier/:id`**: shows items, totals, lock status + **countdown** to lock expiry.
+  - Actions: **Reprint** (increments `printCount`), **Release** (clears lock).
+
+- ✅ **Payment (MVP) & Inventory Deduction**
+
+  - Action **`_action=settlePayment`**: validates each line against current product data and infers mode by price:
+    - **Retail**: `allowPackSale` true, `unitPrice == price`, deducts **retail units** from `packingStock`.
+    - **Pack**: `unitPrice == srp`, deducts **pack count** from `stock`.
+  - On success: marks order **PAID** (no discounts yet); on failure: returns per-line errors.
+
+- 🔧 **Schema already aligned**
+
+  - `Order.lockedAt`, `Order.lockedBy` used for cashier locking.
+  - Confirmed canonical mapping used across code paths:
+    - `stock` = **pack count**, `packingStock` = **retail units**.
+
+- 🧪 Notes
+  - Lock claim uses `updateMany` for atomicity; separate read to fetch ID for redirect.
+  - `orders/:id/slip` reprint updates `printedAt` (latest print) but leaves `expiryAt` unchanged.

@@ -134,3 +134,19 @@ If any rule fails, kiosk prevents submit and opens an **Error Modal** listing:
 - Customer data
 - Barcode scanning at kiosk (reserved for cashier)
 - Cashier queue/locking
+
+## 2025-08-28 — Consistency with Cashier Flow
+
+- **Server-side validation** now mirrors kiosk preflight exactly:
+  - Retail lines → check `allowPackSale`, `unitPrice === price`, clamp by `packingStock`.
+  - Pack lines → check `unitPrice === srp`, clamp by `stock`.
+- **Mixed-mode orders** (retail + pack for the same product) are preserved in slips and re-validated at cashier payment.
+- **Canonical stock meaning** (clarified):
+  - `stock` = pack count
+  - `packingStock` = retail units
+- Errors caught at cashier:
+  - Not enough stock at payment time.
+  - Price changed since slip was printed.
+  - Ambiguous lines (cannot match mode from unitPrice).
+
+> Kiosk remains the **first line of validation**, but cashier is the **final authority**.
