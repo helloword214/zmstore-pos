@@ -70,6 +70,12 @@ export default function KioskPage() {
 
   const createSlip = useFetcher<CreateSlipResp>();
   const navigate = useNavigate();
+  const [printSlip, setPrintSlip] = React.useState(false);
+  const [justCreated, setJustCreated] = React.useState<{
+    open: boolean;
+    id?: number;
+    code?: string;
+  }>({ open: false });
 
   const [errorOpen, setErrorOpen] = React.useState(false);
 
@@ -215,12 +221,26 @@ export default function KioskPage() {
   React.useEffect(() => {
     if (createSlip.state !== "idle" || !createSlip.data) return;
     if (createSlip.data.ok === true) {
-      navigate(`/orders/${createSlip.data.id}/slip`, { replace: true });
+      // If printing is requested, go to slip page (auto-print can be handled there)
+      if (printSlip) {
+        navigate(`/orders/${createSlip.data.id}/slip?autoprint=1&autoback=1`, {
+          replace: true,
+        });
+      } else {
+        // No print: show code/QR so staff can relay to cashier quickly
+        setJustCreated({
+          open: true,
+          id: createSlip.data.id,
+          code: (createSlip.data as any).orderCode,
+        });
+        // Clear cart after creation (optional: keep? choose UX)
+        setCart({});
+      }
     } else {
       setClientErrors([]); // server-side errors will be shown
       setErrorOpen(true);
     }
-  }, [createSlip.state, createSlip.data, navigate]);
+  }, [createSlip.state, createSlip.data, navigate, printSlip]);
   // header clock
   const [clock, setClock] = React.useState(() =>
     new Date().toLocaleTimeString("en-PH", {
@@ -637,7 +657,8 @@ export default function KioskPage() {
                           !retailAvailable &&
                           packAvailable && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                              Retail empty — open sack needed
+                              Retail empty — open {packUnit.toLowerCase()}{" "}
+                              needed
                             </span>
                           )}
                         {!packAvailable && retailAvailable && (
@@ -847,11 +868,24 @@ export default function KioskPage() {
             >
               <input type="hidden" name="items" value={payload} />
               <input type="hidden" name="terminalId" value="KIOSK-01" />
+              <label className="mt-2 mb-2 inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={printSlip}
+                  onChange={(e) => setPrintSlip(e.target.checked)}
+                />
+                <span>Print slip after create</span>
+              </label>
               <button
                 className="w-full py-2 rounded bg-black text-white text-sm"
                 disabled={items.length === 0 || createSlip.state !== "idle"}
               >
-                {createSlip.state !== "idle" ? "Printing…" : "Print Order Slip"}
+                {createSlip.state !== "idle"
+                  ? "Creating…"
+                  : printSlip
+                  ? "Create & Print Slip"
+                  : "Create Order"}
               </button>
             </createSlip.Form>
           </>
@@ -863,6 +897,57 @@ export default function KioskPage() {
         Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust qty •
         Low stock badge legend coming next • v0.1
       </footer>
+
+      {/* Post-create success (no print): show Order Code + QR for cashier */}
+      {justCreated.open ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setJustCreated({ open: false })}
+          />
+          <div
+            role="document"
+            className="relative w-full max-w-sm rounded-lg bg-white shadow-lg p-4 text-center"
+          >
+            <div className="font-semibold text-lg">Order Created</div>
+            <div className="mt-2 text-sm text-gray-600">
+              Show this code to the cashier
+            </div>
+            <div className="mt-3">
+              <div className="text-xs text-gray-500">Order Code</div>
+              <div className="font-mono text-2xl tracking-wider">
+                {justCreated.code}
+              </div>
+            </div>
+            <div className="mt-3 flex justify-center">
+              {justCreated.code ? (
+                <img
+                  className="w-28 h-28"
+                  alt="QR"
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                    justCreated.code
+                  )}`}
+                />
+              ) : null}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setJustCreated({ open: false })}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Order creation errors (server validation) */}
       {errorOpen ? (
         <div

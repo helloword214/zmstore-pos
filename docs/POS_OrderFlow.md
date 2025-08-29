@@ -397,3 +397,24 @@ VOIDED --> [*]
 
 items[] may contain multiple entries with the same id when the customer buys both Retail and Pack. Each line’s unitPrice reflects the mode.”
 ````
+
+## Delta (2025-08-28/29)
+
+- **UNPAID maintenance**
+
+  - On queue load, expire & auto-cancel: `UNPAID` with `expiryAt < now` and either unlocked or stale-locked (lock older than 5 min).
+  - **Retention**: `CANCELLED` older than 24h is **purged** (OrderItems [+ Payments]) for data hygiene.
+
+- **Locking**
+
+  - TTL = 5 minutes. Claim by code or id (atomic update). Release returns to queue.
+
+- **Payment**
+
+  - Form captures **cash received**; server enforces **not underpaying**.
+  - Transaction: deduct stock (mode-aware), set `PAID`, record Payment, allocate `receiptNo`, stamp `paidAt`.
+  - Receipt printed once; **single guarded auto-print** effect prevents double/triple dialogs.
+
+- **Slip**
+  - Creation no longer auto-prints by default; kiosk can choose **Create & Print** vs **Create**.
+  - Slip page supports 57 mm thermal layout via `.ticket` wrapper CSS.

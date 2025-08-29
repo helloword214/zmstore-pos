@@ -1,8 +1,14 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useActionData, Form } from "@remix-run/react";
+import {
+  useLoaderData,
+  useActionData,
+  Form,
+  useNavigation,
+} from "@remix-run/react";
 import * as React from "react";
-
+import { allocateReceiptNo } from "~/utils/receipt";
+import type { PaymentMethod as PaymentMethodEnum } from "@prisma/client";
 import { db } from "~/utils/db.server";
 
 // Lock TTL: 5 minutes (same as queue page)
@@ -49,6 +55,37 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   if (act === "settlePayment") {
     // Load order with items (must be UNPAID and (ideally) locked)
+
+    // Read cash received from the form and validate against total
+    const cashGiven = Number(fd.get("cashGiven") || 0);
+    const printReceipt = fd.get("printReceipt") === "1"; // new toggle
+
+    const orderForAmount = await db.order.findUnique({
+      where: { id },
+      select: { totalBeforeDiscount: true, status: true },
+    });
+    if (!orderForAmount) {
+      return json({ ok: false, error: "Order not found" }, { status: 404 });
+    }
+    const total = Number(orderForAmount.totalBeforeDiscount);
+    if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
+      return json(
+        { ok: false, error: "Enter cash received (₱)" },
+        { status: 400 }
+      );
+    }
+    if (cashGiven + 1e-6 < total) {
+      return json(
+        {
+          ok: false,
+          error: `Insufficient cash: received ₱${cashGiven.toFixed(
+            2
+          )}, need ₱${total.toFixed(2)}`,
+        },
+        { status: 400 }
+      );
+    }
+
     const order = await db.order.findUnique({
       where: { id },
       include: { items: true },
@@ -126,37 +163,57 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json({ ok: false, errors }, { status: 400 });
     }
 
+    // 2) ✅ Consolidate `deltas` per product (now that `deltas` is filled)
+    const combined = new Map<number, { pack: number; retail: number }>();
+    for (const d of deltas) {
+      const c = combined.get(d.id) ?? { pack: 0, retail: 0 };
+      c.pack += d.packDelta;
+      c.retail += d.retailDelta;
+      combined.set(d.id, c);
+    }
+
     // Apply deductions + mark PAID in a transaction
     await db.$transaction(async (tx) => {
-      // Consolidate per product (in case multiple lines of same product)
-      const combined = new Map<number, { pack: number; retail: number }>();
-      for (const d of deltas) {
-        const c = combined.get(d.id) ?? { pack: 0, retail: 0 };
-        c.pack += d.packDelta;
-        c.retail += d.retailDelta;
-        combined.set(d.id, c);
-      }
-      // Update products
+      // 1) Deduct consolidated deltas (your existing loop)
       for (const [pid, c] of combined.entries()) {
         const p = byId.get(pid)!;
         const newPack = Number(p.stock ?? 0) - c.pack;
         const newRetail = Number(p.packingStock ?? 0) - c.retail;
         await tx.product.update({
           where: { id: pid },
-          data: {
-            stock: newPack,
-            packingStock: newRetail,
-          },
+          data: { stock: newPack, packingStock: newRetail },
         });
       }
-      // Mark order PAID
+
+      // 2) Allocate receiptNo
+      const receiptNo = await allocateReceiptNo(tx);
+
+      // 3) Mark order PAID + set paidAt + receiptNo
       await tx.order.update({
         where: { id: order.id },
-        data: { status: "PAID" },
+        data: {
+          status: "PAID",
+          paidAt: new Date(),
+          receiptNo,
+          lockedAt: null,
+          lockedBy: null,
+        },
+      });
+
+      // 4) Record payment (Cash full amount for now)
+      await tx.payment.create({
+        data: {
+          orderId: order.id,
+          method: "CASH" as PaymentMethodEnum, // type-only enum
+          amount: cashGiven, // what the customer handed
+        },
       });
     });
-
-    return json({ ok: true, paid: true });
+    // Branch navigation: print or go back to queue
+    if (printReceipt) {
+      return redirect(`/orders/${id}/receipt?autoprint=1&autoback=1`);
+    }
+    return redirect("/cashier");
   }
 
   return json({ ok: false, error: "Unknown action" }, { status: 400 });
@@ -165,9 +222,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
 export default function CashierOrder() {
   const { order, isStale, lockExpiresAt } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const nav = useNavigation();
+  const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like kiosk toggle
+  // Cash input + change preview
+  const [cashGiven, setCashGiven] = React.useState("");
+  const total = Number(order.totalBeforeDiscount);
+  const entered = Number(cashGiven) || 0;
+  const changePreview = entered > 0 ? Math.max(0, entered - total) : 0;
   const [remaining, setRemaining] = React.useState(
     lockExpiresAt ? lockExpiresAt - Date.now() : 0
   );
+  React.useEffect(() => {
+    if (actionData && (actionData as any).redirectToReceipt) {
+      window.location.assign((actionData as any).redirectToReceipt);
+    }
+  }, [actionData]);
   React.useEffect(() => {
     if (!lockExpiresAt) return;
     const id = setInterval(() => {
@@ -181,6 +250,7 @@ export default function CashierOrder() {
       style: "currency",
       currency: "PHP",
     }).format(n);
+
   return (
     <main className="max-w-3xl mx-auto p-4">
       <div className="flex items-start justify-between">
@@ -266,6 +336,11 @@ export default function CashierOrder() {
             ))}
           </ul>
         ) : null}
+        {actionData && "error" in actionData && (actionData as any).error ? (
+          <div className="mt-2 text-sm text-red-600">
+            {(actionData as any).error}
+          </div>
+        ) : null}
         {actionData && "paid" in actionData && actionData.paid ? (
           <div className="mt-2 text-sm text-green-700">
             Paid ✔ Inventory deducted.
@@ -273,15 +348,53 @@ export default function CashierOrder() {
         ) : null}
         <Form method="post" className="mt-3">
           <input type="hidden" name="_action" value="settlePayment" />
+          <label className="block text-sm text-gray-600">
+            Cash received
+            <input
+              name="cashGiven"
+              type="number"
+              step="0.01"
+              min="0"
+              value={cashGiven}
+              onChange={(e) => setCashGiven(e.target.value)}
+              className="mt-1 w-full border rounded px-3 py-2"
+              placeholder="0.00"
+              inputMode="decimal"
+            />
+          </label>
+          <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              name="printReceipt"
+              value="1"
+              checked={printReceipt}
+              onChange={(e) => setPrintReceipt(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <span>Print receipt after paying</span>
+          </label>
+          <div className="mt-2 text-sm flex justify-between">
+            <span>Change (preview)</span>
+            <span className="font-medium">
+              {new Intl.NumberFormat("en-PH", {
+                style: "currency",
+                currency: "PHP",
+              }).format(changePreview)}
+            </span>
+          </div>
           <button
             type="submit"
-            className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
-            disabled={isStale}
+            className="w-full px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+            disabled={isStale || nav.state !== "idle"}
             title={
               isStale ? "Lock is stale; re-open from queue" : "Mark as PAID"
             }
           >
-            Mark PAID (Cash)
+            {nav.state !== "idle"
+              ? "Completing…"
+              : printReceipt
+              ? "Complete & Print Receipt"
+              : "Complete Sale"}
           </button>
         </Form>
       </div>

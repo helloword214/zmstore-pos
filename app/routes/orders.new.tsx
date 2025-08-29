@@ -274,12 +274,13 @@ export const action: ActionFunction = async ({ request }) => {
         })),
       },
     },
-    select: { id: true },
+
+    select: { id: true, orderCode: true },
   });
 
   // Either JSON (for kiosk fetcher) or normal redirect (other flows)
   if (wantsJson) {
-    return json({ ok: true, id: created.id });
+    return json({ ok: true, id: created.id, orderCode: created.orderCode });
   }
   return redirect(`/orders/${created.id}/slip`);
 };

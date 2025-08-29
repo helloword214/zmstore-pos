@@ -238,3 +238,38 @@ model Order {
   @@index([expiryAt])
 }
 ```
+
+## Milestone 3 — Payment & Receipt (added 2025-08-28/29)
+
+**New / updated fields**
+
+- **Order**
+
+  - `paidAt DateTime?` — set on PAID.
+  - `receiptNo String?` — assigned on payment (for Official Receipt).
+  - `lockedAt DateTime?`, `lockedBy String?`, `lockNote String?` — cashier TTL locking.
+  - Indexes updated: by `status`, `expiryAt`, and `lockedAt`.
+
+- **Payment** (new)
+
+  - `id Int @id @default(autoincrement())`
+  - `orderId Int` → `Order`
+  - `method String` (e.g., `"CASH"`) _simple string to avoid enum churn_
+  - `amount Float`
+  - `refNo String?`
+  - `createdAt DateTime @default(now())`
+
+- **ReceiptCounter** (new)
+  - `id Int @id @default(autoincrement())`
+  - `series String @unique` _e.g., branch code or `"DEFAULT"`_
+  - `lastNumber Int @default(0)`
+
+**Invariants**
+
+- On `PAID`, `receiptNo` is unique per series; `paidAt` is non-null.
+- `Payment.amount` sums to **cash received**; change = sum(payments) − totalAfterDiscount (currently `totalBeforeDiscount`).
+
+**Retention**
+
+- `UNPAID` expired → `CANCELLED` during queue load.
+- `CANCELLED` **older than 24h** → purged (Order + items [+ payments]).

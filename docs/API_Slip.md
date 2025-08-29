@@ -137,3 +137,15 @@ Notes
 items[] may contain multiple entries with the same product id when the customer buys both Retail and Pack; each line’s unitPrice reflects its mode.
 
 All kiosk validations are re-checked on the server to handle concurrent stock/price changes.
+
+## Optional printing (Kiosk)
+
+- The kiosk now posts `POST /orders/new` and decides:
+  - **Create Order** (no print): navigate to `/orders/:id/slip` **without** `autoprint`.
+  - **Create & Print Slip**: navigate to `/orders/:id/slip?autoprint=1&autoback=1`.
+
+The slip page uses a **single guarded auto-print** effect and `afterprint` to avoid duplicate dialogs, then optionally goes back.
+
+## Print layout
+
+- The slip has a `.ticket` wrapper with print CSS targeting **57 mm** thermal width. (See `orders.$id.slip.tsx`.)

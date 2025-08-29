@@ -124,6 +124,11 @@ Kiosk data can go stale; server must clamp by **current DB** to keep slips valid
 - **Failure** → `400 { errors: [ { id, mode?, reason } ] }` and the kiosk shows a small modal.  
   _No order is created when any line fails._
 
+  ### Milestone 1.2 — Optional Slip Printing
+
+- Kiosk can **Create Order** without printing (paper-saving) or **Create & Print Slip** when needed.
+- Purpose: speed during peak hours; slip paper becomes optional.
+
 ---
 
 ### Milestone 2 — Cashier Queue & Scan
@@ -133,6 +138,12 @@ Kiosk data can go stale; server must clamp by **current DB** to keep slips valid
 - Cashier can apply discounts (senior, PWD, promo).
 - Manager PIN required for manual/override discounts.
 
+### Milestone 2 — Cashier Queue & Scan (updates)
+
+- Queue auto-cancels expired slips; CANCELLED older than 24h is auto-purged.
+- TTL lock (5 min) on open (by code or list). Release returns to queue.
+- Cashier records **cash received**; change is shown before posting.
+
 ---
 
 ### Milestone 3 — Payment & Receipt
@@ -141,6 +152,13 @@ Kiosk data can go stale; server must clamp by **current DB** to keep slips valid
 - Split payments supported.
 - Change always returned in cash.
 - Official Receipt printed only when `PAID`.
+
+### Milestone 3 — Payment & Receipt (MVP)
+
+- On settle:
+  - Validate stock again, deduct inventory, set `paidAt`, allocate `receiptNo`, insert Payment (Cash).
+  - Navigate to `/orders/:id/receipt` with `?autoprint=1&autoback=1` to print once and go back to queue.
+- Receipt page shows merchant header, items, totals, payments, change.
 
 ---
 

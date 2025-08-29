@@ -158,6 +158,12 @@ model Location {
 
 // ────────────── ORDER SLIP (Milestone 1) ──────────────
 
+model ReceiptCounter {
+  id       Int      @id @default(1)        // singleton (or per-branch later)
+  current  Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 model Order {
   id        Int         @id @default(autoincrement())
   orderCode String      @unique
@@ -175,6 +181,7 @@ model Order {
 
   // Relations
   items OrderItem[]
+  payments  Payment[] 
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -184,6 +191,12 @@ model Order {
   lockedAt DateTime?
   lockedBy String? // cashier code/email/name
   lockNote String? // optional reason
+  
+
+ // Receipt fields (set when PAID)
+  paidAt     DateTime?
+  receiptNo  String?   @unique   // set when PAID
+
 
   @@index([status, expiryAt])
   @@index([lockedAt])
@@ -206,6 +219,30 @@ model OrderItem {
   lineTotal Float
 
   @@index([orderId])
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id])
+  method    PaymentMethod
+  amount    Float
+  refNo     String?   // GCash ref, last 4 of card, etc.
+  createdAt DateTime  @default(now())
+
+  @@index([orderId])
+
+  
+}
+
+// ── NEW (singleton counter for receipts) ────────────────────
+
+
+enum PaymentMethod {
+  CASH
+  GCASH
+  CARD
+  SPLIT // optional: if you want a “meta” method; otherwise just record multiple rows
 }
 
 enum OrderStatus {

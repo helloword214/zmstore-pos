@@ -141,5 +141,31 @@
     - `stock` = **pack count**, `packingStock` = **retail units**.
 
 - 🧪 Notes
+
   - Lock claim uses `updateMany` for atomicity; separate read to fetch ID for redirect.
   - `orders/:id/slip` reprint updates `printedAt` (latest print) but leaves `expiryAt` unchanged.
+
+  ## 2025-08-28
+
+- ✅ Cashier Queue auto-maintenance:
+  - Auto-cancel **expired UNPAID** slips (unlocked or stale lock).
+  - Auto-purge **CANCELLED > 24h** (deletes Order + OrderItems [+ Payments if any]).
+- ✅ Cashier locking TTL (5 min): atomic lock on open (by code or id); release on exit.
+- ✅ Receipt MVP:
+  - `orders.$id.receipt.tsx` page added (Official Receipt).
+  - `utils/receipt.allocateReceiptNo()` + `ReceiptCounter` table (per-branch counter ready).
+  - Payment row created on settle; `receiptNo` + `paidAt` set on Order.
+  - Auto-print receipt via `?autoprint=1&autoback=1`; **fixed duplicate print** by consolidating to a single guarded `useEffect` with `afterprint` listener.
+
+## 2025-08-29
+
+- ✅ Kiosk slip behavior:
+  - Button now **Create Order** (no print) or **Create & Print Slip** (optional print).
+  - Client preflight keeps existing rules; server re-validates.
+  - Label fix: **“Retail empty — open {packUnit} needed”** (dynamic pack unit).
+- ✅ Slip page polish:
+  - 57 mm ticket CSS (`.ticket` wrapper) for thermal printers.
+  - Back-to-Kiosk link; optional auto-print (`autoprint=1`) + auto-return (`autoback=1`).
+- 🔧 Cashier screen:
+  - Cash input (₱ received) + change preview.
+  - On settle, inventory deducted per mode, order marked **PAID**, optional auto-print receipt, then back to `/cashier`.

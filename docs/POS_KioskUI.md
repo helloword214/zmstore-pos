@@ -150,3 +150,15 @@ If any rule fails, kiosk prevents submit and opens an **Error Modal** listing:
   - Ambiguous lines (cannot match mode from unitPrice).
 
 > Kiosk remains the **first line of validation**, but cashier is the **final authority**.
+
+## Create vs Create & Print
+
+- Primary button toggles:
+  - **Create Order** (no paper)
+  - **Create & Print Slip** (paper)
+- The UI passes `?autoprint=1&autoback=1` only when the user chooses to print.
+
+## Label fix
+
+- Message now uses dynamic pack unit:
+  - “Retail empty — open **{packUnit}** needed” (e.g., “open **tank** needed”).
