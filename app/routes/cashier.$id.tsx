@@ -223,7 +223,7 @@ export default function CashierOrder() {
   const { order, isStale, lockExpiresAt } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
-  const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like kiosk toggle
+  const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like order-pad toggle
   // Cash input + change preview
   const [cashGiven, setCashGiven] = React.useState("");
   const total = Number(order.totalBeforeDiscount);

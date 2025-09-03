@@ -278,7 +278,7 @@ export const action: ActionFunction = async ({ request }) => {
     select: { id: true, orderCode: true },
   });
 
-  // Either JSON (for kiosk fetcher) or normal redirect (other flows)
+  // Either JSON (for order-pad fetcher) or normal redirect (other flows)
   if (wantsJson) {
     return json({ ok: true, id: created.id, orderCode: created.orderCode });
   }

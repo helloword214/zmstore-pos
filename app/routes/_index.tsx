@@ -96,7 +96,7 @@ export default function Index() {
               Products
             </Link>
             <Link
-              to="/kiosk"
+              to="/pad-order"
               className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
             >
               Open Order Pad

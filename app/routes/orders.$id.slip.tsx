@@ -64,7 +64,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 // ─────────────────────────────────────────────────────────────
 // Component
 //  - Single autoprint source: ?autoprint=1
-//  - Optional auto-return after print: ?autoback=1 → /kiosk
+//  - Optional auto-return after print: ?autoback=1 → /pad-order
 //  - Printable area wrapped in `.ticket` (57/58mm receipt)
 // ─────────────────────────────────────────────────────────────
 export default function OrderSlipPage() {
@@ -87,13 +87,13 @@ export default function OrderSlipPage() {
     setTimeout(() => window.print(), 0);
   }, [autoPrint]);
 
-  // Optional: auto-back to kiosk after print dialog closes (OK or Cancel)
+  // Optional: auto-back to pad-order after print dialog closes (OK or Cancel)
   useEffect(() => {
     if (!autoBack) return;
     const handleAfterPrint = () => {
       if (backedRef.current) return;
       backedRef.current = true;
-      navigate("/kiosk");
+      navigate("/order-pad");
     };
     window.addEventListener("afterprint", handleAfterPrint);
     return () => window.removeEventListener("afterprint", handleAfterPrint);
@@ -242,7 +242,7 @@ export default function OrderSlipPage() {
           </button>
         </Form>
 
-        <a href="/kiosk" className="px-3 py-1 rounded border text-sm">
+        <a href="/pad-order" className="px-3 py-1 rounded border text-sm">
           Back to Kiosk
         </a>
       </div>

@@ -185,3 +185,69 @@
 ## 2025-09-04
 
 - UI: Unified POS look & feel (indigo theme), compact controls, and consistent inputs across Order Pad, Cashier, Tickets, and Receipts. **No logic changes.** (a3aca3e)
+
+## 2025-08-29 — Business model refinements
+
+**Terminology**
+
+- Renamed **Slip → Order / Order Ticket**; **Kiosk → Order Pad** (docs + UI copy).
+
+**Delivery & Settlement**
+
+- Added **Delivery (COD)** model with **RemitBatch** (end-of-day settlement turns delivered UNPAID orders into PAID + prints receipt).
+
+**Discounts**
+
+- Simplified to **amount-based** per line / per order with **floor-price guardrails** (no sale below computed cost). Percentage discounts removed from docs/UI.
+
+**LPG Rules**
+
+- Documented **swap/upgrade** flows and **cylinder loan** records (borrowed empty, customer info required).
+
+**Customers**
+
+- Added **Customer** / **CustomerAddress** (split names, contact, optional geo). Will support discounts on file and future credit (“Utang”) tracking.
+
+**Receipt**
+
+- 57mm format finalized; receipt is printed on **PAID** (cashier or batch settlement).
+
+---
+
+## 2025-08-28 — Cashier Queue & Receipt MVP
+
+**Cashier Queue & Scan**
+
+- Queue lists UNPAID orders (fresh first), **TTL locking** (5 min) on open (by Code or ID).
+- Auto-cancel: **expired UNPAID** (unlocked or stale-locked) → `CANCELLED`.
+- Auto-purge: `CANCELLED` older than **24h** removed (items/payments cleaned).
+
+**Payment**
+
+- Cash input + validation; marks order **PAID**, **deducts inventory**, **unlocks order**.
+- **Receipt numbering** via `ReceiptCounter`; `paidAt`, `receiptNo` stored.
+- Optional **auto-print** & **auto-back** to `/cashier` via URL flags.
+
+**Slip / Ticket**
+
+- Order Pad can **Create Order** (no print) or **Create & Print Ticket** (57mm).
+- **Single guarded auto-print** on ticket/receipt pages to prevent duplicate dialogs.
+
+**Data Model**
+
+- Added: `Payment` table; `ReceiptCounter`; `Order.paidAt`, `Order.receiptNo`; cashier lock fields (`lockedAt`, `lockedBy`, `lockNote`).
+- Indexes for queue & cleanup: `Order(status, expiryAt)`, plus lock/expiry indices.
+
+**APIs & Pages**
+
+- `POST /orders/new` returns JSON on `?respond=json`; server validates mode-aware lines.
+- `/orders/:id/slip` 57mm ticket + reprint counter; `/orders/:id/receipt` 57mm receipt (payments + change).
+
+**Bug fixes**
+
+- Guard duplicate print dialogs (React StrictMode) using a **printedOnce** ref + single effect.
+- Reprint increments **printCount** and updates **printedAt** without changing `expiryAt`.
+
+**Refs**
+
+- Commits: a261229, 91a49c9, 304e730, 9005bf8
