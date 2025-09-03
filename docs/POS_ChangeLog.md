@@ -167,5 +167,21 @@
   - 57 mm ticket CSS (`.ticket` wrapper) for thermal printers.
   - Back-to-Kiosk link; optional auto-print (`autoprint=1`) + auto-return (`autoback=1`).
 - 🔧 Cashier screen:
+
   - Cash input (₱ received) + change preview.
   - On settle, inventory deducted per mode, order marked **PAID**, optional auto-print receipt, then back to `/cashier`.
+
+  ## 2025-08-30
+
+- Renamed **Slip → Order Ticket**, **Kiosk → Order Pad** (docs + UI copy).
+- Added **Utang (on-credit)** with due date, release with balance, partial payments.
+- Introduced **Partial Payments** and `PARTIALLY_PAID` state.
+- Delivery flow with **DISPATCHED** inventory deduction and **RemitBatch** settlement.
+- **CatGas composite LPG**: unified stock, brand-based pricing, swap/upgrade rules, cylinder loan ledger.
+- Flexible **amount-based discounts** with SKU floor guardrails and manager approval.
+- 57 mm **Ticket/Receipt** patterns with single guarded **auto-print**.
+- Cashier queue **auto-cancels expired** UNPAID + **purges CANCELLED** >24h.
+
+## 2025-09-04
+
+- UI: Unified POS look & feel (indigo theme), compact controls, and consistent inputs across Order Pad, Cashier, Tickets, and Receipts. **No logic changes.** (a3aca3e)

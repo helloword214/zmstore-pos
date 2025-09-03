@@ -1,275 +1,111 @@
 # POS Data Model
 
-> 📌 Purpose:  
-> Defines the **database schema and key fields** for orders, payments, fulfillment, etc.
->
-> 🛠 When to update:
->
-> - If schema changes (add/remove columns).
-> - If retention/archive rules change.
-> - If derived fields logic changes (e.g., how grandTotal is calculated).
->
-> ✅ Readers:
->
-> - Backend developers (Prisma, DB)
-> - DevOps (indexing, backups)
-> - Auditors (to understand data retention)
+> **Purpose**  
+> Logical schema (not code) for Orders, Payments, Fulfillment, Delivery, Discounts, Customers, and LPG.
 
 ---
 
-# POS Data Model
+## Entities
 
-## Core Entities
+- **Product**
 
-- Order
-- OrderItem
-- Payment
-- Discount
-- Fulfillment
-- ReceiptCounter
-- AuditLog
-
-## Milestone 1 — Order Slip
-
-- Snapshot items: productId, name, qty, unitPrice, lineTotal
-- Save totals: subtotal, totalBeforeDiscount
-- Slip metadata: terminalId, printedAt, printCount, expiryAt
-
-### Order / OrderItem (added 2025‑08‑23)
-
-**Entities**
-
-- `Order` — snapshot of a kiosk slip (status=`UNPAID`).
-- `OrderItem` — line items linked to `Order`.
-
-**Order fields**
-
-- `orderCode` (string, unique) — human‑friendly code printed on slip.
-- `status` (enum) — `UNPAID` at creation.
-- `subtotal` (float) — sum of item `qty * unitPrice`.
-- `totalBeforeDiscount` (float) — equals `subtotal` in M1 (no discounts yet).
-- `printCount` (int, default 1) — increments on reprint.
-- `printedAt` (datetime) — when slip was first printed.
-- `expiryAt` (datetime) — default +24h from `printedAt`.
-- `terminalId` (string, optional) — kiosk/counter identifier.
-- `createdAt`, `updatedAt`.
-
-**OrderItem fields**
-
-- `productId` (int) — reference for analytics.
-- `name` (string) — snapshot of product name (immutable).
-- `qty` (float) — supports retail weights (e.g., 0.5).
-- `unitPrice` (float) — snapshot at time of slip.
-- `lineTotal` (float) — `qty * unitPrice`.
-
-**Invariants**
-
-- `subtotal = sum(lineTotal)`.
-- `totalBeforeDiscount = subtotal` (Milestone 1).
-- `qty > 0`, `unitPrice ≥ 0`, `lineTotal = round(qty * unitPrice, 2)`.
-
-**Indexes**
-
-- `Order(status)`, `Order(expiryAt)` — for cashier queue & cleanup.
-
-**Retention**
-
-- Keep `UNPAID` orders for 30 days (TBD).  
-  Auto‑purge expired slips older than N days (configurable).
-
-**Example**
-
-```json
-{
-  "orderCode": "8K3J5Q",
-  "status": "UNPAID",
-  "subtotal": 168,
-  "totalBeforeDiscount": 168,
-  "printCount": 1,
-  "printedAt": "2025-08-23T11:30:00+08:00",
-  "expiryAt": "2025-08-24T11:30:00+08:00",
-  "terminalId": "KIOSK-01",
-  "items": [
-    { "productId": 123, "name": "Rice", "qty": 1, "unitPrice": 48, "lineTotal": 48 },
-    { "productId": 456, "name": "Cat Food", "qty": 1, "unitPrice": 120, "lineTotal": 120 }
-  ]
-}
-
-
-#### Product pricing & stock semantics (UI integration)
-
-- `price Float?` — **retail per-unit** price (e.g., per kg or per pc).
-- `srp Float?` — **per-pack** price (e.g., per sack/tank). Used when selling packs.
-- `allowPackSale Boolean` — if `true`, kiosk shows retail price/stock and allows fractional quantities.
-- `unitId` / `packingUnitId` — display labels for retail unit vs pack unit (e.g., `kg` vs `tank`).
-- `packingSize Float?` — container size in retail units (e.g., `22` means 22 kg per tank). Shown as text only (`{packingSize} {unit} / {packingUnit}`); **not** used to compute a price in UI.
-- `stock Float?` — **retail stock** (loose) available (e.g., kg/pcs), shown only if `allowPackSale = true`.
-- `packingStock Int?` — **pack stock** (whole sacks/tanks), always shown.
-
-**Kiosk display rules**
-- Retail price shown only if `allowPackSale = true` and `price > 0`.
-- Pack price shown only if `srp > 0`.
-- Never compute a pack price from retail (no `price × packingSize`).
-- Stock row shows packs always; retail only when retail is allowed.
-- “Add” enables only when the corresponding price exists:
-  - Retail flow → requires `price`.
-  - Pack-only flow → requires `srp`.
-
-
-
-## Milestone 2 — Cashier Queue
-
-- Lock fields: lockedById, lockedAt
-- editedByCashier boolean
-
-## Milestone 3 — Payment & Receipt
-
-- Payment table (method, amount, refNo)
-- ReceiptCounter for auto-increment numbers
-
-## Milestone 4 — Fulfillment
-
-- Fulfillment table with state (NEW → HANDOVER)
-- Staff IDs: pickedBy, packedBy, releasedBy
-- openSack logic logged separately
-```
-
-## ✅ Implemented (2025-08-28) — Cashier Locking + Stock Canonicalization
-
-### Order (updates)
-
-- **Locking fields** (used by Cashier Queue & Order view):
-  - `lockedAt DateTime?`
-  - `lockedBy String?` // cashier code/name
-  - `lockNote String?` // optional reason
-- **Indexes** (support queue + locking lookups):
-  - `@@index([status, expiryAt])`
-  - `@@index([lockedAt])`
-  - `@@index([status])`
-  - `@@index([expiryAt])`
-
-**Semantics**
-
-- Opening an order in `/cashier` **claims a lock** by setting `lockedAt` & `lockedBy`.
-- Locks are **time-based** in app logic (TTL = **5 minutes**) — no extra DB column needed; staleness is computed as `now - lockedAt > TTL`.
-- Reprinting updates **`printedAt`** and increments **`printCount`**; does **not** change `expiryAt`.
-
----
-
-### Product pricing & stock semantics — **Canonical Mapping (corrected)**
-
-> This replaces the earlier wording to match the code paths now in use.
-
-- `price Float?` — **retail per-unit** price (kg/pc).
-- `srp Float?` — **per-pack** price (sack/tank).
-- `allowPackSale Boolean` — enables retail selling (fractional qty).
-- `stock Float?` — **pack count on hand** (whole sacks/tanks).  
-  _Used when deducting **pack** sales._
-- `packingStock Int?` — **retail units on hand** (kg/pcs).  
-  _Used when deducting **retail** sales._
-- `unitId` / `packingUnitId` — display labels (e.g., `kg` vs `tank`).
-- `packingSize Float?` — container size in retail units (text only; never compute `srp = price × packingSize`).
-
-**Why this matters**
-
-- In **kiosk** and **cashier** flows, validation & deduction now rely on:
-  - **Retail lines** → compare against `price`, cap by `packingStock`, deduct from `packingStock`.
-  - **Pack lines** → compare against `srp`, cap by `stock`, deduct from `stock`.
-
----
-
-### Inventory Deduction (Payment)
-
-- On `_action=settlePayment` (cashier page):
-  - Server **re-reads products**, infers each line’s mode by price equality, and validates stock.
-  - Consolidates line deltas **per product** and **deducts inside a transaction**:
-    - `stock = stock - packQty`
-    - `packingStock = packingStock - retailQty`
-  - Sets `Order.status = PAID`.
-  - If any line fails (price changed or insufficient stock) → **no changes**; returns per-line errors.
-
----
-
-### OrderItem (reminder)
-
-- Snapshot fields remain the source of truth for the slip:
-  - `productId`, `name`, `qty`, `unitPrice`, `lineTotal`.
-- We **do not** yet persist a line `mode` column; mode is **inferred** by matching `unitPrice` to `price/srp`.  
-  _Optional future fields:_ `mode ENUM('RETAIL','PACK')`, `unitLabel TEXT`.
-
----
-
-### Retention (no change)
-
-- Keep `UNPAID` orders ~30 days (TBD).  
-  Expired slips may be auto-cancelled and purged by a maintenance job.
-
----
-
-### Prisma (current shape excerpt)
-
-```prisma
-model Order {
-  id        Int         @id @default(autoincrement())
-  orderCode String      @unique
-  status    OrderStatus @default(UNPAID)
-
-  subtotal            Float
-  totalBeforeDiscount Float
-
-  printCount Int      @default(1)
-  printedAt  DateTime
-  expiryAt   DateTime
-  terminalId String?
-
-  items     OrderItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Cashier locking
-  lockedAt  DateTime?
-  lockedBy  String?
-  lockNote  String?
-
-  @@index([status, expiryAt])
-  @@index([lockedAt])
-  @@index([status])
-  @@index([expiryAt])
-}
-```
-
-## Milestone 3 — Payment & Receipt (added 2025-08-28/29)
-
-**New / updated fields**
+  - `name`, `categoryId`, `brandId`
+  - Prices: `price` (retail/unit), `srp` (per pack), `dealerPrice` (cost basis)
+  - Units: `unitId` (retail), `packingUnitId` (pack), `packingSize`
+  - **Stock**:
+    - `stock` = **pack count** (e.g., sacks/tanks)
+    - `packingStock` = **retail units** (kg/pcs)
+  - LPG composite:
+    - `lpgFamily` (e.g., `CATGAS`, `BRANDED`), optional
+    - `lpgBrandPriceList` (map of brand→price) OR separate `PriceList` table
+  - Flags: `allowPackSale`, `isActive`, `minStock`
+  - Index: `(isActive, categoryId, brandId)`
 
 - **Order**
 
-  - `paidAt DateTime?` — set on PAID.
-  - `receiptNo String?` — assigned on payment (for Official Receipt).
-  - `lockedAt DateTime?`, `lockedBy String?`, `lockNote String?` — cashier TTL locking.
-  - Indexes updated: by `status`, `expiryAt`, and `lockedAt`.
+  - `orderCode` (short code for ticket/barcode)
+  - `status` enum: `DRAFT | UNPAID | PARTIALLY_PAID | PAID | CANCELLED | VOIDED`
+  - **Totals (snapshots)**: `subtotal`, `totalBeforeDiscount`, `discountTotal` (optional), `grandTotal`
+  - **Slip/Print meta**: `printCount`, `printedAt`, `expiryAt`, `terminalId`
+  - **Payment/Receipt**: `receiptNo`, `paidAt`
+  - **Credit/Release**: `isOnCredit` (bool), `dueDate`, `releaseWithBalance` (bool), `releasedApprovedBy`
+  - **Relations**: `customerId?`, `items[]`, `payments[]`, `discounts[]`, `fulfillment?`
+  - **Locking**: `lockedAt`, `lockedBy`, `lockNote`
+  - Indexes: `(status, expiryAt)`, `(lockedAt)`, `(customerId)`
 
-- **Payment** (new)
+- **OrderItem**
 
-  - `id Int @id @default(autoincrement())`
-  - `orderId Int` → `Order`
-  - `method String` (e.g., `"CASH"`) _simple string to avoid enum churn_
-  - `amount Float`
-  - `refNo String?`
-  - `createdAt DateTime @default(now())`
+  - `orderId`, `productId`
+  - Snapshots: `name`, `qty` (float for retail), `unitPrice`, `lineTotal`
+  - Optional: `mode` (`retail|pack`), `unitLabel`
+  - Invariants: `lineTotal = round(qty * unitPrice, 2)`
 
-- **ReceiptCounter** (new)
-  - `id Int @id @default(autoincrement())`
-  - `series String @unique` _e.g., branch code or `"DEFAULT"`_
-  - `lastNumber Int @default(0)`
+- **Payment**
 
-**Invariants**
+  - `orderId`
+  - `method` enum: `CASH | CARD | GCASH | COD | AR_SETTLEMENT` (etc.)
+  - `amount` (₱), `refNo?`, `createdAt`
+  - (For delivery remit: use `method = COD` when rider turns over cash)
 
-- On `PAID`, `receiptNo` is unique per series; `paidAt` is non-null.
-- `Payment.amount` sums to **cash received**; change = sum(payments) − totalAfterDiscount (currently `totalBeforeDiscount`).
+- **Discount** (amount-based)
 
-**Retention**
+  - `orderId` (or `orderItemId` for line-level)
+  - `amount` (₱ positive)
+  - `reason` (text), `appliedBy`, `approvedBy?`
+  - Guardrails enforced in app (do not go below SKU floor price)
 
-- `UNPAID` expired → `CANCELLED` during queue load.
-- `CANCELLED` **older than 24h** → purged (Order + items [+ payments]).
+- **Customer**
+
+  - Split names: `firstName`, `middleName?`, `lastName`, `suffix?`
+  - Contacts: `mobile`, `phone?`, `email?`
+  - Flags: `isActive`, `notes?`, `creditLimit?`
+  - Relations: `addresses[]`
+
+- **CustomerAddress**
+
+  - `customerId`
+  - `label` (e.g., “Home”, “Store”)
+  - `line1`, `barangay`, `city`, `province`, `postalCode?`
+  - `landmark?`, `geoLat?`, `geoLng?`
+
+- **Fulfillment**
+
+  - `orderId`
+  - `state`: `NEW | PICKING | PACKING | DISPATCHED | DELIVERED | ON_HOLD`
+  - Timestamps per stage; `pickedBy`, `packedBy`, `dispatchedBy`, `deliveredBy`
+  - Delivery fields: `deliveryAgentId?`, `vehicle?`, `notes?`
+
+- **DeliveryAgent** (rider or store staff)
+
+  - `name`, `mobile?`, `isActive`
+  - Shared for dedicated riders & store personnel who deliver occasionally
+
+- **RemitBatch** (end-of-day delivery settlement)
+
+  - `agentId`, `openedAt`, `closedAt?`
+  - `orders[]` included in batch
+  - `cashTurnedOver`, `nonCashNotes`, `variance?`
+  - When closing: apply `Payments` to orders (COD/partial), print batch summary
+
+- **CylinderLoan** (LPG)
+
+  - `customerId`, `brandFamily` (`CATGAS`/etc.), `qty`, `openedAt`, `closedAt?`, `notes`
+  - Tracks borrowed empties until returned
+
+- **ReceiptCounter**
+
+  - `branchKey` (or global), `currentNo` → allocate sequential `receiptNo`
+
+- **AuditLog**
+  - Who did what and when (discounts, overrides, voids, releases, stock ops)
+
+---
+
+## Derived/Business Rules
+
+- **Floor price** per SKU:
+  - Retail minimum ≈ `dealerPrice / packingSize`
+  - Pack minimum ≈ `dealerPrice`
+  - App prevents pricing below floor without manager approval.
+- **Composite LPG**: price chosen by selected brand; stock deducts from the **family’s** pool.
+- **AR**: sum of `balanceDue` over orders with `status IN (UNPAID, PARTIALLY_PAID)`.

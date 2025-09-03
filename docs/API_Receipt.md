@@ -1,25 +1,25 @@
-# API & Page — Receipt
-
-## View Receipt
+# API — Official Receipt (57 mm)
 
 **GET** `/orders/:id/receipt[?autoprint=1&autoback=1]`
 
-### Behavior
+### Preconditions
 
-- Requires: `Order.status === "PAID"` and `receiptNo` set.
-- Renders merchant header, items, totals, payments, change.
-- If `autoprint=1` is present:
-  - A **single guarded effect** triggers `window.print()` once.
-  - An `afterprint` handler returns to `/cashier` when `autoback=1`.
+- `order.status = PAID` OR (Delivery remit flow) order just settled in batch
+- `receiptNo` allocated
+- Include `payments[]` to show breakdown
 
-### Fields shown
+### Render
 
-- Receipt No, Order Code, Date/Time (`paidAt`), Items (qty × price, line total)
-- Subtotal, (Discounts TBD), **Grand Total**
-- Payments list (method, ref), **Change**
+- Merchant header, **Receipt No**, Order Code
+- Date/Time (paidAt), Item lines (qty × unit price → line total)
+- Subtotal, (optional) Discounts, **Grand Total**
+- Payments (multiple lines), **Change**
 
-## Allocate Receipt Number (server)
+### Auto-print
 
-- `utils/receipt.allocateReceiptNo(tx)` uses `ReceiptCounter` to `upsert` and increment:
-  - Input: a Prisma transaction client
-  - Output: formatted `receiptNo` string (e.g., `ZMD-000123`)
+- If `autoprint=1`, trigger **once** using a ref + `afterprint` listener
+- If `autoback=1`, navigate back to **/cashier** after print (or history back)
+
+### Reprint
+
+- Reprinting receipts should mark an audit note (not required in v1)

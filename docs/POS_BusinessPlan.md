@@ -1,207 +1,131 @@
-# POS Business Plan
+# POS_BusinessPlan.md
 
-> 📌 Purpose:  
-> This document describes the **big picture business logic** of the POS system.  
-> It explains _why_ the system behaves this way, not just _how to code it_.
->
-> 🛠 When to update:
->
-> - When a **new rule** is added (e.g., discount policy changes).
-> - When a **milestone** is completed (add summary under "Milestones Applied").
-> - When a **business decision** is reversed (cross out old rule, add new one with date).
->
-> ✅ Readers:
->
-> - Self-taught devs (like us now).
-> - Future devs joining the project.
-> - Non-technical stakeholders who want to understand the workflow.
+## 📌 Purpose
 
----
+Describes the big-picture business logic of the POS. Explains why the system behaves this way, not just how to code it.
+
+## 🛠 When to update
+
+- When a new rule is added (discount policy, delivery rules, LPG swap).
+
+- When a milestone is completed (add to “Milestones Applied”).
+
+- When a decision is reversed (strike old, add new with date).
+
+## ✅ Readers
+
+- Self-taught devs & future devs
+
+- Cashiers/managers
+
+- Non-technical stakeholders
+
+- Naming (2025-08)
+
+- “Slip” → Order Ticket (paper is optional).
+
+- “Kiosk” → Order Pad (tablet cart page).
 
 ## Vision
 
-Fast-food style **Kiosk → Cashier → Fulfillment** flow adapted to retail (rice, feeds, pet supplies, LPG).
+- Retail + LPG with simple, fast flows:
+
+- Order Pad → Cashier → (optional) Ticket → Payment/Receipt → Fulfillment
+
+- Delivery/COD supported with end-of-day remittance.
 
 ## Core Principles
 
-- **Kiosk**: Customer builds order, prints Order Slip (**no discounts**).
-- **Cashier**: Verifies order, applies discounts, collects payment.
-- **Receipt**: Only issued when order is `PAID`.
-- **Inventory**: Deducted only when `PAID`.
-- **Fulfillment**: Picking/Packing starts after payment.
+1. **Order creation does not deduct inventory**.  
+   Inventory is deducted **when goods leave the store**:
 
----
+   - In-store handover → when cashier completes or approves release with balance (utang).
+   - Delivery → when order is **DISPATCHED** to a delivery agent.
 
-## Data Terms (Kiosk/Inventory semantics)
+2. **Paper is optional**.  
+   You can **Create Order** without printing OR **Create & Print Ticket** (57 mm). Receipts print when fully paid or at settlement (remit).
 
-- `price` — **retail/unit price** (e.g., per kg / pc)
-- `srp` — **pack price** (e.g., per sack / tank)
-- `stock` — **pack count** on hand (sacks/tanks)
-- `packingStock` — **retail units** on hand (kg/pcs)
-- `allowPackSale` — retail is allowed (can sell by unit **and** by pack)
+3. **Discounts are flexible and amount-based**.  
+   Not fixed percentages. Approval is required when discount would breach **floor price** (per SKU guardrail based on cost).
 
----
+4. **Utang (on-credit)** is first-class.  
+   Orders can be released with a balance (manager approval logged). Payments can be posted later (partial or full), moving the order to **PARTIALLY_PAID** then **PAID**.
+
+5. **Delivery supports “pasabay” items**, LPG swap/upgrade fees, and cylinder loans. End-of-day **RemitBatch** closes COD/credit deliveries and prints receipts for settled orders.
+
+## Scenarios We Support
+
+- **In-store, pay now** → create order → take cash/card → print official receipt (57 mm).
+- **In-store, utang or partial** → create order → record ₱ received (optional) → **release with balance** → print Charge Invoice → later collect payments and print simple payment receipts; mark PAID when balance reaches 0.
+- **Delivery (COD)** → prepare, dispatch (deducts stock), deliver, remit end-of-day to cashier → mark PAID and print receipt.
+- **Delivery (utang/partial)** → same as COD but remit partial/no cash; order remains PARTIALLY_PAID/UNPAID until cleared.
+- **LPG**: refill, swap (brand change), upgrade fee; cylinder loans ledger (borrowed/returned).
+
+## Discounts (Simple & Safe)
+
+- **Discount = Peso amount** (per line or per order).
+- **Floor price guardrail** (per SKU): don’t allow below computed minimum (e.g., `dealerPrice / packingSize` for retail, or `dealerPrice` for pack).
+- **Manager PIN** required to override floor or to apply large order-level discounts.
+- Later we can attach **customer-specific discounts** (loyalty/tiers) but for now it’s ad-hoc with approval.
+
+## LPG — “Catgas Family” Simplification (Option A)
+
+- Treat local pull-valve brands (e.g., Gerona, MDS, Island Gas, Regasco) as one stock pool (“Catgas family”) for cylinder tracking and exchanges.
+
+- Brand at sale only affects price printed on receipt (line snapshot stores brandAtSale).
+
+- Swaps/Upgrades:
+
+- Swap (catgas ↔ catgas): no fee (usually), same stock pool.
+
+- Upgrade to Branded (e.g., Petron/Solane): upgrade fee line item.
+
+- Cylinder Loan: if customer lacks an empty, record a loan (no cash) and track return later.
+
+## Delivery & Remittance
+
+- Delivery ticket can be printed; inventory is deducted at DISPATCHED.
+
+- Rider/store staff collects cash on doorstep (full or partial only with approval).
+
+- Remit Batch at end of shift/day: reconcile collected amounts → orders move to PAID (or remain PARTIALLY_PAID if balance remains).
+
+- No electronic POD yet; use paper stubs (received/borrowed slip), then encode outcomes at cashier.
+
+## Customer Basics (for today; extensible later)
+
+- Customer: split name fields, phone, notes.
+
+- CustomerAddress: address text + optional geo (lat/lng) for delivery reference.
+
+- Use for future loyalty/utang/discount lists.
 
 ## Milestones Applied
 
-### Milestone K1 — Kiosk UI (Tablet-First)
+M1 — Order Ticket (UNPAID): create order from Order Pad; optional print; ticket expires in 24h; reprint counter.
 
-**Scope (UI only, no discounts/payment yet)**
+M2 — Cashier Queue & Locking: open by code; TTL locking; auto-cancel expired; purge CANCELLED>24h; delete accidental tickets.
 
-- Tablet-first kiosk for item selection and cart building.
-- Category chips + search, product grid, sticky cart.
-- Qty rules: retail-allowed → step **0.25**; pack-only → step **1**.
-- **Mixed-mode orders** for eligible products: customer can add **Retail** and **Pack** for the **same product** in one slip.
-  - Cart lines are keyed by **product + mode**; slip uses snapshot `{id, name, qty, unitPrice}` per line.
-- **Unit-aware Add buttons**:
-  - Retail → **“Add by {unit}”** (uses `price`, step **0.25**)
-  - Pack → **“Add {packUnit} ({packSize} {unit})”** (uses `srp`, step **1**)
-- **Availability is per mode** (independent disable rules):
-  - Retail requires `packingStock > 0` **and** `price > 0`
-  - Pack requires `stock > 0` **and** `srp > 0`
-- **Low / Out** badges shown **inline beside the product name** for quick scanning.
-- “Print Order Slip” posts the cart to **`POST /orders/new`** (fetcher; JSON).
+M3 — Payment & Receipt: partial payments supported; per-payment receipts; final receipt on PAID.
 
-**Out of scope (moved to later milestones)**
+M4 — Fulfillment: in-store bagging; delivery NEW→PICKING→PACKING→DISPATCHED→DELIVERED; cylinder swap/loan notes.
 
-- Discounts, promos, customer data, barcode scan, cashier lock/queue.
+## Paper Sizes & UX Copy
 
-**Why (business)**
+- Tickets/Receipts are designed for **57 mm** thermal.
+- “Retail empty — open **{packUnit}** needed” (dynamic copy) e.g., sack/tank.
+- Avoid jargon; keep labels simple (“Change”, “Paid”, “Balance left”, “Deliver to”).
 
-- Faster iteration: visualize flow before wiring deeper backend.
-- Reduces kiosk training time (big buttons, clear totals).
-- Aligns with “Slip first, cashier later” principle.
+## Cleanup & Queue Health
 
-**Acceptance (K1 v1)**
+- **Auto-cancel** UNPAID orders after expiry (24h).
+- **Purge CANCELLED** older than 24h.
+- Cashier queue shows **oldest first**, with **locking TTL** (5 min).
 
-- [x] Filter by category/search and add items.
-- [x] Add **Retail and Pack** for the same product in one cart.
-- [x] Retail steps by **0.25**; Pack by **1**.
-- [x] Add buttons have **unit-aware labels**; disable per-mode when unavailable or already in cart.
-- [x] **Low/Out** badges appear beside product name.
-- [x] Can print an Order Slip from the cart.
+## Out of Scope (now)
 
-**Spec**
+- Full customer loyalty points
 
-- See `docs/POS_KioskUI.md` for layout, behaviors, accessibility.
+- Electronic POD
 
----
-
-### Milestone 1 — Order Slip
-
-- Slip shows **totals before discounts**.
-- Discounts are **not** applied at kiosk.
-- Expiry: **24h** by default.
-- Reprint allowed (`Reprint #n` footer).
-- **Note:** `items[]` may include **multiple lines with the same product `id`** when the customer buys both modes (Retail + Pack). Each line’s `unitPrice` reflects its mode.
-
----
-
-### Milestone 1.1 — Server-side Slip Validation (mode-aware)
-
-**Why**  
-Kiosk data can go stale; server must clamp by **current DB** to keep slips valid.
-
-**What the server enforces (at `POST /orders/new`)**
-
-- Canonical mapping:
-  - `stock` = **pack count**, `packingStock` = **retail units**
-  - `price` = retail price, `srp` = pack price
-- **Retail line**
-  - `allowPackSale === true`
-  - `price > 0`
-  - `qty` multiple of **0.25**, and `qty ≤ packingStock`
-  - `unitPrice === price` (prevents stale/edited client price)
-- **Pack line**
-  - `srp > 0`
-  - `qty` is **integer**, and `qty ≤ stock`
-  - `unitPrice === srp`
-
-**Responses**
-
-- **Success** → creates `UNPAID` **Order** with `items` snapshots `{ name, unitPrice, qty, lineTotal, productId }`;  
-  returns JSON `{ ok: true, id }` to the kiosk fetcher (UI then navigates to `/orders/:id/slip`).
-- **Failure** → `400 { errors: [ { id, mode?, reason } ] }` and the kiosk shows a small modal.  
-  _No order is created when any line fails._
-
-  ### Milestone 1.2 — Optional Slip Printing
-
-- Kiosk can **Create Order** without printing (paper-saving) or **Create & Print Slip** when needed.
-- Purpose: speed during peak hours; slip paper becomes optional.
-
----
-
-### Milestone 2 — Cashier Queue & Scan
-
-- Cashier sees all `UNPAID` orders in queue.
-- Orders lock when cashier opens (to prevent double handling).
-- Cashier can apply discounts (senior, PWD, promo).
-- Manager PIN required for manual/override discounts.
-
-### Milestone 2 — Cashier Queue & Scan (updates)
-
-- Queue auto-cancels expired slips; CANCELLED older than 24h is auto-purged.
-- TTL lock (5 min) on open (by code or list). Release returns to queue.
-- Cashier records **cash received**; change is shown before posting.
-
----
-
-### Milestone 3 — Payment & Receipt
-
-- Payment methods: Cash, GCash, Card.
-- Split payments supported.
-- Change always returned in cash.
-- Official Receipt printed only when `PAID`.
-
-### Milestone 3 — Payment & Receipt (MVP)
-
-- On settle:
-  - Validate stock again, deduct inventory, set `paidAt`, allocate `receiptNo`, insert Payment (Cash).
-  - Navigate to `/orders/:id/receipt` with `?autoprint=1&autoback=1` to print once and go back to queue.
-- Receipt page shows merchant header, items, totals, payments, change.
-
----
-
-### Milestone 4 — Fulfillment
-
-- Fulfillment states: `NEW → PICKING → PACKING → READY_FOR_PICKUP → HANDED_OVER`.
-- Pick Ticket prints after `PAID`.
-- Open Sack allowed during packing (convert sack → retail stock).
-- Abandoned orders marked `UNCLAIMED` after timeout.
-
-## 2025-08-28 — Cashier Flow (MVP) now live
-
-### Cashier Responsibilities
-
-- Open slip from queue (scan/type **Order Code** or click in list).
-- Order is **exclusively locked** to the cashier for **5 minutes** (TTL).
-- Verify items with customer; reprint slip if needed.
-- **Mark Paid (Cash)** — triggers inventory deduction (see below).
-- Release lock when stepping away (returns order to queue).
-
-### Locking (Why & How)
-
-- **Why**: Prevents two cashiers from handling the same order.
-- **How**: Claim lock by setting `lockedAt` + `lockedBy`.  
-  TTL = **5 minutes**; stale locks can be reclaimed from the queue.  
-  Releasing clears both fields.
-
-### Payment (MVP scope)
-
-- Current scope: **Cash** only; no discounts/split yet.
-- Server validates each line against **fresh product data**:
-  - **Retail line**: requires `allowPackSale`, `unitPrice === price`; deduct **retail units** from `packingStock`.
-  - **Pack line**: requires `unitPrice === srp`; deduct **pack count** from `stock`.
-- All deductions happen **inside a transaction** and the order becomes **PAID**.
-- On validation failure (price changed / insufficient stock): **no changes**; show per-line errors.
-
-### Inventory Timing (unchanged principle)
-
-- **Only deduct on `PAID`** (never on slip creation).
-- Slip reprints increment `printCount` and update `printedAt` (expiry unchanged).
-
-### Out of Scope (to be added next)
-
-- Discounts (senior/PWD/promo/manual + manager PIN).
-- Payment methods: **GCash**, **Card**, **Split**.
-- Receipt printing (official receipt) and numbering.
+- Real-time GPS/dispatch

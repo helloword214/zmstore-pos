@@ -1,151 +1,49 @@
-# API & Actions — Milestone 1 (Order Slip)
+# API & Actions — Order Ticket _(formerly “Slip”)_
 
-This doc covers `/orders/new` and `/orders/:id/slip` for the kiosk flow.
+This covers `POST /orders/new` and `GET /orders/:id/ticket` used by the Order Pad.
 
 ---
 
-## Create Slip
+## Create Order
 
-**POST** `/orders/new`  
-Kiosk uses a Remix `fetcher` with `Accept: application/json` or appends `?respond=json`.
+**POST** `/orders/new` (Remix fetcher, `Accept: application/json` or `?respond=json`)
 
-### Body (form fields)
+### Body
 
-- `items` — JSON array of cart lines:
+- `items`: JSON array of cart lines `{ id, name, qty, unitPrice, mode }`
+- `terminalId` (optional)
 
-  ```json
-  [
-    {
-      "id": 123,
-      "name": "RICE 25kg",
-      "qty": 1,
-      "unitPrice": 1200,
-      "mode": "pack"
-    },
-    {
-      "id": 456,
-      "name": "Feeds 1kg",
-      "qty": 0.25,
-      "unitPrice": 42.5,
-      "mode": "retail"
-    }
-  ]
-  ```
+Server revalidates each line against current DB:
 
-  mode ∈ "retail" | "pack" (optional; server can infer from prices if omitted)
+- Retail: allowPackSale, price>0, qty%0.25==0, qty≤packingStock, unitPrice===price.
+- Pack: srp>0, qty integer, qty≤stock, unitPrice===srp.
+- Mixed-mode allowed.
 
-terminalId — optional string (e.g., "KIOSK-01")
+### Effects (success)
 
-Server-Side Validation (against fresh DB)
+- Create `Order` with `status=UNPAID`, snapshot items & totals, `printedAt`, `expiryAt=+24h`, `printCount=1`, `orderCode`.
+- **No inventory deduction**.
 
-Canonical mapping
+### Response
 
-stock = pack count
+- JSON: `{ ok: true, id }` (or 400 with `{ errors: [...] }`)
 
-packingStock = retail units
+---
 
-price = retail price
+## Ticket Page
 
-srp = pack price
+**GET** `/orders/:id/ticket`
 
-Retail line
+- Renders code + barcode, items, totals, expiry, reprint count.
+- `?autoprint=1&autoback=1` → single guarded auto-print (uses `afterprint`), then returns to previous screen (or queue fallback).
 
-allowPackSale === true
+**Reprint**
 
-price > 0
+- **POST** `/orders/:id/ticket` with `_action=reprint`  
+  Increments `printCount`, updates `printedAt`. No state/totals change.
 
-qty multiple of 0.25
+---
 
-qty > 0
+## Print Layout (57 mm)
 
-qty <= packingStock
-
-unitPrice === price (tolerance 1e-6)
-
-Pack line
-
-srp > 0
-
-qty integer
-
-qty > 0
-
-qty <= stock
-
-unitPrice === srp (tolerance 1e-6)
-
-Effects (on success)
-
-Create Order with:
-
-status = "UNPAID"
-
-subtotal, totalBeforeDiscount = subtotal
-
-printedAt = now, expiryAt = now + 24h, printCount = 1
-
-terminalId
-
-items.create[]:
-
-{
-name: string,
-unitPrice: number,
-qty: number,
-lineTotal: number,
-product: { connect: { id } }
-// optional: mode, unitLabel, etc. if schema includes them
-}
-
-Response
-
-JSON (?respond=json or Accept: application/json):
-
-Success: { "ok": true, "id": <orderId> }
-
-Failure: { "ok": false, "errors": [ { "id": 123, "mode": "retail", "reason": "Retail qty must be a multiple of 0.25" } ] }
-
-HTML (no JSON): 302 → /orders/:id/slip
-
-Print Page
-
-GET /orders/:id/slip
-Renders code + QR/barcode, items, totals, expiry, reprint count.
-
-Shows “EXPIRED” badge if expiryAt < now.
-
-Reprint
-
-POST /orders/:id/slip with \_action=reprint
-
-Increments printCount
-
-Updates printedAt to the most recent print time
-
-Does not change expiryAt, totals, or status
-
-State Transitions (scope of this milestone)
-
-DRAFT → UNPAID on slip creation
-
-Reprints do not change state
-
-Expired UNPAID → CANCELLED (no inventory movement)
-
-Notes
-
-items[] may contain multiple entries with the same product id when the customer buys both Retail and Pack; each line’s unitPrice reflects its mode.
-
-All kiosk validations are re-checked on the server to handle concurrent stock/price changes.
-
-## Optional printing (Kiosk)
-
-- The kiosk now posts `POST /orders/new` and decides:
-  - **Create Order** (no print): navigate to `/orders/:id/slip` **without** `autoprint`.
-  - **Create & Print Slip**: navigate to `/orders/:id/slip?autoprint=1&autoback=1`.
-
-The slip page uses a **single guarded auto-print** effect and `afterprint` to avoid duplicate dialogs, then optionally goes back.
-
-## Print layout
-
-- The slip has a `.ticket` wrapper with print CSS targeting **57 mm** thermal width. (See `orders.$id.slip.tsx`.)
+- Wrap content with `.ticket` root and use 57 mm print CSS (narrow margins, mono totals, hide controls on `@media print`).
