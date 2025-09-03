@@ -89,152 +89,176 @@ export default function ReceiptPage() {
   const change = Math.max(0, totalPaid - grandTotal);
 
   return (
-    <div className="mx-auto p-4 print:p-0 text-gray-900">
-      <div className="ticket mx-auto">
-        {/* Merchant header */}
-        <div className="text-center mb-2">
-          <div className="font-semibold">Zaldy Merchandise</div>
-          <div className="text-xs text-gray-600">
-            Poblacion East, Asingan, Pangasinan • 0919 939 1932
+    <div className="mx-auto p-0 md:p-6 print:p-0 text-slate-900 bg-[#f7f7fb] min-h-screen">
+      <div className="mx-auto max-w-xl">
+        {/* Card (kept narrow for 57mm preview) */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 print:p-0">
+          {/* Merchant header */}
+          <div className="text-center mb-3">
+            <div className="font-semibold text-slate-900">
+              Zaldy Merchandise
+            </div>
+            <div className="text-xs text-slate-600">
+              Poblacion East, Asingan, Pangasinan • 0919 939 1932
+            </div>
+            <div className="text-xs mt-1 tracking-wide text-slate-700">
+              Official Receipt
+            </div>
           </div>
-          <div className="text-xs mt-1">Official Receipt</div>
-        </div>
 
-        {/* Receipt meta */}
-        <div className="text-xs grid grid-cols-2 gap-y-1 mb-2">
-          <div>Receipt No:</div>
-          <div className="text-right font-mono">{order.receiptNo}</div>
-          <div>Order Code:</div>
-          <div className="text-right font-mono">{order.orderCode}</div>
-          <div>Date/Time:</div>
-          <div className="text-right">
-            {order.paidAt ? new Date(order.paidAt).toLocaleString() : ""}
+          {/* Receipt meta */}
+          <div className="text-xs grid grid-cols-2 gap-y-1 mb-3">
+            <div className="text-slate-600">Receipt No:</div>
+            <div className="text-right font-mono text-slate-900">
+              {order.receiptNo}
+            </div>
+
+            <div className="text-slate-600">Order Code:</div>
+            <div className="text-right font-mono text-slate-900">
+              {order.orderCode}
+            </div>
+
+            <div className="text-slate-600">Date/Time:</div>
+            <div className="text-right text-slate-900">
+              {order.paidAt ? new Date(order.paidAt).toLocaleString() : ""}
+            </div>
           </div>
-        </div>
 
-        {/* Items */}
-        <div className="border-t border-b py-1">
-          {order.items.map((it) => (
-            <div key={it.id} className="flex text-sm py-1">
-              <div className="flex-1">
-                <div className="font-medium">{it.name}</div>
-                <div className="text-xs text-gray-600">
-                  {it.qty} × {peso(Number(it.unitPrice))}
+          {/* Items */}
+          <div className="border-y border-slate-200 py-1">
+            {order.items.map((it) => (
+              <div key={it.id} className="flex text-sm py-1">
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">{it.name}</div>
+                  <div className="text-xs text-slate-600">
+                    {it.qty} × {peso(Number(it.unitPrice))}
+                  </div>
+                </div>
+                <div className="font-medium text-slate-900">
+                  {peso(Number(it.lineTotal))}
                 </div>
               </div>
-              <div className="font-medium">{peso(Number(it.lineTotal))}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Totals + payments */}
-        <div className="mt-2 text-sm space-y-1">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span className="font-medium">{peso(Number(order.subtotal))}</span>
-          </div>
-
-          {/* Discounts (coming soon) */}
-          {/* <div className="flex justify-between">
-              <span>Discounts</span>
-              <span>- {peso(discountsTotal)}</span>
-            </div> */}
-
-          <div className="flex justify-between">
-            <span>Grand Total</span>
-            <span className="font-semibold">{peso(grandTotal)}</span>
-          </div>
-
-          <div className="pt-1 border-t">
-            {order.payments.map((p) => (
-              <div key={p.id} className="flex justify-between">
-                <span>
-                  Paid ({p.method}
-                  {p.refNo ? ` • ${p.refNo}` : ""})
-                </span>
-                <span>{peso(Number(p.amount))}</span>
-              </div>
             ))}
-            <div className="flex justify-between mt-1">
-              <span>Change</span>
-              <span className="font-semibold">{peso(change)}</span>
+          </div>
+
+          {/* Totals + payments */}
+          <div className="mt-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="font-medium text-slate-900">
+                {peso(Number(order.subtotal))}
+              </span>
+            </div>
+
+            {/* Discounts (coming soon)
+        <div className="flex justify-between">
+          <span className="text-slate-600">Discounts</span>
+          <span className="text-slate-900">- {peso(discountsTotal)}</span>
+        </div> */}
+
+            <div className="flex justify-between">
+              <span className="text-slate-700">Grand Total</span>
+              <span className="font-semibold text-slate-900">
+                {peso(grandTotal)}
+              </span>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200">
+              {order.payments.map((p) => (
+                <div key={p.id} className="flex justify-between">
+                  <span className="text-slate-700">
+                    Paid ({p.method}
+                    {p.refNo ? ` • ${p.refNo}` : ""})
+                  </span>
+                  <span className="text-slate-900">
+                    {peso(Number(p.amount))}
+                  </span>
+                </div>
+              ))}
+              <div className="flex justify-between mt-1">
+                <span className="text-slate-700">Change</span>
+                <span className="font-semibold text-slate-900">
+                  {peso(change)}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="mt-3 text-xs text-gray-600">
-          Thank you for your purchase!
-        </div>
+          {/* Footer */}
+          <div className="mt-4 text-center text-xs text-slate-600">
+            Thank you for your purchase!
+          </div>
 
-        {/* Controls (hidden on print) */}
-        <div className="mt-4 flex flex-wrap gap-2 no-print">
-          <button
-            onClick={() => window.print()}
-            className="px-3 py-1 rounded bg-black text-white text-sm"
-          >
-            Print Official Receipt
-          </button>
-          <button
-            onClick={() => navigate("/cashier")}
-            className="px-3 py-1 rounded border text-sm"
-            title="Return to cashier queue"
-          >
-            Back to Cashier
-          </button>
-
-          <label className="ml-2 inline-flex items-center gap-2 text-xs text-gray-600">
-            <input
-              type="checkbox"
-              checked={showMore}
-              onChange={(e) => setShowMore(e.target.checked)}
-            />
-            More options
-          </label>
-        </div>
-
-        {showMore && (
-          <div className="mt-3 no-print flex gap-2">
-            {/* CREATE: start a new sale (kiosk) */}
+          {/* Controls (hidden on print) */}
+          <div className="mt-4 flex flex-wrap gap-2 no-print">
             <button
-              onClick={() => navigate("/kiosk")}
-              className="px-3 py-1 rounded border text-sm"
-              title="Start a new order"
+              onClick={() => window.print()}
+              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
             >
-              New Sale
+              Print Official Receipt
+            </button>
+            <button
+              onClick={() => navigate("/cashier")}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Return to cashier queue"
+            >
+              Back to Cashier
             </button>
 
-            {/* DELETE/VOID: placeholder until backend is implemented */}
-            <form
-              method="post"
-              onSubmit={(e) => {
-                if (!confirm("Void this sale? Stock will be restored."))
-                  e.preventDefault();
-              }}
-            >
-              <input type="hidden" name="_action" value="void" />
-              <button
-                type="submit"
-                className="px-3 py-1 rounded border border-red-300 text-red-700 text-sm"
-                title="Void this sale (manager approval)"
-                disabled
-              >
-                Void Sale (Soon)
-              </button>
-            </form>
+            <label className="ml-2 inline-flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={showMore}
+                onChange={(e) => setShowMore(e.target.checked)}
+                className="h-4 w-4 accent-indigo-600"
+              />
+              More options
+            </label>
           </div>
-        )}
+
+          {showMore && (
+            <div className="mt-3 no-print flex gap-2">
+              {/* CREATE: start a new sale (order pad) */}
+              <button
+                onClick={() => navigate("/kiosk")}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                title="Start a new order"
+              >
+                New Sale
+              </button>
+
+              {/* DELETE/VOID: placeholder */}
+              <form
+                method="post"
+                onSubmit={(e) => {
+                  if (!confirm("Void this sale? Stock will be restored."))
+                    e.preventDefault();
+                }}
+              >
+                <input type="hidden" name="_action" value="void" />
+                <button
+                  type="submit"
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-sm disabled:opacity-60"
+                  title="Void this sale (manager approval)"
+                  disabled
+                >
+                  Void Sale (Soon)
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 57mm ticket & print styles */}
       <style>{`
-        .ticket { width: 57mm; max-width: 100%; }
-        @media print {
-          .no-print { display: none !important; }
-          body { margin: 0; }
-          @page { size: 57mm auto; margin: 4mm; }
-        }
-      `}</style>
+    .ticket { width: 57mm; max-width: 100%; }
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; }
+      @page { size: 57mm auto; margin: 4mm; }
+    }
+  `}</style>
     </div>
   );
 }

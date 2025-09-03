@@ -252,143 +252,235 @@ export default function CashierOrder() {
     }).format(n);
 
   return (
-    <main className="max-w-3xl mx-auto p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Order {order.orderCode}</h1>
-          <div className="text-xs text-gray-600">
-            {order.lockedBy ? `Locked by ${order.lockedBy}` : "Unlocked"}
-            {isStale && " • stale"}
-          </div>
-          {!isStale && typeof remaining === "number" && remaining > 0 && (
-            <div className="text-xs text-amber-700 mt-1">
-              Lock expires in{" "}
-              <span className="font-mono">
-                {String(Math.max(0, Math.floor(remaining / 60000))).padStart(
-                  2,
-                  "0"
+    <main className="min-h-screen bg-[#f7f7fb]">
+      {/* Page header */}
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-4xl px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Order{" "}
+                <span className="font-mono text-indigo-700">
+                  {order.orderCode}
+                </span>
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                <span
+                  className={`
+                inline-flex items-center gap-1 rounded-full px-2.5 py-1
+                ${
+                  order.lockedBy
+                    ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                    : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                }
+              `}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+                  {order.lockedBy ? `Locked by ${order.lockedBy}` : "Unlocked"}
+                  {isStale && <span className="ml-1 opacity-70">• stale</span>}
+                </span>
+
+                {!isStale && typeof remaining === "number" && remaining > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 ring-1 ring-slate-200">
+                    Lock expires in{" "}
+                    <span className="font-mono tabular-nums">
+                      {String(
+                        Math.max(0, Math.floor(remaining / 60000))
+                      ).padStart(2, "0")}
+                      :
+                      {String(
+                        Math.max(0, Math.floor((remaining % 60000) / 1000))
+                      ).padStart(2, "0")}
+                    </span>
+                  </span>
                 )}
-                :
-                {String(
-                  Math.max(0, Math.floor((remaining % 60000) / 1000))
-                ).padStart(2, "0")}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Form method="post">
-            <input type="hidden" name="_action" value="reprint" />
-            <button className="px-3 py-1.5 rounded border text-gray-600">
-              Reprint
-            </button>
-          </Form>
-          <Form method="post">
-            <input type="hidden" name="_action" value="release" />
-            <button className="px-3 py-1.5 rounded border text-gray-600">
-              Release
-            </button>
-          </Form>
-        </div>
-      </div>
-      <div className="mt-3 border rounded divide-y">
-        {order.items.map((it) => (
-          <div
-            key={it.id}
-            className="flex items-center justify-between px-3 py-2 text-sm text-gray-600"
-          >
-            <div>
-              <div className="font-medium">{it.name}</div>
-              <div className="text-xs text-gray-600">
-                {it.qty} × {peso(Number(it.unitPrice))}
               </div>
             </div>
-            <div className="font-semibold">{peso(Number(it.lineTotal))}</div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <Form method="post">
+                <input type="hidden" name="_action" value="reprint" />
+                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
+                  Reprint
+                </button>
+              </Form>
+              <Form method="post">
+                <input type="hidden" name="_action" value="release" />
+                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
+                  Release
+                </button>
+              </Form>
+            </div>
           </div>
-        ))}
+        </div>
       </div>
-      <div className="mt-3 text-sm">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span className="font-medium">{peso(Number(order.subtotal))}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Total (before discounts)</span>
-          <span className="font-semibold">
-            {peso(Number(order.totalBeforeDiscount))}
-          </span>
+
+      <div className="mx-auto max-w-4xl px-5 py-6">
+        {/* Content grid */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Left: items */}
+          <section className="lg:col-span-2">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <h2 className="text-sm font-medium tracking-wide text-slate-700">
+                  Items
+                </h2>
+                <span className="text-xs text-slate-500">
+                  {order.items.length} item(s)
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {order.items.map((it) => (
+                  <div
+                    key={it.id}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-900">
+                        {it.name}
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {it.qty} × {peso(Number(it.unitPrice))}
+                      </div>
+                    </div>
+                    <div className="text-right text-sm font-semibold text-slate-900">
+                      {peso(Number(it.lineTotal))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals */}
+              <div className="space-y-2 border-t border-slate-100 px-4 py-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">Subtotal</span>
+                  <span className="font-medium text-slate-900">
+                    {peso(Number(order.subtotal))}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">
+                    Total (before discounts)
+                  </span>
+                  <span className="font-semibold text-slate-900">
+                    {peso(Number(order.totalBeforeDiscount))}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Right: payment card */}
+          <aside className="lg:col-span-1">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <h3 className="text-sm font-medium tracking-wide text-slate-700">
+                  Payment
+                </h3>
+                <span className="text-[11px] text-slate-500">
+                  (MVP: marks PAID & deducts inventory)
+                </span>
+              </div>
+
+              <div className="px-4 py-4">
+                {actionData &&
+                "errors" in actionData &&
+                actionData.errors?.length ? (
+                  <ul className="mb-3 list-disc pl-5 text-sm text-red-700">
+                    {actionData.errors.map((e: any, i: number) => (
+                      <li key={i}>
+                        Product #{e.id}: {e.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {actionData &&
+                "error" in actionData &&
+                (actionData as any).error ? (
+                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {(actionData as any).error}
+                  </div>
+                ) : null}
+
+                {actionData && "paid" in actionData && actionData.paid ? (
+                  <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Paid ✔ Inventory deducted.
+                  </div>
+                ) : null}
+
+                <Form method="post" className="space-y-3">
+                  <input type="hidden" name="_action" value="settlePayment" />
+
+                  <label className="block text-sm">
+                    <span className="text-slate-700">Cash received</span>
+                    <input
+                      name="cashGiven"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={cashGiven}
+                      onChange={(e) => setCashGiven(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                      placeholder="0.00"
+                      inputMode="decimal"
+                    />
+                  </label>
+
+                  <label className="mt-1 inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="printReceipt"
+                      value="1"
+                      checked={printReceipt}
+                      onChange={(e) => setPrintReceipt(e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                    <span>Print receipt after paying</span>
+                  </label>
+
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-slate-600">Change (preview)</span>
+                    <span className="font-semibold text-slate-900">
+                      {new Intl.NumberFormat("en-PH", {
+                        style: "currency",
+                        currency: "PHP",
+                      }).format(changePreview)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+                    disabled={isStale || nav.state !== "idle"}
+                    title={
+                      isStale
+                        ? "Lock is stale; re-open from queue"
+                        : "Mark as PAID"
+                    }
+                  >
+                    {nav.state !== "idle"
+                      ? "Completing…"
+                      : printReceipt
+                      ? "Complete & Print Receipt"
+                      : "Complete Sale"}
+                  </button>
+                </Form>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
-      {/* Payment (MVP) */}
-      <div className="mt-4 p-3 border rounded">
-        <div className="flex items-center justify-between">
-          <div className="font-medium">Payment</div>
-          <div className="text-xs text-gray-600">
-            (MVP: marks order PAID and deducts inventory)
-          </div>
-        </div>
-        {actionData && "errors" in actionData && actionData.errors?.length ? (
-          <ul className="mt-2 list-disc pl-5 text-sm text-red-700">
-            {actionData.errors.map((e: any, i: number) => (
-              <li key={i}>
-                Product #{e.id}: {e.reason}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {actionData && "error" in actionData && (actionData as any).error ? (
-          <div className="mt-2 text-sm text-red-600">
-            {(actionData as any).error}
-          </div>
-        ) : null}
-        {actionData && "paid" in actionData && actionData.paid ? (
-          <div className="mt-2 text-sm text-green-700">
-            Paid ✔ Inventory deducted.
-          </div>
-        ) : null}
-        <Form method="post" className="mt-3">
-          <input type="hidden" name="_action" value="settlePayment" />
-          <label className="block text-sm text-gray-600">
-            Cash received
-            <input
-              name="cashGiven"
-              type="number"
-              step="0.01"
-              min="0"
-              value={cashGiven}
-              onChange={(e) => setCashGiven(e.target.value)}
-              className="mt-1 w-full border rounded px-3 py-2"
-              placeholder="0.00"
-              inputMode="decimal"
-            />
-          </label>
-          <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              name="printReceipt"
-              value="1"
-              checked={printReceipt}
-              onChange={(e) => setPrintReceipt(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span>Print receipt after paying</span>
-          </label>
-          <div className="mt-2 text-sm flex justify-between">
-            <span>Change (preview)</span>
-            <span className="font-medium">
-              {new Intl.NumberFormat("en-PH", {
-                style: "currency",
-                currency: "PHP",
-              }).format(changePreview)}
-            </span>
-          </div>
+
+      {/* Sticky action footer for mobile comfort */}
+      <div className="lg:hidden fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur px-5 py-3">
+        <div className="mx-auto max-w-4xl">
           <button
             type="submit"
-            className="w-full px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+            formAction="post"
+            className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             disabled={isStale || nav.state !== "idle"}
-            title={
-              isStale ? "Lock is stale; re-open from queue" : "Mark as PAID"
-            }
           >
             {nav.state !== "idle"
               ? "Completing…"
@@ -396,7 +488,7 @@ export default function CashierOrder() {
               ? "Complete & Print Receipt"
               : "Complete Sale"}
           </button>
-        </Form>
+        </div>
       </div>
     </main>
   );

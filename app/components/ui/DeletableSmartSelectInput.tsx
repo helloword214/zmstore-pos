@@ -55,7 +55,7 @@ export function DeletableSmartSelectInput({
   const isCustom = selectedOption === "__custom__";
 
   return (
-    <div className="">
+    <div className="space-y-2">
       <DeletableSelectInput
         label={label}
         name={`${name}_select`}
@@ -99,7 +99,7 @@ export function DeletableSmartSelectInput({
               onChange("__custom__");
             }}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Enter custom {label?.toLowerCase() || "value"} here.
           </p>
         </>

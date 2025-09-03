@@ -12,28 +12,26 @@ export function ManageOptionModal({
   onClose,
 }: ManageOptionModalProps) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-      <div className="bg-white rounded shadow-md w-full max-w-sm p-4">
-        <h2 className="text-lg font-semibold mb-4">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+        <h2 className="text-lg font-semibold text-slate-900 mb-3">{title}</h2>
 
-        <ul className="max-h-60 overflow-y-auto space-y-2">
+        <ul className="max-h-60 overflow-y-auto divide-y divide-slate-200">
           {options.map((opt) => (
             <li
               key={opt.value}
-              className="flex items-center justify-between text-sm border-b pb-1 text-green-800"
+              className="flex items-center justify-between gap-3 py-2 text-sm"
             >
-              <span>{opt.label}</span>
+              <span className="text-slate-800 truncate">{opt.label}</span>
               <button
                 type="button"
                 onClick={() => {
                   const confirmDelete = window.confirm(
                     `Are you sure you want to delete "${opt.label}"?`
                   );
-                  if (confirmDelete) {
-                    onDelete(opt.value);
-                  }
+                  if (confirmDelete) onDelete(opt.value);
                 }}
-                className="text-red-500 hover:text-red-700 text-xs"
+                className="text-rose-600 hover:text-rose-700 text-xs rounded px-2 py-1 hover:bg-rose-50"
               >
                 Delete
               </button>
@@ -41,11 +39,11 @@ export function ManageOptionModal({
           ))}
         </ul>
 
-        <div className="mt-4 text-right">
+        <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
           >
             Close
           </button>

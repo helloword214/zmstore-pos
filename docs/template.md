@@ -25,3 +25,5 @@ When starting new work, paste this:
 ```
 
 POS Code Snippets - key logic or hard decisions
+
+Update the UI of this component to match our elegant light POS dashboard design (rounded-2xl cards, soft shadows, subtle borders, slate/indigo palette, clean typography). Keep all logic, data, and handlers untouched — UI/UX only. Apply consistent style like the Cashier Queue / Order Pad / Dashboard we already have.

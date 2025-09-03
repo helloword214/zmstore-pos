@@ -102,18 +102,21 @@ export function SelectInput({
   return (
     <div className="mb-4 relative" ref={wrapperRef}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+        <label className="block text-sm font-medium mb-1 text-slate-700">
           {label}
         </label>
       )}
+
       <button
         ref={buttonRef}
         type="button"
         className={clsx(
-          "w-full p-2 border rounded shadow-sm transition flex justify-between items-center text-left",
+          "w-full rounded-xl border bg-white px-3 py-2.5 text-left text-slate-900 shadow-sm transition",
+          "flex items-center justify-between",
+          "focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300",
           error
-            ? "border-red-500 bg-red-50 text-gray-800"
-            : "border-gray-300 text-gray-800 focus:border-blue-500",
+            ? "border-rose-300 bg-rose-50"
+            : "border-slate-300 hover:bg-slate-50/50",
           className
         )}
         onClick={() => setShowDropdown((prev) => !prev)}
@@ -122,6 +125,7 @@ export function SelectInput({
         aria-expanded={showDropdown}
       >
         <span
+          className="truncate"
           style={
             selectedOption?.style ||
             (!selectedOption && options[0]?.style) ||
@@ -130,15 +134,17 @@ export function SelectInput({
         >
           {displayValue || options[0]?.label || "-- Select --"}
         </span>
+
         <svg
           className={clsx(
-            "w-4 h-4 ml-2 transition-transform",
+            "ml-2 h-4 w-4 flex-none text-slate-500 transition-transform",
             showDropdown && "rotate-180"
           )}
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
           viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -151,53 +157,87 @@ export function SelectInput({
       {showDropdown && (
         <ul
           ref={listRef}
-          className="absolute mt-1 w-full max-h-48 overflow-auto z-10 text-sm bg-white text-gray-800 border border-gray-300 shadow-md rounded"
+          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg"
           role="listbox"
           onMouseLeave={() => setInputMode(null)}
         >
           {options.length === 0 && (
-            <li className="px-3 py-2 text-gray-500 select-none">No options</li>
+            <li className="px-3 py-2 text-slate-500 select-none">No options</li>
           )}
-          {options.map((opt, index) => (
-            <li
-              key={opt.value}
-              role="option"
-              aria-selected={String(opt.value) === String(value)}
-              tabIndex={0}
-              onClick={() => {
-                onChange?.(opt.value);
-                setShowDropdown(false);
-                setHighlightedIndex(index);
-                setInputMode(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+
+          {options.map((opt, index) => {
+            const isSelected = String(opt.value) === String(value);
+            const isKeyboardActive =
+              inputMode === "keyboard" && highlightedIndex === index;
+            const isMouseActive =
+              inputMode === "mouse" && highlightedIndex === index;
+
+            return (
+              <li
+                key={opt.value}
+                role="option"
+                aria-selected={isSelected}
+                tabIndex={0}
+                onClick={() => {
                   onChange?.(opt.value);
                   setShowDropdown(false);
                   setHighlightedIndex(index);
                   setInputMode(null);
-                }
-              }}
-              onMouseEnter={() => {
-                setInputMode("mouse");
-                setHighlightedIndex(index);
-              }}
-              className={clsx(
-                "px-3 py-2 cursor-pointer transition select-none",
-                inputMode === "keyboard" && highlightedIndex === index
-                  ? "bg-blue-600 text-white"
-                  : inputMode === "mouse" && highlightedIndex === index
-                  ? "bg-blue-100"
-                  : "hover:bg-blue-100"
-              )}
-            >
-              {opt.label}
-            </li>
-          ))}
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    onChange?.(opt.value);
+                    setShowDropdown(false);
+                    setHighlightedIndex(index);
+                    setInputMode(null);
+                  }
+                }}
+                onMouseEnter={() => {
+                  setInputMode("mouse");
+                  setHighlightedIndex(index);
+                }}
+                className={clsx(
+                  "flex cursor-pointer select-none items-center justify-between rounded-xl px-2.5 py-2 text-sm",
+                  isKeyboardActive
+                    ? "bg-indigo-600 text-white"
+                    : isMouseActive
+                    ? "bg-slate-50"
+                    : "hover:bg-slate-50",
+                  isSelected &&
+                    !isKeyboardActive &&
+                    "bg-indigo-50 text-indigo-700"
+                )}
+                style={opt.style}
+              >
+                <span className="truncate">{opt.label}</span>
+
+                {/* checkmark for selected */}
+                {isSelected && (
+                  <svg
+                    className={clsx(
+                      "ml-2 h-4 w-4 flex-none",
+                      isKeyboardActive ? "text-white" : "text-indigo-600"
+                    )}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
     </div>
   );
 }

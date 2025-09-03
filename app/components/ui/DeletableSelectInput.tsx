@@ -113,10 +113,11 @@ export function DeletableSelectInput({
       <button
         type="button"
         className={clsx(
-          "w-full p-2 border rounded shadow-sm flex justify-between items-center text-left",
+          "w-full px-3 py-2.5 border rounded-xl shadow-sm flex justify-between items-center text-left",
           error
-            ? "border-red-500 bg-red-50 text-gray-800"
-            : "border-gray-300 focus:border-blue-500 text-gray-800",
+            ? "border-rose-300 bg-rose-50 text-slate-900"
+            : "border-slate-300 text-slate-900 hover:bg-slate-50/50 focus:border-indigo-300",
+          "bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200",
           className
         )}
         onClick={() => setShowDropdown((prev) => !prev)}
@@ -124,11 +125,14 @@ export function DeletableSelectInput({
         aria-haspopup="listbox"
         aria-expanded={showDropdown}
       >
-        <span style={selectedOption?.style}>
+        <span className="truncate" style={selectedOption?.style}>
           {displayValue || "-- Select --"}
         </span>
         <svg
-          className={clsx("w-4 h-4 ml-2", showDropdown && "rotate-180")}
+          className={clsx(
+            "w-4 h-4 ml-2 text-slate-500 transition-transform",
+            showDropdown && "rotate-180"
+          )}
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
@@ -145,7 +149,7 @@ export function DeletableSelectInput({
       {showDropdown && (
         <ul
           ref={listRef}
-          className="absolute mt-1 w-full max-h-48 overflow-auto z-10 text-sm bg-white border border-gray-300 shadow-md rounded text-gray-800"
+          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg text-sm text-slate-900"
           role="listbox"
           onMouseLeave={() => setInputMode(null)}
         >
@@ -179,12 +183,12 @@ export function DeletableSelectInput({
                 setHighlightedIndex(index);
               }}
               className={clsx(
-                "px-3 py-2 cursor-pointer transition select-none flex justify-between items-center",
+                "px-2.5 py-2 cursor-pointer transition select-none flex justify-between items-center rounded-xl",
                 inputMode === "keyboard" && highlightedIndex === index
-                  ? "bg-blue-600 text-white"
+                  ? "bg-indigo-600 text-white"
                   : inputMode === "mouse" && highlightedIndex === index
-                  ? "bg-blue-100"
-                  : "hover:bg-blue-100"
+                  ? "bg-slate-50"
+                  : "hover:bg-slate-50"
               )}
             >
               <span className="truncate" style={opt.style}>
@@ -194,7 +198,7 @@ export function DeletableSelectInput({
                 onDeleteOption && (
                   <button
                     type="button"
-                    className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                    className="ml-2 text-rose-600 hover:text-rose-700 text-xs rounded px-1 py-0.5 hover:bg-rose-50"
                     tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -211,7 +215,7 @@ export function DeletableSelectInput({
         </ul>
       )}
 
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+      {error && <p className="text-sm text-rose-600 mt-1">{error}</p>}
     </div>
   );
 }

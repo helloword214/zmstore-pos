@@ -39,20 +39,24 @@ export function CurrencyInput({
       {label && (
         <label
           htmlFor={name}
-          className="block text-sm font-medium mb-1 text-gray-700"
+          className="block text-sm font-medium mb-1 text-slate-700"
         >
           {label}
         </label>
       )}
+
       <input
         type="text"
         name={name}
         placeholder={placeholder}
-        className={`w-full p-2 border rounded text-gray-800 ${
+        className={[
+          "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
+          "placeholder:text-slate-400",
+          "focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300",
           error
-            ? "border-red-500 bg-red-50"
-            : "border-gray-300 bg-white focus:border-blue-500 focus:outline-none"
-        }`}
+            ? "border-rose-300 bg-rose-50"
+            : "border-slate-300 hover:bg-slate-50/50",
+        ].join(" ")}
         value={
           isFocused
             ? value // raw while typing
@@ -64,8 +68,15 @@ export function CurrencyInput({
         onBlur={() => setIsFocused(false)}
         onChange={handleChange}
         inputMode="decimal"
+        aria-invalid={!!error}
+        aria-describedby={error ? `${name}-error` : undefined}
       />
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+
+      {error && (
+        <p id={`${name}-error`} className="mt-1 text-sm text-rose-600">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

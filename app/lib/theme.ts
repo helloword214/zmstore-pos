@@ -25,14 +25,10 @@ export const theme = {
   },
 
   buttons: {
-    primary:
-      "bg-primary text-white hover:bg-primary-dark font-medium px-4 py-2 rounded transition",
-    accent:
-      "bg-accent text-white hover:bg-accent-dark font-medium px-4 py-2 rounded transition",
-    danger:
-      "bg-red-600 text-white hover:bg-red-700 font-medium px-4 py-2 rounded transition",
-    ghost:
-      "bg-white border text-gray-700 hover:bg-gray-100 font-medium px-4 py-2 rounded",
+    primary: "bg-indigo-600 text-white hover:bg-indigo-700",
+    accent: "bg-slate-900 text-white hover:bg-slate-800",
+    danger: "bg-rose-600 text-white hover:bg-rose-700",
+    ghost: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50",
   },
 
   shadow: {

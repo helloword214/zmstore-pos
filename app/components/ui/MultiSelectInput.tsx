@@ -72,24 +72,27 @@ export function MultiSelectInput({
   }, []);
 
   return (
-    <div className="mb-4" ref={wrapperRef}>
+    <div className="mb-4 relative" ref={wrapperRef}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+        <label className="block text-sm font-medium mb-1 text-slate-700">
           {label}
         </label>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 mb-2">
+      {/* selected chips */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         {selected.map((tag) => (
           <span
             key={tag.value}
-            className="flex items-center bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full"
+            className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-sm text-indigo-700 ring-1 ring-inset ring-indigo-200"
           >
-            {tag.label}
+            <span className="truncate">{tag.label}</span>
             <button
               type="button"
               onClick={() => handleRemove(tag.value)}
-              className="ml-1 text-xs text-red-500 hover:text-red-700"
+              className="ml-0.5 inline-grid h-4 w-4 place-items-center rounded-full text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700"
+              title="Remove"
+              aria-label={`Remove ${tag.label}`}
             >
               ×
             </button>
@@ -99,6 +102,7 @@ export function MultiSelectInput({
         ))}
       </div>
 
+      {/* input */}
       <input
         type="text"
         value={inputValue}
@@ -109,21 +113,21 @@ export function MultiSelectInput({
         }}
         onFocus={() => setShowDropdown(true)}
         className={clsx(
-          "w-full p-2 border rounded shadow-sm text-gray-800",
-          error
-            ? "border-red-500 bg-red-50"
-            : "border-gray-300 bg-white focus:border-blue-500 focus:outline-none"
+          "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
+          "placeholder:text-slate-400",
+          "focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 hover:bg-slate-50/50",
+          error ? "border-rose-300 bg-rose-50" : "border-slate-300"
         )}
       />
 
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
 
+      {/* dropdown */}
       {showDropdown && inputValue.trim() !== "" && (
         <ul
           ref={listRef}
-          className="absolute z-10 mt-1 w-full max-h-48 overflow-auto text-sm bg-white text-gray-800 border border-gray-300 shadow-md rounded"
+          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg"
         >
-          {/* Show matching suggestions */}
           {filteredOptions.map((opt) => (
             <li key={opt.value}>
               <button
@@ -132,14 +136,13 @@ export function MultiSelectInput({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") handleSelect(opt);
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-blue-100"
+                className="w-full text-left rounded-xl px-2.5 py-2 text-sm text-slate-900 hover:bg-slate-50"
               >
                 {opt.label}
               </button>
             </li>
           ))}
 
-          {/* Show "Create" button if input doesn't match any option */}
           {onCustomInput &&
             !options.some(
               (opt) =>
@@ -152,7 +155,7 @@ export function MultiSelectInput({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") handleCreate();
                   }}
-                  className="w-full text-left px-3 py-2 text-blue-600 hover:bg-blue-100"
+                  className="w-full text-left rounded-xl px-2.5 py-2 text-sm text-indigo-600 hover:bg-indigo-50"
                 >
                   Create “{inputValue.trim()}”
                 </button>

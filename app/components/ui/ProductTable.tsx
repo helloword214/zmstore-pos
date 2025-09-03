@@ -129,10 +129,10 @@ export function ProductTable({
 
   return (
     <>
-      <div className="hidden sm:block overflow-auto rounded-xl border bg-surface max-h-[70vh]">
+      <div className="hidden sm:block overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm max-h-[70vh]">
         <table className="min-w-full text-sm font-sans">
-          <thead className="sticky top-0 z-0 bg-white dark:bg-surface-dark shadow-sm border-b text-left">
-            <tr className="text-xs text-gray-600 uppercase tracking-wider font-heading">
+          <thead className="sticky top-0 z-0 bg-white shadow-sm border-b border-slate-200 text-left">
+            <tr className="text-xs uppercase tracking-wide text-slate-600">
               <th className="p-2 hidden sm:table-cell">ID</th>
               <th className="p-2">Name (Brand)</th>
               <th className="p-2 hidden md:table-cell">Category</th>
@@ -175,10 +175,11 @@ export function ProductTable({
                 <tr
                   key={product.id}
                   className={clsx(
-                    "border-t transition hover:bg-gray-50 cursor-default",
-                    index % 2 === 0 && "bg-surface-subtle",
-                    product.id === highlightId && "highlight-row",
-                    isLowStock && "bg-red-50"
+                    "border-t border-slate-200 transition cursor-default",
+                    "hover:bg-slate-50",
+                    index % 2 === 0 && "bg-slate-50/30",
+                    product.id === highlightId && "ring-1 ring-emerald-300",
+                    isLowStock && "bg-rose-50/70"
                   )}
                   style={
                     product.id === highlightId
@@ -186,11 +187,11 @@ export function ProductTable({
                       : {}
                   }
                 >
-                  <td className="p-2 text-gray-600 hidden sm:table-cell">
+                  <td className="p-2 text-slate-600 hidden sm:table-cell">
                     {product.id}
                   </td>
 
-                  <td className="p-2 max-w-[200px] text-gray-900 align-top">
+                  <td className="p-2 max-w-[220px] text-slate-900 align-top">
                     <div
                       className="flex flex-col overflow-hidden"
                       title={`${product.name}${
@@ -201,67 +202,67 @@ export function ProductTable({
                         {product.name}
                       </span>
                       {product.brand?.name && (
-                        <span className="text-xs text-gray-500 truncate">
+                        <span className="text-xs text-slate-500 truncate">
                           ({product.brand.name})
                         </span>
                       )}
                     </div>
                   </td>
 
-                  <td className="p-2 text-gray-700 hidden md:table-cell">
+                  <td className="p-2 text-slate-700 hidden md:table-cell">
                     {product.category?.name || "—"}
                   </td>
 
-                  <td className="p-2 text-gray-700 hidden lg:table-cell">
+                  <td className="p-2 text-slate-700 hidden lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {product.indications?.length ? (
                         product.indications.map((i) => (
                           <span
                             key={i.id}
-                            className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full"
+                            className="inline-block bg-indigo-50 text-indigo-700 text-[11px] px-2 py-0.5 rounded-full border border-indigo-100"
                           >
                             {i.name}
                           </span>
                         ))
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </div>
                   </td>
 
-                  <td className="p-2 text-gray-700 hidden lg:table-cell">
+                  <td className="p-2 text-slate-700 hidden lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {product.targets?.length ? (
                         product.targets.map((t) => (
                           <span
                             key={t.id}
-                            className="inline-block bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full"
+                            className="inline-block bg-emerald-50 text-emerald-700 text-[11px] px-2 py-0.5 rounded-full border border-emerald-100"
                           >
                             {t.name}
                           </span>
                         ))
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </div>
                   </td>
 
-                  <td className="p-2 text-gray-700 hidden lg:table-cell">
+                  <td className="p-2 text-slate-700 hidden lg:table-cell">
                     {packLabel}
                   </td>
 
-                  <td className="p-2 text-gray-700 text-sm">
+                  <td className="p-2 text-slate-800 text-sm">
                     <div className="space-y-1">
                       {product.srp != null && (
                         <div>
                           <strong>₱{product.srp.toFixed(2)}</strong>{" "}
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-slate-500">
                             / {product.packingUnitName || "unit"}
                           </span>
                         </div>
                       )}
                       {product.allowPackSale && product.price != null && (
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-slate-500">
                           Retail: ₱{product.price.toFixed(2)} /{" "}
                           {product.unitName}
                         </div>
@@ -269,7 +270,7 @@ export function ProductTable({
                     </div>
                   </td>
 
-                  <td className="p-2 text-gray-700 text-sm">
+                  <td className="p-2 text-slate-800 text-sm">
                     {product.stock != null || product.packingStock != null ? (
                       <div className="flex flex-col gap-1">
                         {product.stock != null && (
@@ -279,7 +280,7 @@ export function ProductTable({
                               {pluralize(product.packingUnitName || "")}
                             </span>
                             {isLowStock && (
-                              <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded font-semibold">
+                              <span className="text-[11px] px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full border border-rose-200 font-semibold">
                                 ⚠ Low
                               </span>
                             )}
@@ -287,18 +288,18 @@ export function ProductTable({
                         )}
                         {product.allowPackSale &&
                           product.packingStock != null && (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-slate-500">
                               <strong>Retail Stock:</strong>{" "}
                               {product.packingStock} {product.unitName}
                             </div>
                           )}
                       </div>
                     ) : (
-                      <span className="text-gray-400">—</span>
+                      <span className="text-slate-400">—</span>
                     )}
                   </td>
 
-                  <td className="p-2 text-gray-700 hidden md:table-cell">
+                  <td className="p-2 text-slate-700 hidden md:table-cell">
                     {product.locationName || "—"}
                   </td>
 
@@ -307,8 +308,8 @@ export function ProductTable({
                       className={clsx(
                         "inline-block px-2 py-1 text-xs rounded font-medium transition",
                         product.isActive
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-red-100 text-red-700 hover:bg-red-200",
+                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                          : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200",
                         pending.kind === "toggle" &&
                           pending.id === product.id &&
                           "opacity-50 cursor-not-allowed"
@@ -328,19 +329,33 @@ export function ProductTable({
                         actionFetcher.submit(form, { method: "post" });
                       }}
                     >
-                      {pending.kind === "toggle" && pending.id === product.id
-                        ? "…"
-                        : product.isActive
-                        ? "🟢"
-                        : "🔴"}
+                      {pending.kind === "toggle" &&
+                      pending.id === product.id ? (
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400 animate-pulse"
+                          aria-label="Updating"
+                          title="Updating"
+                        />
+                      ) : product.isActive ? (
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"
+                          aria-label="Active"
+                          title="Active"
+                        />
+                      ) : (
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500"
+                          aria-label="Inactive"
+                          title="Inactive"
+                        />
+                      )}
                     </button>
                   </td>
 
                   <td className="p-2 text-center align-middle">
                     <button
                       onClick={() => setQuickView(product)}
-                      className="bg-blue-50 text-blue-700 px-3 py-0.5 
-                      text-xs rounded-full hover:bg-blue-100"
+                      className="bg-indigo-50 text-indigo-700 px-3 py-1 text-xs rounded-full border border-indigo-200 hover:bg-indigo-100 transition"
                     >
                       View
                     </button>

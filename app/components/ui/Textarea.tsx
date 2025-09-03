@@ -10,21 +10,27 @@ export function Textarea({ label, error, className, ...props }: Props) {
   return (
     <div className="mb-4">
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+        <label className="block text-sm font-medium mb-1 text-slate-700">
           {label}
         </label>
       )}
+
       <textarea
         className={clsx(
-          "w-full p-2 border rounded shadow-sm transition resize-none text-gray-500",
-          error
-            ? "border-red-500 bg-red-50"
-            : "border-gray-300 focus:border-blue-500",
+          // base
+          "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
+          "placeholder:text-slate-400 resize-none", // keep no-resize behavior
+          // focus/hover
+          "focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 hover:bg-slate-50/50",
+          // error state
+          error ? "border-rose-300 bg-rose-50" : "border-slate-300",
           className
         )}
         {...props}
+        aria-invalid={!!error}
       />
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+
+      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
     </div>
   );
 }

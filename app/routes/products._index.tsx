@@ -2339,18 +2339,17 @@ export default function ProductsPage() {
   );
 
   return (
-    <main className="min-h-screen bg-slate-900 text-white px-3 sm:px-4 py-6 sm:py-8">
+    <main className="min-h-screen bg-[#f7f7fb] text-slate-900 px-3 sm:px-4 py-6 sm:py-8">
       {/* title + Add button */}
       <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-between items-start sm:items-center">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-          🛒 Zaldy Merchandise <span className="text-sm"> Product List</span>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
+          🛒 Zaldy Merchandise{" "}
+          <span className="text-sm text-slate-500">Product List</span>
         </h1>
         <button
           type="button"
           onClick={handleOpenModal}
-          className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 px-3 sm:px-4 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 transition
-             hover:from-blue-500 hover:to-blue-600 hover:shadow-md active:translate-y-px
-             focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          className="group inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 py-2 text-white shadow-sm transition hover:bg-indigo-700 active:translate-y-px focus:outline-none focus:ring-2 focus:ring-indigo-300"
           aria-label="Add Product"
         >
           <svg
@@ -2380,7 +2379,7 @@ export default function ProductsPage() {
               placeholder="🔍 Search product name, description, brand..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full border border-gray-300 shadow-sm"
+              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
             />
           </div>
 
@@ -2457,7 +2456,7 @@ export default function ProductsPage() {
           </div>
 
           <fieldset className="md:col-span-3">
-            <legend className="text-sm font-medium text-gray-700 mb-2">
+            <legend className="text-sm font-medium text-slate-700 mb-2">
               Status
             </legend>
 
@@ -2481,17 +2480,18 @@ export default function ProductsPage() {
                     key={opt.value}
                     className={[
                       "relative cursor-pointer select-none",
-                      "px-3 py-2 rounded-lg border text-sm",
+                      "px-3 py-2 rounded-xl border text-sm",
                       "flex items-center gap-2 transition",
-                      "hover:border-gray-300 active:scale-[0.98] focus-within:ring-2 focus-within:ring-offset-1",
+                      "hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98]",
+                      "focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
                       selected
-                        ? "bg-white shadow-sm ring-2 ring-offset-1 border-transparent " +
+                        ? "bg-white shadow-sm border-transparent ring-2 ring-offset-1 " +
                           (opt.value === "active"
-                            ? "ring-green-500"
+                            ? "ring-emerald-300"
                             : opt.value === "inactive"
-                            ? "ring-red-500"
-                            : "ring-blue-500")
-                        : "bg-gray-50 border-gray-200 text-gray-700",
+                            ? "ring-rose-300"
+                            : "ring-indigo-300")
+                        : "bg-slate-50 border-slate-200 text-slate-700",
                     ].join(" ")}
                   >
                     <input
@@ -2505,7 +2505,7 @@ export default function ProductsPage() {
                     <span
                       className={[
                         "h-2.5 w-2.5 rounded-full",
-                        selected ? opt.dot : "bg-gray-300",
+                        selected ? opt.dot : "bg-slate-300",
                       ].join(" ")}
                       aria-hidden="true"
                     />
@@ -2514,11 +2514,11 @@ export default function ProductsPage() {
                         selected
                           ? "font-semibold " +
                             (opt.value === "active"
-                              ? "text-green-700"
+                              ? "text-emerald-700"
                               : opt.value === "inactive"
-                              ? "text-red-700"
-                              : "text-blue-700")
-                          : "text-gray-700"
+                              ? "text-rose-700"
+                              : "text-indigo-700")
+                          : "text-slate-700"
                       }
                     >
                       {opt.label}
@@ -2535,18 +2535,18 @@ export default function ProductsPage() {
 
         {/* 🎯 Target Filter (collapsible) */}
         <details className="group">
-          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700">
+          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-slate-700">
             <span>
               🎯 Target Filter{" "}
               <button
                 type="button"
-                className="text-xs text-gray-500 ml-4 underline"
+                className="ml-4 text-xs text-slate-500 underline hover:text-slate-700"
                 onClick={() => setShowManageTarget(true)}
               >
                 ⚙️ Manage
               </button>
             </span>
-            <span className="text-gray-500 group-open:rotate-180 transition-transform duration-200">
+            <span className="text-slate-500 group-open:rotate-180 transition-transform duration-200">
               ▼
             </span>
           </summary>
@@ -2557,9 +2557,10 @@ export default function ProductsPage() {
                 key={option.value}
                 className={clsx(
                   "cursor-pointer px-4 py-1 rounded-full border text-sm transition",
+                  "focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
                   filterTarget === option.value
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 )}
               >
                 <input
@@ -2673,11 +2674,11 @@ export default function ProductsPage() {
 
       {/* Modal: Step 1 / 2 / 3 */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-800/60 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl p-4 sm:p-6 shadow-lg relative flex flex-col sm:max-w-lg">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+          <div className="relative w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl p-4 sm:p-6 flex flex-col">
             <button
               onClick={handleCloseModal}
-              className="absolute top-3 right-3 text-2xl sm:text-xl text-gray-600"
+              className="absolute top-3.5 right-3.5 text-xl sm:text-lg text-slate-500 hover:text-slate-700 transition"
             >
               ×
             </button>
@@ -2687,7 +2688,8 @@ export default function ProductsPage() {
               key={formKey}
               ref={formRef}
               encType="multipart/form-data"
-              className="space-y-4 overflow-y-auto flex-1 pr-1 sm:pr-2 min-h-[500px]"
+              className="flex-1 overflow-y-auto pr-1 sm:pr-2 min-h-[500px] space-y-4
+                   [scrollbar-gutter:stable] scroll-smooth"
               onSubmit={(e) => {
                 if (!confirm("Save this product?")) {
                   e.preventDefault();
@@ -2702,14 +2704,14 @@ export default function ProductsPage() {
               }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold">
+                <h2 className="text-lg font-semibold text-slate-900">
                   {step === 1
                     ? "Step 1: Basic Info"
                     : step === 2
                     ? "Step 2: Stock & Pricing"
                     : "Step 3: Description & Tags"}
                 </h2>
-                <span className="text-xs sm:text-sm text-gray-500">
+                <span className="text-xs sm:text-sm text-slate-500 px-1">
                   Step {step} of 3
                 </span>
               </div>
@@ -2723,7 +2725,7 @@ export default function ProductsPage() {
                   className="space-y-3 sm:space-y-4"
                 >
                   {errorMsg && (
-                    <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">
+                    <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                       {errorMsg}
                     </div>
                   )}
@@ -2815,20 +2817,22 @@ export default function ProductsPage() {
                           allowPackSale: e.target.checked ? "true" : "false",
                         }))
                       }
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
                     />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-slate-700">
                       Sell per kilo (e.g. bigas/feeds/pet-food)
                     </span>
                   </div>
 
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="mt-1 text-xs text-slate-500">
                     Don’t check this if your product is sold as a whole unit
                     only (e.g., tank, sack, bottle).
                   </p>
 
                   <div className="text-right">
                     <Button
+                      variant="primary"
+                      className="w-full sm:w-auto"
                       type="button"
                       onClick={async (e) => {
                         e.preventDefault();
@@ -3171,6 +3175,7 @@ export default function ProductsPage() {
                       ← Back
                     </Button>
                     <Button
+                      variant="primary"
                       type="button"
                       onClick={() => {
                         const requiredFields = [

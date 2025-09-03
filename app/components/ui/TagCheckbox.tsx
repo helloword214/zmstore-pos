@@ -10,13 +10,14 @@ export function TagCheckbox({ label, checked, ...props }: Props) {
   return (
     <label
       className={clsx(
-        "flex items-center gap-1 px-3 py-1 rounded text-sm cursor-pointer border",
+        "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer border transition",
+        "focus-within:ring-1 focus-within:ring-indigo-200",
         checked
-          ? "bg-orange-500 text-white border-orange-600"
-          : "bg-gray-100 text-gray-700"
+          ? "bg-indigo-600 text-white border-indigo-600"
+          : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
       )}
     >
-      <input type="checkbox" className="hidden" checked={checked} {...props} />
+      <input type="checkbox" className="sr-only" checked={checked} {...props} />
       {label}
     </label>
   );

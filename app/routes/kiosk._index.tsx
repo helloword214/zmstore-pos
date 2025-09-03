@@ -8,6 +8,8 @@ import {
 } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
+import { SelectInput } from "~/components/ui/SelectInput";
+import { TextInput } from "~/components/ui/TextInput";
 
 type CreateSlipResp =
   | { ok: true; id: number }
@@ -280,14 +282,18 @@ export default function KioskPage() {
   }, [revalidator]);
 
   // ── UI helpers for nicer buttons ──────────────────────────
+  // ✅ keep these names; only classes updated
   const btnBase =
-    "inline-flex items-center gap-1 rounded-md border text-[12px] px-3 py-1.5 shadow-sm transition-colors";
+    "inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-sm transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200";
+
   const btnOutline =
-    "bg-white text-gray-800 border-gray-300 hover:bg-gray-50 active:bg-gray-100";
+    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:shadow-none";
+
   const btnDisabled =
-    "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed";
+    "border border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed";
+
   const priceChip =
-    "ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600";
+    "ml-2 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-inset ring-slate-200";
 
   function packAddLabel(p: {
     packingUnit?: { name?: string } | null;
@@ -415,28 +421,33 @@ export default function KioskPage() {
   }
 
   return (
-    <main className="kiosk-wrapper min-h-screen bg-white text-gray-900 p-4 mx-auto max-w-[1200px] grid gap-4 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_380px] items-start overflow-x-hidden">
+    <main className="min-h-screen bg-[#f7f7fb] text-slate-900 mx-auto  p-0 md:p-4 grid gap-4 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_380px] items-start overflow-x-hidden">
       {/* HEADER */}
-      <header className="md:col-span-3 sticky top-0 z-10 bg-white border-b border-gray-200 -m-4 mb-0 px-4">
-        <div className="h-14 flex items-center justify-between">
+      <header className="md:col-span-3 sticky top-0 z-10 -mx-0 -mt-0 bg-white/85 backdrop-blur border-b border-slate-200">
+        <div className="h-14 mx-auto px-4 flex items-center justify-between">
           <div className="text-sm leading-tight">
-            <div className="font-semibold">Branch Name</div>
-            <div className="text-xs text-gray-600">Terminal: KIOSK-01</div>
+            <div className="font-semibold tracking-tight text-slate-900">
+              Zaldy Merhcandise
+            </div>
+            <div className="text-xs text-gray-600">Order Pad: OP-01</div>
           </div>
-          <div className="text-sm tabular-nums" aria-label="clock">
+          <div
+            className="text-sm tabular-nums text-slate-700"
+            aria-label="clock"
+          >
             {clock}
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setCart({})}
-              className="px-3 py-2 rounded border text-sm"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
               title="Start a fresh cart"
             >
-              New Cart
+              New Order
             </button>
             <button
               onClick={() => setCart({})}
-              className="px-3 py-2 rounded bg-black text-white text-sm"
+              className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700"
             >
               Clear
             </button>
@@ -445,11 +456,13 @@ export default function KioskPage() {
       </header>
 
       {/* Top controls (mobile only): chips + search */}
-      <div className="md:hidden flex flex-col gap-2">
+      <div className="md:hidden flex flex-col gap-3 px-4">
         <div className="flex gap-2 overflow-x-auto">
           <button
-            className={`px-3 py-2 rounded text-sm border ${
-              activeCat === "" ? "bg-black text-white" : ""
+            className={`px-3 py-2 rounded-xl text-sm border ${
+              activeCat === ""
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "border-slate-200 bg-white text-slate-700"
             }`}
             onClick={() => setActiveCat("")}
           >
@@ -458,8 +471,10 @@ export default function KioskPage() {
           {categories.map((c) => (
             <button
               key={c.id}
-              className={`px-3 py-2 rounded text-sm border ${
-                activeCat === c.id ? "bg-black text-white" : ""
+              className={`px-3 py-2 rounded-xl text-sm border ${
+                activeCat === c.id
+                  ? "bg-indigo-600 text-white border-indigo-600"
+                  : "border-slate-200 bg-white text-slate-700"
               }`}
               onClick={() => setActiveCat(c.id)}
             >
@@ -473,18 +488,20 @@ export default function KioskPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search products…"
-            className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-500"
+            className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
           />
         </div>
       </div>
 
       {/* LEFT: Sticky category sidebar (tablet/desktop) */}
-      <aside className="border border-gray-200 rounded-lg p-3 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-auto bg-white">
-        <div className="font-semibold mb-2">Categories</div>
+      <aside className="hidden md:block border border-slate-200 rounded-2xl p-3 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-auto bg-white shadow-sm">
+        <div className="font-semibold mb-2 text-slate-800">Categories</div>
         <div className="flex flex-col gap-2">
           <button
-            className={`px-3 py-2 rounded text-sm border text-left ${
-              activeCat === "" ? "bg-black text-white" : ""
+            className={`px-3 py-2 rounded-xl text-sm text-left border ${
+              activeCat === ""
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             onClick={() => setActiveCat("")}
           >
@@ -493,8 +510,10 @@ export default function KioskPage() {
           {categories.map((c) => (
             <button
               key={c.id}
-              className={`px-3 py-2 rounded text-sm border text-left ${
-                activeCat === c.id ? "bg-black text-white" : ""
+              className={`px-3 py-2 rounded-xl text-sm text-left border ${
+                activeCat === c.id
+                  ? "bg-indigo-600 text-white border-indigo-600"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}
               onClick={() => setActiveCat(c.id)}
             >
@@ -505,62 +524,58 @@ export default function KioskPage() {
       </aside>
 
       {/* Product grid */}
-      <section className="border border-gray-200 rounded-lg p-3 bg-white overflow-hidden">
+      <section className="border border-slate-200 rounded-2xl p-3 md:p-4 bg-white overflow-hidden shadow-sm">
         {/* Search (tablet/desktop) */}
-        <div className="hidden md:flex gap-2 mb-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search products…"
-            className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-500"
-          />
-          <select
-            value={activeBrand === "" ? "" : String(activeBrand)}
-            onChange={(e) =>
-              setActiveBrand(e.target.value ? Number(e.target.value) : "")
-            }
-            className="w-48 border border-gray-300 rounded px-2 py-2 text-sm bg-white text-gray-900"
-          >
-            <option value="">All brands</option>
-            {brandOptions.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
+        <div className="hidden md:flex gap-2 mb-3">
+          <div className="flex-1">
+            <TextInput
+              label="Search"
+              name="search"
+              placeholder="🔍 Search products…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+            />
+          </div>
+          <div className="w-56">
+            <SelectInput
+              label="Brand"
+              name="brand"
+              value={String(activeBrand ?? "")}
+              onChange={(val) => setActiveBrand(val ? Number(val) : "")}
+              options={[
+                { label: "All brands", value: "", style: { color: "#6b7280" } },
+                ...brandOptions.map(([id, name]) => ({
+                  label: name,
+                  value: String(id),
+                })),
+              ]}
+            />
+          </div>
         </div>
 
-        <h2 className="font-semibold mb-2">Products</h2>
+        <h2 className="font-semibold mb-2 text-slate-800">Products</h2>
 
         {filtered.length === 0 ? (
-          <div className="text-sm text-gray-500">No results.</div>
+          <div className="text-sm text-slate-500">No results.</div>
         ) : (
           <div
             className="space-y-2 overflow-y-auto pr-1"
             style={{ maxHeight: "calc(100vh - 14rem)" }}
           >
             {filtered.map((p) => {
-              // units & container
+              // (all your original logic here unchanged)
               const unit = p.unit?.name ?? "unit";
               const packUnit = p.packingUnit?.name ?? "pack";
               const packSize = Number(p.packingSize ?? 0);
-
-              // 🔄 DB meaning:
-              // - stock          = PACK COUNT (tanks/sacks)
-              // - packingStock   = RETAIL UNITS (kg/pcs)
-              const packStock = Number(p.stock ?? 0); // whole packs available
-              const retailStock = Number(p.packingStock ?? 0); // retail units available
-
-              const price = Number(p.price ?? 0); // retail price per unit
-              const srp = Number(p.srp ?? 0); // price per pack
-              const minStock = p.minStock ?? null; // low retail threshold
-
-              // availability by channel
+              const packStock = Number(p.stock ?? 0);
+              const retailStock = Number(p.packingStock ?? 0);
+              const price = Number(p.price ?? 0);
+              const srp = Number(p.srp ?? 0);
+              const minStock = p.minStock ?? null;
               const retailAvailable =
                 !!p.allowPackSale && retailStock > 0 && price > 0;
               const packAvailable = packStock > 0 && srp > 0;
-
-              // overall state
               const isOut = !retailAvailable && !packAvailable;
               const isLowStock =
                 !isOut &&
@@ -569,21 +584,19 @@ export default function KioskPage() {
                     minStock != null &&
                     retailStock > 0 &&
                     retailStock <= minStock));
-
-              // Gray out whole card only when fully out of stock
               const cardDisabled = isOut;
 
               return (
                 <div
                   key={p.id}
-                  className={`border border-gray-200 rounded-lg p-2 bg-white ${
+                  className={`border border-slate-200 rounded-2xl p-3 bg-white shadow-sm hover:shadow ${
                     cardDisabled ? "opacity-60" : ""
                   }`}
                   aria-disabled={cardDisabled}
                 >
-                  <div className="flex gap-2 items-start">
+                  <div className="flex gap-3 items-start">
                     {/* Thumb */}
-                    <div className="w-12 h-12 rounded-md overflow-hidden bg-gray-100 border flex items-center justify-center shrink-0">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                       {p.imageUrl ? (
                         <img
                           src={p.imageUrl}
@@ -592,23 +605,23 @@ export default function KioskPage() {
                           loading="lazy"
                         />
                       ) : (
-                        <span className="text-[10px] text-gray-400">
+                        <span className="text-[10px] text-slate-400">
                           No Img
                         </span>
                       )}
                     </div>
 
-                    {/* Content (name/brand, price, stock) */}
+                    {/* Content */}
                     <div className="min-w-0 flex-1">
-                      {/* line 1: name + small inline tags */}
+                      {/* line 1: name + tags */}
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className="font-medium text-sm text-gray-900 truncate">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-medium text-sm text-slate-900 truncate">
                             {p.name}
                           </span>
                           {isLowStock && (
                             <span
-                              className="flex-none text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200"
+                              className="flex-none text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200"
                               title="Low stock"
                             >
                               Low
@@ -616,7 +629,7 @@ export default function KioskPage() {
                           )}
                           {isOut && (
                             <span
-                              className="flex-none text-[10px] px-1.5 py-0.5 rounded border bg-red-50 text-red-700 border-red-200"
+                              className="flex-none text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200"
                               title="Out of stock"
                             >
                               Out
@@ -624,13 +637,14 @@ export default function KioskPage() {
                           )}
                         </div>
                         {p.brand?.name && (
-                          <div className="text-[11px] text-gray-500 truncate">
+                          <div className="text-[11px] text-slate-500 truncate">
                             {p.brand.name}
                           </div>
                         )}
                       </div>
+
                       {/* line 2: stocks & container */}
-                      <div className="mt-1 text-[11px] text-gray-700 flex flex-wrap items-center gap-2">
+                      <div className="mt-1 text-[11px] text-slate-700 flex flex-wrap items-center gap-2">
                         <span className="truncate">
                           <strong>Stock:</strong> {Math.max(0, packStock)}{" "}
                           {packUnit}
@@ -638,7 +652,7 @@ export default function KioskPage() {
                         </span>
 
                         {p.allowPackSale && (
-                          <span className="text-gray-500 truncate">
+                          <span className="text-slate-500 truncate">
                             <strong>Retail Stock:</strong>{" "}
                             {Math.max(0, +retailStock.toFixed(2))} {unit}
                           </span>
@@ -647,7 +661,7 @@ export default function KioskPage() {
                         {packSize > 0 &&
                           p.unit?.name &&
                           p.packingUnit?.name && (
-                            <span className="text-gray-500 truncate">
+                            <span className="text-slate-500 truncate">
                               Container: {packSize} {unit} / {packUnit}
                             </span>
                           )}
@@ -656,20 +670,20 @@ export default function KioskPage() {
                         {p.allowPackSale &&
                           !retailAvailable &&
                           packAvailable && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                               Retail empty — open {packUnit.toLowerCase()}{" "}
                               needed
                             </span>
                           )}
                         {!packAvailable && retailAvailable && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
                             Pack stock empty
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Controls (right) — allow adding BOTH modes (clean UI) */}
+                    {/* Controls (right) */}
                     <div className="shrink-0 flex flex-col items-end gap-1">
                       {p.allowPackSale ? (
                         <>
@@ -705,7 +719,7 @@ export default function KioskPage() {
                             );
                           })()}
 
-                          {/* Pack Add (outline pill + price chip) */}
+                          {/* Pack Add */}
                           {(() => {
                             const inCartPack = Boolean(
                               cart[makeKey(p.id, "pack")]
@@ -737,8 +751,7 @@ export default function KioskPage() {
                           })()}
                         </>
                       ) : (
-                        // Pack-only product
-                        // Pack-only product (outline pill + price chip)
+                        // Pack-only
                         (() => {
                           const inCartPack = Boolean(
                             cart[makeKey(p.id, "pack")]
@@ -779,9 +792,9 @@ export default function KioskPage() {
       </section>
 
       {/* Cart panel */}
-      <aside className="border border-gray-200 rounded-lg p-3 sticky top-3 h-fit bg-white">
+      <aside className="border border-slate-200 rounded-2xl p-3 md:p-4 sticky top-3 h-fit bg-white shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Cart</h2>
+          <h2 className="font-semibold text-slate-800">Cart</h2>
           <button
             onClick={() => setCart({})}
             className="text-xs text-red-600 hover:underline disabled:opacity-50"
@@ -792,10 +805,10 @@ export default function KioskPage() {
         </div>
 
         {items.length === 0 ? (
-          <div className="text-sm text-gray-500 mt-2">Cart is empty.</div>
+          <div className="text-sm text-slate-500 mt-2">Cart is empty.</div>
         ) : (
           <>
-            <div className="mt-2 space-y-2 max-h-[50vh] overflow-auto pr-1">
+            <div className="mt-3 space-y-2 max-h-[50vh] overflow-auto pr-1">
               {items.map((it) => (
                 <div
                   key={it.key}
@@ -804,11 +817,11 @@ export default function KioskPage() {
                   <div className="min-w-0">
                     <div className="font-medium truncate">
                       {it.name}{" "}
-                      <span className="text-[10px] uppercase text-gray-500">
+                      <span className="text-[10px] uppercase text-slate-500">
                         [{it.mode}]
                       </span>
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-slate-600">
                       {it.qty} × {peso(it.unitPrice)}{" "}
                       {it.mode === "retail" ? `/${it.unitLabel}` : ""}
                     </div>
@@ -816,7 +829,7 @@ export default function KioskPage() {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => dec(it.key)}
-                      className="px-2 rounded bg-gray-200 text-sm"
+                      className="px-2 rounded-lg bg-slate-200/80 hover:bg-slate-200 text-sm"
                     >
                       −
                     </button>
@@ -827,11 +840,11 @@ export default function KioskPage() {
                       max={999}
                       value={it.qty}
                       onChange={(e) => setQty(it.key, Number(e.target.value))}
-                      className="w-16 text-sm border border-gray-300 rounded px-2 py-1 bg-white text-gray-900"
+                      className="w-16 text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
                     />
                     <button
                       onClick={() => inc(it.key)}
-                      className="px-2 rounded bg-gray-200 text-sm"
+                      className="px-2 rounded-lg bg-slate-200/80 hover:bg-slate-200 text-sm"
                     >
                       +
                     </button>
@@ -843,7 +856,7 @@ export default function KioskPage() {
                           return c;
                         })
                       }
-                      className="px-2 rounded text-red-600 text-sm"
+                      className="px-2 rounded-lg text-red-600 text-sm hover:bg-red-50"
                     >
                       🗑
                     </button>
@@ -856,8 +869,10 @@ export default function KioskPage() {
             </div>
 
             <div className="mt-3 flex items-center justify-between">
-              <div className="text-sm text-gray-600">Subtotal</div>
-              <div className="font-semibold">{peso(subtotal)}</div>
+              <div className="text-sm text-slate-600">Subtotal</div>
+              <div className="font-semibold text-slate-900">
+                {peso(subtotal)}
+              </div>
             </div>
 
             <createSlip.Form
@@ -868,23 +883,23 @@ export default function KioskPage() {
             >
               <input type="hidden" name="items" value={payload} />
               <input type="hidden" name="terminalId" value="KIOSK-01" />
-              <label className="mt-2 mb-2 inline-flex items-center gap-2 text-sm text-gray-700">
+              <label className="mt-2 mb-2 inline-flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
-                  className="h-4 w-4"
+                  className="h-4 w-4 accent-indigo-600"
                   checked={printSlip}
                   onChange={(e) => setPrintSlip(e.target.checked)}
                 />
                 <span>Print slip after create</span>
               </label>
               <button
-                className="w-full py-2 rounded bg-black text-white text-sm"
+                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50"
                 disabled={items.length === 0 || createSlip.state !== "idle"}
               >
                 {createSlip.state !== "idle"
                   ? "Creating…"
                   : printSlip
-                  ? "Create & Print Slip"
+                  ? "Create & Print Ticket"
                   : "Create Order"}
               </button>
             </createSlip.Form>
@@ -893,12 +908,12 @@ export default function KioskPage() {
       </aside>
 
       {/* FOOTER */}
-      <footer className="md:col-span-3 text-xs text-gray-600 border-t border-gray-200 pt-2 mt-2">
+      <footer className="md:col-span-3 text-xs text-slate-600 border-t border-slate-200 pt-2 mt-2 px-4">
         Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust qty •
         Low stock badge legend coming next • v0.1
       </footer>
 
-      {/* Post-create success (no print): show Order Code + QR for cashier */}
+      {/* Post-create success (no print) */}
       {justCreated.open ? (
         <div
           role="dialog"
@@ -913,19 +928,21 @@ export default function KioskPage() {
           />
           <div
             role="document"
-            className="relative w-full max-w-sm rounded-lg bg-white shadow-lg p-4 text-center"
+            className="relative w-full max-w-sm rounded-2xl bg-white shadow-lg p-5 text-center border border-slate-200"
           >
-            <div className="font-semibold text-lg">Order Created</div>
-            <div className="mt-2 text-sm text-gray-600">
+            <div className="font-semibold text-lg text-slate-900">
+              Order Created
+            </div>
+            <div className="mt-1.5 text-sm text-slate-600">
               Show this code to the cashier
             </div>
             <div className="mt-3">
-              <div className="text-xs text-gray-500">Order Code</div>
-              <div className="font-mono text-2xl tracking-wider">
+              <div className="text-[11px] text-slate-500">Order Code</div>
+              <div className="font-mono text-2xl tracking-wider text-slate-900">
                 {justCreated.code}
               </div>
             </div>
-            <div className="mt-3 flex justify-center">
+            <div className="mt-4 flex justify-center">
               {justCreated.code ? (
                 <img
                   className="w-28 h-28"
@@ -939,7 +956,7 @@ export default function KioskPage() {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setJustCreated({ open: false })}
-                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
               >
                 Done
               </button>
@@ -955,7 +972,7 @@ export default function KioskPage() {
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
-          {/* Backdrop as an interactive element to satisfy a11y + eslint */}
+          {/* Backdrop */}
           <button
             type="button"
             aria-label="Close modal"
@@ -964,10 +981,12 @@ export default function KioskPage() {
           />
           <div
             role="document"
-            className="relative w-full max-w-md rounded-lg bg-white shadow-lg p-4"
+            className="relative w-full max-w-md rounded-2xl bg-white shadow-lg p-5 border border-slate-200"
           >
-            <div className="font-semibold mb-2">Can’t print slip</div>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 max-h-64 overflow-auto">
+            <div className="font-semibold mb-2 text-slate-900">
+              Can’t print ticket
+            </div>
+            <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700 max-h-64 overflow-auto">
               {(clientErrors.length
                 ? clientErrors
                 : createSlip.data && createSlip.data.ok === false
@@ -983,7 +1002,7 @@ export default function KioskPage() {
             <div className="mt-3 flex justify-end">
               <button
                 onClick={() => setErrorOpen(false)}
-                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
               >
                 Close
               </button>
