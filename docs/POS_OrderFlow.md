@@ -51,3 +51,96 @@ NEW → PICKING → PACKING → DISPATCHED → DELIVERED
 
 - Auto-cancel `UNPAID` when `expiryAt < now` (not locked or stale lock).
 - Purge `CANCELLED` older than 24h.
+
+# POS Credit Flow (Utang Management)
+
+## Overview
+
+- This document defines how credit (utang) and partial payments are handled in the POS system.
+  It separates three types of documents/receipts:
+
+  1. Credit Acknowledgment Receipt – proof that goods were released without full payment.
+
+  2. Payment Acknowledgment Receipt – proof of a payment made toward an outstanding balance.
+
+  3. Statement of Account (SOA) – summary of all credit + payments per customer.
+
+## 1. Credit Acknowledgment Receipt
+
+- Issued when goods leave the store without full payment.
+
+- Trigger: Order is released while still UNPAID or PARTIALLY_PAID.
+
+- Contains:
+
+  - Order details (items, qty, price, total)
+
+  - Customer info (name, alias, phone)
+
+  - Total credited balance
+
+  - Due date (if set)
+
+  - Approver (if release-with-balance was authorized)
+
+  ** 📄 Purpose: This is the utang slip. It documents that the store extended credit for this order. **
+
+## 2. Payment Acknowledgment Receipt
+
+- Issued when a customer makes a payment (partial or full).
+
+- Trigger: A new record is added in the Payment table.
+
+- Contains:
+
+  - Order reference
+
+  - Payment amount + method (Cash, GCash, etc.)
+
+  - Running balance (after this payment)
+
+  - Timestamp of payment
+
+* 📄 Purpose: This is the payment slip. It provides proof of each installment or settlement.
+
+## 3. Statement of Account (SOA)
+
+- Generated per customer, not per order.
+
+- Contains:
+
+  - List of all credited orders
+
+  - List of all payments made
+
+  - Total outstanding balance
+
+- Typically used for monthly reconciliation or follow-up.
+
+* 📄 Purpose: This is the long-term account record. It’s not printed by default after a transaction, but can be requested.
+
+## Flow Summary
+
+1. Order released on credit → Print Credit Acknowledgment Receipt.
+
+2. Customer makes payment → Print Payment Acknowledgment Receipt.
+
+3. Store wants summary per customer → Generate Statement of Account.
+
+## Notes
+
+1.  Reprinting:
+
+- Credit Ack can be reprinted any time from the order page.
+
+- Payment Ack can be reprinted from the payment record.
+
+2.  Balances:
+
+- Always computed from Order.totalBeforeDiscount - SUM(Payments.amount).
+
+- Credit flag (Order.isOnCredit) ensures order is tracked.
+
+3. Future:
+
+- SOA module can export to PDF/Excel for external reporting.

@@ -14,3 +14,12 @@ body {
   background-color: #d1fae5 !important; /* green-100 */
   animation: pulse 1s ease-in-out infinite;
 }
+
+@layer base {
+  html {
+    color-scheme: light;
+  } /* opt-out of auto-dark */
+  body {
+    @apply bg-[#f7f7fb] text-slate-900;
+  } /* global light bg + text */
+}

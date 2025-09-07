@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model Product {
@@ -44,6 +45,8 @@ model Product {
   productTargets     ProductTarget[]
   saleItems          SaleItem[]
   tags               Tag[]               @relation("ProductTags")
+  // back-relation to customer-specific pricing rules
+  customerItemPrices CustomerItemPrice[] @relation("CustomerItemPricesOnProduct")
   orderItems         OrderItem[]
 }
 
@@ -159,9 +162,72 @@ model Location {
 // ────────────── ORDER SLIP (Milestone 1) ──────────────
 
 model ReceiptCounter {
-  id       Int      @id @default(1)        // singleton (or per-branch later)
-  current  Int      @default(0)
+  id        Int      @id @default(1) // singleton (or per-branch later)
+  current   Int      @default(0)
   updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id            Int     @id @default(autoincrement())
+  firstName     String
+  middleName    String?
+  lastName      String
+  suffix        String?
+  alias         String?
+  phone         String? @unique
+  email         String?
+  isActive      Boolean @default(true)
+  notes         String?
+  creditLimit   Float?
+  loyaltyPoints Int     @default(0)
+  tier          String?
+
+  addresses          CustomerAddress[]
+  orders             Order[]
+  cylinderLoans      CylinderLoan[]
+  customerItemPrices CustomerItemPrice[]
+
+  @@index([phone])
+  @@index([alias])
+  @@index([lastName, firstName])
+}
+
+model CustomerAddress {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String
+  line1      String
+  barangay   String
+  city       String
+  province   String
+  postalCode String?
+  landmark   String?
+  geoLat     Float?
+  geoLng     Float?
+}
+
+model CustomerItemPrice {
+  id         Int       @id @default(autoincrement())
+  customerId Int
+  productId  Int
+  unitKind   UnitKind
+  mode       PriceMode
+  value      Decimal   @db.Decimal(10, 2) // meaning depends on mode
+  note       String?
+  active     Boolean   @default(true)
+  startsAt   DateTime?
+  endsAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product  @relation("CustomerItemPricesOnProduct", fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId, unitKind, startsAt, endsAt])
+  @@index([customerId, productId, unitKind])
+  @@index([active, startsAt, endsAt])
 }
 
 model Order {
@@ -180,8 +246,10 @@ model Order {
   terminalId String?
 
   // Relations
-  items OrderItem[]
-  payments  Payment[] 
+  items      OrderItem[]
+  payments   Payment[]
+  customerId Int?
+  customer   Customer?   @relation(fields: [customerId], references: [id])
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -191,17 +259,23 @@ model Order {
   lockedAt DateTime?
   lockedBy String? // cashier code/email/name
   lockNote String? // optional reason
-  
 
- // Receipt fields (set when PAID)
-  paidAt     DateTime?
-  receiptNo  String?   @unique   // set when PAID
+  // --- Utang / Credit fields ---
+  isOnCredit         Boolean   @default(false) // mark as utang/AR
+  dueDate            DateTime? // optional promise-to-pay date
+  releaseWithBalance Boolean   @default(false) // goods released before full payment
+  releasedApprovedBy String? // who approved the release
+  releasedAt         DateTime? // when goods left store
 
+  // Receipt fields (set when PAID)
+  paidAt    DateTime?
+  receiptNo String?   @unique // set when PAID
 
   @@index([status, expiryAt])
   @@index([lockedAt])
   @@index([status])
   @@index([expiryAt])
+  @@index([customerId])
 }
 
 model OrderItem {
@@ -214,29 +288,45 @@ model OrderItem {
   product   Product @relation(fields: [productId], references: [id])
 
   name      String
-  qty       Float // allows 0.25, 0.5 kg etc.
-  unitPrice Float
-  lineTotal Float
+  qty       Decimal @db.Decimal(10, 2)
+  unitPrice Decimal @db.Decimal(10, 2)
+  lineTotal Decimal @db.Decimal(10, 2)
+
+  // discount audit
+  pricePolicy        String? // "BASE", "PER_ITEM", or "RULE:<id/type>"
+  allowedUnitPrice   Decimal? @db.Decimal(10, 2)
+  discountApprovedBy String? // if cashier priced below allowed
 
   @@index([orderId])
 }
 
 model Payment {
-  id        Int      @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   orderId   Int
-  order     Order    @relation(fields: [orderId], references: [id])
+  order     Order         @relation(fields: [orderId], references: [id])
   method    PaymentMethod
   amount    Float
-  refNo     String?   // GCash ref, last 4 of card, etc.
-  createdAt DateTime  @default(now())
+  refNo     String? // GCash ref, last 4 of card, etc.
+  createdAt DateTime      @default(now())
 
   @@index([orderId])
+}
 
-  
+// Track borrowed LPG cylinders per customer
+model CylinderLoan {
+  id          Int       @id @default(autoincrement())
+  customerId  Int
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  brandFamily String // e.g. "CATGAS", "BRANDED" (can convert to enum later)
+  qty         Float // allow fractional if needed (e.g., partial deposit logic later)
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  notes       String?
+
+  @@index([customerId, closedAt])
 }
 
 // ── NEW (singleton counter for receipts) ────────────────────
-
 
 enum PaymentMethod {
   CASH
@@ -249,6 +339,18 @@ enum OrderStatus {
   DRAFT
   UNPAID
   PAID
+  PARTIALLY_PAID
   CANCELLED
   VOIDED
+}
+
+enum UnitKind {
+  RETAIL
+  PACK
+}
+
+enum PriceMode {
+  FIXED_PRICE // set the exact unit price
+  FIXED_DISCOUNT // subtract a fixed amount (per unit)
+  PERCENT_DISCOUNT // subtract % of base price (per unit)
 }

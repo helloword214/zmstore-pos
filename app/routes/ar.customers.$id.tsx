@@ -1,0 +1,419 @@
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+
+import {
+  Form,
+  useLoaderData,
+  useNavigation,
+  useSearchParams,
+  Link,
+} from "@remix-run/react";
+import { Prisma } from "@prisma/client";
+
+import { db } from "~/utils/db.server";
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const id = Number(params.id);
+  if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
+
+  const customer = await db.customer.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      firstName: true,
+      middleName: true,
+      lastName: true,
+      alias: true,
+      phone: true,
+      creditLimit: true,
+      orders: {
+        where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+        select: {
+          id: true,
+          orderCode: true,
+          createdAt: true,
+          dueDate: true,
+          totalBeforeDiscount: true,
+          payments: {
+            select: {
+              id: true,
+              amount: true,
+              method: true,
+              refNo: true,
+              createdAt: true,
+            },
+          },
+          status: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+  if (!customer) throw new Response("Not found", { status: 404 });
+
+  // Build ledger rows: charges (order) & credits (payments)
+  type Row =
+    | {
+        kind: "order";
+        date: string;
+        label: string;
+        amount: number;
+        orderId: number;
+        due?: string | null;
+      }
+    | {
+        kind: "payment";
+        date: string;
+        label: string;
+        amount: number;
+        orderId: number;
+        ref?: string | null;
+      };
+
+  const rows: Row[] = [];
+  let balance = 0;
+  for (const o of customer.orders) {
+    const orderAmt = Number(o.totalBeforeDiscount);
+    rows.push({
+      kind: "order",
+      date: o.createdAt.toISOString(),
+      label: `Order ${o.orderCode}`,
+      amount: orderAmt,
+      orderId: o.id,
+      due: o.dueDate ? o.dueDate.toISOString() : null,
+    });
+    balance += orderAmt;
+
+    for (const p of o.payments) {
+      rows.push({
+        kind: "payment",
+        date: p.createdAt.toISOString(),
+        label: `Payment ${p.method}${p.refNo ? ` • ${p.refNo}` : ""}`,
+        amount: Number(p.amount),
+        orderId: o.id,
+        ref: p.refNo ?? null,
+      });
+      balance -= Number(p.amount);
+    }
+  }
+
+  // sort by date ascending
+  rows.sort((a, b) => +new Date(a.date) - +new Date(b.date));
+
+  const displayName = `${customer.firstName}${
+    customer.middleName ? ` ${customer.middleName}` : ""
+  } ${customer.lastName}`.trim();
+
+  return json({
+    customer: {
+      id: customer.id,
+      name: displayName,
+      alias: customer.alias ?? null,
+      phone: customer.phone ?? null,
+      creditLimit: customer.creditLimit ?? null,
+    },
+    rows,
+    balance: Number(balance.toFixed(2)),
+  });
+}
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  const customerId = Number(params.id);
+  if (!Number.isFinite(customerId))
+    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
+
+  const fd = await request.formData();
+  const act = String(fd.get("_action") || "");
+
+  if (act === "recordPayment") {
+    const amount = Number(fd.get("amount") || 0);
+    const method = String(fd.get("method") || "CASH") as
+      | "CASH"
+      | "GCASH"
+      | "CARD";
+    const refNo = String(fd.get("refNo") || "").trim() || null;
+    const orderId = Number(fd.get("orderId") || 0); // optional: apply to one order
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return json({ ok: false, error: "Enter amount > 0" }, { status: 400 });
+    }
+
+    // Helper to (re)compute an order's remaining inside tx
+    const getRemaining = async (tx: Prisma.TransactionClient, oid: number) => {
+      const ord = await tx.order.findUnique({
+        where: { id: oid },
+        select: { totalBeforeDiscount: true },
+      });
+      if (!ord) return 0;
+      const paidAgg = await tx.payment.aggregate({
+        where: { orderId: oid },
+        _sum: { amount: true },
+      });
+      const paid = Number(paidAgg._sum.amount ?? 0);
+      return Math.max(0, Number(ord.totalBeforeDiscount) - paid);
+    };
+
+    let change = 0;
+    // Track which order(s) we actually applied payment to
+    const appliedOrderIds: number[] = [];
+
+    // If we're auto-allocating, fetch open orders OUTSIDE the tx so we can validate/early-return safely.
+    let openOrders: Array<{ id: number; createdAt: Date }> = [];
+    if (!orderId) {
+      openOrders = await db.order.findMany({
+        where: {
+          customerId,
+          status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      });
+      if (openOrders.length === 0) {
+        return json({ ok: false, error: "No open orders." }, { status: 400 });
+      }
+    }
+
+    await db.$transaction(async (tx) => {
+      let remainingToApply = amount;
+
+      if (orderId) {
+        // apply only to the chosen order
+        const rem = await getRemaining(tx, orderId);
+        const apply = Math.min(remainingToApply, rem);
+        if (apply > 0) {
+          await tx.payment.create({
+            data: { orderId, method, amount: apply, refNo },
+          });
+          remainingToApply -= apply;
+          appliedOrderIds.push(orderId);
+
+          // update order status after payment
+          const remAfter = await getRemaining(tx, orderId);
+          await tx.order.update({
+            where: { id: orderId },
+            data: {
+              status: remAfter <= 1e-6 ? "PAID" : "PARTIALLY_PAID",
+              ...(remAfter <= 1e-6 ? { paidAt: new Date() } : {}),
+            },
+          });
+        }
+        change = Math.max(0, remainingToApply);
+      } else {
+        for (const o of openOrders) {
+          if (remainingToApply <= 0) break;
+          const rem = await getRemaining(tx, o.id);
+          if (rem <= 0) continue;
+          const apply = Math.min(remainingToApply, rem);
+          await tx.payment.create({
+            data: { orderId: o.id, method, amount: apply, refNo },
+          });
+          remainingToApply -= apply;
+          appliedOrderIds.push(o.id);
+          const remAfter = await getRemaining(tx, o.id);
+          await tx.order.update({
+            where: { id: o.id },
+            data: {
+              status: remAfter <= 1e-6 ? "PAID" : "PARTIALLY_PAID",
+              ...(remAfter <= 1e-6 ? { paidAt: new Date() } : {}),
+            },
+          });
+        }
+        change = Math.max(0, remainingToApply);
+      }
+    });
+
+    // Build redirect with optional change banner
+    const qs = new URLSearchParams();
+    if (change > 0) qs.set("change", change.toFixed(2));
+
+    // If “Save & Print Ack” was used:
+    const shouldPrint = String(fd.get("printAck") || "0") === "1";
+    if (shouldPrint) {
+      const targetForAck =
+        (orderId && appliedOrderIds.includes(orderId) ? orderId : null) ??
+        (appliedOrderIds.length > 0 ? appliedOrderIds[0] : null);
+      if (targetForAck) {
+        const qs = new URLSearchParams({
+          autoprint: "1",
+          autoback: "1",
+          tendered: amount.toFixed(2),
+        });
+        if (change > 0) qs.set("change", change.toFixed(2));
+        return redirect(`/orders/${targetForAck}/ack?${qs.toString()}`);
+      }
+      // Fallback: go back to AR with a small banner
+      qs.set("printed", "1");
+      return redirect(`/ar/customers/${customerId}?${qs.toString()}`);
+    }
+    return redirect(`/ar/customers/${customerId}?${qs.toString()}`);
+  }
+  return json({ ok: false, error: "Unknown action" }, { status: 400 });
+}
+
+export default function CustomerLedgerPage() {
+  const { customer, rows, balance } = useLoaderData<typeof loader>();
+  const [sp] = useSearchParams();
+  const nav = useNavigation();
+  const peso = (n: number) =>
+    new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+    }).format(n);
+
+  return (
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-4xl px-5 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Customer Ledger
+            </h1>
+            <div className="text-sm text-slate-600">
+              {customer.name}
+              {customer.alias ? ` (${customer.alias})` : ""} •{" "}
+              {customer.phone ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-right">
+            <div className="text-xs text-slate-500">Current Balance</div>
+            <div className="text-lg font-semibold text-slate-900">
+              {peso(balance)}
+            </div>
+            {/* Optional change banner after redirect */}
+            {sp.get("change") && (
+              <div className="mx-auto max-w-4xl px-5 pb-3">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Change due to customer:{" "}
+                  <b>₱{Number(sp.get("change")).toFixed(2)}</b>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-4xl px-5 py-6 grid lg:grid-cols-3 gap-6">
+        {/* Ledger */}
+        <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
+            Activity
+          </div>
+          <div className="divide-y divide-slate-100">
+            {rows.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-slate-600">
+                No activity yet.
+              </div>
+            ) : (
+              rows.map((r, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-3 flex items-center justify-between"
+                >
+                  <div>
+                    <div className="text-sm text-slate-900">
+                      {r.kind === "order" ? "Charge" : "Payment"} • {r.label}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {new Date(r.date).toLocaleString()}
+                      {r.kind === "order" && r.due
+                        ? ` • due ${new Date(r.due).toLocaleDateString()}`
+                        : ""}
+                    </div>
+                  </div>
+                  <div
+                    className={`text-sm font-semibold ${
+                      r.kind === "order" ? "text-slate-900" : "text-emerald-700"
+                    }`}
+                  >
+                    {r.kind === "order" ? "+" : "−"} {peso(r.amount)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* Record Payment */}
+        <aside className="lg:col-span-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
+            Record Payment
+          </div>
+          <Form method="post" className="p-4 space-y-3">
+            <input type="hidden" name="_action" value="recordPayment" />
+            <label className="block text-sm">
+              <span className="text-slate-700">Amount</span>
+              <input
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0.00"
+                inputMode="decimal"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              />
+            </label>
+
+            <label className="block text-sm">
+              <span className="text-slate-700">Method</span>
+              <select
+                name="method"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                defaultValue="CASH"
+              >
+                <option value="CASH">Cash</option>
+                <option value="GCASH">GCash</option>
+                <option value="CARD">Card</option>
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="text-slate-700">Apply to Order (optional)</span>
+              <input
+                name="orderId"
+                type="number"
+                placeholder="Order ID (blank = oldest open)"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              />
+            </label>
+
+            <label className="block text-sm">
+              <span className="text-slate-700">Reference (optional)</span>
+              <input
+                name="refNo"
+                placeholder="GCash ref / last 4 / notes"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              />
+            </label>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                name="printAck"
+                value="0"
+                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                disabled={nav.state !== "idle"}
+              >
+                {nav.state !== "idle" ? "Saving…" : "Save Payment"}
+              </button>
+              <button
+                type="submit"
+                name="printAck"
+                value="1"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                disabled={nav.state !== "idle"}
+              >
+                {nav.state !== "idle" ? "Saving…" : "Save & Print Ack"}
+              </button>
+              <Link
+                to={`/customers/${customer.id}`}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                View Customer Profile
+              </Link>
+            </div>
+          </Form>
+        </aside>
+      </div>
+    </main>
+  );
+}

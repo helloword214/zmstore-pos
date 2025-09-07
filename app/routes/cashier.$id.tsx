@@ -1,4 +1,5 @@
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   useLoaderData,
@@ -6,24 +7,39 @@ import {
   Form,
   useNavigation,
 } from "@remix-run/react";
-import * as React from "react";
+import React, { useMemo } from "react";
 import { allocateReceiptNo } from "~/utils/receipt";
-import type { PaymentMethod as PaymentMethodEnum } from "@prisma/client";
+import { CustomerPicker } from "~/components/CustomerPicker";
+import { computeUnitPriceForCustomer } from "~/services/pricing";
+import { UnitKind } from "@prisma/client";
+import { applyDiscounts, type Cart, type Rule } from "~/services/pricing";
+
 import { db } from "~/utils/db.server";
 
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
 
-function approxEqual(a: number, b: number, eps = 0.01) {
-  return Math.abs(a - b) <= eps;
-}
-
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
+  if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
   const order = await db.order.findUnique({
     where: { id },
-    include: { items: true },
+    include: {
+      items: true,
+      payments: true,
+      customer: {
+        select: {
+          id: true,
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          alias: true,
+          phone: true,
+        },
+      },
+    },
   });
+
   if (!order) throw new Response("Not found", { status: 404 });
   const now = Date.now();
   const isStale = order.lockedAt
@@ -32,7 +48,13 @@ export async function loader({ params }: LoaderFunctionArgs) {
   const lockExpiresAt = order.lockedAt
     ? order.lockedAt.getTime() + LOCK_TTL_MS
     : null;
-  return json({ order, isStale, lockExpiresAt });
+
+  return json({
+    order,
+    isStale,
+    lockExpiresAt,
+    activePricingRules: [] as import("~/services/pricing").Rule[],
+  });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -54,68 +76,147 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect("/cashier");
   }
   if (act === "settlePayment") {
-    // Load order with items (must be UNPAID and (ideally) locked)
-
-    // Read cash received from the form and validate against total
     const cashGiven = Number(fd.get("cashGiven") || 0);
-    const printReceipt = fd.get("printReceipt") === "1"; // new toggle
+    const printReceipt = fd.get("printReceipt") === "1";
+    const releaseWithBalance = fd.get("releaseWithBalance") === "1";
+    const releasedApprovedBy =
+      String(fd.get("releaseApprovedBy") || "").trim() || null;
+    const discountApprovedBy =
+      String(fd.get("discountApprovedBy") || "").trim() || null;
 
-    const orderForAmount = await db.order.findUnique({
-      where: { id },
-      select: { totalBeforeDiscount: true, status: true },
-    });
-    if (!orderForAmount) {
-      return json({ ok: false, error: "Order not found" }, { status: 404 });
-    }
-    const total = Number(orderForAmount.totalBeforeDiscount);
+    const customerId = Number(fd.get("customerId") || 0) || null;
+
+    // Cashier requires an actual payment (> 0). Full-utang is a separate flow.
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
-      return json(
-        { ok: false, error: "Enter cash received (₱)" },
-        { status: 400 }
-      );
-    }
-    if (cashGiven + 1e-6 < total) {
       return json(
         {
           ok: false,
-          error: `Insufficient cash: received ₱${cashGiven.toFixed(
-            2
-          )}, need ₱${total.toFixed(2)}`,
+          error: "Enter cash > 0. For full utang, use “Record as Credit”.",
         },
         { status: 400 }
       );
     }
 
+    // Load order (with items + payments for running balance)
     const order = await db.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: true, payments: true },
     });
-    if (!order) {
+    if (!order)
       return json({ ok: false, error: "Order not found" }, { status: 404 });
-    }
-    if (order.status !== "UNPAID") {
-      return json({ ok: false, error: "Order is not UNPAID" }, { status: 400 });
+    if (order.status !== "UNPAID" && order.status !== "PARTIALLY_PAID") {
+      return json(
+        { ok: false, error: "Order is already settled/voided" },
+        { status: 400 }
+      );
     }
 
-    // Fetch current product data for all items
+    const total = Number(order.totalBeforeDiscount);
+    const alreadyPaid = (order.payments ?? []).reduce(
+      (s, p) => s + Number(p.amount),
+      0
+    );
+
+    const nowPaid = alreadyPaid + cashGiven;
+    const remaining = Math.max(0, total - nowPaid);
+
+    // For utang/partial balance, require a customer to carry the balance
+    if (remaining > 0 && !customerId) {
+      return json(
+        {
+          ok: false,
+          error: "Select or create a customer before allowing utang.",
+        },
+        { status: 400 }
+      );
+    }
+    // If releasing goods with balance, require manager approval note
+    if (remaining > 0 && releaseWithBalance && !releasedApprovedBy) {
+      return json(
+        {
+          ok: false,
+          error: "Manager PIN/Name is required to release with balance.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Fetch products (for possible deduction)
     const productIds = Array.from(new Set(order.items.map((i) => i.productId)));
     const products = await db.product.findMany({
       where: { id: { in: productIds } },
       select: {
         id: true,
         allowPackSale: true,
-        price: true, // retail price (Decimal)
-        srp: true, // pack price (Decimal)
-        stock: true, // pack count (Decimal/Float)
-        packingStock: true, // retail units (Decimal/Float)
+        price: true,
+        srp: true,
+        stock: true, // packs
+        packingStock: true, // retail units
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    // Validate deductions first
+    // 🔒 Final price guard: ensure no item is cheaper than allowed price for this customer
+    const priceViolations: Array<{
+      itemId: number;
+      name: string;
+      allowed: number;
+      actual: number;
+    }> = [];
+    for (const it of order.items) {
+      const p = byId.get(it.productId);
+      if (!p) continue;
+      // infer unit kind from snapshot vs product base
+      const approx = (a: number, b: number, eps = 0.01) =>
+        Math.abs(a - b) <= eps;
+      const isRetail =
+        p.allowPackSale &&
+        Number(p.price ?? 0) > 0 &&
+        approx(Number(it.unitPrice), Number(p.price ?? 0));
+      const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
+      const base =
+        unitKind === UnitKind.RETAIL
+          ? Number(p.price ?? 0)
+          : Number(p.srp ?? 0);
+      const allowed = await computeUnitPriceForCustomer(db, {
+        customerId: order.customerId ?? null,
+        productId: p.id,
+        unitKind,
+        baseUnitPrice: base,
+      });
+      const actual = Number(it.unitPrice);
+      // if cashier somehow priced below allowed (e.g., older item or UI hack), block
+      if (actual + 1e-6 < allowed) {
+        priceViolations.push({ itemId: it.id, name: it.name, allowed, actual });
+      }
+    }
+    if (priceViolations.length) {
+      // allow only with manager override
+      if (!discountApprovedBy) {
+        const details = priceViolations
+          .map(
+            (v) =>
+              `• ${v.name}: allowed ₱${v.allowed.toFixed(
+                2
+              )}, actual ₱${v.actual.toFixed(2)}`
+          )
+          .join("\n");
+        return json(
+          {
+            ok: false,
+            error:
+              "Price below allowed. Manager approval required.\n" + details,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Build deltas (retail vs pack) using price inference
     const errors: Array<{ id: number; reason: string }> = [];
-    type Deduction = { id: number; packDelta: number; retailDelta: number };
-    const deltas: Deduction[] = [];
+    const deltas = new Map<number, { pack: number; retail: number }>();
+    const approxEqual = (a: number, b: number, eps = 0.01) =>
+      Math.abs(a - b) <= eps;
 
     for (const it of order.items) {
       const p = byId.get(it.productId);
@@ -131,7 +232,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const retailStock = Number(p.packingStock ?? 0);
 
       if (p.allowPackSale && price > 0 && approxEqual(unitPrice, price)) {
-        // RETAIL line → deduct retail units
         if (qty > retailStock) {
           errors.push({
             id: it.productId,
@@ -139,10 +239,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
           });
           continue;
         }
-        deltas.push({ id: it.productId, packDelta: 0, retailDelta: qty });
+        const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
+        c.retail += qty;
+        deltas.set(p.id, c);
       } else if (srp > 0 && approxEqual(unitPrice, srp)) {
-        // PACK line → deduct pack count
-        // qty should be integer for packs, but we’ll still guard the stock math
         if (qty > packStock) {
           errors.push({
             id: it.productId,
@@ -150,7 +250,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
           });
           continue;
         }
-        deltas.push({ id: it.productId, packDelta: qty, retailDelta: 0 });
+        const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
+        c.pack += qty;
+        deltas.set(p.id, c);
       } else {
         errors.push({
           id: it.productId,
@@ -159,60 +261,148 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
     }
 
-    if (errors.length) {
+    // We only need to block on stock errors when we are going to deduct now:
+    // - full payment (remaining == 0) OR
+    // - partial but releasing with balance (releaseWithBalance) and not yet released.
+    const willDeductNow =
+      remaining <= 1e-6 || (releaseWithBalance && !order.releasedAt);
+    if (errors.length && willDeductNow) {
       return json({ ok: false, errors }, { status: 400 });
     }
 
-    // 2) ✅ Consolidate `deltas` per product (now that `deltas` is filled)
-    const combined = new Map<number, { pack: number; retail: number }>();
-    for (const d of deltas) {
-      const c = combined.get(d.id) ?? { pack: 0, retail: 0 };
-      c.pack += d.packDelta;
-      c.retail += d.retailDelta;
-      combined.set(d.id, c);
-    }
+    let createdPaymentId: number | null = null;
 
-    // Apply deductions + mark PAID in a transaction
+    // Perform everything atomically
     await db.$transaction(async (tx) => {
-      // 1) Deduct consolidated deltas (your existing loop)
-      for (const [pid, c] of combined.entries()) {
-        const p = byId.get(pid)!;
-        const newPack = Number(p.stock ?? 0) - c.pack;
-        const newRetail = Number(p.packingStock ?? 0) - c.retail;
-        await tx.product.update({
-          where: { id: pid },
-          data: { stock: newPack, packingStock: newRetail },
+      // 0) Attach/keep customer if provided
+      if (customerId) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { customerId },
         });
       }
 
-      // 2) Allocate receiptNo
-      const receiptNo = await allocateReceiptNo(tx);
-
-      // 3) Mark order PAID + set paidAt + receiptNo
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          status: "PAID",
-          paidAt: new Date(),
-          receiptNo,
-          lockedAt: null,
-          lockedBy: null,
-        },
+      // 1) Record payment (cashier path always > 0 now)
+      const p = await tx.payment.create({
+        data: { orderId: order.id, method: "CASH", amount: cashGiven },
+        select: { id: true },
       });
+      createdPaymentId = p.id;
 
-      // 4) Record payment (Cash full amount for now)
-      await tx.payment.create({
-        data: {
-          orderId: order.id,
-          method: "CASH" as PaymentMethodEnum, // type-only enum
-          amount: cashGiven, // what the customer handed
-        },
-      });
+      // 2) Deduct inventory only when needed (see rule above)
+      if (willDeductNow) {
+        for (const [pid, c] of deltas.entries()) {
+          const p = byId.get(pid)!;
+          await tx.product.update({
+            where: { id: pid },
+            data: {
+              stock: Number(p.stock ?? 0) - c.pack,
+              packingStock: Number(p.packingStock ?? 0) - c.retail,
+            },
+          });
+        }
+      }
+
+      // 2.a) Price audit per item (allowed unit price + policy + optional manager override)
+      for (const it of order.items) {
+        const p = byId.get(it.productId);
+        if (!p) continue;
+        const approx = (a: number, b: number, eps = 0.01) =>
+          Math.abs(a - b) <= eps;
+        const isRetail =
+          p.allowPackSale &&
+          Number(p.price ?? 0) > 0 &&
+          approx(Number(it.unitPrice), Number(p.price ?? 0));
+        const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
+        const baseUnitPrice =
+          unitKind === UnitKind.RETAIL
+            ? Number(p.price ?? 0)
+            : Number(p.srp ?? 0);
+
+        const allowed = await computeUnitPriceForCustomer(tx as any, {
+          customerId: order.customerId ?? null,
+          productId: p.id,
+          unitKind,
+          baseUnitPrice,
+        });
+        const pricePolicy =
+          Math.abs(allowed - baseUnitPrice) <= 0.009 ? "BASE" : "PER_ITEM";
+
+        await tx.orderItem.update({
+          where: { id: it.id },
+          data: {
+            allowedUnitPrice: allowed,
+            pricePolicy,
+            ...(Number(it.unitPrice) + 1e-6 < allowed && discountApprovedBy
+              ? { discountApprovedBy }
+              : {}),
+          },
+        });
+      }
+
+      // 3) Update order status & fields
+      if (remaining <= 1e-6) {
+        // Fully paid
+        const receiptNo = await allocateReceiptNo(tx);
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: "PAID",
+            paidAt: new Date(),
+            receiptNo,
+            lockedAt: null,
+            lockedBy: null,
+            // if cashier picked a customer anyway, persist it
+            ...(customerId ? { customerId } : {}),
+            // If this full payment also did a release now, persist release metadata.
+            ...(releaseWithBalance && !order.releasedAt
+              ? {
+                  releaseWithBalance: true,
+                  releasedApprovedBy,
+                  releasedAt: new Date(),
+                }
+              : {}),
+          },
+        });
+      } else {
+        // Partial payment
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: "PARTIALLY_PAID",
+            isOnCredit: true,
+            ...(customerId ? { customerId } : {}),
+            lockedAt: null,
+            lockedBy: null,
+            ...(releaseWithBalance && !order.releasedAt
+              ? {
+                  releaseWithBalance: true,
+                  releasedApprovedBy,
+                  releasedAt: new Date(),
+                }
+              : {}),
+          },
+        });
+      }
     });
-    // Branch navigation: print or go back to queue
-    if (printReceipt) {
+
+    // Navigate
+    if (remaining <= 1e-6 && printReceipt) {
+      // Official Receipt for fully-paid
       return redirect(`/orders/${id}/receipt?autoprint=1&autoback=1`);
     }
+
+    // Partial payment → Acknowledgment
+    if (remaining > 0 && printReceipt && createdPaymentId) {
+      const qs = new URLSearchParams({
+        autoprint: "1",
+        autoback: "1",
+        pid: String(createdPaymentId),
+      });
+      return redirect(`/orders/${id}/ack?${qs.toString()}`);
+    }
+
+    // Otherwise just go back to queue (ensures we don't fall through)
     return redirect("/cashier");
   }
 
@@ -220,18 +410,36 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function CashierOrder() {
-  const { order, isStale, lockExpiresAt } = useLoaderData<typeof loader>();
+  const { order, isStale, lockExpiresAt, activePricingRules } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like order-pad toggle
   // Cash input + change preview
   const [cashGiven, setCashGiven] = React.useState("");
+  const [customer, setCustomer] = React.useState<{
+    id: number;
+    firstName: string;
+    middleName?: string | null;
+    lastName: string;
+    alias?: string | null;
+    phone?: string | null;
+  } | null>(order.customer ?? null);
   const total = Number(order.totalBeforeDiscount);
+  const alreadyPaid =
+    order.payments?.reduce((s: number, p: any) => s + Number(p.amount), 0) || 0;
   const entered = Number(cashGiven) || 0;
-  const changePreview = entered > 0 ? Math.max(0, entered - total) : 0;
+  const dueBefore = Math.max(0, total - alreadyPaid);
+  const changePreview = entered > 0 ? Math.max(0, entered - dueBefore) : 0;
+  const balanceAfterThisPayment = Math.max(0, total - alreadyPaid - entered);
+  const willBePartial = balanceAfterThisPayment > 0;
+
   const [remaining, setRemaining] = React.useState(
     lockExpiresAt ? lockExpiresAt - Date.now() : 0
   );
+
+  // ...inside CashierOrder component (top of render state)
+
   React.useEffect(() => {
     if (actionData && (actionData as any).redirectToReceipt) {
       window.location.assign((actionData as any).redirectToReceipt);
@@ -251,6 +459,49 @@ export default function CashierOrder() {
       currency: "PHP",
     }).format(n);
 
+  // ---------- Discount engine (read-only preview) ----------
+  // 1) Build a Cart from current order items
+  const cart = useMemo<Cart>(
+    () => ({
+      items: (order.items ?? []).map((it: any) => ({
+        id: it.id,
+        productId: it.productId,
+        name: it.name,
+        qty: Number(it.qty),
+        unitPrice: Number(it.unitPrice),
+        // optional selectors (use if you have them on loader include)
+        categoryId: (it as any).product?.categoryId ?? null,
+        brandId: (it as any).product?.brandId ?? null,
+        sku: (it as any).product?.sku ?? null,
+      })),
+    }),
+    [order.items]
+  );
+
+  // 2) Active rules (memoized; filter out null/undefined just in case)
+  const rules = useMemo<Rule[]>(
+    () =>
+      Array.isArray(activePricingRules)
+        ? (activePricingRules.filter(Boolean) as Rule[])
+        : [],
+    [activePricingRules]
+  );
+
+  // 3) Customer context (minimal for now)
+  const ctx = useMemo(
+    () => ({
+      id: order.customer?.id ?? null,
+    }),
+    [order.customer?.id]
+  );
+
+  // 4) Compute
+  const pricing = useMemo(
+    () => applyDiscounts(cart, rules, ctx),
+    [cart, rules, ctx]
+  );
+  // ---------------------------------------------------------
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       {/* Page header */}
@@ -266,14 +517,11 @@ export default function CashierOrder() {
               </h1>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
                 <span
-                  className={`
-                inline-flex items-center gap-1 rounded-full px-2.5 py-1
-                ${
-                  order.lockedBy
-                    ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-                    : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                }
-              `}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ring-1 ${
+                    order.lockedBy
+                      ? "bg-amber-50 text-amber-700 ring-amber-200"
+                      : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  }`}
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                   {order.lockedBy ? `Locked by ${order.lockedBy}` : "Unlocked"}
@@ -331,42 +579,80 @@ export default function CashierOrder() {
               </div>
 
               <div className="divide-y divide-slate-100">
-                {order.items.map((it) => (
-                  <div
-                    key={it.id}
-                    className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/60"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-900">
-                        {it.name}
+                {(order.items ?? []).map((it: any) => {
+                  const adj = pricing.adjustedItems.find(
+                    (ai) => ai.id === it.id
+                  );
+                  const effUnit =
+                    adj?.effectiveUnitPrice ?? Number(it.unitPrice);
+                  const discounted = Number(effUnit) !== Number(it.unitPrice);
+                  const originalLine = Number(it.lineTotal);
+                  const effLine = Math.max(0, Number(it.qty) * effUnit);
+                  return (
+                    <div
+                      key={it.id}
+                      className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/60"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-900">
+                          {it.name}
+                        </div>
+                        <div className="mt-0.5 text-xs text-slate-500">
+                          {it.qty} ×{" "}
+                          {discounted ? (
+                            <>
+                              <s className="text-slate-400">
+                                {peso(Number(it.unitPrice))}
+                              </s>{" "}
+                              <strong>{peso(effUnit)}</strong>
+                            </>
+                          ) : (
+                            <>{peso(effUnit)}</>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        {it.qty} × {peso(Number(it.unitPrice))}
+                      <div className="text-right text-sm font-semibold text-slate-900">
+                        {discounted ? (
+                          <>
+                            <s className="mr-1 text-slate-400">
+                              {peso(originalLine)}
+                            </s>
+                            <span>{peso(effLine)}</span>
+                          </>
+                        ) : (
+                          <span>{peso(originalLine)}</span>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right text-sm font-semibold text-slate-900">
-                      {peso(Number(it.lineTotal))}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Totals */}
-              <div className="space-y-2 border-t border-slate-100 px-4 py-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Subtotal</span>
-                  <span className="font-medium text-slate-900">
-                    {peso(Number(order.subtotal))}
-                  </span>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Subtotal</span>
+                <span className="font-medium text-slate-900">
+                  {peso(pricing.subtotal)}
+                </span>
+              </div>
+              {pricing.discounts.map((d) => (
+                <div
+                  key={d.ruleId}
+                  className="flex items-center justify-between text-sm text-rose-700"
+                >
+                  <span className="text-rose-700">Less: {d.name}</span>
+                  <span>-{peso(d.amount)}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">
-                    Total (before discounts)
-                  </span>
-                  <span className="font-semibold text-slate-900">
-                    {peso(Number(order.totalBeforeDiscount))}
-                  </span>
-                </div>
+              ))}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Total (before discounts)</span>
+                <span className="font-semibold text-slate-900">
+                  {peso(Number(order.totalBeforeDiscount))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm font-semibold text-indigo-700">
+                <span>Total after discounts (preview)</span>
+                <span>{peso(pricing.total)}</span>
               </div>
             </div>
           </section>
@@ -410,8 +696,35 @@ export default function CashierOrder() {
                   </div>
                 ) : null}
 
-                <Form method="post" className="space-y-3">
+                <Form id="settle-form" method="post" className="space-y-3">
                   <input type="hidden" name="_action" value="settlePayment" />
+                  <input
+                    type="hidden"
+                    name="customerId"
+                    value={customer?.id ?? ""}
+                  />
+                  {/* Quick link to full-credit flow (no payment here) */}
+                  <div className="flex justify-end -mb-1">
+                    <a
+                      href={`/orders/${order.id}/credit`}
+                      className="text-xs text-indigo-600 hover:underline"
+                      title="Record this as full utang / credit without taking payment"
+                    >
+                      Record as Credit (no payment)
+                    </a>
+                  </div>
+                  {/* Customer (required if utang / partial / zero-cash) */}
+                  <div className="mb-3">
+                    <label className="block text-sm text-slate-700 mb-1">
+                      Customer
+                    </label>
+                    <CustomerPicker value={customer} onChange={setCustomer} />
+                    {willBePartial && !customer && (
+                      <div className="mt-1 text-xs text-red-700">
+                        Required for utang / partial payments.
+                      </div>
+                    )}
+                  </div>
 
                   <label className="block text-sm">
                     <span className="text-slate-700">Cash received</span>
@@ -450,20 +763,71 @@ export default function CashierOrder() {
                     </span>
                   </div>
 
+                  {/* Balance after this payment (preview) */}
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-slate-600">
+                      Balance (after this payment)
+                    </span>
+                    <span className="font-semibold text-slate-900">
+                      {new Intl.NumberFormat("en-PH", {
+                        style: "currency",
+                        currency: "PHP",
+                      }).format(balanceAfterThisPayment)}
+                    </span>
+                  </div>
+
+                  {/* Release with balance (manager approval) */}
+                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="releaseWithBalance"
+                      value="1"
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                    <span>Release goods now (with balance)</span>
+                  </label>
+                  <label className="block text-xs text-slate-600">
+                    Manager PIN/Name (for release)
+                    <input
+                      name="releaseApprovedBy"
+                      type="text"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                      placeholder="e.g. 1234 or MGR-ANA"
+                    />
+                  </label>
+                  {/* Manager approval if prices are below allowed */}
+                  <label className="block text-xs text-slate-600">
+                    Manager PIN/Name (required if price lessthan allowed)
+                    <input
+                      name="discountApprovedBy"
+                      type="text"
+                      className="mt-1 w-full rounded-xl border px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                      placeholder="e.g. MGR-ANA"
+                    />
+                  </label>
+
                   <button
                     type="submit"
                     className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
-                    disabled={isStale || nav.state !== "idle"}
+                    disabled={
+                      isStale ||
+                      nav.state !== "idle" ||
+                      (willBePartial && !customer)
+                    }
                     title={
                       isStale
                         ? "Lock is stale; re-open from queue"
-                        : "Mark as PAID"
+                        : willBePartial
+                        ? "Record partial payment"
+                        : "Submit payment"
                     }
                   >
                     {nav.state !== "idle"
                       ? "Completing…"
                       : printReceipt
-                      ? "Complete & Print Receipt"
+                      ? willBePartial
+                        ? "Complete & Print Ack"
+                        : "Complete & Print Receipt"
                       : "Complete Sale"}
                   </button>
                 </Form>
@@ -478,14 +842,25 @@ export default function CashierOrder() {
         <div className="mx-auto max-w-4xl">
           <button
             type="submit"
-            formAction="post"
+            form="settle-form"
             className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-            disabled={isStale || nav.state !== "idle"}
+            disabled={
+              isStale || nav.state !== "idle" || (willBePartial && !customer)
+            }
+            title={
+              isStale
+                ? "Lock is stale; re-open from queue"
+                : willBePartial
+                ? "Record partial payment"
+                : "Mark as PAID"
+            }
           >
             {nav.state !== "idle"
               ? "Completing…"
               : printReceipt
-              ? "Complete & Print Receipt"
+              ? willBePartial
+                ? "Complete & Print Ack"
+                : "Complete & Print Receipt"
               : "Complete Sale"}
           </button>
         </div>

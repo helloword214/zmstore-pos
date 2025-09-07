@@ -89,6 +89,8 @@ export default function KioskPage() {
   const [activeCat, setActiveCat] = React.useState<number | "">("");
   const [activeBrand, setActiveBrand] = React.useState<number | "">("");
 
+  const searchRef = React.useRef<HTMLInputElement | null>(null);
+
   // cart: id -> item snapshot
 
   type Mode = "retail" | "pack";
@@ -117,7 +119,10 @@ export default function KioskPage() {
     const term = q.trim().toLowerCase();
     return products.filter((p) => {
       if (activeCat !== "" && p.categoryId !== activeCat) return false;
-      if (activeBrand !== "" && (p.brand?.id ?? "") !== activeBrand)
+      if (
+        activeBrand !== "" &&
+        Number(p.brand?.id ?? 0) !== Number(activeBrand)
+      )
         return false;
       if (!term) return true;
       return p.name.toLowerCase().includes(term);
@@ -281,6 +286,31 @@ export default function KioskPage() {
     };
   }, [revalidator]);
 
+  // Global key handler: "/" focuses the search field
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && !e.defaultPrevented) {
+        // don't steal focus when typing in inputs/textareas/contenteditable
+        const t = e.target as HTMLElement | null;
+        if (
+          t &&
+          (t.tagName === "INPUT" ||
+            t.tagName === "TEXTAREA" ||
+            (t as any).isContentEditable)
+        )
+          return;
+        e.preventDefault();
+        // try explicit ref first, then fallback to querySelector (works for TextInput)
+        (
+          searchRef.current ??
+          document.querySelector<HTMLInputElement>('input[name="search"]')
+        )?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── UI helpers for nicer buttons ──────────────────────────
   // ✅ keep these names; only classes updated
   const btnBase =
@@ -344,9 +374,9 @@ export default function KioskPage() {
             reason: "Retail price not set",
           });
         }
-        // qty multiple of 0.25
-        const q4 = Math.round(line.qty * 100) / 25; // 0.25 = 25/100
-        if (Math.abs(q4 - Math.round(q4)) > eps) {
+        // qty must be a multiple of 0.25 → check in hundredths against 25
+        const hundredths = Math.round(line.qty * 100); // integer in cents
+        if (Math.abs(hundredths % 25) > eps) {
           errs.push({
             id: p.id,
             mode: "retail",
@@ -438,13 +468,26 @@ export default function KioskPage() {
             {clock}
           </div>
           <div className="flex gap-2">
+            {/* New Order resets cart + search + filters */}
             <button
-              onClick={() => setCart({})}
+              onClick={() => {
+                setCart({});
+                setQ("");
+                setActiveCat("");
+                setActiveBrand("");
+                // focus search after reset
+                const el =
+                  document.querySelector<HTMLInputElement>(
+                    'input[name="search"]'
+                  ) || searchRef.current;
+                el?.focus();
+              }}
               className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
               title="Start a fresh cart"
             >
               New Order
             </button>
+            {/* Clear now only clears cart (keeps filters/search) */}
             <button
               onClick={() => setCart({})}
               className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700"
@@ -485,6 +528,8 @@ export default function KioskPage() {
 
         <div className="flex gap-2">
           <input
+            ref={searchRef}
+            name="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search products…"
@@ -794,7 +839,7 @@ export default function KioskPage() {
       {/* Cart panel */}
       <aside className="border border-slate-200 rounded-2xl p-3 md:p-4 sticky top-3 h-fit bg-white shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-800">Cart</h2>
+          <h2 className="font-semibold text-slate-800">Order List</h2>
           <button
             onClick={() => setCart({})}
             className="text-xs text-red-600 hover:underline disabled:opacity-50"
@@ -805,7 +850,7 @@ export default function KioskPage() {
         </div>
 
         {items.length === 0 ? (
-          <div className="text-sm text-slate-500 mt-2">Cart is empty.</div>
+          <div className="text-sm text-slate-500 mt-2">Order is empty.</div>
         ) : (
           <>
             <div className="mt-3 space-y-2 max-h-[50vh] overflow-auto pr-1">
