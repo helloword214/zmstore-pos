@@ -251,3 +251,44 @@
 **Refs**
 
 - Commits: a261229, 91a49c9, 304e730, 9005bf8
+
+## 2025-09-07
+
+- Minimal UI fixes: unified sticky headers, consistent containers, removed overlapping sub-navs.
+- AR functionality: Accounts Receivable list, per-customer ledger, payment recording + auto-allocation, change handling.
+- Customers: consolidated layout with tabs (Profile / Pricing / AR), moved pricing to `customers.$id.pricing._index.tsx`.
+- Customer discounts: per-item discount rules groundwork wired into customer pricing view.
+- Routes cleanup: deleted obsolete `customers.$id.pricing.tsx` Outlet.
+
+## 2025-09-07 — Mobile-first Order Pad polish
+
+### Added
+
+- Sticky bottom action bar + full-screen Cart sheet for mobile.
+- Product cards show inline “− qty +” stepper on mobile.
+- Compact category pill bar (emoji icons, smart edge fades, inner padding).
+- Mobile infinite scroll for product list.
+
+### Changed
+
+- Scanner is **mobile-only**; desktop Scan button removed from product list.
+- Desktop pagination UI (count + “Load more”) hidden on mobile (auto-load instead).
+- Removed redundant unit-price captions on mobile cart lines.
+
+### Fixed
+
+- TDZ error (“Cannot access `total` before initialization”) by using `filtered.length` in the mobile scroll effect.
+- Awkward white edge fade in categories; fades now match `#f7f7fb` and auto-hide at ends.
+
+### Notes
+
+- Add (or keep) the global utility:
+  ```css
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  ```
