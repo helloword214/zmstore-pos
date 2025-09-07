@@ -6,18 +6,16 @@ import { Form, useActionData, useLoaderData, Link } from "@remix-run/react";
 import { PriceMode, UnitKind } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import React from "react";
+import { ProductPickerHybrid } from "~/components/ProductPickerHybrid";
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const customerId = Number(params.id);
-  const [customer, products, rawRules] = await Promise.all([
+  const [customer, rawRules] = await Promise.all([
     db.customer.findUnique({
       where: { id: customerId },
       select: { id: true, firstName: true, lastName: true, alias: true },
     }),
-    db.product.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+
     db.customerItemPrice.findMany({
       where: { customerId },
       orderBy: [{ active: "desc" }, { createdAt: "desc" }],
@@ -40,7 +38,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     // Prisma Decimal -> number
     value: Number(r.value ?? 0),
   }));
-  return json({ customer, products, rules });
+  return json({ customer, rules });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -254,7 +252,7 @@ function formatRuleValue(
 }
 
 export default function CustomerPricingRules() {
-  const { customer, products, rules } = useLoaderData<typeof loader>();
+  const { customer, rules } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const name = [customer.firstName, customer.lastName]
     .filter(Boolean)
@@ -279,19 +277,7 @@ export default function CustomerPricingRules() {
         className="rounded-2xl border bg-white p-4 mb-4 grid gap-3 sm:grid-cols-2"
       >
         <input type="hidden" name="_action" value="create" />
-        <label className="text-sm">
-          <div className="text-slate-700">Product</div>
-          <select
-            name="productId"
-            className="mt-1 w-full rounded border px-3 py-2"
-          >
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ProductPickerHybrid name="productId" />
         <label className="text-sm">
           <div className="text-slate-700">Unit</div>
           <select

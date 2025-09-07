@@ -11,6 +11,157 @@ import {
 import { Prisma } from "@prisma/client";
 
 import { db } from "~/utils/db.server";
+import type { Cart, Rule } from "~/services/pricing";
+
+// ── Minimal pricing helpers (mirror cashier logic) ─────────────
+const r2 = (n: number) => +Number(n).toFixed(2);
+const applyDiscountsLocal = (cart: Cart, rules: Rule[]) => {
+  let subtotal = 0;
+  let total = 0;
+  for (const it of cart.items) {
+    const qty = Number(it.qty);
+    const unit = Number(it.unitPrice);
+    subtotal = r2(subtotal + qty * unit);
+    let eff = unit;
+    // tolerant matcher: unknown item.unitKind = wildcard
+    const matches = rules.filter((r) => {
+      const byPid = r.selector?.productIds?.includes(it.productId) ?? false;
+      if (!byPid) return false;
+      if (r.selector?.unitKind)
+        return !it.unitKind || r.selector.unitKind === it.unitKind;
+      return true;
+    });
+    const override = matches.find((m) => m.kind === "PRICE_OVERRIDE");
+    const percents = matches.filter((m) => m.kind === "PERCENT_OFF");
+    if (override && override.kind === "PRICE_OVERRIDE") {
+      eff = r2(override.priceOverride);
+    }
+    for (const p of percents) {
+      if (p.kind !== "PERCENT_OFF") continue;
+      const pct = Math.max(0, Number(p.percentOff ?? 0));
+      if (pct <= 0) continue;
+      eff = r2(eff * (1 - pct / 100));
+    }
+    total = r2(total + qty * eff);
+  }
+  return { subtotal: r2(subtotal), total: r2(total) };
+};
+const mapRules = (
+  rows: Array<{
+    id: number;
+    productId: number;
+    unitKind: "RETAIL" | "PACK";
+    mode: "FIXED_PRICE" | "PERCENT_DISCOUNT" | "FIXED_DISCOUNT";
+    value: Prisma.Decimal | number | null;
+    product: {
+      price: Prisma.Decimal | number | null;
+      srp: Prisma.Decimal | number | null;
+    };
+  }>
+): Rule[] =>
+  rows.map((r) => {
+    const selector = { productIds: [r.productId], unitKind: r.unitKind };
+    const v = Number(r.value ?? 0);
+    if (r.mode === "FIXED_PRICE") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer Price",
+        scope: "ITEM",
+        kind: "PRICE_OVERRIDE",
+        priceOverride: v,
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: false,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+    if (r.mode === "PERCENT_DISCOUNT") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer % Off",
+        scope: "ITEM",
+        kind: "PERCENT_OFF",
+        percentOff: v,
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: true,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+    const base =
+      r.unitKind === "RETAIL"
+        ? Number(r.product.price ?? 0)
+        : Number(r.product.srp ?? 0);
+    const override = Math.max(0, +(base - v).toFixed(2));
+    return {
+      id: `CIP:${r.id}`,
+      name: "Customer Fixed Off",
+      scope: "ITEM",
+      kind: "PRICE_OVERRIDE",
+      priceOverride: override,
+      selector,
+      priority: 10,
+      enabled: true,
+      stackable: false,
+      notes: `unit=${r.unitKind}`,
+    } as Rule;
+  });
+const buildCartFromOrder = (
+  order: {
+    items: Array<{
+      id: number;
+      productId: number;
+      qty: Prisma.Decimal | number;
+      unitPrice: Prisma.Decimal | number;
+      product: {
+        price: Prisma.Decimal | number | null;
+        srp: Prisma.Decimal | number | null;
+        allowPackSale: boolean;
+      };
+    }>;
+  },
+  rules: Rule[]
+): Cart => {
+  const eq = (a: number, b: number, eps = 0.25) => Math.abs(a - b) <= eps;
+  return {
+    items: order.items.map((it) => {
+      const baseRetail = Number(it.product?.price ?? 0);
+      const basePack = Number(it.product?.srp ?? 0);
+      const u = Number(it.unitPrice);
+      let unitKind: "RETAIL" | "PACK" | undefined;
+      const retailClose = baseRetail > 0 && eq(u, baseRetail);
+      const packClose = basePack > 0 && eq(u, basePack);
+      if (retailClose && !packClose) unitKind = "RETAIL";
+      else if (packClose && !retailClose) unitKind = "PACK";
+      else if (retailClose && packClose)
+        unitKind = baseRetail <= basePack ? "RETAIL" : "PACK";
+      if (!unitKind) {
+        const hasPack = rules.some(
+          (r) =>
+            r.selector?.unitKind === "PACK" &&
+            r.selector?.productIds?.includes(it.productId)
+        );
+        const hasRetail = rules.some(
+          (r) =>
+            r.selector?.unitKind === "RETAIL" &&
+            r.selector?.productIds?.includes(it.productId)
+        );
+        if (hasPack && !hasRetail) unitKind = "PACK";
+        else if (hasRetail && !hasPack) unitKind = "RETAIL";
+      }
+      return {
+        id: it.id,
+        productId: it.productId,
+        name: "",
+        qty: Number(it.qty),
+        unitPrice: Number(it.unitPrice),
+        unitKind,
+      };
+    }),
+  };
+};
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
@@ -33,7 +184,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
           orderCode: true,
           createdAt: true,
           dueDate: true,
-          totalBeforeDiscount: true,
+          // totalBeforeDiscount kept implicitly via items; we compute discounted total instead
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              qty: true,
+              unitPrice: true,
+              product: {
+                select: { price: true, srp: true, allowPackSale: true },
+              },
+            },
+          },
           payments: {
             select: {
               id: true,
@@ -70,10 +232,36 @@ export async function loader({ params }: LoaderFunctionArgs) {
         ref?: string | null;
       };
 
+  // Load active rules for this customer (as of now)
+  const now = new Date();
+  const rawRules = await db.customerItemPrice.findMany({
+    where: {
+      customerId: customer.id,
+      active: true,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+      ],
+    },
+    select: {
+      id: true,
+      productId: true,
+      unitKind: true,
+      mode: true,
+      value: true,
+      product: { select: { price: true, srp: true } },
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+  const rules = mapRules(rawRules);
+
   const rows: Row[] = [];
   let balance = 0;
   for (const o of customer.orders) {
-    const orderAmt = Number(o.totalBeforeDiscount);
+    // compute discounted total from items + rules
+    const cart = buildCartFromOrder({ items: o.items }, rules);
+    const pricing = applyDiscountsLocal(cart, rules);
+    const orderAmt = pricing.total;
     rows.push({
       kind: "order",
       date: o.createdAt.toISOString(),
@@ -138,19 +326,60 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json({ ok: false, error: "Enter amount > 0" }, { status: 400 });
     }
 
-    // Helper to (re)compute an order's remaining inside tx
+    // Helper: (re)compute an order's remaining using discounted total inside tx
     const getRemaining = async (tx: Prisma.TransactionClient, oid: number) => {
       const ord = await tx.order.findUnique({
         where: { id: oid },
-        select: { totalBeforeDiscount: true },
+        select: {
+          customerId: true,
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              qty: true,
+              unitPrice: true,
+              product: {
+                select: { price: true, srp: true, allowPackSale: true },
+              },
+            },
+          },
+        },
       });
       if (!ord) return 0;
+      // load active rules for this order's customer
+      let rules: Rule[] = [];
+      if (ord.customerId) {
+        const now = new Date();
+        const raw = await tx.customerItemPrice.findMany({
+          where: {
+            customerId: ord.customerId,
+            active: true,
+            AND: [
+              { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+              { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+            ],
+          },
+          select: {
+            id: true,
+            productId: true,
+            unitKind: true,
+            mode: true,
+            value: true,
+            product: { select: { price: true, srp: true } },
+          },
+          orderBy: [{ createdAt: "desc" }],
+        });
+        rules = mapRules(raw);
+      }
+      const cart = buildCartFromOrder({ items: ord.items }, rules);
+      const pricing = applyDiscountsLocal(cart, rules);
+      const effectiveTotal = pricing.total;
       const paidAgg = await tx.payment.aggregate({
         where: { orderId: oid },
         _sum: { amount: true },
       });
       const paid = Number(paidAgg._sum.amount ?? 0);
-      return Math.max(0, Number(ord.totalBeforeDiscount) - paid);
+      return Math.max(0, effectiveTotal - paid);
     };
 
     let change = 0;

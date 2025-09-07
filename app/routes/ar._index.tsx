@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData, Form } from "@remix-run/react";
 import { db } from "~/utils/db.server";
+import type { Cart, Rule } from "~/services/pricing";
 
 type Row = {
   customerId: number;
@@ -14,6 +15,40 @@ type Row = {
   nextDue: string | null;
   openOrders: number;
 };
+
+// ── Minimal in-loader pricing helper (matches cashier logic) ────────────────
+const r2 = (n: number) => +Number(n).toFixed(2);
+function applyDiscountsLocal(cart: Cart, rules: Rule[]) {
+  let subtotal = 0;
+  let total = 0;
+  for (const it of cart.items) {
+    const qty = Number(it.qty);
+    const unit = Number(it.unitPrice);
+    subtotal = r2(subtotal + qty * unit);
+    let eff = unit;
+    // tolerant matcher: unknown item.unitKind = wildcard
+    const matches = rules.filter((r) => {
+      const byPid = r.selector?.productIds?.includes(it.productId) ?? false;
+      if (!byPid) return false;
+      if (r.selector?.unitKind)
+        return !it.unitKind || r.selector.unitKind === it.unitKind;
+      return true;
+    });
+    const override = matches.find((m) => m.kind === "PRICE_OVERRIDE");
+    const percents = matches.filter((m) => m.kind === "PERCENT_OFF");
+    if (override && override.kind === "PRICE_OVERRIDE") {
+      eff = r2(override.priceOverride);
+    }
+    for (const p of percents) {
+      if (p.kind !== "PERCENT_OFF") continue;
+      const pct = Math.max(0, Number(p.percentOff ?? 0));
+      if (pct <= 0) continue;
+      eff = r2(eff * (1 - pct / 100));
+    }
+    total = r2(total + qty * eff);
+  }
+  return { subtotal: r2(subtotal), total: r2(total) };
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -42,10 +77,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
         select: {
           id: true,
-          totalBeforeDiscount: true,
           dueDate: true,
           payments: { select: { amount: true } },
           isOnCredit: true,
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              qty: true,
+              unitPrice: true,
+              product: {
+                select: { price: true, srp: true, allowPackSale: true },
+              },
+            },
+          },
         },
       },
     },
@@ -53,35 +98,152 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 200,
   });
 
-  const rows: Row[] = customers
-    .map((c) => {
-      if (!c.orders.length) return null;
+  const rowPromises = customers.map(async (c): Promise<Row | null> => {
+    if (!c.orders.length) return null;
 
-      let balance = 0;
-      let nextDue: Date | null = null;
-
-      for (const o of c.orders) {
-        const paid = o.payments.reduce((s, p) => s + Number(p.amount), 0);
-        const remaining = Math.max(0, Number(o.totalBeforeDiscount) - paid);
-        balance += remaining;
-        if (o.dueDate && (!nextDue || o.dueDate < nextDue)) nextDue = o.dueDate;
-      }
-
-      if (balance <= 0) return null;
-
-      return {
+    // Load this customer's active item rules once (valid as of now)
+    let rules: Rule[] = [];
+    const now = new Date();
+    const cip = await db.customerItemPrice.findMany({
+      where: {
         customerId: c.id,
-        firstName: c.firstName,
-        middleName: c.middleName,
-        lastName: c.lastName,
-        alias: c.alias ?? null,
-        phone: c.phone ?? null,
-        balance: Number(balance.toFixed(2)),
-        nextDue: nextDue ? nextDue.toISOString() : null,
-        openOrders: c.orders.length,
+        active: true,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+        ],
+      },
+      select: {
+        id: true,
+        productId: true,
+        unitKind: true,
+        mode: true,
+        value: true,
+        product: { select: { price: true, srp: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    });
+    rules = cip.map((r) => {
+      const selector = {
+        productIds: [r.productId],
+        unitKind: r.unitKind as "RETAIL" | "PACK",
       };
-    })
-    .filter(Boolean) as Row[];
+      const v = Number(r.value ?? 0);
+      if (r.mode === "FIXED_PRICE") {
+        return {
+          id: `CIP:${r.id}`,
+          name: "Customer Price",
+          scope: "ITEM",
+          kind: "PRICE_OVERRIDE" as const,
+          priceOverride: v,
+          selector,
+          priority: 10,
+          enabled: true,
+          stackable: false,
+          notes: `unit=${r.unitKind}`,
+        };
+      }
+      if (r.mode === "PERCENT_DISCOUNT") {
+        return {
+          id: `CIP:${r.id}`,
+          name: "Customer % Off",
+          scope: "ITEM",
+          kind: "PERCENT_OFF" as const,
+          percentOff: v,
+          selector,
+          priority: 10,
+          enabled: true,
+          stackable: true,
+          notes: `unit=${r.unitKind}`,
+        };
+      }
+      const base =
+        r.unitKind === "RETAIL"
+          ? Number(r.product.price ?? 0)
+          : Number(r.product.srp ?? 0);
+      const override = Math.max(0, +(base - v).toFixed(2));
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer Fixed Off",
+        scope: "ITEM",
+        kind: "PRICE_OVERRIDE" as const,
+        priceOverride: override,
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: false,
+        notes: `unit=${r.unitKind}`,
+      };
+    });
+
+    let balance = 0;
+    let nextDue: Date | null = null;
+
+    // Rule-aware cart build per order (unitKind inference + wildcard)
+    const eq = (a: number, b: number, eps = 0.25) => Math.abs(a - b) <= eps;
+    for (const o of c.orders) {
+      const cart: Cart = {
+        items: o.items.map((it) => {
+          const baseRetail = Number(it.product?.price ?? 0);
+          const basePack = Number(it.product?.srp ?? 0);
+          const u = Number(it.unitPrice);
+          let unitKind: "RETAIL" | "PACK" | undefined;
+          const retailClose = baseRetail > 0 && eq(u, baseRetail);
+          const packClose = basePack > 0 && eq(u, basePack);
+          if (retailClose && !packClose) unitKind = "RETAIL";
+          else if (packClose && !retailClose) unitKind = "PACK";
+          else if (retailClose && packClose)
+            unitKind = baseRetail <= basePack ? "RETAIL" : "PACK";
+          // rule-aware fallback
+          if (!unitKind) {
+            const hasPack = rules.some(
+              (r) =>
+                r.selector?.unitKind === "PACK" &&
+                r.selector?.productIds?.includes(it.productId)
+            );
+            const hasRetail = rules.some(
+              (r) =>
+                r.selector?.unitKind === "RETAIL" &&
+                r.selector?.productIds?.includes(it.productId)
+            );
+            if (hasPack && !hasRetail) unitKind = "PACK";
+            else if (hasRetail && !hasPack) unitKind = "RETAIL";
+          }
+          return {
+            id: it.id,
+            productId: it.productId,
+            name: "",
+            qty: Number(it.qty),
+            unitPrice: Number(it.unitPrice),
+            unitKind,
+          };
+        }),
+      };
+      const pricing = applyDiscountsLocal(cart, rules);
+      const effectiveTotal = pricing.total;
+      const paid = o.payments.reduce((s, p) => s + Number(p.amount), 0);
+      const remaining = Math.max(0, effectiveTotal - paid);
+      balance += remaining;
+      if (o.dueDate && (!nextDue || o.dueDate < nextDue)) nextDue = o.dueDate;
+    }
+
+    if (balance <= 0) return null;
+
+    return {
+      customerId: c.id,
+      firstName: c.firstName,
+      middleName: c.middleName,
+      lastName: c.lastName,
+      alias: c.alias ?? null,
+      phone: c.phone ?? null,
+      balance: Number(balance.toFixed(2)),
+      nextDue: nextDue ? nextDue.toISOString() : null,
+      openOrders: c.orders.length,
+    };
+  });
+  // note: we used async in map; resolve then filter
+  const resolved = await Promise.all(rowPromises);
+  const rows: Row[] = resolved.filter((r): r is Row => r !== null);
 
   // sort by highest balance, then nearest due date
   rows.sort((a, b) => {

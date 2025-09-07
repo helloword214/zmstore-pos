@@ -109,8 +109,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const active = fd.get("active") === "on";
     const startsAtStr = String(fd.get("startsAt") || "").trim();
     const endsAtStr = String(fd.get("endsAt") || "").trim();
-    const startsAt = startsAtStr ? new Date(startsAtStr) : null;
-    const endsAt = endsAtStr ? new Date(endsAtStr) : null;
+    const startsAt = startsAtStr ? new Date(`${startsAtStr}T00:00:00`) : null;
+    const endsAt = endsAtStr ? new Date(`${endsAtStr}T23:59:59.999`) : null;
 
     const fieldErrors: Record<string, string> = {};
     if (!Number.isFinite(productId) || productId <= 0)
