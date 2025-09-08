@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // app/services/pricing.ts
 /* Core pricing types + engine used both in the client preview and server guards */
-
-import type { PrismaClient, UnitKind } from "@prisma/client";
+import type {
+  PrismaClient,
+  Prisma,
+  UnitKind as PrismaUnitKind,
+} from "@prisma/client";
 
 /** Selectors let a rule target specific products/units (extend as needed). */
 export type Selector = {
@@ -80,6 +83,20 @@ export type PricingResult = {
   total: number; // subtotal - discountTotal
   adjustedItems: AdjustedItem[];
 };
+
+// Helper: return only rules that match product AND unitKind (or no unitKind specified)
+export function resolveApplicableRules(params: {
+  productId: number;
+  unitKind: UnitKind; // "RETAIL" | "PACK"
+  rules: Rule[];
+}) {
+  const { productId, unitKind, rules } = params;
+  return (rules ?? []).filter((r) => {
+    const pidOk = r?.selector?.productIds?.includes?.(productId) ?? false;
+    const kindOk = !r?.selector?.unitKind || r.selector.unitKind === unitKind;
+    return pidOk && kindOk && r?.enabled !== false;
+  });
+}
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -224,7 +241,7 @@ export function applyDiscounts(
  * then apply all % discounts.
  */
 export async function computeUnitPriceForCustomer(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   params: {
     customerId: number | null;
     productId: number;
@@ -313,4 +330,286 @@ export async function computeUnitPriceForCustomer(
   const out = applyDiscounts(one, rules, { id: customerId });
   const eff = out.adjustedItems[0]?.effectiveUnitPrice ?? baseUnitPrice;
   return r2(eff);
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEW: Shared helpers to centralize pricing/disc logic
+// ─────────────────────────────────────────────────────────────
+
+/** Query all active, unit-aware customer rules and map -> Rule[] */
+export async function fetchActiveCustomerRules(
+  db: PrismaClient | Prisma.TransactionClient,
+  customerId: number | null
+): Promise<Rule[]> {
+  if (!customerId) return [];
+
+  const now = new Date();
+  const rows = await db.customerItemPrice.findMany({
+    where: {
+      customerId,
+      active: true,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+      ],
+    },
+    select: {
+      id: true,
+      productId: true,
+      unitKind: true,
+      mode: true,
+      value: true,
+      product: { select: { price: true, srp: true } }, // for FIXED_DISCOUNT base
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  const rules: Rule[] = rows.map((r) => {
+    const selector: RuleSelector = {
+      productIds: [r.productId],
+      unitKind: r.unitKind as "RETAIL" | "PACK",
+    };
+    const v = Number(r.value ?? 0);
+
+    if (r.mode === "FIXED_PRICE") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer Price",
+        scope: "ITEM",
+        kind: "PRICE_OVERRIDE",
+        priceOverride: r2(v),
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: false,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+
+    if (r.mode === "PERCENT_DISCOUNT") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer % Off",
+        scope: "ITEM",
+        kind: "PERCENT_OFF",
+        percentOff: r2(v),
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: true,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+
+    // FIXED_DISCOUNT → convert using base for that unit kind
+    const base =
+      r.unitKind === "RETAIL"
+        ? Number(r.product?.price ?? 0)
+        : Number(r.product?.srp ?? 0);
+    const override = Math.max(0, r2(base - v));
+    return {
+      id: `CIP:${r.id}`,
+      name: "Customer Fixed Off",
+      scope: "ITEM",
+      kind: "PRICE_OVERRIDE",
+      priceOverride: override,
+      selector,
+      priority: 10,
+      enabled: true,
+      stackable: false,
+      notes: `unit=${r.unitKind}`,
+    } as Rule;
+  });
+
+  return rules;
+}
+
+/** Fetch customer rules that were valid at a specific time (e.g., receipt paidAt). */
+export async function fetchCustomerRulesAt(
+  db: PrismaClient | Prisma.TransactionClient,
+  customerId: number | null,
+  at: Date
+): Promise<Rule[]> {
+  if (!customerId) return [];
+
+  const rows = await db.customerItemPrice.findMany({
+    where: {
+      customerId,
+      active: true,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: at } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: at } }] },
+      ],
+    },
+    select: {
+      id: true,
+      productId: true,
+      unitKind: true,
+      mode: true,
+      value: true,
+      product: { select: { price: true, srp: true } },
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  return rows.map((r) => {
+    const selector: RuleSelector = {
+      productIds: [r.productId],
+      unitKind: r.unitKind as "RETAIL" | "PACK",
+    };
+    const v = Number(r.value ?? 0);
+    if (r.mode === "PERCENT_DISCOUNT") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer % Off",
+        scope: "ITEM",
+        kind: "PERCENT_OFF",
+        percentOff: r2(v),
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: true,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+    if (r.mode === "FIXED_PRICE") {
+      return {
+        id: `CIP:${r.id}`,
+        name: "Customer Price",
+        scope: "ITEM",
+        kind: "PRICE_OVERRIDE",
+        priceOverride: r2(v),
+        selector,
+        priority: 10,
+        enabled: true,
+        stackable: false,
+        notes: `unit=${r.unitKind}`,
+      } as Rule;
+    }
+    // FIXED_DISCOUNT -> use correct base
+    const base =
+      r.unitKind === "RETAIL"
+        ? Number(r.product?.price ?? 0)
+        : Number(r.product?.srp ?? 0);
+    const override = Math.max(0, r2(base - v));
+    return {
+      id: `CIP:${r.id}`,
+      name: "Customer Fixed Off",
+      scope: "ITEM",
+      kind: "PRICE_OVERRIDE",
+      priceOverride: override,
+      selector,
+      priority: 10,
+      enabled: true,
+      stackable: false,
+      notes: `unit=${r.unitKind}`,
+    } as Rule;
+  });
+}
+
+/**
+ * Infer the unit kind by comparing unitPrice to base prices, then
+ * falling back to which unit the rules target for that product.
+ */
+export function inferUnitKindFromPriceAndRules(args: {
+  unitPrice: number;
+  productBaseRetail: number; // product.price
+  productBasePack: number; // product.srp
+  allowPackSale?: boolean | null;
+  rules: Rule[];
+  productId: number;
+  epsForBaseCompare?: number; // default 0.25
+}): "RETAIL" | "PACK" | undefined {
+  const {
+    unitPrice,
+    productBaseRetail,
+    productBasePack,
+    allowPackSale,
+    rules,
+    productId,
+    epsForBaseCompare = 0.25,
+  } = args;
+
+  const eq = (a: number, b: number, eps = 0.25) => Math.abs(a - b) <= eps;
+  const hasRetailBase =
+    (allowPackSale ?? true) &&
+    productBaseRetail > 0 &&
+    Number.isFinite(productBaseRetail);
+  const hasPackBase = productBasePack > 0 && Number.isFinite(productBasePack);
+
+  const retailClose =
+    hasRetailBase && eq(unitPrice, productBaseRetail, epsForBaseCompare);
+  const packClose =
+    hasPackBase && eq(unitPrice, productBasePack, epsForBaseCompare);
+
+  if (retailClose && !packClose) return "RETAIL";
+  if (packClose && !retailClose) return "PACK";
+  if (retailClose && packClose)
+    return productBaseRetail <= productBasePack ? "RETAIL" : "PACK";
+
+  // Rule-aware fallback
+  const hasPackRule = rules.some(
+    (r) =>
+      r.selector?.unitKind === "PACK" &&
+      r.selector?.productIds?.includes(productId)
+  );
+  const hasRetailRule = rules.some(
+    (r) =>
+      r.selector?.unitKind === "RETAIL" &&
+      r.selector?.productIds?.includes(productId)
+  );
+  if (hasPackRule && !hasRetailRule) return "PACK";
+  if (hasRetailRule && !hasPackRule) return "RETAIL";
+  return undefined;
+}
+
+/** Build a Cart from order items using the shared inference above */
+export function buildCartFromOrderItems(args: {
+  items: Array<{
+    id: number;
+    productId: number;
+    name: string;
+    qty: number | string;
+    unitPrice: number | string;
+    product?: {
+      price: number | null;
+      srp: number | null;
+      allowPackSale: boolean | null;
+      categoryId?: number | null;
+      brandId?: number | null;
+      sku?: string | null;
+    } | null;
+  }>;
+  rules: Rule[];
+}): Cart {
+  const { items, rules } = args;
+  return {
+    items: (items ?? []).map((it) => {
+      const baseRetail = Number(it.product?.price ?? 0);
+      const basePack = Number(it.product?.srp ?? 0);
+      const allowPackSale = Boolean(it.product?.allowPackSale ?? true);
+      const u = Number(it.unitPrice);
+
+      const unitKind = inferUnitKindFromPriceAndRules({
+        unitPrice: u,
+        productBaseRetail: baseRetail,
+        productBasePack: basePack,
+        allowPackSale,
+        rules,
+        productId: it.productId,
+      });
+
+      return {
+        id: it.id,
+        productId: it.productId,
+        name: it.name,
+        qty: Number(it.qty),
+        unitPrice: u,
+        unitKind,
+        categoryId: it.product?.categoryId ?? null,
+        brandId: it.product?.brandId ?? null,
+        sku: it.product?.sku ?? null,
+      };
+    }),
+  };
 }

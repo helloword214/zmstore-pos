@@ -3,7 +3,11 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useLocation, useNavigate } from "@remix-run/react";
 import { db } from "~/utils/db.server";
-import type { Cart, Rule } from "~/services/pricing";
+import {
+  applyDiscounts,
+  buildCartFromOrderItems,
+  fetchCustomerRulesAt,
+} from "~/services/pricing";
 
 type AckDiscount = { ruleId: string; name: string; amount: number };
 type AckPricing = {
@@ -113,189 +117,43 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     }
   }
 
-  // ── Compute discounted total at the time of this payment (or now) ──────────
-  // Small local engine mirroring server logic
-  const r2 = (n: number) => +Number(n).toFixed(2);
-  const applyDiscountsLocal = (cart: Cart, rules: Rule[]) => {
-    let subtotal = 0;
-    let total = 0;
-    const perRule = new Map<string, AckDiscount>();
-    for (const it of cart.items) {
-      const qty = Number(it.qty);
-      const unit = Number(it.unitPrice);
-      subtotal = r2(subtotal + qty * unit);
-      let eff = unit;
-      // tolerant matching: unknown unitKind acts as wildcard
-      const matches = rules.filter((r) => {
-        const byPid = r.selector?.productIds?.includes(it.productId) ?? false;
-        if (!byPid) return false;
-        if (r.selector?.unitKind)
-          return !it.unitKind || r.selector.unitKind === it.unitKind;
-        return true;
-      });
-      const override = matches.find((m) => m.kind === "PRICE_OVERRIDE");
-      const percents = matches.filter((m) => m.kind === "PERCENT_OFF");
-      if (override && override.kind === "PRICE_OVERRIDE") {
-        const next = r2(override.priceOverride);
-        const delta = Math.max(0, r2((eff - next) * qty));
-        if (delta > 0) {
-          const e = perRule.get(override.id) ?? {
-            ruleId: override.id,
-            name: override.name,
-            amount: 0,
-          };
-          e.amount = r2(e.amount + delta);
-          perRule.set(override.id, e);
-        }
-        eff = next;
-      }
-      for (const p of percents) {
-        if (p.kind !== "PERCENT_OFF") continue;
-        const pct = Math.max(0, Number(p.percentOff ?? 0));
-        if (pct <= 0) continue;
-        const next = r2(eff * (1 - pct / 100));
-        const delta = Math.max(0, r2((eff - next) * qty));
-        if (delta > 0) {
-          const e = perRule.get(p.id) ?? {
-            ruleId: p.id,
-            name: p.name,
-            amount: 0,
-          };
-          e.amount = r2(e.amount + delta);
-          perRule.set(p.id, e);
-        }
-        eff = next;
-      }
-      total = r2(total + qty * eff);
-    }
-    const discounts = Array.from(perRule.values());
-    const discountTotal = r2(subtotal - total);
-    return {
-      subtotal: r2(subtotal),
-      total: r2(total),
-      discountTotal,
-      discounts,
-    };
-  };
-
   // Pick the reference instant: the featured payment time, otherwise now
   const at = featured?.createdAt ?? new Date();
 
   // Load customer rules valid at `at`
-  let rules: Rule[] = [];
-  if (order.customer?.id) {
-    const rows = await db.customerItemPrice.findMany({
-      where: {
-        customerId: order.customer.id,
-        active: true,
-        AND: [
-          { OR: [{ startsAt: null }, { startsAt: { lte: at } }] },
-          { OR: [{ endsAt: null }, { endsAt: { gte: at } }] },
-        ],
-      },
-      select: {
-        id: true,
-        productId: true,
-        unitKind: true,
-        mode: true,
-        value: true,
-        product: { select: { price: true, srp: true } },
-      },
-      orderBy: [{ createdAt: "desc" }],
-    });
-    rules = rows.map((r) => {
-      const selector = {
-        productIds: [r.productId],
-        unitKind: r.unitKind as "RETAIL" | "PACK",
-      };
-      const v = Number(r.value ?? 0);
-      if (r.mode === "FIXED_PRICE") {
-        return {
-          id: `CIP:${r.id}`,
-          name: "Customer Price",
-          scope: "ITEM",
-          kind: "PRICE_OVERRIDE",
-          priceOverride: v,
-          selector,
-          priority: 10,
-          enabled: true,
-          stackable: false,
-          notes: `unit=${r.unitKind}`,
-        } as Rule;
-      }
-      if (r.mode === "PERCENT_DISCOUNT") {
-        return {
-          id: `CIP:${r.id}`,
-          name: "Customer % Off",
-          scope: "ITEM",
-          kind: "PERCENT_OFF",
-          percentOff: v,
-          selector,
-          priority: 10,
-          enabled: true,
-          stackable: true,
-          notes: `unit=${r.unitKind}`,
-        } as Rule;
-      }
-      const base =
-        r.unitKind === "RETAIL"
-          ? Number(r.product.price ?? 0)
-          : Number(r.product.srp ?? 0);
-      const override = Math.max(0, +(base - v).toFixed(2));
-      return {
-        id: `CIP:${r.id}`,
-        name: "Customer Fixed Off",
-        scope: "ITEM",
-        kind: "PRICE_OVERRIDE",
-        priceOverride: override,
-        selector,
-        priority: 10,
-        enabled: true,
-        stackable: false,
-        notes: `unit=${r.unitKind}`,
-      } as Rule;
-    });
-  }
+  // Load customer rules valid at `at` (centralized)
+  const rules = await fetchCustomerRulesAt(db, order.customer?.id ?? null, at);
 
   // Build a rule-aware cart (same inference/wildcard as on server)
-  const eq = (a: number, b: number, eps = 0.25) => Math.abs(a - b) <= eps;
-  const cart: Cart = {
-    items: order.items.map((it) => {
-      const baseRetail = Number(it.product?.price ?? 0);
-      const basePack = Number(it.product?.srp ?? 0);
-      const u = Number(it.unitPrice);
-      let unitKind: "RETAIL" | "PACK" | undefined;
-      const retailClose = baseRetail > 0 && eq(u, baseRetail);
-      const packClose = basePack > 0 && eq(u, basePack);
-      if (retailClose && !packClose) unitKind = "RETAIL";
-      else if (packClose && !retailClose) unitKind = "PACK";
-      else if (retailClose && packClose)
-        unitKind = baseRetail <= basePack ? "RETAIL" : "PACK";
-      if (!unitKind) {
-        const hasPackRule = rules.some(
-          (r) =>
-            r.selector?.unitKind === "PACK" &&
-            r.selector?.productIds?.includes(it.productId)
-        );
-        const hasRetailRule = rules.some(
-          (r) =>
-            r.selector?.unitKind === "RETAIL" &&
-            r.selector?.productIds?.includes(it.productId)
-        );
-        if (hasPackRule && !hasRetailRule) unitKind = "PACK";
-        else if (hasRetailRule && !hasPackRule) unitKind = "RETAIL";
-      }
-      return {
-        id: it.id,
-        productId: it.productId,
-        name: it.name,
-        qty: Number(it.qty),
-        unitPrice: u,
-        unitKind,
-      };
-    }),
+  // Build a rule-aware cart (centralized) – coerce Decimal → number
+  const cart = buildCartFromOrderItems({
+    items: order.items.map((it) => ({
+      id: it.id,
+      productId: it.productId,
+      name: it.name,
+      qty: Number(it.qty),
+      unitPrice: Number(it.unitPrice),
+      product: {
+        price: it.product?.price == null ? null : Number(it.product.price),
+        srp: it.product?.srp == null ? null : Number(it.product.srp),
+        allowPackSale: it.product?.allowPackSale ?? null,
+      },
+    })),
+    rules,
+  });
+  const computed = applyDiscounts(cart, rules, {
+    id: order.customer?.id ?? null,
+  });
+  const pricing: AckPricing = {
+    subtotal: computed.subtotal,
+    total: computed.total,
+    discountTotal: computed.discountTotal,
+    discounts: computed.discounts.map((d) => ({
+      ruleId: d.ruleId,
+      name: d.name,
+      amount: d.amount,
+    })),
   };
-  const pricing = applyDiscountsLocal(cart, rules);
 
   const total = pricing.total || 0;
   const paidSoFar = (order.payments ?? []).reduce(

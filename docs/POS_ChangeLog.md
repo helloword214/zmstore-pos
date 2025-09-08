@@ -292,3 +292,31 @@
     scrollbar-width: none;
   }
   ```
+
+## [2025-09-08] Rule-aware pricing parity
+
+### Added
+
+- Discount lines on Official Receipt and Payment Acknowledgment (per-rule breakdown).
+- Receipt/ACK recompute discounted totals using rules valid at payment time (`paidAt` or payment timestamp).
+
+### Changed
+
+- Server cart unit-kind inference mirrors client; unknown `unitKind` treated as wildcard for rule matching.
+- AR Index & Customer Ledger balances now use **discounted totals** (not `totalBeforeDiscount`).
+
+### Fixed
+
+- Full payments with discounts now print **Official Receipt** (no more ACK misfire).
+- AR payment allocation/status updates use effective totals; orders flip to **PAID** correctly.
+- TypeScript cleanups: union narrowing for `Rule`, declared `adjustedItems`, removed unused `computeUnitPriceForCustomer` import.
+
+### Files touched
+
+- `app/routes/cashier.$id.tsx`
+- `app/routes/orders.$id.receipt.tsx`
+- `app/routes/orders.$id.ack.tsx`
+- `app/routes/ar._index.tsx`
+- `app/routes/ar.customers.$id.tsx`
+
+> DB schema unchanged. No migrations required.

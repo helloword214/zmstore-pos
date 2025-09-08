@@ -15,146 +15,19 @@ import { allocateReceiptNo } from "~/utils/receipt";
 import { CustomerPicker } from "~/components/CustomerPicker";
 
 import { UnitKind } from "@prisma/client";
-import { applyDiscounts, type Cart, type Rule } from "~/services/pricing";
+import {
+  applyDiscounts,
+  buildCartFromOrderItems,
+  fetchActiveCustomerRules,
+  computeUnitPriceForCustomer,
+  type Cart,
+  type Rule,
+} from "~/services/pricing";
 
 import { db } from "~/utils/db.server";
 
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
-
-// ─────────────────────────────────────────────────────────────
-// Local types (no dependency on ~/services/pricing)
-// ─────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────
-// Local discount engine (UI + server can use this)
-// Rules are already “item” scoped from your mapping.
-// Precedence: first matching rule in the array wins.
-// If both exist, PRICE_OVERRIDE outranks PERCENT_OFF if they are adjacent;
-// otherwise, rely on array order (you already order by createdAt desc).
-// ─────────────────────────────────────────────────────────────
-function applyDiscountsLocal(cart: Cart, rules: Rule[]) {
-  const subtotal = cart.items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
-
-  const discountsByRule = new Map<string, { name: string; amount: number }>();
-  const adjustedItems: Array<{
-    id: number;
-    productId: number;
-    effectiveUnitPrice: number;
-  }> = [];
-
-  for (const it of cart.items) {
-    const matches = rules.filter((r) => {
-      const byPid = r.selector?.productIds?.includes(it.productId) ?? false;
-      if (!byPid) return false;
-      // ✅ Treat unknown item unitKind as wildcard so unit-gated rules still apply
-      if (r.selector?.unitKind) {
-        return !it.unitKind || r.selector.unitKind === it.unitKind;
-      }
-      return true;
-    });
-
-    // prefer PRICE_OVERRIDE if it exists among the first matching group
-    let chosen: Rule | undefined;
-    for (const candidate of matches) {
-      if (candidate.kind === "PRICE_OVERRIDE") {
-        chosen = candidate;
-        break;
-      }
-      if (!chosen) chosen = candidate; // fallback to PERCENT_OFF if no override found
-    }
-
-    let eff = it.unitPrice;
-    if (chosen) {
-      if (chosen.kind === "PRICE_OVERRIDE") {
-        eff = Number(chosen.priceOverride);
-      } else if (chosen.kind === "PERCENT_OFF") {
-        const pct = Math.max(0, Number(chosen.percentOff || 0));
-        eff = +(it.unitPrice * (1 - pct / 100)).toFixed(2);
-      }
-      const lineDiscount = Math.max(0, (it.unitPrice - eff) * it.qty);
-      if (lineDiscount > 0) {
-        const prev = discountsByRule.get(chosen.id) ?? {
-          name: chosen.name,
-          amount: 0,
-        };
-        prev.amount += lineDiscount;
-        discountsByRule.set(chosen.id, prev);
-      }
-    }
-
-    adjustedItems.push({
-      id: it.id,
-      productId: it.productId,
-      effectiveUnitPrice: eff,
-    });
-  }
-
-  const total = adjustedItems.reduce((s, ai) => {
-    const q = cart.items.find((x) => x.id === ai.id)?.qty ?? 0;
-    return s + q * ai.effectiveUnitPrice;
-  }, 0);
-
-  return {
-    subtotal: +subtotal.toFixed(2),
-    total: +total.toFixed(2),
-    discountTotal: +(subtotal - total).toFixed(2),
-    discounts: Array.from(discountsByRule, ([ruleId, v]) => ({
-      ruleId,
-      name: v.name,
-      amount: +v.amount.toFixed(2),
-    })),
-    adjustedItems,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────
-// Local computeUnitPriceForCustomer (server-side use)
-// Returns the allowed price for a single product/unit
-// according to the most recent active rule; defaults to base.
-// ─────────────────────────────────────────────────────────────
-async function computeUnitPriceForCustomerLocal(
-  tx: typeof db,
-  opts: {
-    customerId: number | null;
-    productId: number;
-    unitKind: UnitKind; // Prisma enum
-    baseUnitPrice: number;
-  }
-): Promise<number> {
-  const { customerId, productId, unitKind, baseUnitPrice } = opts;
-  if (!customerId) return baseUnitPrice;
-
-  const now = new Date();
-  const row = await tx.customerItemPrice.findFirst({
-    where: {
-      customerId,
-      productId,
-      unitKind,
-      active: true,
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-      ],
-    },
-    orderBy: [{ createdAt: "desc" }],
-    select: { mode: true, value: true },
-  });
-
-  if (!row) return baseUnitPrice;
-  const v = Number(row.value ?? 0);
-
-  switch (row.mode) {
-    case "FIXED_PRICE":
-      return +v.toFixed(2);
-    case "PERCENT_DISCOUNT":
-      return +Math.max(0, baseUnitPrice * (1 - v / 100)).toFixed(2);
-    case "FIXED_DISCOUNT":
-      return +Math.max(0, baseUnitPrice - v).toFixed(2);
-    default:
-      return baseUnitPrice;
-  }
-}
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
@@ -205,89 +78,10 @@ export async function loader({ params }: LoaderFunctionArgs) {
   // ─────────────────────────────────────────────────────────────
   const customerId = order.customerId ?? null;
 
-  let activePricingRules: Rule[] = [];
-  if (customerId) {
-    const now = new Date();
-    const raw = await db.customerItemPrice.findMany({
-      where: {
-        customerId,
-        active: true,
-        AND: [
-          // startsAt ≤ now OR null
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          // endsAt ≥ now OR null
-          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-        ],
-      },
-      select: {
-        id: true,
-        productId: true,
-        unitKind: true,
-        mode: true,
-        value: true,
-        product: { select: { price: true, srp: true } }, // base prices
-      },
-      orderBy: [{ createdAt: "desc" }],
-    });
-
-    // Map DB rules → pure pricing Rule objects (ITEM scope)
-    activePricingRules = raw.map((r) => {
-      // attach unitKind so rules only hit the correct unit
-      const selector = {
-        productIds: [r.productId],
-        unitKind: r.unitKind as "RETAIL" | "PACK",
-      };
-
-      if (r.mode === "FIXED_PRICE") {
-        return {
-          id: `CIP:${r.id}`,
-          name: "Customer Price",
-          scope: "ITEM",
-          kind: "PRICE_OVERRIDE",
-          priceOverride: Number(r.value ?? 0),
-          selector,
-          priority: 10,
-          enabled: true,
-          stackable: false,
-          notes: `unit=${r.unitKind}`,
-        } satisfies Rule;
-      }
-
-      if (r.mode === "PERCENT_DISCOUNT") {
-        return {
-          id: `CIP:${r.id}`,
-          name: "Customer % Off",
-          scope: "ITEM",
-          kind: "PERCENT_OFF",
-          percentOff: Number(r.value ?? 0),
-          selector,
-          priority: 10,
-          enabled: true,
-          stackable: true,
-          notes: `unit=${r.unitKind}`,
-        } satisfies Rule;
-      }
-
-      // FIXED_DISCOUNT → convert to price override using the correct base
-      const base =
-        r.unitKind === "RETAIL"
-          ? Number(r.product.price ?? 0)
-          : Number(r.product.srp ?? 0);
-      const override = Math.max(0, +(base - Number(r.value ?? 0)).toFixed(2));
-      return {
-        id: `CIP:${r.id}`,
-        name: "Customer Fixed Off",
-        scope: "ITEM",
-        kind: "PRICE_OVERRIDE",
-        priceOverride: override,
-        selector,
-        priority: 10,
-        enabled: true,
-        stackable: false,
-        notes: `unit=${r.unitKind}`,
-      } satisfies Rule;
-    });
-  }
+  const activePricingRules: Rule[] = await fetchActiveCustomerRules(
+    db,
+    customerId
+  );
 
   return json({
     order,
@@ -377,132 +171,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    // Build Cart AFTER rules so we can use rule-aware fallback (mirror client)
-    const eq = (a: number, b: number, eps = 0.25) => Math.abs(a - b) <= eps;
-    const cart: Cart = {
-      items: order.items.map((it) => {
-        const p = byId.get(it.productId);
-        const baseRetail = p ? Number(p.price ?? 0) : 0;
-        const basePack = p ? Number(p.srp ?? 0) : 0;
-        const u = Number(it.unitPrice);
-
-        let unitKind: "RETAIL" | "PACK" | undefined;
-        const retailClose = baseRetail > 0 && eq(u, baseRetail);
-        const packClose = basePack > 0 && eq(u, basePack);
-
-        if (retailClose && !packClose) unitKind = "RETAIL";
-        else if (packClose && !retailClose) unitKind = "PACK";
-        else if (retailClose && packClose)
-          unitKind = baseRetail <= basePack ? "RETAIL" : "PACK";
-
-        // ✨ Rule-aware fallback (same as client preview)
-        if (!unitKind) {
-          const hasPackRule = rules.some(
-            (r) =>
-              r.selector?.unitKind === "PACK" &&
-              r.selector?.productIds?.includes(it.productId)
-          );
-          const hasRetailRule = rules.some(
-            (r) =>
-              r.selector?.unitKind === "RETAIL" &&
-              r.selector?.productIds?.includes(it.productId)
-          );
-          if (hasPackRule && !hasRetailRule) unitKind = "PACK";
-          else if (hasRetailRule && !hasPackRule) unitKind = "RETAIL";
-          // else leave undefined; matcher treats undefined as wildcard
-        }
-
-        return {
-          id: it.id,
-          productId: it.productId,
-          name: it.name,
-          qty: Number(it.qty),
-          unitPrice: u,
-          unitKind,
-        };
-      }),
-    };
-
-    // Pull active customer rules (unit-aware) and map → Rule[]
-    let rules: Rule[] = [];
-    if (effectiveCustomerId) {
-      const now = new Date();
-      const rows = await db.customerItemPrice.findMany({
-        where: {
-          customerId: effectiveCustomerId,
-          active: true,
-          AND: [
-            { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-            { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-          ],
-        },
-        select: {
-          id: true,
-          productId: true,
-          unitKind: true,
-          mode: true,
-          value: true,
-          product: { select: { price: true, srp: true } },
-        },
-        orderBy: [{ createdAt: "desc" }],
-      });
-      rules = rows.map((r) => {
-        const selector = {
-          productIds: [r.productId],
-          unitKind: r.unitKind as "RETAIL" | "PACK",
-        };
-        const v = Number(r.value ?? 0);
-        if (r.mode === "FIXED_PRICE") {
-          return {
-            id: `CIP:${r.id}`,
-            name: "Customer Price",
-            scope: "ITEM",
-            kind: "PRICE_OVERRIDE",
-            priceOverride: v,
-            selector,
-            priority: 10,
-            enabled: true,
-            stackable: false,
-            notes: `unit=${r.unitKind}`,
-          } as Rule;
-        }
-        if (r.mode === "PERCENT_DISCOUNT") {
-          return {
-            id: `CIP:${r.id}`,
-            name: "Customer % Off",
-            scope: "ITEM",
-            kind: "PERCENT_OFF",
-            percentOff: v,
-            selector,
-            priority: 10,
-            enabled: true,
-            stackable: true,
-            notes: `unit=${r.unitKind}`,
-          } as Rule;
-        }
-        const base =
-          r.unitKind === "RETAIL"
-            ? Number(r.product.price ?? 0)
-            : Number(r.product.srp ?? 0);
-        const override = Math.max(0, +(base - v).toFixed(2));
-        return {
-          id: `CIP:${r.id}`,
-          name: "Customer Fixed Off",
-          scope: "ITEM",
-          kind: "PRICE_OVERRIDE",
-          priceOverride: override,
-          selector,
-          priority: 10,
-          enabled: true,
-          stackable: false,
-          notes: `unit=${r.unitKind}`,
-        } as Rule;
-      });
-    }
-    const pricing = applyDiscountsLocal(
-      cart,
-      rules /*, { id: effectiveCustomerId }*/
+    // Build rules (centralized) and Cart (centralized)
+    const rules: Rule[] = await fetchActiveCustomerRules(
+      db,
+      effectiveCustomerId
     );
+    const cart: Cart = buildCartFromOrderItems({
+      items: order.items.map((it: any) => ({
+        ...it,
+        product: byId.get(it.productId)
+          ? {
+              price: byId.get(it.productId)!.price,
+              srp: byId.get(it.productId)!.srp,
+              allowPackSale: byId.get(it.productId)!.allowPackSale,
+            }
+          : { price: 0, srp: 0, allowPackSale: true },
+      })),
+      rules,
+    });
+    const pricing = applyDiscounts(cart, rules, { id: effectiveCustomerId });
+
+    //// DITO STOP
 
     const total = pricing.total ?? Number(order.totalBeforeDiscount);
     const remaining = Math.max(0, total - nowPaid);
@@ -552,7 +241,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         unitKind === UnitKind.RETAIL
           ? Number(p.price ?? 0)
           : Number(p.srp ?? 0);
-      const allowed = await computeUnitPriceForCustomerLocal(db, {
+      const allowed = await computeUnitPriceForCustomer(db, {
         customerId: effectiveCustomerId,
         productId: p.id,
         unitKind,
@@ -610,7 +299,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // then pick the closer one.
       const [allowedRetail, allowedPack] = await Promise.all([
         baseRetail > 0
-          ? computeUnitPriceForCustomerLocal(db as any, {
+          ? computeUnitPriceForCustomer(db as any, {
               customerId: effectiveCustomerId,
               productId: p.id,
               unitKind: UnitKind.RETAIL,
@@ -618,7 +307,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             })
           : Promise.resolve(NaN),
         basePack > 0
-          ? computeUnitPriceForCustomerLocal(db as any, {
+          ? computeUnitPriceForCustomer(db as any, {
               customerId: effectiveCustomerId,
               productId: p.id,
               unitKind: UnitKind.PACK,
@@ -749,7 +438,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? Number(p.price ?? 0)
             : Number(p.srp ?? 0);
 
-        const allowed = await computeUnitPriceForCustomerLocal(tx as any, {
+        const allowed = await computeUnitPriceForCustomer(tx as any, {
           customerId: effectiveCustomerId,
           productId: p.id,
           unitKind,
@@ -881,9 +570,6 @@ export default function CashierOrder() {
       currency: "PHP",
     }).format(n);
 
-  const approxEqual = (a: number, b: number, eps = 0.02) =>
-    Math.abs(a - b) <= eps;
-
   // ---------- Live customer-based rules ----------
   const fetcher = useFetcher<{ rules: Rule[] }>();
   const [clientRules, setClientRules] = React.useState<Rule[]>(
@@ -926,53 +612,14 @@ export default function CashierOrder() {
   );
 
   // 2) Build a Cart from current order items
-  const cart = useMemo<Cart>(() => {
-    const items = (order.items ?? []).map((it: any) => {
-      const baseRetail = Number(it.product?.price ?? 0);
-      const basePack = Number(it.product?.srp ?? 0);
-      const u = Number(it.unitPrice);
-
-      let unitKind: "RETAIL" | "PACK" | undefined;
-      const retailClose = baseRetail > 0 && approxEqual(u, baseRetail);
-      const packClose = basePack > 0 && approxEqual(u, basePack);
-
-      if (retailClose && !packClose) unitKind = "RETAIL";
-      else if (packClose && !retailClose) unitKind = "PACK";
-      else if (retailClose && packClose)
-        unitKind = baseRetail <= basePack ? "RETAIL" : "PACK";
-
-      // ✨ Fallback: if still undefined, prefer the unitKind that has a matching rule for this product
-      if (!unitKind) {
-        const hasPackRule = rules.some(
-          (r) =>
-            r.selector?.unitKind === "PACK" &&
-            r.selector?.productIds?.includes(it.productId)
-        );
-        const hasRetailRule = rules.some(
-          (r) =>
-            r.selector?.unitKind === "RETAIL" &&
-            r.selector?.productIds?.includes(it.productId)
-        );
-        if (hasPackRule && !hasRetailRule) unitKind = "PACK";
-        else if (hasRetailRule && !hasPackRule) unitKind = "RETAIL";
-        // if both/neither, keep undefined
-      }
-
-      return {
-        id: it.id,
-        productId: it.productId,
-        name: it.name,
-        qty: Number(it.qty),
-        unitPrice: u,
-        unitKind,
-        categoryId: it.product?.categoryId ?? null,
-        brandId: it.product?.brandId ?? null,
-        sku: it.product?.sku ?? null,
-      };
-    });
-    return { items };
-  }, [order.items, rules]);
-
+  const cart = useMemo<Cart>(
+    () =>
+      buildCartFromOrderItems({
+        items: order.items as any,
+        rules,
+      }),
+    [order.items, rules]
+  );
   // 3) Customer context (minimal for now)
   // Use the live-selected customer first; fall back to the order’s saved customer.
   const ctx = useMemo<{ id: number | null }>(
@@ -987,8 +634,6 @@ export default function CashierOrder() {
     () => applyDiscounts(cart, rules, ctx),
     [cart, rules, ctx]
   );
-
-  // DEBUG: see why rules fail to match
 
   // ---------------------------------------------------------
 
@@ -1093,6 +738,27 @@ export default function CashierOrder() {
                   const originalLine = Number(it.lineTotal);
                   const effLine = Math.max(0, qty * effUnit);
                   const saveLine = Math.max(0, originalLine - effLine);
+                  // Decide badge kind: show % if a percent rule matches; show ₱ if override rule matches.
+                  // We infer match using the centralized rules + selector.
+                  let showPercent = false;
+                  let showOverridePeso = false;
+                  if (discounted) {
+                    const matching = rules.filter((r) => {
+                      const pidOk =
+                        r.selector?.productIds?.includes(it.productId) ?? false;
+                      // If unitKind was inferred in cart, prefer that; else allow wildcard.
+                      const kindOk =
+                        !r.selector?.unitKind ||
+                        r.selector.unitKind === (it.unitKind as any);
+                      return pidOk && kindOk && r.enabled !== false;
+                    });
+                    showPercent = matching.some(
+                      (r) => r.kind === "PERCENT_OFF"
+                    );
+                    showOverridePeso = matching.some(
+                      (r) => r.kind === "PRICE_OVERRIDE"
+                    );
+                  }
                   const unitSavePct =
                     discounted && unitOrig > 0
                       ? Math.max(0, Math.round((1 - effUnit / unitOrig) * 100))
@@ -1106,15 +772,25 @@ export default function CashierOrder() {
                             <span className="truncate text-sm font-medium text-slate-900">
                               {it.name}
                             </span>
-                            {discounted && (
-                              <span
-                                className="flex-none text-[10px] rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-200"
-                                title={`~${unitSavePct}% off per unit`}
-                              >
-                                −{unitSavePct}%
-                              </span>
-                            )}
+                            {discounted &&
+                              (showPercent || showOverridePeso) && (
+                                <span
+                                  className="flex-none text-[10px] rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-200"
+                                  title={
+                                    showOverridePeso
+                                      ? `₱${(unitOrig - effUnit).toFixed(
+                                          2
+                                        )} off per unit`
+                                      : `~${unitSavePct}% off per unit`
+                                  }
+                                >
+                                  {showOverridePeso
+                                    ? `−${peso(unitOrig - effUnit)}`
+                                    : `−${unitSavePct}%`}
+                                </span>
+                              )}
                           </div>
+                          {/* Per-unit: show ORIGINAL first, then discounted */}
                           <div className="mt-0.5 text-xs text-slate-600">
                             {qty} ×{" "}
                             {discounted ? (
@@ -1122,7 +798,10 @@ export default function CashierOrder() {
                                 <s className="text-slate-400">
                                   {peso(unitOrig)}
                                 </s>{" "}
-                                <strong>{peso(effUnit)}</strong>
+                                <span aria-hidden>→</span>{" "}
+                                <strong className="text-slate-900">
+                                  {peso(effUnit)}
+                                </strong>
                               </>
                             ) : (
                               <>{peso(unitOrig)}</>
@@ -1132,12 +811,24 @@ export default function CashierOrder() {
 
                         {/* Right: line total + savings */}
                         <div className="text-right">
-                          <div className="text-sm font-semibold text-slate-900">
-                            {peso(effLine)}
-                          </div>
-                          {discounted && saveLine > 0 && (
-                            <div className="text-[11px] text-rose-600">
-                              −{peso(saveLine)}
+                          {discounted ? (
+                            <>
+                              {/* Line totals: ORIGINAL first (struck), then discounted */}
+                              <div className="text-sm text-slate-400 line-through">
+                                {peso(originalLine)}
+                              </div>
+                              <div className="text-sm font-semibold text-slate-900">
+                                {peso(effLine)}
+                              </div>
+                              {saveLine > 0 && (
+                                <div className="text-[11px] text-rose-600">
+                                  Saved −{peso(saveLine)}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-sm font-semibold text-slate-900">
+                              {peso(originalLine)}
                             </div>
                           )}
                         </div>
