@@ -193,18 +193,23 @@ model Customer {
 }
 
 model CustomerAddress {
-  id         Int      @id @default(autoincrement())
-  customerId Int
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label      String
-  line1      String
-  barangay   String
-  city       String
-  province   String
-  postalCode String?
-  landmark   String?
-  geoLat     Float?
-  geoLng     Float?
+  id             Int       @id @default(autoincrement())
+  customerId     Int
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label          String
+  line1          String
+  barangay       String
+  city           String
+  province       String
+  postalCode     String?
+  landmark       String?
+  geoLat         Float?
+  geoLng         Float?
+  photoUrl       String?
+  photoKey       String?
+  photoUpdatedAt DateTime?
+
+  deliveryOrders Order[] @relation("OrderDeliveryAddress")
 }
 
 model CustomerItemPrice {
@@ -235,6 +240,9 @@ model Order {
   orderCode String      @unique
   status    OrderStatus @default(UNPAID)
 
+  // Channel: pickup vs delivery
+  channel OrderChannel @default(PICKUP)
+
   // Snapshot totals (no discounts yet)
   subtotal            Float
   totalBeforeDiscount Float
@@ -250,6 +258,17 @@ model Order {
   payments   Payment[]
   customerId Int?
   customer   Customer?   @relation(fields: [customerId], references: [id])
+
+  // (optional) Delivery address reference for delivery orders
+  deliveryAddressId Int?
+  deliveryAddress   CustomerAddress? @relation("OrderDeliveryAddress", fields: [deliveryAddressId], references: [id], onDelete: SetNull)
+  deliverTo         String? // snapshot: "Name — full address"
+  deliverPhone      String? // snapshot contact for rider
+  deliverLandmark   String? // snapshot landmark text
+  deliverGeoLat     Float? // snapshot coords (optional)
+  deliverGeoLng     Float? // snapshot coords (optional)
+  deliverPhotoUrl   String? // snapshot photo (optional)
+  deliverPhotoKey   String? // snapshot photo storage key (optional)
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -267,6 +286,12 @@ model Order {
   releasedApprovedBy String? // who approved the release
   releasedAt         DateTime? // when goods left store
 
+  // --- Delivery / Fulfillment ---
+  fulfillmentStatus FulfillmentStatus? @default(NEW)
+  dispatchedAt      DateTime?
+  deliveredAt       DateTime?
+  riderName         String? // free text for now; future: Staff/User relation
+
   // Receipt fields (set when PAID)
   paidAt    DateTime?
   receiptNo String?   @unique // set when PAID
@@ -276,6 +301,10 @@ model Order {
   @@index([status])
   @@index([expiryAt])
   @@index([customerId])
+  @@index([channel])
+  @@index([fulfillmentStatus])
+  @@index([deliveryAddressId])
+  @@index([deliverGeoLat, deliverGeoLng])
 }
 
 model OrderItem {
@@ -296,6 +325,13 @@ model OrderItem {
   pricePolicy        String? // "BASE", "PER_ITEM", or "RULE:<id/type>"
   allowedUnitPrice   Decimal? @db.Decimal(10, 2)
   discountApprovedBy String? // if cashier priced below allowed
+
+  // --- LPG minimal hooks (per line) ---
+  isLpg            Boolean      @default(false)
+  brandAtSale      String? // snapshot brand for receipt (esp. Catgas family)
+  lpgSwapKind      LpgSwapKind?
+  lpgEmptyReturned Float? // empties received at handover/delivery
+  lpgLoaned        Float? // cylinders loaned (no empty returned)
 
   @@index([orderId])
 }
@@ -353,4 +389,25 @@ enum PriceMode {
   FIXED_PRICE // set the exact unit price
   FIXED_DISCOUNT // subtract a fixed amount (per unit)
   PERCENT_DISCOUNT // subtract % of base price (per unit)
+}
+
+// --- NEW: channel + fulfillment + LPG swap kinds ---
+enum OrderChannel {
+  PICKUP
+  DELIVERY
+}
+
+enum FulfillmentStatus {
+  NEW
+  PICKING
+  PACKING
+  DISPATCHED
+  DELIVERED
+  ON_HOLD
+}
+
+enum LpgSwapKind {
+  REFILL
+  SWAP_CATGAS
+  UPGRADE_BRANDED
 }

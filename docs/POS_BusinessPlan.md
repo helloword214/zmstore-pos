@@ -129,3 +129,36 @@ M4 — Fulfillment: in-store bagging; delivery NEW→PICKING→PACKING→DISPATC
 - Electronic POD
 
 - Real-time GPS/dispatch
+
+Business flow (exactly how we’ll use it—no code)
+
+Address picker (Channel=Delivery):
+
+If Select existing address:
+
+Copy address.landmark → order.deliverLandmark
+
+If may photoUrl/Key sa address, copy to order.deliverPhoto\* (snapshot).
+
+If Add new:
+
+Puwedeng mag-upload photo; ito’y mase-save sa CustomerAddress at then i-copy rin to order snapshot.
+
+If Use once (don’t save):
+
+Optional upload → save only to Order.deliverPhoto\* (snapshot lang; walang bagong CustomerAddress).
+
+Saan makikita ang photo:
+
+PACKING/DISPATCH screen: show thumbnail; click = full view (para bago pa umalis si rider, familiar na).
+
+Delivery Ticket (57mm): landmark text lang ang naka-print.
+Photo is optional; hindi natin ipi-print para mabilis at malinaw ang resibo. (Kung gusto mo ng QR to photo later, madali nang idagdag.)
+
+Remit view: optional thumbnail para mabilis ma-recall kung saan ang bahay.
+
+Bakit hiwalay ang text at photo?
+
+Text (deliverLandmark) ay laging readable kahit walang data/signal;
+
+Photo (deliverPhotoUrl) ay bonus visual cue—tinutulungan ang bagong rider bago pa umalis, or ma-upload ng staff “pag wala pa”.

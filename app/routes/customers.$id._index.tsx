@@ -51,6 +51,17 @@ export default function CustomerProfile() {
       currency: "PHP",
     }).format(n);
 
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // show items by default? add &items=1 if you want
+  const statementHref = `/ar/customers/${customer.id}/statement?start=${ymd(
+    start
+  )}&end=${ymd(now)}`;
+
   return (
     <section className="px-4 md:px-0 pb-6">
       {/* Header (non-sticky) */}
@@ -89,19 +100,33 @@ export default function CustomerProfile() {
           <div className="text-lg font-semibold text-slate-900">
             {peso(arBalance)}
           </div>
-          <Link
-            to={`/ar/customers/${customer.id}`}
-            className="mt-2 inline-block text-xs text-indigo-600 hover:underline"
-          >
-            View AR Ledger →
-          </Link>
+
+          {/* action pills */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to={`/ar/customers/${customer.id}`}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+              title="View AR Ledger"
+            >
+              AR Ledger
+            </Link>
+            <Link
+              to={statementHref}
+              className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              title="Statement of Account"
+            >
+              Statement
+            </Link>
+          </div>
         </div>
+
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs text-slate-500">Credit Limit</div>
           <div className="text-lg font-semibold text-slate-900">
             {customer.creditLimit ?? "—"}
           </div>
         </div>
+
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs text-slate-500">Active Pricing Rules</div>
           <div className="text-lg font-semibold text-slate-900">

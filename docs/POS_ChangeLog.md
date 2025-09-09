@@ -351,3 +351,51 @@
 - app/routes/ar.customers.$id.tsx
 
 > DB schema unchanged. No migrations required.
+
+## [2025-09-09] Statement of Account (SOA)
+
+### Added
+
+- New route: app/routes/ar.customers.$id.statement.tsx (Statement of Account).
+- Period selector (Start/End) with print button.
+- Optional Show items toggle (?items=1) showing per-line effective unit price and line totals using rules valid at the time.
+- Opening balance computation (pre-period charges minus payments).
+- Running balance per transaction (opening → each txn), displayed in the table.
+
+### Changed
+
+- AR Customer Ledger (ar.customers.$id.tsx): added quick action link to Statement.
+- SOA totals now use the pricing engine (applyDiscounts) via fetchCustomerRulesAt and buildCartFromOrderItems to ensure parity with receipts/ACK.
+
+### Fixed
+
+- End-date filter off-by-one: switched to local date parsing (parseYmdLocal) and exclusive end (< endExclusive) so the chosen end day is fully included.
+- Payments can no longer drive the running balance negative: each payment is capped to the current due and reported as creditApplied.
+- Cleaned up unused variable warning by replacing txnsWithRunning with txnsWithApplied.
+
+### Files touched
+
+- app/routes/ar.customers.$id.statement.tsx (new)
+- app/routes/ar.customers.$id.tsx (add Statement link)
+- app/services/pricing.ts (referenced helpers: applyDiscounts, buildCartFromOrderItems, fetchCustomerRulesAt)
+
+> DB schema unchanged. No migrations required.
+
+## [2025-09-09] Delivery: Geo-address snapshot (Order-level)
+
+**Added**
+
+- Link `Order → CustomerAddress` via `deliveryAddressId` (named relation).
+- Snapshot fields on `Order`: `deliverTo`, `deliverPhone`, `deliverLandmark`, `deliverGeoLat`, `deliverGeoLng`, `deliverPhotoUrl`, `deliverPhotoKey`.
+- Optional landmark photo on `CustomerAddress`: `photoUrl`, `photoKey`, `photoUpdatedAt`.
+- Indexes: `Order(deliveryAddressId)` and `Order(deliverGeoLat, deliverGeoLng)`.
+
+**Behavior**
+
+- When **Channel = Delivery**, always snapshot **address + landmark**; **coords/photo optional**.
+- **Do not block** dispatch if coords are missing; Delivery Ticket uses **QR to Maps** (pin if coords, text search otherwise).
+- Photos are **screen-only** (packing/dispatch/remit), **not** printed on 57 mm.
+
+**DB**
+
+- Migration: `order-delivery-geo-snapshot` (adds-only; no breaking changes).

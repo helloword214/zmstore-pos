@@ -144,3 +144,43 @@ NEW → PICKING → PACKING → DISPATCHED → DELIVERED
 3. Future:
 
 - SOA module can export to PDF/Excel for external reporting.
+
+---
+
+# Pick-up / In-store flow
+
+Scenario A – Pay now →
+Official Receipt agad (57mm).
+
+Scenario B – Utang / Partial →
+Credit Acknowledgment Receipt (utang slip).
+
+Scenario C – Partial Payment after release →
+Payment Acknowledgment Receipt for each hulog.
+
+👉 Sa cashier ang papel na hawak palagi ay OR (paid) or Ack receipts (utang/payment).
+
+## Delivery flow
+
+Scenario A – Prep/Dispatch →
+Delivery Ticket ang hawak ng rider/staff (pang-handover & pang-stub).
+
+May items, qty, presyo (snapshot),
+
+Space para sa “Received by” signature,
+
+LPG notes (empties returned, loaned, upgrade).
+
+Scenario B – Doorstep payment
+
+Kung full paid → rider collects cash, pero receipt proper (Official Receipt) hindi na sa rider – nai-issue at Remit sa cashier pagbalik.
+
+Kung partial/utang → rider marks collection, then cashier generates Payment Ack / Credit Ack pag na-encode sa remit.
+
+👉 Sa rider/staff ang papel ay Delivery Ticket, hindi OR (OR centralized sa cashier para official numbering/printing).
+
+## Core difference
+
+Pick-up: customer walks away na may official/ack receipt.
+
+Delivery: customer gets a Delivery Ticket stub muna; official receipts/acks are only printed once rider remits at cashier.
