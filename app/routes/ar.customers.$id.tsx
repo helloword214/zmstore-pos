@@ -6,7 +6,9 @@ import {
   useLoaderData,
   useNavigation,
   useSearchParams,
+  useLocation,
   Link,
+  Outlet,
 } from "@remix-run/react";
 import { Prisma } from "@prisma/client";
 
@@ -333,6 +335,20 @@ export default function CustomerLedgerPage() {
   const { customer, rows, balance } = useLoaderData<typeof loader>();
   const [sp] = useSearchParams();
   const nav = useNavigation();
+  const location = useLocation();
+  const isStatement = location.pathname.endsWith("/statement");
+  // build default period = current month → today
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(
+    start.getDate()
+  )}`;
+  const endStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+    now.getDate()
+  )}`;
+  const statementHref = `/ar/customers/${customer.id}/statement?start=${startStr}&end=${endStr}`;
+
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -341,158 +357,178 @@ export default function CustomerLedgerPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Customer Ledger
-            </h1>
-            <div className="text-sm text-slate-600">
-              {customer.name}
-              {customer.alias ? ` (${customer.alias})` : ""} •{" "}
-              {customer.phone ?? "—"}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-right">
-            <div className="text-xs text-slate-500">Current Balance</div>
-            <div className="text-lg font-semibold text-slate-900">
-              {peso(balance)}
-            </div>
-            {/* Optional change banner after redirect */}
-            {sp.get("change") && (
-              <div className="mx-auto max-w-4xl px-5 pb-3">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Change due to customer:{" "}
-                  <b>₱{Number(sp.get("change")).toFixed(2)}</b>
-                </div>
+      {!isStatement && (
+        <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+          <div className="mx-auto max-w-4xl px-5 py-4 flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Customer Ledger
+              </h1>
+              <div className="text-sm text-slate-600">
+                {customer.name}
+                {customer.alias ? ` (${customer.alias})` : ""} •{" "}
+                {customer.phone ?? "—"}
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-4xl px-5 py-6 grid lg:grid-cols-3 gap-6">
-        {/* Ledger */}
-        <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Activity
-          </div>
-          <div className="divide-y divide-slate-100">
-            {rows.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-600">
-                No activity yet.
-              </div>
-            ) : (
-              rows.map((r, i) => (
-                <div
-                  key={i}
-                  className="px-4 py-3 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="text-sm text-slate-900">
-                      {r.kind === "order" ? "Charge" : "Payment"} • {r.label}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {new Date(r.date).toLocaleString()}
-                      {r.kind === "order" && r.due
-                        ? ` • due ${new Date(r.due).toLocaleDateString()}`
-                        : ""}
-                    </div>
-                  </div>
-                  <div
-                    className={`text-sm font-semibold ${
-                      r.kind === "order" ? "text-slate-900" : "text-emerald-700"
-                    }`}
-                  >
-                    {r.kind === "order" ? "+" : "−"} {peso(r.amount)}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Record Payment */}
-        <aside className="lg:col-span-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Record Payment
-          </div>
-          <Form method="post" className="p-4 space-y-3">
-            <input type="hidden" name="_action" value="recordPayment" />
-            <label className="block text-sm">
-              <span className="text-slate-700">Amount</span>
-              <input
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="0.00"
-                inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              />
-            </label>
-
-            <label className="block text-sm">
-              <span className="text-slate-700">Method</span>
-              <select
-                name="method"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                defaultValue="CASH"
-              >
-                <option value="CASH">Cash</option>
-                <option value="GCASH">GCash</option>
-                <option value="CARD">Card</option>
-              </select>
-            </label>
-
-            <label className="block text-sm">
-              <span className="text-slate-700">Apply to Order (optional)</span>
-              <input
-                name="orderId"
-                type="number"
-                placeholder="Order ID (blank = oldest open)"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              />
-            </label>
-
-            <label className="block text-sm">
-              <span className="text-slate-700">Reference (optional)</span>
-              <input
-                name="refNo"
-                placeholder="GCash ref / last 4 / notes"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              />
-            </label>
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                name="printAck"
-                value="0"
-                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                disabled={nav.state !== "idle"}
-              >
-                {nav.state !== "idle" ? "Saving…" : "Save Payment"}
-              </button>
-              <button
-                type="submit"
-                name="printAck"
-                value="1"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                disabled={nav.state !== "idle"}
-              >
-                {nav.state !== "idle" ? "Saving…" : "Save & Print Ack"}
-              </button>
+            </div>
+            {/* Quick actions */}
+            <div className="mt-2 flex justify-end">
               <Link
-                to={`/customers/${customer.id}`}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                to={statementHref}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50"
+                title="Open Statement of Account"
               >
-                View Customer Profile
+                Statement
               </Link>
             </div>
-          </Form>
-        </aside>
-      </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-right">
+              <div className="text-xs text-slate-500">Current Balance</div>
+              <div className="text-lg font-semibold text-slate-900">
+                {peso(balance)}
+              </div>
+              {/* Optional change banner after redirect */}
+              {sp.get("change") && (
+                <div className="mx-auto max-w-4xl px-5 pb-3">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Change due to customer:{" "}
+                    <b>₱{Number(sp.get("change")).toFixed(2)}</b>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isStatement && (
+        <div className="mx-auto max-w-4xl px-5 py-6 grid lg:grid-cols-3 gap-6">
+          {/* Ledger */}
+          <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
+              Activity
+            </div>
+            <div className="divide-y divide-slate-100">
+              {rows.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-slate-600">
+                  No activity yet.
+                </div>
+              ) : (
+                rows.map((r, i) => (
+                  <div
+                    key={i}
+                    className="px-4 py-3 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="text-sm text-slate-900">
+                        {r.kind === "order" ? "Charge" : "Payment"} • {r.label}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {new Date(r.date).toLocaleString()}
+                        {r.kind === "order" && r.due
+                          ? ` • due ${new Date(r.due).toLocaleDateString()}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div
+                      className={`text-sm font-semibold ${
+                        r.kind === "order"
+                          ? "text-slate-900"
+                          : "text-emerald-700"
+                      }`}
+                    >
+                      {r.kind === "order" ? "+" : "−"} {peso(r.amount)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* Record Payment */}
+          <aside className="lg:col-span-1 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
+              Record Payment
+            </div>
+            <Form method="post" className="p-4 space-y-3">
+              <input type="hidden" name="_action" value="recordPayment" />
+              <label className="block text-sm">
+                <span className="text-slate-700">Amount</span>
+                <input
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="0.00"
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                />
+              </label>
+
+              <label className="block text-sm">
+                <span className="text-slate-700">Method</span>
+                <select
+                  name="method"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                  defaultValue="CASH"
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="GCASH">GCash</option>
+                  <option value="CARD">Card</option>
+                </select>
+              </label>
+
+              <label className="block text-sm">
+                <span className="text-slate-700">
+                  Apply to Order (optional)
+                </span>
+                <input
+                  name="orderId"
+                  type="number"
+                  placeholder="Order ID (blank = oldest open)"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                />
+              </label>
+
+              <label className="block text-sm">
+                <span className="text-slate-700">Reference (optional)</span>
+                <input
+                  name="refNo"
+                  placeholder="GCash ref / last 4 / notes"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                />
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  name="printAck"
+                  value="0"
+                  className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  disabled={nav.state !== "idle"}
+                >
+                  {nav.state !== "idle" ? "Saving…" : "Save Payment"}
+                </button>
+                <button
+                  type="submit"
+                  name="printAck"
+                  value="1"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  disabled={nav.state !== "idle"}
+                >
+                  {nav.state !== "idle" ? "Saving…" : "Save & Print Ack"}
+                </button>
+                <Link
+                  to={`/customers/${customer.id}`}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  View Customer Profile
+                </Link>
+              </div>
+            </Form>
+          </aside>
+        </div>
+      )}
+      {/* Child route (/statement) renders here */}
+      <Outlet />
     </main>
   );
 }

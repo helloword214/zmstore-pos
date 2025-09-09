@@ -152,7 +152,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       0
     );
 
-    const nowPaid = alreadyPaid + cashGiven;
     // ─────────────────────────────────────────────────────────────
     // Compute EFFECTIVE total using active customer pricing rules
     // ─────────────────────────────────────────────────────────────
@@ -191,9 +190,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     const pricing = applyDiscounts(cart, rules, { id: effectiveCustomerId });
 
-    //// DITO STOP
-
     const total = pricing.total ?? Number(order.totalBeforeDiscount);
+    const dueBefore = Math.max(0, total - alreadyPaid);
+    const appliedPayment = Math.min(Math.max(0, cashGiven), dueBefore);
+    const change = Math.max(0, cashGiven - appliedPayment);
+    const nowPaid = alreadyPaid + appliedPayment;
     const remaining = Math.max(0, total - nowPaid);
 
     // For utang/partial balance, require a customer to carry the balance
@@ -402,12 +403,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       // 1) Record payment (cashier path always > 0 now)
-      const p = await tx.payment.create({
-        data: { orderId: order.id, method: "CASH", amount: cashGiven },
-        select: { id: true },
-      });
-      createdPaymentId = p.id;
-
+      // 1) Record payment actually applied against the balance
+      if (appliedPayment > 0) {
+        const p = await tx.payment.create({
+          data: { orderId: order.id, method: "CASH", amount: appliedPayment },
+          select: { id: true },
+        });
+        createdPaymentId = p.id;
+      }
       // 2) Deduct inventory only when needed (see rule above)
       if (willDeductNow) {
         for (const [pid, c] of deltas.entries()) {
@@ -518,6 +521,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         autoback: "1",
         pid: String(createdPaymentId),
       });
+      if (cashGiven > 0) qs.set("tendered", cashGiven.toFixed(2));
+      if (change > 0) qs.set("change", change.toFixed(2));
       return redirect(`/orders/${id}/ack?${qs.toString()}`);
     }
 

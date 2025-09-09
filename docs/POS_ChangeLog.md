@@ -320,3 +320,34 @@
 - `app/routes/ar.customers.$id.tsx`
 
 > DB schema unchanged. No migrations required.
+
+## [2025-09-08] Centralized rule-aware pricing parity
+
+### Added
+
+- services/pricing.ts: fetchActiveCustomerRules(db, customerId) for loading/mapping active item rules.
+- services/pricing.ts: buildCartFromOrderItems({ items, rules }) for rule-aware cart building (unitKind inference + Decimal→number coercion).
+- Discount lines on Official Receipt and Payment Acknowledgment (per-rule breakdown).
+
+### Changed
+
+- Cashier, Receipt, Ack, AR List, and Customer Ledger now use shared applyDiscounts + centralized rule fetcher/cart builder.
+- Server cart unit-kind inference mirrors client; unknown unitKind acts as wildcard with rule-aware fallback.
+- AR Index & Customer Ledger balances now use discounted totals (not totalBeforeDiscount).
+- /api/customer-pricing now sources rules via shared helper (no duplicate DB→rule mapping).
+- Fixed
+- Full payments with discounts now print Official Receipt (no more ACK misfire).
+- AR payment allocation/status updates use effective totals; orders flip to PAID correctly.
+- TypeScript cleanups: Decimal coercions, union narrowing for Rule, removed duplicate/local pricing helpers.
+
+## Files touched
+
+- app/services/pricing.ts
+- app/routes/api.customer-pricing.tsx
+- app/routes/cashier.$id.tsx
+- app/routes/orders.$id.receipt.tsx
+- app/routes/orders.$id.ack.tsx
+- app/routes/ar.\_index.tsx
+- app/routes/ar.customers.$id.tsx
+
+> DB schema unchanged. No migrations required.
