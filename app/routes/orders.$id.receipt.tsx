@@ -15,7 +15,7 @@ import {
 // If you already have a shared helper, you can import it instead of duplicating:
 // import { applyDiscounts } from "~/services/pricing";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -72,11 +72,20 @@ export async function loader({ params }: LoaderFunctionArgs) {
     id: order.customer?.id ?? null,
   });
 
-  return json({ order, isVoid, pricing });
+  // read cash/change passed by remit (optional)
+  const url = new URL(request.url);
+  const cashParam = Number(url.searchParams.get("cash"));
+  const changeParam = Number(url.searchParams.get("change"));
+  const cash = Number.isFinite(cashParam) ? Math.max(0, cashParam) : null;
+  const changeFromQuery = Number.isFinite(changeParam)
+    ? Math.max(0, changeParam)
+    : null;
+
+  return json({ order, isVoid, pricing, cash, change: changeFromQuery });
 }
 
 export default function ReceiptPage() {
-  const { order, pricing } = useLoaderData<typeof loader>();
+  const { order, pricing, cash, change } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -138,7 +147,8 @@ export default function ReceiptPage() {
 
   const totalPaid = order.payments.reduce((s, p) => s + Number(p.amount), 0);
   const grandTotal = pricing?.total ?? Number(order.totalBeforeDiscount);
-  const change = Math.max(0, totalPaid - grandTotal);
+  const changeComputed = Math.max(0, totalPaid - grandTotal);
+  const changeToShow = change ?? changeComputed;
 
   return (
     <div className="mx-auto p-0 md:p-6 print:p-0 text-slate-900 bg-[#f7f7fb] min-h-screen">
@@ -239,10 +249,18 @@ export default function ReceiptPage() {
                   </span>
                 </div>
               ))}
+              {cash != null && (
+                <div className="flex justify-between mt-1">
+                  <span className="text-slate-700">Cash Received</span>
+                  <span className="font-semibold text-slate-900">
+                    {peso(cash)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between mt-1">
                 <span className="text-slate-700">Change</span>
                 <span className="font-semibold text-slate-900">
-                  {peso(change)}
+                  {peso(changeToShow)}
                 </span>
               </div>
             </div>

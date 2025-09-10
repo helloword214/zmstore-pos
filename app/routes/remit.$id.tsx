@@ -150,6 +150,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const nowPaid = alreadyPaid + appliedPayment;
   const remaining = Math.max(0, total - nowPaid);
 
+  // Guard: partial payments MUST be tied to a customer for A/R
+  if (remaining > 0 && !order.customerId) {
+    return json(
+      { ok: false, error: "Link a customer before accepting partial payment." },
+      { status: 400 }
+    );
+  }
+
   // Build stock deltas (unit inference allows for customer pricing)
   const errors: Array<{ id: number; reason: string }> = [];
   const deltas = new Map<number, { pack: number; retail: number }>();
@@ -323,13 +331,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // 4) Print
   if (remaining <= 1e-6 && printReceipt) {
-    return redirect(`/orders/${id}/receipt?autoprint=1&autoback=1`);
+    const qs = new URLSearchParams({
+      autoprint: "1",
+      autoback: "1",
+      cash: cashGiven.toFixed(2),
+      change: change.toFixed(2),
+      ...(createdPaymentId ? { pid: String(createdPaymentId) } : {}),
+    });
+    return redirect(`/orders/${id}/receipt?${qs.toString()}`);
   }
   if (remaining > 0 && printReceipt && createdPaymentId) {
     const qs = new URLSearchParams({
       autoprint: "1",
       autoback: "1",
       pid: String(createdPaymentId),
+      cash: cashGiven.toFixed(2),
+      change: change.toFixed(2),
     });
     return redirect(`/orders/${id}/ack?${qs.toString()}`);
   }

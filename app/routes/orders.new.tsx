@@ -38,6 +38,7 @@ export const action: ActionFunction = async ({ request }) => {
   // ── NEW: channel + delivery snapshot fields (all optional unless channel=DELIVERY)
   const channelRaw = String(form.get("channel") ?? "PICKUP").toUpperCase();
   const channel = channelRaw === "DELIVERY" ? "DELIVERY" : "PICKUP";
+  const customerId = Number(form.get("customerId") || 0) || null;
   const deliverTo = (form.get("deliverTo") ?? "").toString().trim();
   const deliverPhone =
     (form.get("deliverPhone") ?? "").toString().trim() || null;
@@ -288,7 +289,8 @@ export const action: ActionFunction = async ({ request }) => {
   }
 
   if (errors.length > 0) {
-    return json({ errors }, { status: 400 });
+    // Match the pad's expected shape: { ok:false, errors:[...] }
+    return json({ ok: false, errors }, { status: 400 });
   }
 
   // Compute totals
@@ -308,6 +310,7 @@ export const action: ActionFunction = async ({ request }) => {
       expiryAt: expiry,
       printCount: 1,
       terminalId,
+      customerId, // ← link customer (optional even for pickup)
       // Snapshot delivery fields only for DELIVERY channel
       ...(channel === "DELIVERY"
         ? {

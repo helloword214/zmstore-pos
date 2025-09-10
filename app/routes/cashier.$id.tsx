@@ -675,8 +675,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     // Navigate
     if (remaining <= 1e-6 && printReceipt) {
-      // Official Receipt for fully-paid
-      return redirect(`/orders/${id}/receipt?autoprint=1&autoback=1`);
+      // Official Receipt for fully-paid — include tendered + change
+      const qs = new URLSearchParams({
+        autoprint: "1",
+        autoback: "1",
+        cash: cashGiven.toFixed(2),
+        change: Math.max(0, cashGiven - appliedPayment).toFixed(2),
+      });
+      return redirect(`/orders/${id}/receipt?${qs.toString()}`);
     }
 
     // Partial payment → Acknowledgment

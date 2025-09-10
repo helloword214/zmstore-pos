@@ -131,6 +131,12 @@ export default function KioskPage() {
   const [deliverGeoLat, setDeliverGeoLat] = React.useState("");
   const [deliverGeoLng, setDeliverGeoLng] = React.useState("");
   const [deliverPhotoUrl, setDeliverPhotoUrl] = React.useState("");
+  const [customerId, setCustomerId] = React.useState<number | null>(null);
+  const [deliveryAddressId, setDeliveryAddressId] = React.useState<
+    number | null
+  >(null);
+  const customerSearch = useFetcher<{ hits: Array<any> }>();
+  const [custQ, setCustQ] = React.useState("");
   const printLabel =
     channel === "DELIVERY"
       ? "Print ticket after create"
@@ -1540,6 +1546,109 @@ export default function KioskPage() {
               </div>
               {channel === "DELIVERY" && (
                 <div className="mt-3 grid grid-cols-1 gap-2">
+                  {/* Customer picker (phone-first) */}
+                  <div className="rounded-xl border border-slate-200 p-2">
+                    <div className="text-xs text-slate-600 mb-1">
+                      Link Customer (phone preferred)
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={custQ}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setCustQ(v);
+                          if (v.trim().length >= 3) {
+                            customerSearch.load(
+                              `/api/customers/search?q=${encodeURIComponent(
+                                v.trim()
+                              )}`
+                            );
+                          }
+                        }}
+                        placeholder="09xx… / name / alias"
+                        className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      />
+                      {customerId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerId(null);
+                            setDeliveryAddressId(null);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                    {customerSearch.data?.hits?.length ? (
+                      <div className="mt-2 max-h-44 overflow-auto divide-y divide-slate-100">
+                        {customerSearch.data.hits.map((h) => (
+                          <button
+                            key={h.id}
+                            type="button"
+                            onClick={() => {
+                              setCustomerId(h.id);
+                              // choose address: single -> pick; multi -> first (can change via select)
+                              const addr = (h.addresses || [])[0] || null;
+                              setDeliveryAddressId(addr ? addr.id : null);
+                              // prefill deliverTo + phone snapshot
+                              const name = `${h.firstName}${
+                                h.middleName ? " " + h.middleName : ""
+                              } ${h.lastName}`.trim();
+                              const addrText = addr
+                                ? `${addr.line1}, ${addr.barangay}, ${
+                                    addr.city
+                                  }${addr.province ? ", " + addr.province : ""}`
+                                : "";
+                              setDeliverTo(
+                                addr ? `${name} — ${addrText}` : name
+                              );
+                              if (h.phone) setDeliverPhone(h.phone);
+                              setCustQ(
+                                `${name}${h.phone ? " • " + h.phone : ""}`
+                              );
+                            }}
+                            className="w-full text-left px-2 py-2 hover:bg-slate-50"
+                          >
+                            <div className="text-sm text-slate-900">
+                              {h.firstName} {h.middleName || ""} {h.lastName}{" "}
+                              {h.alias ? `(${h.alias})` : ""}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              {h.phone || "—"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {customerId && customerSearch.data?.hits?.length ? (
+                      <div className="mt-2">
+                        <label className="block text-xs text-slate-600">
+                          Address
+                        </label>
+                        <select
+                          value={deliveryAddressId ?? ""}
+                          onChange={(e) => {
+                            const id = e.target.value
+                              ? Number(e.target.value)
+                              : null;
+                            setDeliveryAddressId(id);
+                          }}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        >
+                          <option value="">— None / custom —</option>
+                          {customerSearch.data.hits
+                            .find((z) => z.id === customerId)
+                            ?.addresses?.map((a: any) => (
+                              <option key={a.id} value={a.id}>
+                                {a.label}: {a.line1}, {a.barangay}, {a.city}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
                   <label className="block text-xs text-slate-600">
                     Deliver To (name — full address) *
                     <input
@@ -1618,6 +1727,17 @@ export default function KioskPage() {
               >
                 <input type="hidden" name="items" value={payload} />
                 <input type="hidden" name="terminalId" value="KIOSK-01" />
+                {/* carry customer linkage */}
+                <input
+                  type="hidden"
+                  name="customerId"
+                  value={customerId ?? ""}
+                />
+                <input
+                  type="hidden"
+                  name="deliveryAddressId"
+                  value={deliveryAddressId ?? ""}
+                />
                 {/* NEW: fulfillment + delivery fields */}
                 <input type="hidden" name="channel" value={channel} />
                 {channel === "DELIVERY" && (
