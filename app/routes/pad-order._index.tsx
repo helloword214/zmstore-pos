@@ -15,9 +15,13 @@ import { TextInput } from "~/components/ui/TextInput";
 import { useLocalStorageState } from "~/utils/hooks";
 
 type CreateSlipResp =
-  | { ok: true; id: number }
+  | {
+      ok: true;
+      id: number;
+      orderCode: string;
+      channel: "PICKUP" | "DELIVERY";
+    }
   | { ok: false; errors: Array<{ id: number; mode?: string; reason: string }> };
-
 // ─────────────────────────────────────────────────────────────
 // Loader: fetch + normalize numerics, disable caching
 // ─────────────────────────────────────────────────────────────
@@ -118,6 +122,21 @@ export default function KioskPage() {
   const navigate = useNavigate();
   const [printSlip, setPrintSlip] = React.useState(false);
   const [mobileCartOpen, setMobileCartOpen] = React.useState(false);
+
+  // ── Fulfillment state (PICKUP / DELIVERY) + delivery fields ─────────────
+  const [channel, setChannel] = React.useState<"PICKUP" | "DELIVERY">("PICKUP");
+  const [deliverTo, setDeliverTo] = React.useState("");
+  const [deliverPhone, setDeliverPhone] = React.useState("");
+  const [deliverLandmark, setDeliverLandmark] = React.useState("");
+  const [deliverGeoLat, setDeliverGeoLat] = React.useState("");
+  const [deliverGeoLng, setDeliverGeoLng] = React.useState("");
+  const [deliverPhotoUrl, setDeliverPhotoUrl] = React.useState("");
+  const printLabel =
+    channel === "DELIVERY"
+      ? "Print ticket after create"
+      : "Print slip after create";
+  const createAndPrintCta =
+    channel === "DELIVERY" ? "Create & Print Ticket" : "Create & Print Slip";
 
   const [justCreated, setJustCreated] = React.useState<{
     open: boolean;
@@ -424,26 +443,34 @@ export default function KioskPage() {
   React.useEffect(() => {
     if (createSlip.state !== "idle" || !createSlip.data) return;
     if (createSlip.data.ok === true) {
-      // If printing is requested, go to slip page (auto-print can be handled there)
+      const createdId = createSlip.data.id;
+      const ch = createSlip.data.channel ?? channel;
       if (printSlip) {
-        navigate(`/orders/${createSlip.data.id}/slip?autoprint=1&autoback=1`, {
+        const dest = ch === "DELIVERY" ? "ticket" : "slip";
+        navigate(`/orders/${createdId}/${dest}?autoprint=1&autoback=1`, {
           replace: true,
         });
-      } else {
-        // No print: show code/QR so staff can relay to cashier quickly
-        setJustCreated({
-          open: true,
-          id: createSlip.data.id,
-          code: (createSlip.data as any).orderCode,
-        });
-        // Clear cart after creation (optional: keep? choose UX)
-        clearCart();
+        return;
       }
+      // No print → show code/QR for cashier
+      setJustCreated({
+        open: true,
+        id: createdId,
+        code: createSlip.data.orderCode,
+      });
+      clearCart();
     } else {
-      setClientErrors([]); // server-side errors will be shown
+      setClientErrors([]);
       setErrorOpen(true);
     }
-  }, [createSlip.state, createSlip.data, navigate, printSlip, clearCart]);
+  }, [
+    createSlip.state,
+    createSlip.data,
+    navigate,
+    printSlip,
+    clearCart,
+    channel,
+  ]);
   // header clock
   const [clock, setClock] = React.useState(() =>
     new Date().toLocaleTimeString("en-PH", {
@@ -756,6 +783,15 @@ export default function KioskPage() {
                 setQ("");
                 setActiveCat("");
                 setActiveBrand("");
+                // reset fulfillment state
+                setChannel("PICKUP");
+                setDeliverTo("");
+                setDeliverPhone("");
+                setDeliverLandmark("");
+                setDeliverGeoLat("");
+                setDeliverGeoLng("");
+                setDeliverPhotoUrl("");
+                setPrintSlip(false);
                 // focus search after reset
                 const el =
                   document.querySelector<HTMLInputElement>(
@@ -1479,6 +1515,98 @@ export default function KioskPage() {
                 </div>
               </div>
             </div>
+            {/* Fulfillment */}
+            <div className="px-4 pt-3">
+              <div className="text-sm font-medium text-slate-800 mb-2">
+                Fulfillment
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <label className="inline-flex items-center gap-1">
+                  <input
+                    type="radio"
+                    checked={channel === "PICKUP"}
+                    onChange={() => setChannel("PICKUP")}
+                  />
+                  <span>Pick-up</span>
+                </label>
+                <label className="inline-flex items-center gap-1">
+                  <input
+                    type="radio"
+                    checked={channel === "DELIVERY"}
+                    onChange={() => setChannel("DELIVERY")}
+                  />
+                  <span>Delivery</span>
+                </label>
+              </div>
+              {channel === "DELIVERY" && (
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  <label className="block text-xs text-slate-600">
+                    Deliver To (name — full address) *
+                    <input
+                      value={deliverTo}
+                      onChange={(e) => setDeliverTo(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      placeholder="Juan Dela Cruz — #123 Purok 1, Brgy. Sample, City"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-xs text-slate-600">
+                      Phone (optional)
+                      <input
+                        value={deliverPhone}
+                        onChange={(e) => setDeliverPhone(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        placeholder="09xx xxx xxxx"
+                      />
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Landmark (optional)
+                      <input
+                        value={deliverLandmark}
+                        onChange={(e) => setDeliverLandmark(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        placeholder="Near barangay hall"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-xs text-slate-600">
+                      Latitude (optional)
+                      <input
+                        value={deliverGeoLat}
+                        onChange={(e) => setDeliverGeoLat(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        placeholder="14.5995"
+                        inputMode="decimal"
+                      />
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Longitude (optional)
+                      <input
+                        value={deliverGeoLng}
+                        onChange={(e) => setDeliverGeoLng(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        placeholder="120.9842"
+                        inputMode="decimal"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-xs text-slate-600">
+                    Photo URL (optional)
+                    <input
+                      value={deliverPhotoUrl}
+                      onChange={(e) => setDeliverPhotoUrl(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      placeholder="https://…"
+                    />
+                  </label>
+                  <div className="text-[11px] text-slate-500">
+                    If you set either latitude or longitude, set both (server
+                    validates).
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Actions */}
             <div className="px-4 pb-4">
@@ -1490,6 +1618,43 @@ export default function KioskPage() {
               >
                 <input type="hidden" name="items" value={payload} />
                 <input type="hidden" name="terminalId" value="KIOSK-01" />
+                {/* NEW: fulfillment + delivery fields */}
+                <input type="hidden" name="channel" value={channel} />
+                {channel === "DELIVERY" && (
+                  <>
+                    <input name="deliverTo" value={deliverTo} readOnly hidden />
+                    <input
+                      name="deliverPhone"
+                      value={deliverPhone}
+                      readOnly
+                      hidden
+                    />
+                    <input
+                      name="deliverLandmark"
+                      value={deliverLandmark}
+                      readOnly
+                      hidden
+                    />
+                    <input
+                      name="deliverGeoLat"
+                      value={deliverGeoLat}
+                      readOnly
+                      hidden
+                    />
+                    <input
+                      name="deliverGeoLng"
+                      value={deliverGeoLng}
+                      readOnly
+                      hidden
+                    />
+                    <input
+                      name="deliverPhotoUrl"
+                      value={deliverPhotoUrl}
+                      readOnly
+                      hidden
+                    />
+                  </>
+                )}
                 <label className="mb-2 inline-flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
@@ -1497,16 +1662,25 @@ export default function KioskPage() {
                     checked={printSlip}
                     onChange={(e) => setPrintSlip(e.target.checked)}
                   />
-                  <span>Print slip after create</span>
+                  <span>{printLabel}</span>
                 </label>
                 <button
                   className="mt-2 w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                  disabled={items.length === 0 || createSlip.state !== "idle"}
+                  disabled={
+                    items.length === 0 ||
+                    createSlip.state !== "idle" ||
+                    (channel === "DELIVERY" && !deliverTo.trim())
+                  }
+                  title={
+                    channel === "DELIVERY" && !deliverTo.trim()
+                      ? "Enter Deliver To"
+                      : undefined
+                  }
                 >
                   {createSlip.state !== "idle"
                     ? "Creating…"
                     : printSlip
-                    ? "Create & Print Ticket"
+                    ? createAndPrintCta
                     : "Create Order"}
                 </button>
               </createSlip.Form>
@@ -1849,14 +2023,71 @@ export default function KioskPage() {
                       e.preventDefault();
                       setClientErrors(errs);
                       setErrorOpen(true);
+                      return;
+                    }
+                    if (channel === "DELIVERY" && !deliverTo.trim()) {
+                      e.preventDefault();
+                      alert(
+                        "Please enter 'Deliver To' before creating a Delivery order."
+                      );
                     }
                   }}
                 >
                   <input type="hidden" name="items" value={payload} />
                   <input type="hidden" name="terminalId" value="KIOSK-01" />
+                  <input type="hidden" name="channel" value={channel} />
+                  {channel === "DELIVERY" && (
+                    <>
+                      <input
+                        name="deliverTo"
+                        value={deliverTo}
+                        readOnly
+                        hidden
+                      />
+                      <input
+                        name="deliverPhone"
+                        value={deliverPhone}
+                        readOnly
+                        hidden
+                      />
+                      <input
+                        name="deliverLandmark"
+                        value={deliverLandmark}
+                        readOnly
+                        hidden
+                      />
+                      <input
+                        name="deliverGeoLat"
+                        value={deliverGeoLat}
+                        readOnly
+                        hidden
+                      />
+                      <input
+                        name="deliverGeoLng"
+                        value={deliverGeoLng}
+                        readOnly
+                        hidden
+                      />
+                      <input
+                        name="deliverPhotoUrl"
+                        value={deliverPhotoUrl}
+                        readOnly
+                        hidden
+                      />
+                    </>
+                  )}
                   <button
                     className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                    disabled={items.length === 0 || createSlip.state !== "idle"}
+                    disabled={
+                      items.length === 0 ||
+                      createSlip.state !== "idle" ||
+                      (channel === "DELIVERY" && !deliverTo.trim())
+                    }
+                    title={
+                      channel === "DELIVERY" && !deliverTo.trim()
+                        ? "Open Cart and fill delivery details"
+                        : undefined
+                    }
                   >
                     {createSlip.state !== "idle" ? "Creating…" : "Create Order"}
                   </button>
@@ -1891,9 +2122,54 @@ export default function KioskPage() {
           >
             <input type="hidden" name="items" value={payload} />
             <input type="hidden" name="terminalId" value="KIOSK-01" />
+            <input type="hidden" name="channel" value={channel} />
+            {channel === "DELIVERY" && (
+              <>
+                <input name="deliverTo" value={deliverTo} readOnly hidden />
+                <input
+                  name="deliverPhone"
+                  value={deliverPhone}
+                  readOnly
+                  hidden
+                />
+                <input
+                  name="deliverLandmark"
+                  value={deliverLandmark}
+                  readOnly
+                  hidden
+                />
+                <input
+                  name="deliverGeoLat"
+                  value={deliverGeoLat}
+                  readOnly
+                  hidden
+                />
+                <input
+                  name="deliverGeoLng"
+                  value={deliverGeoLng}
+                  readOnly
+                  hidden
+                />
+                <input
+                  name="deliverPhotoUrl"
+                  value={deliverPhotoUrl}
+                  readOnly
+                  hidden
+                />
+              </>
+            )}
             <button
               className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-              disabled={items.length === 0 || createSlip.state !== "idle"}
+              disabled={
+                items.length === 0 ||
+                createSlip.state !== "idle" ||
+                (channel === "DELIVERY" && !deliverTo.trim())
+              }
+              title={
+                channel === "DELIVERY" && !deliverTo.trim()
+                  ? "Open cart and fill delivery details"
+                  : undefined
+              }
             >
               {createSlip.state !== "idle" ? "Creating…" : "Create"}
             </button>

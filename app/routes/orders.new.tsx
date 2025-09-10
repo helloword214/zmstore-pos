@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { db } from "~/utils/db.server";
@@ -33,6 +34,56 @@ export const action: ActionFunction = async ({ request }) => {
   const form = await request.formData();
   const itemsRaw = form.get("items");
   const terminalId = String(form.get("terminalId") ?? "KIOSK-UNKNOWN");
+
+  // ── NEW: channel + delivery snapshot fields (all optional unless channel=DELIVERY)
+  const channelRaw = String(form.get("channel") ?? "PICKUP").toUpperCase();
+  const channel = channelRaw === "DELIVERY" ? "DELIVERY" : "PICKUP";
+  const deliverTo = (form.get("deliverTo") ?? "").toString().trim();
+  const deliverPhone =
+    (form.get("deliverPhone") ?? "").toString().trim() || null;
+  const deliverLandmark =
+    (form.get("deliverLandmark") ?? "").toString().trim() || null;
+  const deliverGeoLatRaw = (form.get("deliverGeoLat") ?? "").toString().trim();
+  const deliverGeoLngRaw = (form.get("deliverGeoLng") ?? "").toString().trim();
+  const deliverPhotoUrl =
+    (form.get("deliverPhotoUrl") ?? "").toString().trim() || null;
+  const deliveryAddressIdVal = Number(form.get("deliveryAddressId") ?? 0);
+  const deliveryAddressId =
+    Number.isFinite(deliveryAddressIdVal) && deliveryAddressIdVal > 0
+      ? deliveryAddressIdVal
+      : null;
+
+  // Validate delivery rules only when channel is DELIVERY
+  if (channel === "DELIVERY") {
+    if (!deliverTo) {
+      return json(
+        { error: "deliverTo is required for delivery orders." },
+        { status: 400 }
+      );
+    }
+    const latGiven = deliverGeoLatRaw !== "";
+    const lngGiven = deliverGeoLngRaw !== "";
+    if ((latGiven && !lngGiven) || (!latGiven && lngGiven)) {
+      return json(
+        {
+          error:
+            "Both deliverGeoLat and deliverGeoLng must be set, or both left blank.",
+        },
+        { status: 400 }
+      );
+    }
+    // If both provided, they must be valid numbers
+    if (latGiven && lngGiven) {
+      const lat = Number(deliverGeoLatRaw);
+      const lng = Number(deliverGeoLngRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return json(
+          { error: "deliverGeoLat and deliverGeoLng must be valid numbers." },
+          { status: 400 }
+        );
+      }
+    }
+  }
 
   if (!itemsRaw || typeof itemsRaw !== "string") {
     return json({ error: "`items` missing" }, { status: 400 });
@@ -250,12 +301,26 @@ export const action: ActionFunction = async ({ request }) => {
   const created = await db.order.create({
     data: {
       status: "UNPAID",
+      channel: channel as any, // ok as-is; replace with OrderChannel if you prefer
       subtotal,
       totalBeforeDiscount: subtotal,
       printedAt: now,
       expiryAt: expiry,
       printCount: 1,
       terminalId,
+      // Snapshot delivery fields only for DELIVERY channel
+      ...(channel === "DELIVERY"
+        ? {
+            deliverTo,
+            deliverPhone,
+            deliverLandmark,
+            deliverGeoLat: deliverGeoLatRaw ? Number(deliverGeoLatRaw) : null,
+            deliverGeoLng: deliverGeoLngRaw ? Number(deliverGeoLngRaw) : null,
+            deliverPhotoUrl,
+            deliveryAddressId,
+            // fulfillmentStatus will default to NEW per schema; no need to set explicitly.
+          }
+        : {}),
       // If you have orderCode helper, use it here instead of this simple code:
       orderCode: `OS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(
         2,
@@ -280,7 +345,16 @@ export const action: ActionFunction = async ({ request }) => {
 
   // Either JSON (for order-pad fetcher) or normal redirect (other flows)
   if (wantsJson) {
-    return json({ ok: true, id: created.id, orderCode: created.orderCode });
+    return json({
+      ok: true,
+      id: created.id,
+      orderCode: created.orderCode,
+      channel,
+    });
+  }
+  // For DELIVERY, print Delivery Ticket stub; for PICKUP, show the usual slip
+  if (channel === "DELIVERY") {
+    return redirect(`/orders/${created.id}/ticket?autoprint=1&autoback=1`);
   }
   return redirect(`/orders/${created.id}/slip`);
 };
