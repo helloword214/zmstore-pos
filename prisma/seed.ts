@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // prisma/seed.ts
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, EmployeeRole, VehicleType } from "@prisma/client";
 import { generateSKU } from "~/utils/skuHelpers";
 
 const db = new PrismaClient();
@@ -943,20 +944,56 @@ async function makeAgriProducts({
 // 4️⃣ Seed Function
 // ─────────────────────────────────────────
 async function seed() {
-  console.log("🧹 Resetting...");
-  await db.saleItem.deleteMany();
-  await db.sale.deleteMany();
-  await db.productTarget.deleteMany();
-  await db.productTag.deleteMany();
-  await db.product.deleteMany();
-  await db.target.deleteMany();
-  await db.indication.deleteMany();
-  await db.tag.deleteMany();
-  await db.brand.deleteMany();
-  await db.category.deleteMany();
-  await db.unit.deleteMany();
-  await db.packingUnit.deleteMany();
-  await db.location.deleteMany();
+  console.log("🧹 Resetting (FK-safe order)...");
+  // Wrap in a single transaction for speed & consistency
+  await db.$transaction([
+    // ── M3/M2 artifacts first (may reference Product & Order)
+    db.deliveryRunOrder.deleteMany(),
+    db.runAdhocSale.deleteMany(),
+    db.stockMovement.deleteMany(),
+
+    // ── Order graph
+    db.payment.deleteMany(),
+    db.orderItem.deleteMany(),
+    db.order.deleteMany(),
+
+    // ── Sales graph
+    db.saleItem.deleteMany(),
+    db.sale.deleteMany(),
+
+    // ── Product-side many-to-many & details
+    db.productIndication.deleteMany(),
+    db.productTarget.deleteMany(),
+    db.productTag.deleteMany(),
+
+    // ── Customers (if you want a clean slate for your product seeding run)
+    //    Keep these if you prefer to retain customers/addresses.
+    db.customerAddress.deleteMany(),
+    db.customerItemPrice.deleteMany(),
+    db.cylinderLoan.deleteMany(),
+    db.customer.deleteMany(),
+
+    // ── Core catalog
+    db.product.deleteMany(),
+    db.brand.deleteMany(),
+    db.target.deleteMany(),
+    db.indication.deleteMany(),
+    db.tag.deleteMany(),
+    db.category.deleteMany(),
+
+    // ── Static refs
+    db.unit.deleteMany(),
+    db.packingUnit.deleteMany(),
+    db.location.deleteMany(),
+
+    // ── Optional: if you also want a clean slate for fleet/workforce
+    // Comment out if you want to keep them across seeds.
+    // db.overrideLog.deleteMany(),
+    // db.deliveryRun.deleteMany(),
+    // db.vehicleCapacityProfile.deleteMany(),
+    // db.vehicle.deleteMany(),
+    // db.employee.deleteMany(),
+  ]);
 
   console.log("🏷️ Creating units, locations, tags...");
   const unitMap = await getOrCreateMap("unit", unitNames);
@@ -980,6 +1017,128 @@ async function seed() {
       create: { name },
     });
     locationMap[name] = location.id;
+  }
+
+  // ─────────────────────────────────────────
+  // NEW: Fleet & Riders
+  // ─────────────────────────────────────────
+  console.log("🛵 Creating vehicles...");
+  const vehiclesData = [
+    {
+      name: "Tricycle A",
+      type: VehicleType.TRICYCLE,
+      capacityUnits: 12,
+      notes: "Main trike",
+      active: true,
+    },
+    {
+      name: "Motorcycle A",
+      type: VehicleType.MOTORCYCLE,
+      capacityUnits: 4,
+      notes: "Rack installed",
+      active: true,
+    },
+    {
+      name: "Sidecar A",
+      type: VehicleType.SIDECAR,
+      capacityUnits: 8,
+      notes: null,
+      active: true,
+    },
+    {
+      name: "Multicab A",
+      type: VehicleType.MULTICAB,
+      capacityUnits: 25,
+      notes: "High capacity",
+      active: true,
+    },
+  ];
+  const vehiclesByKey: Record<string, { id: number }> = {};
+  for (const v of vehiclesData) {
+    const up = await db.vehicle.upsert({
+      where: { name_type: { name: v.name, type: v.type } }, // @@unique([name, type])
+      update: {
+        capacityUnits: v.capacityUnits,
+        notes: v.notes,
+        active: v.active,
+      },
+      create: v,
+    });
+    vehiclesByKey[`${up.name}:${up.type}`] = { id: up.id };
+  }
+  // Optional capacity profile (tag-based). Mirrors vehicle capacity for TAG:LPG.
+  for (const key of Object.keys(vehiclesByKey)) {
+    const v = vehiclesByKey[key];
+    await db.vehicleCapacityProfile.upsert({
+      where: { vehicleId_key: { vehicleId: v.id, key: "TAG:LPG" } },
+      update: {
+        maxUnits:
+          vehiclesData.find((d) => `${d.name}:${d.type}` === key)
+            ?.capacityUnits ?? 0,
+      },
+      create: {
+        vehicleId: v.id,
+        key: "TAG:LPG",
+        maxUnits:
+          vehiclesData.find((d) => `${d.name}:${d.type}` === key)
+            ?.capacityUnits ?? 0,
+      },
+    });
+  }
+
+  console.log("👷 Creating riders (employees)...");
+  const riders = [
+    {
+      firstName: "Juan",
+      lastName: "Dela Cruz",
+      alias: "Juan",
+      phone: "09170000001",
+      email: "juan.rider@example.com",
+      role: EmployeeRole.RIDER,
+      dv: "Tricycle A:TRICYCLE",
+    },
+    {
+      firstName: "Maria",
+      lastName: "Santos",
+      alias: "Maria",
+      phone: "09170000002",
+      email: "maria.rider@example.com",
+      role: EmployeeRole.RIDER,
+      dv: "Motorcycle A:MOTORCYCLE",
+    },
+    {
+      firstName: "Pedro",
+      lastName: "Reyes",
+      alias: "Pedro",
+      phone: "09170000003",
+      email: "pedro.rider@example.com",
+      role: EmployeeRole.RIDER,
+      dv: "Sidecar A:SIDECAR",
+    },
+  ];
+  for (const r of riders) {
+    await db.employee.upsert({
+      where: { email: r.email },
+      update: {
+        firstName: r.firstName,
+        lastName: r.lastName,
+        alias: r.alias,
+        phone: r.phone,
+        role: r.role,
+        active: true,
+        defaultVehicleId: vehiclesByKey[r.dv]?.id ?? null,
+      },
+      create: {
+        firstName: r.firstName,
+        lastName: r.lastName,
+        alias: r.alias,
+        phone: r.phone,
+        email: r.email,
+        role: r.role,
+        active: true,
+        defaultVehicleId: vehiclesByKey[r.dv]?.id ?? null,
+      },
+    });
   }
 
   console.log("🎯 Creating targets...");
@@ -1183,6 +1342,248 @@ async function seed() {
     tagList,
     nameList: productNamesByCategory["Agriculture Products"],
   });
+
+  // ─────────────────────────────────────────
+  // NEW: A few customers with addresses (safe upserts)
+  // ─────────────────────────────────────────
+  console.log("👨‍👩‍👧‍👦 Creating customers + addresses…");
+  const customers = [
+    {
+      alias: "Bahay ni Mang Tonyo",
+      firstName: "Antonio",
+      lastName: "Ramirez",
+      phone: "09180000001",
+      email: "antonio@example.com",
+      notes: "Prefers morning delivery",
+      addr: {
+        label: "Home",
+        line1: "Blk 4 Lot 12, Mabini St.",
+        barangay: "San Isidro",
+        city: "Quezon City",
+        province: "Metro Manila",
+        postalCode: "1100",
+        landmark: "Near sari-sari store",
+        geoLat: 14.6501,
+        geoLng: 121.0493,
+      },
+    },
+    {
+      alias: "Apt 2B",
+      firstName: "Jessica",
+      lastName: "Lopez",
+      phone: "09180000002",
+      email: "jessica@example.com",
+      notes: "GCash preferred",
+      addr: {
+        label: "Condo",
+        line1: "Unit 2B, Sunrise Tower",
+        barangay: "Bel-Air",
+        city: "Makati",
+        province: "Metro Manila",
+        postalCode: "1210",
+        landmark: "Across coffee shop",
+        geoLat: 14.5585,
+        geoLng: 121.0244,
+      },
+    },
+    {
+      alias: "Carinderia",
+      firstName: "Luisa",
+      lastName: "Garcia",
+      phone: "09180000003",
+      email: "luisa@example.com",
+      notes: "Bulk LPG every Friday",
+      addr: {
+        label: "Store",
+        line1: "P. Burgos St.",
+        barangay: "San Roque",
+        city: "Marikina",
+        province: "Metro Manila",
+        postalCode: "1800",
+        landmark: "Beside pharmacy",
+        geoLat: 14.6517,
+        geoLng: 121.1029,
+      },
+    },
+  ];
+  for (const c of customers) {
+    const customer = await db.customer.upsert({
+      where: { phone: c.phone }, // phone is unique
+
+      update: {
+        alias: c.alias,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        email: c.email,
+        notes: c.notes,
+        isActive: true,
+      },
+      create: {
+        alias: c.alias,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phone: c.phone,
+        email: c.email,
+        notes: c.notes,
+        isActive: true,
+      },
+    });
+
+    // Ensure one address by (customerId,label)
+    const existing = await db.customerAddress.findFirst({
+      where: { customerId: customer.id, label: c.addr.label },
+      select: { id: true },
+    });
+    if (existing) {
+      await db.customerAddress.update({
+        where: { id: existing.id },
+        data: {
+          line1: c.addr.line1,
+          barangay: c.addr.barangay,
+          city: c.addr.city,
+          province: c.addr.province,
+          postalCode: c.addr.postalCode ?? null,
+          landmark: c.addr.landmark ?? null,
+          geoLat: c.addr.geoLat ?? null,
+          geoLng: c.addr.geoLng ?? null,
+        },
+      });
+    } else {
+      await db.customerAddress.create({
+        data: {
+          customerId: customer.id,
+          label: c.addr.label,
+          line1: c.addr.line1,
+          barangay: c.addr.barangay,
+          city: c.addr.city,
+          province: c.addr.province,
+          postalCode: c.addr.postalCode ?? null,
+          landmark: c.addr.landmark ?? null,
+          geoLat: c.addr.geoLat ?? null,
+          geoLng: c.addr.geoLng ?? null,
+        },
+      });
+    }
+  }
+  // ─────────────────────────────────────────
+  // EXTRA: generate 25 more dummy customers (unique phones)
+  // ─────────────────────────────────────────
+  const firstNames = [
+    "Alex",
+    "Bea",
+    "Carlo",
+    "Diane",
+    "Eli",
+    "Faye",
+    "Gio",
+    "Hannah",
+    "Ivan",
+    "Janna",
+    "Kyle",
+    "Lia",
+    "Mico",
+    "Nina",
+    "Owen",
+    "Pia",
+    "Quin",
+    "Rhea",
+    "Seth",
+    "Tina",
+    "Uli",
+    "Vera",
+    "Wade",
+    "Yani",
+    "Zach",
+  ];
+  const lastNames = [
+    "Alonso",
+    "Bautista",
+    "Cruz",
+    "Dizon",
+    "Escobar",
+    "Flores",
+    "Garcia",
+    "Hernandez",
+    "Ilagan",
+    "Jimenez",
+    "Katigbak",
+    "Lopez",
+    "Mendoza",
+    "Navarro",
+    "Ortega",
+    "Perez",
+    "Quiambao",
+    "Ramos",
+    "Santos",
+    "Trinidad",
+    "Uy",
+    "Villanueva",
+    "Wong",
+    "Yap",
+    "Zamora",
+  ];
+  function pad(n: number, len = 6) {
+    return String(n).padStart(len, "0");
+  }
+
+  for (let i = 1; i <= 25; i++) {
+    const fn = firstNames[(i - 1) % firstNames.length];
+    const ln = lastNames[(i - 1) % lastNames.length];
+    const phone = `0918${pad(100000 + i)}`; // unique phone each
+    const email = `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@example.com`;
+    const alias = `${fn} ${ln}`;
+    const city = ["Quezon City", "Makati", "Pasig", "Marikina", "Taguig"][
+      i % 5
+    ];
+    const barangay = [
+      "San Isidro",
+      "Bel-Air",
+      "Ugong",
+      "San Roque",
+      "Bagumbayan",
+    ][i % 5];
+    const label = ["Home", "Condo", "Shop", "Office"][i % 4];
+
+    const customer = await db.customer.upsert({
+      where: { phone },
+      update: { alias, firstName: fn, lastName: ln, email, isActive: true },
+      create: {
+        alias,
+        firstName: fn,
+        lastName: ln,
+        phone,
+        email,
+        isActive: true,
+      },
+    });
+
+    const existing = await db.customerAddress.findFirst({
+      where: { customerId: customer.id, label },
+      select: { id: true },
+    });
+
+    const addrData = {
+      line1: `#${100 + i} Mabini St.`,
+      barangay,
+      city,
+      province: "Metro Manila",
+      postalCode: "1000",
+      landmark: "Near trike terminal",
+      geoLat: 14.5 + i * 0.001,
+      geoLng: 121.0 + i * 0.001,
+    };
+
+    if (existing) {
+      await db.customerAddress.update({
+        where: { id: existing.id },
+        data: addrData,
+      });
+    } else {
+      await db.customerAddress.create({
+        data: { customerId: customer.id, label, ...addrData },
+      });
+    }
+  }
 
   console.log("\n✅ Seeding complete!");
   await db.$disconnect();

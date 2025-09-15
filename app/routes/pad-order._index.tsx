@@ -11,8 +11,27 @@ import * as React from "react";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { TextInput } from "~/components/ui/TextInput";
+import { useCustomerSearch } from "~/hooks/useCustomerSearch";
 
 import { useLocalStorageState } from "~/utils/hooks";
+
+type PickedCustomer = {
+  id: number;
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  alias?: string | null;
+  phone?: string | null;
+  addresses?: Array<{
+    id: number;
+    label?: string | null;
+    line1?: string | null;
+    barangay?: string | null;
+    city?: string | null;
+    province?: string | null;
+    landmark?: string | null;
+  }>;
+};
 
 type CreateSlipResp =
   | {
@@ -135,8 +154,16 @@ export default function KioskPage() {
   const [deliveryAddressId, setDeliveryAddressId] = React.useState<
     number | null
   >(null);
-  const customerSearch = useFetcher<{ hits: Array<any> }>();
-  const [custQ, setCustQ] = React.useState("");
+  const [selectedCustomer, setSelectedCustomer] =
+    React.useState<PickedCustomer | null>(null);
+
+  const {
+    q: custQ,
+    setQ: setCustQ,
+    items: custItems,
+    open: custOpen,
+    setOpen: setCustOpen,
+  } = useCustomerSearch({ withAddresses: true });
   const printLabel =
     channel === "DELIVERY"
       ? "Print ticket after create"
@@ -1551,29 +1578,42 @@ export default function KioskPage() {
                     <div className="text-xs text-slate-600 mb-1">
                       Link Customer (phone preferred)
                     </div>
+
+                    {/* Input (shared hook) */}
                     <div className="flex gap-2">
                       <input
-                        value={custQ}
+                        value={
+                          selectedCustomer
+                            ? `${selectedCustomer.firstName}${
+                                selectedCustomer.middleName
+                                  ? " " + selectedCustomer.middleName
+                                  : ""
+                              } ${selectedCustomer.lastName}${
+                                selectedCustomer.phone
+                                  ? " • " + selectedCustomer.phone
+                                  : ""
+                              }`
+                            : custQ
+                        }
                         onChange={(e) => {
-                          const v = e.target.value;
-                          setCustQ(v);
-                          if (v.trim().length >= 3) {
-                            customerSearch.load(
-                              `/api/customers/search?q=${encodeURIComponent(
-                                v.trim()
-                              )}`
-                            );
-                          }
+                          setSelectedCustomer(null);
+                          setCustomerId(null);
+                          setDeliveryAddressId(null);
+                          setCustQ(e.target.value);
+                          setCustOpen(Boolean(e.target.value.trim()));
                         }}
+                        onFocus={() => custQ.trim() && setCustOpen(true)}
                         placeholder="09xx… / name / alias"
                         className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2"
                       />
-                      {customerId ? (
+                      {selectedCustomer ? (
                         <button
                           type="button"
                           onClick={() => {
+                            setSelectedCustomer(null);
                             setCustomerId(null);
                             setDeliveryAddressId(null);
+                            setCustQ("");
                           }}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                         >
@@ -1581,74 +1621,87 @@ export default function KioskPage() {
                         </button>
                       ) : null}
                     </div>
-                    {customerSearch.data?.hits?.length ? (
-                      <div className="mt-2 max-h-44 overflow-auto divide-y divide-slate-100">
-                        {customerSearch.data.hits.map((h) => (
-                          <button
-                            key={h.id}
-                            type="button"
-                            onClick={() => {
-                              setCustomerId(h.id);
-                              // choose address: single -> pick; multi -> first (can change via select)
-                              const addr = (h.addresses || [])[0] || null;
-                              setDeliveryAddressId(addr ? addr.id : null);
-                              // prefill deliverTo + phone snapshot
-                              const name = `${h.firstName}${
-                                h.middleName ? " " + h.middleName : ""
-                              } ${h.lastName}`.trim();
-                              const addrText = addr
-                                ? `${addr.line1}, ${addr.barangay}, ${
-                                    addr.city
-                                  }${addr.province ? ", " + addr.province : ""}`
-                                : "";
-                              setDeliverTo(
-                                addr ? `${name} — ${addrText}` : name
-                              );
-                              if (h.phone) setDeliverPhone(h.phone);
-                              setCustQ(
-                                `${name}${h.phone ? " • " + h.phone : ""}`
-                              );
-                            }}
-                            className="w-full text-left px-2 py-2 hover:bg-slate-50"
-                          >
-                            <div className="text-sm text-slate-900">
-                              {h.firstName} {h.middleName || ""} {h.lastName}{" "}
-                              {h.alias ? `(${h.alias})` : ""}
-                            </div>
-                            <div className="text-xs text-slate-600">
-                              {h.phone || "—"}
-                            </div>
-                          </button>
-                        ))}
+
+                    {/* Results dropdown */}
+                    {custOpen && !selectedCustomer && custQ.trim() ? (
+                      <div className="mt-2 max-h-56 overflow-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
+                        {custItems.length > 0 ? (
+                          custItems.map((h) => (
+                            <button
+                              key={h.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCustomer(h as any);
+                                setCustomerId(h.id);
+
+                                // Prefill deliverTo + phone
+                                const name = `${h.firstName}${
+                                  h.middleName ? " " + h.middleName : ""
+                                } ${h.lastName}`.trim();
+                                const addr = (h as any).addresses?.[0] || null;
+                                const addrText = addr
+                                  ? `${addr.line1 ?? ""}${
+                                      addr.barangay ? ", " + addr.barangay : ""
+                                    }${addr.city ? ", " + addr.city : ""}${
+                                      addr.province ? ", " + addr.province : ""
+                                    }`.replace(/^, /, "")
+                                  : "";
+                                setDeliverTo(
+                                  addr ? `${name} — ${addrText}` : name
+                                );
+                                if (h.phone) setDeliverPhone(h.phone);
+
+                                setCustQ("");
+                                setCustOpen(false);
+                              }}
+                              className="w-full text-left px-2 py-2 hover:bg-slate-50"
+                            >
+                              <div className="text-sm text-slate-900">
+                                {h.firstName} {h.middleName || ""} {h.lastName}{" "}
+                                {h.alias ? `(${h.alias})` : ""}
+                              </div>
+                              <div className="text-xs text-slate-600">
+                                {h.phone || "—"}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-2 py-2 text-sm text-slate-600">
+                            No results.
+                          </div>
+                        )}
                       </div>
                     ) : null}
-                    {customerId && customerSearch.data?.hits?.length ? (
+
+                    {/* Address select (from picked customer) */}
+                    {selectedCustomer?.addresses?.length ? (
                       <div className="mt-2">
                         <label className="block text-xs text-slate-600">
                           Address
                         </label>
                         <select
                           value={deliveryAddressId ?? ""}
-                          onChange={(e) => {
-                            const id = e.target.value
-                              ? Number(e.target.value)
-                              : null;
-                            setDeliveryAddressId(id);
-                          }}
+                          onChange={(e) =>
+                            setDeliveryAddressId(
+                              e.target.value ? Number(e.target.value) : null
+                            )
+                          }
                           className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
                         >
                           <option value="">— None / custom —</option>
-                          {customerSearch.data.hits
-                            .find((z) => z.id === customerId)
-                            ?.addresses?.map((a: any) => (
-                              <option key={a.id} value={a.id}>
-                                {a.label}: {a.line1}, {a.barangay}, {a.city}
-                              </option>
-                            ))}
+                          {selectedCustomer.addresses.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {(a.label ? `${a.label}: ` : "") +
+                                [a.line1, a.barangay, a.city]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     ) : null}
                   </div>
+
                   <label className="block text-xs text-slate-600">
                     Deliver To (name — full address) *
                     <input

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useFetcher } from "@remix-run/react";
+import { useCustomerSearch } from "~/hooks/useCustomerSearch";
 
 type Customer = {
   id: number;
@@ -27,57 +28,69 @@ export function CustomerPicker({
   onChange: (c: Customer | null) => void;
   placeholder?: string;
 }) {
-  const [q, setQ] = React.useState("");
-  const [open, setOpen] = React.useState(false);
-  const search = useFetcher<{ items: Customer[] }>();
-  const createFx = useFetcher<any>();
+  const { q, setQ, items, loading, open, setOpen } = useCustomerSearch({
+    withAddresses: false,
+  });
 
-  // Local fields for inline "create customer" (avoid nested form)
+  const createFx = useFetcher<any>();
+  const detailsRef = React.useRef<HTMLDetailsElement | null>(null);
+
+  // Inline “create customer” fields
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [middleName, setMiddleName] = React.useState("");
   const [alias, setAlias] = React.useState("");
   const [phone, setPhone] = React.useState("");
-  const detailsRef = React.useRef<HTMLDetailsElement | null>(null);
 
-  // Auto-use newly created customer when API returns ok
+  // Use newly-created customer immediately
   React.useEffect(() => {
     if (createFx.data?.ok && createFx.data?.customer) {
-      onChange(createFx.data.customer);
+      onChange(createFx.data.customer as Customer);
       setOpen(false);
       setQ("");
+      setFirstName("");
+      setLastName("");
+      setMiddleName("");
+      setAlias("");
+      setPhone("");
+      detailsRef.current?.removeAttribute("open");
     }
-  }, [createFx.data, onChange]);
+  }, [createFx.data, onChange, setOpen, setQ]);
 
+  // Close dropdown when a value is chosen
   React.useEffect(() => {
-    if (!q) return;
-    const id = setTimeout(() => {
-      search.load(`/api/customers/search?q=${encodeURIComponent(q)}`);
-      setOpen(true);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [q]); // eslint-disable-line
+    if (value) setOpen(false);
+  }, [value, setOpen]);
 
-  const items = search.data?.items ?? [];
-
-  // When create succeeds, show a "Use ..." button; optional: auto-select
-  const created = createFx.data?.ok
-    ? (createFx.data.customer as Customer)
-    : null;
+  // Basic outside-click close (optional)
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!open) return;
+      const t = e.target as Node | null;
+      if (rootRef.current && t && !rootRef.current.contains(t)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open, setOpen]);
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <div className="flex gap-2">
         <input
           value={value ? displayName(value) : q}
           onChange={(e) => {
-            onChange(null);
+            // switching back to search mode clears the chosen value
+            if (value) onChange(null);
             setQ(e.target.value);
           }}
-          onFocus={() => q && setOpen(true)}
+          onFocus={() => q.trim() && setOpen(true)}
           onKeyDown={(e) => {
-            // Prevent Enter from submitting the outer cashier form
+            // prevent enter from submitting parent form
             if (e.key === "Enter") e.preventDefault();
+            if (e.key === "Escape") setOpen(false);
           }}
           placeholder={placeholder}
           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
@@ -94,7 +107,7 @@ export function CustomerPicker({
         )}
       </div>
 
-      {open && !value && q && (
+      {open && !value && q.trim() && (
         <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-md">
           {items.length > 0 ? (
             <ul className="max-h-64 overflow-auto py-1">
@@ -121,18 +134,18 @@ export function CustomerPicker({
                 </li>
               ))}
             </ul>
+          ) : loading ? (
+            <div className="px-3 py-2 text-sm text-slate-600">Searching…</div>
           ) : (
             <div className="px-3 py-2 text-sm text-slate-600">No results.</div>
           )}
+
           <div className="border-t border-slate-100 p-2">
             <details
               ref={detailsRef}
               onToggle={(e) => {
-                const open = (e.target as HTMLDetailsElement).open;
-                // Prefill once when opened if firstName is still empty
-                if (open && !firstName) {
-                  setFirstName(q);
-                }
+                const opened = (e.target as HTMLDetailsElement).open;
+                if (opened && !firstName) setFirstName(q);
               }}
             >
               <summary className="text-sm cursor-pointer">
@@ -190,25 +203,26 @@ export function CustomerPicker({
                   >
                     Create
                   </button>
-                  {created && (
+                  {createFx.data?.ok && createFx.data?.customer ? (
                     <button
                       type="button"
                       className="rounded-lg border px-3 py-1.5 text-sm"
                       onClick={() => {
-                        onChange(created);
+                        const c = createFx.data.customer as Customer;
+                        onChange(c);
                         setOpen(false);
                         setQ("");
-                        // clear create form for next time
                         setFirstName("");
                         setLastName("");
                         setMiddleName("");
                         setAlias("");
                         setPhone("");
+                        detailsRef.current?.removeAttribute("open");
                       }}
                     >
-                      Use “{displayName(created)}”
+                      Use “{displayName(createFx.data.customer as Customer)}”
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {createFx.data?.error && (

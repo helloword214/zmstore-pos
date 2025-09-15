@@ -2,7 +2,13 @@
 import * as React from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData, Form } from "@remix-run/react";
+import {
+  Link,
+  useLoaderData,
+  Form,
+  useSubmit,
+  useFetcher,
+} from "@remix-run/react";
 import type { Prisma } from "@prisma/client";
 import { db } from "~/utils/db.server";
 
@@ -72,6 +78,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function CustomersIndex() {
   const { rows, q } = useLoaderData<LoaderData>();
   const searchRef = React.useRef<HTMLInputElement | null>(null);
+  const formRef = React.useRef<HTMLFormElement | null>(null);
+  const submit = useSubmit();
+  const searchFx = useFetcher<{
+    hits: Array<{
+      id: number;
+      firstName: string;
+      middleName: string | null;
+      lastName: string;
+      alias: string | null;
+      phone: string | null;
+      addresses?: any[];
+    }>;
+  }>();
+  const [query, setQuery] = React.useState(q);
+  const [debounceId, setDebounceId] = React.useState<number | null>(null);
 
   // "/" focuses search (doesn't steal focus from inputs)
   React.useEffect(() => {
@@ -95,6 +116,24 @@ export default function CustomersIndex() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // Kick an initial API search if we landed with ?q=
+  React.useEffect(() => {
+    if (!q) return;
+    searchFx.load(`/api/customers/search?q=${encodeURIComponent(q)}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Render source: prefer API hits (live), else loader rows (initial)
+  const live = searchFx.data?.hits ?? null;
+  const list = (live && query.trim() ? live : rows) as Array<{
+    id: number;
+    firstName: string;
+    middleName: string | null;
+    lastName: string;
+    alias: string | null;
+    phone: string | null;
+  }>;
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       {/* Sticky header to match kiosk/cashier */}
@@ -113,12 +152,38 @@ export default function CustomersIndex() {
       </header>
 
       <div className="mx-auto max-w-4xl px-5 py-6">
-        {/* Search */}
-        <Form method="get" className="mb-4">
+        {/* Search (uses API + keeps URL in sync) */}
+        <Form
+          method="get"
+          className="mb-4"
+          ref={formRef}
+          onSubmit={(e) => {
+            // prevent full reload; let useSubmit keep URL updated
+            e.preventDefault();
+            submit(formRef.current!, { method: "get", replace: true });
+          }}
+        >
           <input
             ref={searchRef}
             name="q"
-            defaultValue={q}
+            type="search"
+            value={query}
+            onChange={(e) => {
+              const v = e.target.value;
+              setQuery(v);
+              // keep URL in sync (so refresh/back/forward preserve query)
+              // debounce the API call a bit for nicer UX
+              if (debounceId) window.clearTimeout(debounceId);
+              const id = window.setTimeout(() => {
+                submit(formRef.current!, { method: "get", replace: true });
+                if (v.trim()) {
+                  searchFx.load(
+                    `/api/customers/search?q=${encodeURIComponent(v.trim())}`
+                  );
+                }
+              }, 250);
+              setDebounceId(id);
+            }}
             placeholder="Search name / alias / phone…  (tip: press “/” to focus)"
             className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200 shadow-sm"
           />
@@ -131,15 +196,15 @@ export default function CustomersIndex() {
               {q ? <>Results for “{q}”</> : "All customers"}
             </div>
             <div className="text-[11px] text-slate-500">
-              {rows.length} item(s)
+              {list.length} item(s)
             </div>
           </div>
 
-          {rows.length === 0 ? (
+          {list.length === 0 ? (
             <div className="px-4 py-6 text-sm text-slate-600">No matches.</div>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {rows.map((c) => {
+              {list.map((c) => {
                 const name = [c.firstName, c.middleName, c.lastName]
                   .filter(Boolean)
                   .join(" ");

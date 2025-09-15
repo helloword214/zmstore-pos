@@ -399,3 +399,161 @@
 **DB**
 
 - Migration: `order-delivery-geo-snapshot` (adds-only; no breaking changes).
+
+Changelog
+2025-09-11
+Added
+
+Delivery channel support across order creation.
+
+Server (app/routes/orders.new action): accepts channel (PICKUP/DELIVERY) + delivery snapshot fields (deliverTo, deliverPhone, deliverLandmark, deliverGeoLat, deliverGeoLng, deliverPhotoUrl, deliveryAddressId), validates them when channel=DELIVERY, saves snapshots on the order.
+
+Client (Order Pad) (app/routes/pad-order.\_index.tsx): UI to toggle Pickup vs Delivery; inputs for recipient, phone, landmark, geo, photo; posts hidden fields only for Delivery; carries customerId and deliveryAddressId.
+
+Customer search & attach (phone-first) for Delivery orders.
+
+Client: search box that queries /api/customers/search, shows results, selects a customer, auto-prefills deliverTo & phone, lets you choose an address, and posts customerId + deliveryAddressId.
+
+Pricing engine reuse on receipt and cashier.
+
+Both the cashier payment preview and the receipt use the shared pricing service (applyDiscounts, buildCartFromOrderItems, fetchCustomerRulesAt) to compute subtotals/discounts/total consistently.
+
+Changed
+
+Inventory deduction timing
+
+Pickup: deducts at payment (as before).
+
+Delivery: now deducts at Dispatch (new action) instead of at payment; dispatch still prints a Delivery Ticket.
+
+Receipt can show tendered cash + change if provided in the URL.
+
+Receipt route (app/routes/orders.$id.receipt.tsx): reads optional ?cash= and ?change= query params, displays “Cash Received” and “Change”. Falls back to computing change from total vs recorded payments when query params are absent.
+
+Fixed
+
+(Server) order creation now links customers correctly.
+
+The handler reads customerId/deliveryAddressId from the submitted form and stores them on the order (bug was causing customer link to be dropped).
+
+(Search API) improved phone/name matching and scoring so typing a PH mobile (e.g., 0912…) surfaces the correct customer quickly.
+
+Notes / Behavior Clarifications
+
+Partial payments / balance (utang) still require a customer before the server will accept releasing with balance. Manager approval is enforced when releasing with balance or when per-item price is below the allowed customer price.
+
+Receipt totals: “Grand Total” is the rule-aware total; “Paid” lines show actual recorded payments. If cash/change are present in the query, they override the derived display.
+
+Known Issues / Follow-ups (create issues)
+
+Cash/Change not appearing on fully-paid receipts
+
+Why: The cashier route still redirects to /orders/:id/receipt?autoprint=1&autoback=1 without appending cash and change.
+
+Where: app/routes/cashier.$id.tsx (action settlePayment), the fully-paid redirect path.
+
+Fix: Update the redirect to include cash (tendered) and change in the URL so the receipt can display them. (Partial/ACK path already passes tendered/change.)
+
+Customer search response shape mismatch
+
+API currently returns { items: [...] } while Order Pad UI expects data.hits. Align to one shape (hits or items) across both sides to avoid intermittent “no results” rendering.
+
+Order creation: ensure customerId is read from the correct form variable
+
+If customer linking is still inconsistent on Pickup, double-check the order creation action reads from the same form data name the UI posts.
+
+Dispatch is an action, not a page
+
+Current flow opens ticket immediately after dispatch. We want a Dispatch Page first (assign rider, vehicle, extras, capacity), then dispatch & print. (See EPIC below.)
+
+EPIC Reference: Delivery → Dispatch Page & Runs
+
+Use the checklist we drafted:
+
+New route /orders/:id/dispatch to assign Rider and Vehicle, add Extras (e.g., spare LPG tanks), capacity meter, then Dispatch & Print.
+
+Data model for DispatchRun, DispatchRunOrder, DispatchLine, vehicles, and rider roles.
+
+Dispatch hub /dispatch and Run details /dispatch/:runId with close/reconcile, returns to warehouse, and remit.
+
+Verification Checklist (smoke tests)
+
+Order Pad → Pickup
+
+Create order, pay with cash > total → Official Receipt shows Cash Received and Change correctly.
+
+Order Pad → Delivery
+
+Create order with delivery fields + linked customer/address → Pay any amount:
+
+If fully paid: order becomes PAID, Delivery still not deducted until dispatch (by design).
+
+If partial: order becomes PARTIALLY_PAID, requires customer, optional release with manager approval.
+
+Dispatch flow
+
+Delivery order → Dispatch action deducts stock and prints Delivery Ticket. (Will be replaced by Dispatch Page in the new EPIC.)
+
+Pricing
+
+Discounted customers: totals on cashier preview and receipt match; guards prevent per-item prices below allowed unless manager override provided.
+
+## 2025-09-09 → Delivery Epic Kickoff
+
+- Designed **Delivery Flow**:
+  - Orders with `channel=DELIVERY` open Delivery Details sheet.
+  - Delivery ticket prints (not OR).
+  - Inventory **deducts at DISPATCH**, not at order creation.
+  - Added actions: **dispatch** (ticket & deduction) and **remit** (returns).
+- Drafted **POS_Delivery_GeoAddress.md**:
+  - Order snapshot vs saved addresses.
+  - Reusable vs one-time addresses.
+  - Optional map coordinates & photo.
+
+## 2025-09-10 → Dispatch Staging
+
+- Added **Dispatch Staging Page** before ticket print.
+  - Rider assignment.
+  - Extra LPG tank load tracking.
+- Differentiated **rider vs employee** roles.
+
+## 2025-09-11 → Cashier Integration
+
+- Extended **cashier order route**:
+  - New actions: `dispatch`, `reprint`, `release`, `settlePayment`.
+  - Dispatch decrements stock.
+  - Release unlocks order.
+- Added **discount guardrails**:
+  - Rules enforced via `applyDiscounts` and `computeUnitPriceForCustomer`.
+  - Manager approval required for below-allowed pricing.
+
+## 2025-09-12 → Receipt/Remit
+
+- Implemented **receipt printing toggles** (`printReceipt` default true).
+- Added **remit link** on cashier header.
+- Clarified stock deduction:
+  - **PICKUP** → deduct at payment.
+  - **DELIVERY** → deduct at dispatch.
+- Stock delta logic updated:
+  - Pack vs retail inferred from allowed customer price.
+  - Rounding guardrails (epsilon checks).
+- Drafted **Remit Flow**: unsold load returns to stock.
+
+## 2025-09-13 → Search & Flicker Fix
+
+- Centralized **Customer Search API**:
+  - `q` tokenized; matches by name, alias, or phone (normalized).
+  - Scoring system: phone exact > prefix > contains > name.
+  - Return top 10 results.
+- Began refactor to **useCustomerSearch hook** (for reuse across Cashier, CustomerPicker).
+- Investigated **flicker bug** in Cashier when typing customer name.
+  - Cause: uncontrolled/controlled mismatch when state resets.
+  - Fix: centralize `selectedCustomer` state.
+
+## 2025-09-14 → Discount & Pricing
+
+- Rewired cashier preview panel:
+  - Shows item-level discount badges (percent or peso override).
+  - Totals panel: subtotal, discounts, before vs after discounts.
+- Synced client rules with loader-fetched rules.
+- Ensured **discounts apply in both preview and settlePayment action**.

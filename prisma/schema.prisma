@@ -48,6 +48,10 @@ model Product {
   // back-relation to customer-specific pricing rules
   customerItemPrices CustomerItemPrice[] @relation("CustomerItemPricesOnProduct")
   orderItems         OrderItem[]
+
+  // back-relations for new models
+  stockMovements StockMovement[]
+  runAdhocSales  RunAdhocSale[]
 }
 
 model Sale {
@@ -292,9 +296,26 @@ model Order {
   deliveredAt       DateTime?
   riderName         String? // free text for now; future: Staff/User relation
 
+  // --- Staging (Delivery Dispatch Staging) ---
+  stagedAt        DateTime?
+  riderId         Int? // relational rider (Employee)
+  vehicleId       Int? // relational vehicle
+  vehicleName     String? // snapshot (for ticket history)
+  loadoutSnapshot Json? // [{ productId, name, qty, unit? }]
+
+  // Named relations to avoid ambiguity
+  rider   Employee? @relation("OrderRider", fields: [riderId], references: [id], onDelete: SetNull)
+  vehicle Vehicle?  @relation("OrderVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // Back-relations
+  overrideLogs OverrideLog[] @relation("OrderOverrideLogs")
+
   // Receipt fields (set when PAID)
   paidAt    DateTime?
   receiptNo String?   @unique // set when PAID
+
+  // Back-relation for DeliveryRunOrder join table
+  runOrders DeliveryRunOrder[] @relation("OrderRunLinks")
 
   @@index([status, expiryAt])
   @@index([lockedAt])
@@ -305,6 +326,8 @@ model Order {
   @@index([fulfillmentStatus])
   @@index([deliveryAddressId])
   @@index([deliverGeoLat, deliverGeoLng])
+  @@index([riderId])
+  @@index([vehicleId])
 }
 
 model OrderItem {
@@ -320,6 +343,9 @@ model OrderItem {
   qty       Decimal @db.Decimal(10, 2)
   unitPrice Decimal @db.Decimal(10, 2)
   lineTotal Decimal @db.Decimal(10, 2)
+
+  // DB already has this; make it visible to Prisma
+  unitKind UnitKind?
 
   // discount audit
   pricePolicy        String? // "BASE", "PER_ITEM", or "RULE:<id/type>"
@@ -399,6 +425,7 @@ enum OrderChannel {
 
 enum FulfillmentStatus {
   NEW
+  STAGED
   PICKING
   PACKING
   DISPATCHED
@@ -410,4 +437,199 @@ enum LpgSwapKind {
   REFILL
   SWAP_CATGAS
   UPGRADE_BRANDED
+}
+
+// ────────────── NEW: Workforce & Fleet ──────────────
+
+model Employee {
+  id        Int          @id @default(autoincrement())
+  firstName String
+  lastName  String
+  alias     String?
+  phone     String?      @unique
+  email     String?      @unique
+  role      EmployeeRole @default(STAFF)
+  active    Boolean      @default(true)
+
+  defaultVehicleId Int?
+  defaultVehicle   Vehicle? @relation("DefaultVehicle", fields: [defaultVehicleId], references: [id], onDelete: SetNull)
+
+  // Back-relations
+  ordersAsRider Order[]       @relation("OrderRider")
+  runsAsRider   DeliveryRun[] @relation("RunRider")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role, active])
+}
+
+enum EmployeeRole {
+  STAFF
+  RIDER
+  MANAGER
+}
+
+model Vehicle {
+  id            Int         @id @default(autoincrement())
+  name          String
+  type          VehicleType
+  capacityUnits Float? // e.g., "LPG unit slots" default capacity
+  notes         String?
+  active        Boolean     @default(true)
+
+  // backrefs
+  defaultForEmployees Employee[]               @relation("DefaultVehicle")
+  usedOnOrders        Order[]                  @relation("OrderVehicle")
+  runs                DeliveryRun[]            @relation("RunVehicle")
+  capacityProfiles    VehicleCapacityProfile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, type])
+  @@index([active])
+}
+
+enum VehicleType {
+  TRICYCLE
+  MOTORCYCLE
+  SIDECAR
+  MULTICAB
+  VAN
+  OTHER
+}
+
+// Optional finer-grained capacity per product/tag/category
+model VehicleCapacityProfile {
+  id        Int    @id @default(autoincrement())
+  vehicleId Int
+  key       String // e.g., "TAG:LPG", "CAT:11KG", "PRODUCT:123"
+  maxUnits  Float
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, key])
+  @@index([vehicleId])
+}
+
+// ────────────── NEW: Stock Movements for Loadout (Milestone 2) ──────────────
+
+model StockMovement {
+  id           Int               @id @default(autoincrement())
+  type         StockMovementType
+  productId    Int
+  qty          Decimal           @db.Decimal(12, 3)
+  refKind      StockRefKind?
+  refId        Int? // Order.id or DeliveryRun.id depending on refKind
+  locationFrom String?
+  locationTo   String?
+
+  createdAt DateTime @default(now())
+  notes     String?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([type, productId])
+  @@index([refKind, refId])
+}
+
+enum StockMovementType {
+  LOADOUT_OUT // Movement Out: Loadout to rider
+  RETURN_IN // Movement In: Return from rider
+  ADHOC_SALE_OUT // Optional: ad-hoc sale deduction (from run loadout)
+}
+
+enum StockRefKind {
+  ORDER
+  RUN
+}
+
+// ────────────── NEW: Delivery Runs (Milestone 3) ──────────────
+
+model DeliveryRun {
+  id              Int       @id @default(autoincrement())
+  runCode         String    @unique
+  status          RunStatus @default(PLANNED)
+  riderId         Int?
+  vehicleId       Int?
+  loadoutSnapshot Json? // snapshot at dispatch time
+  notes           String?
+
+  createdAt    DateTime  @default(now())
+  dispatchedAt DateTime?
+  closedAt     DateTime?
+
+  rider   Employee? @relation("RunRider", fields: [riderId], references: [id], onDelete: SetNull)
+  vehicle Vehicle?  @relation("RunVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  orders       DeliveryRunOrder[]
+  adhocSales   RunAdhocSale[]
+  overrideLogs OverrideLog[]      @relation("RunOverrideLogs")
+
+  @@index([status])
+  @@index([riderId])
+  @@index([vehicleId])
+}
+
+enum RunStatus {
+  PLANNED
+  DISPATCHED
+  CLOSED
+  CANCELLED
+}
+
+// Join table: many orders per run
+model DeliveryRunOrder {
+  runId    Int
+  orderId  Int
+  sequence Int? // optional stop ordering
+
+  run   DeliveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  order Order       @relation("OrderRunLinks", fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@id([runId, orderId])
+  @@index([orderId])
+}
+
+// Minimal ad-hoc sale lines against a run loadout
+model RunAdhocSale {
+  id        Int      @id @default(autoincrement())
+  runId     Int
+  productId Int
+  qty       Decimal  @db.Decimal(12, 3)
+  unitPrice Decimal  @db.Decimal(10, 2)
+  lineTotal Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  run     DeliveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  product Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([runId])
+  @@index([productId])
+}
+
+// ────────────── NEW: Permissions & Overrides (Milestone 4) ──────────────
+model OverrideLog {
+  id         Int          @id @default(autoincrement())
+  kind       OverrideKind
+  orderId    Int?
+  runId      Int?
+  approvedBy String // PIN/name or user code
+  reason     String?
+  createdAt  DateTime     @default(now())
+
+  // Named relations + back-relations exist on Order/DeliveryRun
+  order Order?       @relation("OrderOverrideLogs", fields: [orderId], references: [id], onDelete: SetNull)
+  run   DeliveryRun? @relation("RunOverrideLogs", fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([runId])
+  @@index([kind, createdAt])
+}
+
+enum OverrideKind {
+  CAPACITY_EXCEED
+  PRICE_BELOW_ALLOWED
+  MANUAL_RETURN_ADJUST
 }

@@ -9,6 +9,7 @@ import {
   useNavigation,
   useRouteError,
   isRouteErrorResponse,
+  Link,
 } from "@remix-run/react";
 import React, { useMemo } from "react";
 import { allocateReceiptNo } from "~/utils/receipt";
@@ -873,25 +874,20 @@ export default function CashierOrder() {
               {/* NEW: visible only for Delivery orders */}
               {order.channel === "DELIVERY" ? (
                 <>
-                  <Form method="post">
-                    <input type="hidden" name="_action" value="dispatch" />
-                    <button
-                      className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
-                      disabled={
-                        isStale ||
-                        (typeof nav !== "undefined" && nav.state !== "idle")
-                      }
-                      title={
-                        order.dispatchedAt
-                          ? "Reprint Delivery Ticket"
-                          : "Mark dispatched & print ticket"
-                      }
-                    >
-                      {order.dispatchedAt
-                        ? "Reprint Ticket"
-                        : "Dispatch & Ticket"}
-                    </button>
-                  </Form>
+                  <Link
+                    to={`/orders/${order.id}/dispatch`}
+                    className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
+                    aria-disabled={
+                      typeof nav !== "undefined" && nav.state !== "idle"
+                    }
+                    title={
+                      order.dispatchedAt
+                        ? "Open Dispatch Staging (read-only) to reprint ticket"
+                        : "Open Dispatch Staging (assign rider/vehicle, then dispatch & print)"
+                    }
+                  >
+                    {order.dispatchedAt ? "Dispatch (Reprint)" : "Dispatch"}
+                  </Link>
                   <a
                     href={`/remit/${order.id}`}
                     className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
@@ -1166,7 +1162,12 @@ export default function CashierOrder() {
                   <label className="block text-sm text-slate-700 mb-1">
                     Customer
                   </label>
-                  <CustomerPicker value={customer} onChange={setCustomer} />
+                  <CustomerPicker
+                    key={`cust-${order.id}`}
+                    value={customer}
+                    onChange={setCustomer}
+                    placeholder="Search name / alias / phone…"
+                  />
                   {willBePartial && !customer && (
                     <div className="mt-1 text-xs text-red-700">
                       Required for utang / partial payments.
