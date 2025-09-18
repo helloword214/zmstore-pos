@@ -67,6 +67,7 @@ export const loader: LoaderFunction = async () => {
         imageUrl: true,
         unit: { select: { name: true } }, // retail unit
         packingUnit: { select: { name: true } }, // pack unit
+        barcode: true,
       },
       orderBy: { name: "asc" },
       take: 300,
@@ -240,7 +241,11 @@ export default function KioskPage() {
     const m = new Map<string, (typeof products)[number]>();
     for (const p of products) {
       const bc = (p as any).barcode?.trim?.();
-      if (bc) m.set(bc, p);
+      if (bc) {
+        // normalize: remove spaces to match scanner payloads
+        const norm = bc.replace(/\s+/g, "");
+        m.set(norm, p);
+      }
     }
     return m;
   }, [products]);
@@ -506,6 +511,7 @@ export default function KioskPage() {
 
       const ch = createSlip.data.channel ?? channel;
       if (printSlip) {
+        clearCart();
         const dest = ch === "DELIVERY" ? "ticket" : "slip";
         navigate(`/orders/${createdId}/${dest}?autoprint=1&autoback=1`, {
           replace: true,
@@ -648,7 +654,8 @@ export default function KioskPage() {
                 if (now - lastHit > 1200) {
                   lastHit = now;
                   const raw = String(codes[0].rawValue || "").trim();
-                  const p = productByBarcode.get(raw);
+                  const norm = raw.replace(/\s+/g, "");
+                  const p = productByBarcode.get(norm);
                   if (p) {
                     const mode = pickMode(p);
                     if (mode) add(p, mode);
@@ -749,9 +756,8 @@ export default function KioskPage() {
             reason: "Retail price not set",
           });
         }
-        // qty must be a multiple of 0.25 → check in hundredths against 25
-        const hundredths = Math.round(line.qty * 100); // integer in cents
-        if (Math.abs(hundredths % 25) > eps) {
+        // qty must be a multiple of 0.25 → check in quarters (robust integer math)
+        if (!Number.isInteger(Math.round(line.qty * 4))) {
           errs.push({
             id: p.id,
             mode: "retail",
@@ -814,15 +820,33 @@ export default function KioskPage() {
   }
 
   function handleCreateSubmit(e: React.FormEvent<HTMLFormElement>) {
-    // Run preflight; if any errors, stop and show modal
     const errs = validateCartForSubmit();
     if (errs.length) {
       e.preventDefault();
       setClientErrors(errs);
       setErrorOpen(true);
-    } else {
-      setClientErrors([]);
+      return; // importante: stop here
     }
+
+    // EXTRA: delivery checks
+    if (channel === "DELIVERY") {
+      if (!deliverTo.trim()) {
+        e.preventDefault();
+        alert("Please enter 'Deliver To' before creating a Delivery order.");
+        return;
+      }
+      // optional pero helpful: lat/lng must be both filled or both blank
+      const lat = deliverGeoLat.trim();
+      const lng = deliverGeoLng.trim();
+      if ((lat && !lng) || (!lat && lng)) {
+        e.preventDefault();
+        alert("Set BOTH latitude and longitude, or leave BOTH blank.");
+        return;
+      }
+    }
+
+    // ok to submit
+    setClientErrors([]);
   }
 
   return (
@@ -859,6 +883,12 @@ export default function KioskPage() {
                 setDeliverGeoLng("");
                 setDeliverPhotoUrl("");
                 setPrintSlip(false);
+                // reset customer picker state
+                setSelectedCustomer(null);
+                setCustomerId(null);
+                setDeliveryAddressId(null);
+                setCustQ("");
+                setCustOpen(false);
                 // focus search after reset
                 const el =
                   document.querySelector<HTMLInputElement>(
@@ -1817,6 +1847,16 @@ export default function KioskPage() {
               >
                 <input type="hidden" name="items" value={payload} />
                 <input type="hidden" name="terminalId" value="KIOSK-01" />
+                <input
+                  type="hidden"
+                  name="customerId"
+                  value={customerId ?? ""}
+                />
+                <input
+                  type="hidden"
+                  name="deliveryAddressId"
+                  value={deliveryAddressId ?? ""}
+                />
                 {/* carry customer linkage */}
                 <input
                   type="hidden"
@@ -2230,24 +2270,20 @@ export default function KioskPage() {
                 <createSlip.Form
                   method="post"
                   action="/orders/new?respond=json"
-                  onSubmit={(e) => {
-                    const errs = validateCartForSubmit();
-                    if (errs.length) {
-                      e.preventDefault();
-                      setClientErrors(errs);
-                      setErrorOpen(true);
-                      return;
-                    }
-                    if (channel === "DELIVERY" && !deliverTo.trim()) {
-                      e.preventDefault();
-                      alert(
-                        "Please enter 'Deliver To' before creating a Delivery order."
-                      );
-                    }
-                  }}
+                  onSubmit={handleCreateSubmit}
                 >
                   <input type="hidden" name="items" value={payload} />
                   <input type="hidden" name="terminalId" value="KIOSK-01" />
+                  <input
+                    type="hidden"
+                    name="customerId"
+                    value={customerId ?? ""}
+                  />
+                  <input
+                    type="hidden"
+                    name="deliveryAddressId"
+                    value={deliveryAddressId ?? ""}
+                  />
                   <input type="hidden" name="channel" value={channel} />
                   {channel === "DELIVERY" && (
                     <>
@@ -2335,6 +2371,12 @@ export default function KioskPage() {
           >
             <input type="hidden" name="items" value={payload} />
             <input type="hidden" name="terminalId" value="KIOSK-01" />
+            <input type="hidden" name="customerId" value={customerId ?? ""} />
+            <input
+              type="hidden"
+              name="deliveryAddressId"
+              value={deliveryAddressId ?? ""}
+            />
             <input type="hidden" name="channel" value={channel} />
             {channel === "DELIVERY" && (
               <>

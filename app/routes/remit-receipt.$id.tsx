@@ -3,6 +3,38 @@ import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 
+type LoaderData = {
+  parent: {
+    id: number;
+    orderCode: string;
+    riderName: string | null;
+    deliveredAt: string | null; // ISO string
+    subtotal: number | null;
+    totalBeforeDiscount: number | null;
+    items: Array<{
+      id: number;
+      name: string;
+      qty: number;
+      unitPrice: number;
+      lineTotal: number;
+    }>;
+  };
+  children: Array<{
+    id: number;
+    orderCode: string;
+    deliveredAt: string | null; // ISO string
+    deliverTo: string | null;
+    customer: {
+      alias: string | null;
+      firstName: string | null;
+      middleName: string | null;
+      lastName: string | null;
+    } | null;
+    totalBeforeDiscount: number;
+    payments: Array<{ method: string; amount: number }>;
+  }>;
+};
+
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
@@ -30,7 +62,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
   });
   if (!parent) throw new Response("Not found", { status: 404 });
 
-  const children = await db.order.findMany({
+  const childrenRaw = await db.order.findMany({
     where: { remitParentId: id },
     select: {
       id: true,
@@ -45,20 +77,60 @@ export async function loader({ params }: LoaderFunctionArgs) {
           lastName: true,
         },
       },
-      items: {
-        select: { name: true, qty: true, unitPrice: true, lineTotal: true },
-      },
       totalBeforeDiscount: true,
       payments: { select: { method: true, amount: true } },
     },
     orderBy: { id: "asc" },
   });
 
-  return json({ parent, children });
+  // Normalize parent (Dates → ISO, Decimals → number)
+  const parentNorm: LoaderData["parent"] = {
+    id: parent.id,
+    orderCode: parent.orderCode,
+    riderName: parent.riderName,
+    deliveredAt: parent.deliveredAt ? parent.deliveredAt.toISOString() : null,
+    subtotal: parent.subtotal == null ? null : Number(parent.subtotal),
+    totalBeforeDiscount:
+      parent.totalBeforeDiscount == null
+        ? null
+        : Number(parent.totalBeforeDiscount),
+    items: parent.items.map((it) => ({
+      id: it.id,
+      name: it.name,
+      qty: Number(it.qty),
+      unitPrice: Number(it.unitPrice),
+      lineTotal: Number(it.lineTotal),
+    })),
+  };
+
+  const children: LoaderData["children"] = childrenRaw.map((o) => ({
+    id: o.id,
+    orderCode: o.orderCode,
+    deliveredAt: o.deliveredAt ? o.deliveredAt.toISOString() : null,
+    deliverTo: o.deliverTo ?? null,
+    customer: o.customer
+      ? {
+          alias: o.customer.alias ?? null,
+          firstName: o.customer.firstName ?? null,
+          middleName: o.customer.middleName ?? null,
+          lastName: o.customer.lastName ?? null,
+        }
+      : null,
+    totalBeforeDiscount: Number(o.totalBeforeDiscount ?? 0),
+    payments: (o.payments || []).map((p) => ({
+      method: p.method,
+      amount: Number(p.amount ?? 0),
+    })),
+  }));
+
+  return json<LoaderData>(
+    { parent: parentNorm, children },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export default function RiderReceipt() {
-  const { parent, children } = useLoaderData<typeof loader>();
+  const { parent, children } = useLoaderData<LoaderData>();
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -226,21 +298,40 @@ export default function RiderReceipt() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {children.map((o) => {
-                // Prefer customer alias/name, else parse from deliverTo: "Name — Address"
-                const custName =
-                  o.customer?.alias ||
-                  [
-                    o.customer?.firstName,
-                    o.customer?.middleName,
-                    o.customer?.lastName,
-                  ]
-                    .filter(Boolean)
-                    .join(" ")
-                    .trim();
-                const parsedFromDeliverTo = (o.deliverTo || "")
-                  .split("—")[0]
-                  .trim();
-                const name = custName || parsedFromDeliverTo || "Walk-in";
+                // Robust name resolution (ignore placeholders like "Walk-in", support multiple separators)
+                const trim = (s?: string | null) =>
+                  typeof s === "string" ? s.trim() : "";
+                const isPlaceholder = (s: string) =>
+                  /^walk[\s-]?in$/i.test(s) ||
+                  /^n\/?a$/i.test(s) ||
+                  /^-+$/.test(s);
+                const safe = (s?: string | null) => {
+                  const t = trim(s);
+                  return t && !isPlaceholder(t) ? t : "";
+                };
+                const firstNonEmpty = (
+                  ...vals: Array<string | undefined | null>
+                ) => vals.map((v) => trim(v || "")).find((v) => v) || "";
+
+                const alias = safe(o.customer?.alias);
+                const first = safe(o.customer?.firstName);
+                const mid = safe(o.customer?.middleName);
+                const last = safe(o.customer?.lastName);
+                const fromCustomer = firstNonEmpty(
+                  alias,
+                  [first, mid, last].filter(Boolean).join(" ")
+                );
+                const deliverName = (() => {
+                  const raw = trim(o.deliverTo);
+                  if (!raw) return "";
+                  const part = raw.split(/—|-|,/)[0];
+                  return safe(part);
+                })();
+                const name = firstNonEmpty(
+                  fromCustomer,
+                  deliverName,
+                  "Walk-in"
+                );
                 const paid = o.payments.reduce(
                   (s, p) => s + Number(p.amount || 0),
                   0
@@ -250,7 +341,7 @@ export default function RiderReceipt() {
                     <td className="px-3 py-2 font-mono">{o.orderCode}</td>
                     <td className="px-3 py-2">{name}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {peso(o.totalBeforeDiscount as number)}
+                      {peso(o.totalBeforeDiscount)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {peso(paid)}

@@ -361,7 +361,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const remaining = Math.max(0, total - nowPaid);
 
     // For utang/partial balance, require a customer to carry the balance
-    if (remaining > 0 && !customerId) {
+    if (remaining > 0 && !effectiveCustomerId) {
       return json(
         {
           ok: false,
@@ -850,7 +850,9 @@ export default function CashierOrder() {
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                   {order.lockedBy ? `Locked by ${order.lockedBy}` : "Unlocked"}
-                  {isStale && <span className="ml-1 opacity-70">• stale</span>}
+                  {!!order.lockedAt && isStale && (
+                    <span className="ml-1 opacity-70">• stale</span>
+                  )}
                 </span>
 
                 {!isStale && typeof remaining === "number" && remaining > 0 && (
@@ -1258,7 +1260,7 @@ export default function CashierOrder() {
                       />
                     </label>
                     <label className="block text-xs text-slate-600">
-                      Manager PIN/Name (required if price lessthan allowed)
+                      Manager PIN/Name (required if price less than allowed)
                       <input
                         name="discountApprovedBy"
                         type="text"

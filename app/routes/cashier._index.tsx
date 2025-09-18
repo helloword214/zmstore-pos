@@ -17,9 +17,13 @@ const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function loader() {
   const nowMs = Date.now();
-  // Pull active UNPAID tickets (no expiry filter)
-  const orders = await db.order.findMany({
-    where: { status: "UNPAID", NOT: { isOnCredit: true } },
+  // PICKUP tickets (cashier flow only)
+  const pickupsRaw = await db.order.findMany({
+    where: {
+      channel: "PICKUP",
+      status: "UNPAID",
+      NOT: { isOnCredit: true },
+    },
     orderBy: { printedAt: "desc" },
     take: 50,
     select: {
@@ -32,17 +36,39 @@ export async function loader() {
       lockedBy: true,
     },
   });
-
-  const rows = orders.map((o) => ({
+  const pickups = pickupsRaw.map((o) => ({
     ...o,
     isLocked: !!o.lockedAt && nowMs - o.lockedAt.getTime() < LOCK_TTL_MS,
   }));
 
-  // Active remits = DELIVERY orders not PAID yet (UNPAID or PARTIALLY_PAID)
+  // FOR DISPATCH: delivery orders not yet dispatched (staging or new)
+  const forDispatch = await db.order.findMany({
+    where: {
+      channel: "DELIVERY",
+      status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+      dispatchedAt: null,
+    },
+    orderBy: { id: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      orderCode: true,
+      riderName: true,
+      stagedAt: true,
+      dispatchedAt: true,
+      fulfillmentStatus: true,
+      subtotal: true,
+      totalBeforeDiscount: true,
+      printedAt: true,
+    },
+  });
+
+  // FOR REMIT: delivery orders already dispatched but not yet paid
   const remits = await db.order.findMany({
     where: {
       channel: "DELIVERY",
       status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+      dispatchedAt: { not: null },
     },
     orderBy: { id: "desc" },
     take: 50,
@@ -54,12 +80,14 @@ export async function loader() {
       subtotal: true,
       totalBeforeDiscount: true,
       printedAt: true,
+      dispatchedAt: true,
     },
   });
 
   return json(
     {
-      rows,
+      pickups,
+      forDispatch,
       remits,
     },
     { headers: { "Cache-Control": "no-store" } }
@@ -70,6 +98,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
   const action = String(fd.get("_action") || "");
   const id = Number(fd.get("id") || 0);
+  const terminalId = request.headers.get("x-terminal-id") ?? "CASHIER-01";
 
   // Cancel an UNPAID slip (safe, reversible by reprinting later if needed)
   if (action === "cancelSlip") {
@@ -89,15 +118,10 @@ export async function action({ request }: ActionFunctionArgs) {
         OR: [
           { lockedAt: null },
           { lockedAt: { lt: ttlAgo } },
-          { lockedBy: "CASHIER-01" },
+          { lockedBy: terminalId },
         ],
       },
-      data: {
-        status: "CANCELLED",
-        lockedAt: null,
-        lockedBy: null,
-        lockNote: `Cancelled at cashier: ${reason}`,
-      },
+      data: { status: "CANCELLED", lockedAt: null, lockedBy: null },
     });
     if (updated.count !== 1) {
       return json(
@@ -139,59 +163,79 @@ export async function action({ request }: ActionFunctionArgs) {
     const code = String(fd.get("code") || "").trim();
     if (!code)
       return json({ ok: false, error: "Enter a code" }, { status: 400 });
+    // Peek order to decide flow (PICKUP → cashier, DELIVERY → dispatch)
+    const found = await db.order.findFirst({
+      where: { orderCode: code, status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+      select: {
+        id: true,
+        channel: true,
+        lockedAt: true,
+        lockedBy: true,
+        status: true,
+      },
+    });
+    if (!found) {
+      return json(
+        { ok: false, error: "No UNPAID order with that code" },
+        { status: 404 }
+      );
+    }
+    // DELIVERY: go straight to Dispatch Staging (no cashier lock needed)
+    if (found.channel === "DELIVERY") {
+      return redirect(`/orders/${found.id}/dispatch`);
+    }
 
-    // 1) Atomically claim the lock by orderCode
+    // PICKUP: atomically claim the lock by orderCode
     const claimed = await db.order.updateMany({
       where: {
-        orderCode: code,
+        id: found.id,
         status: "UNPAID",
         OR: [
           { lockedAt: null },
           { lockedAt: { lt: new Date(Date.now() - LOCK_TTL_MS) } }, // expired lock
         ],
       },
-      data: { lockedAt: new Date(), lockedBy: "CASHIER-01" },
+      data: { lockedAt: new Date(), lockedBy: terminalId },
     });
     if (claimed.count !== 1) {
-      // Could be wrong code or already locked by someone else within TTL
-      const existing = await db.order.findFirst({
-        where: { orderCode: code, status: "UNPAID" },
-        select: { lockedBy: true, lockedAt: true },
-      });
-      if (!existing) {
-        return json(
-          { ok: false, error: "No UNPAID order with that code" },
-          { status: 404 }
-        );
-      }
       return json(
         {
           ok: false,
-          error: existing.lockedBy
-            ? `Locked by ${existing.lockedBy}`
+          error: found.lockedBy
+            ? `Locked by ${found.lockedBy}`
             : "Unable to lock order",
         },
         { status: 423 }
       );
     }
-    // 2) Fetch id to redirect (separate read to keep claim atomic)
-    const order = await db.order.findFirst({
-      where: { orderCode: code, status: "UNPAID" },
-      select: { id: true },
-    });
-
-    if (!order) {
-      return json(
-        { ok: false, error: "Locked but not found. Please retry." },
-        { status: 500 }
-      );
-    }
-    return redirect(`/cashier/${order.id}`);
+    // redirect to cashier for PICKUP
+    return redirect(`/cashier/${found.id}`);
   }
 
   if (action === "openById") {
     const id = Number(fd.get("id") || 0);
     if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
+    // Peek channel to decide flow
+    const existing = await db.order.findUnique({
+      where: { id },
+      select: { status: true, channel: true, lockedBy: true, lockedAt: true },
+    });
+    if (!existing)
+      return json({ ok: false, error: "Order not found" }, { status: 404 });
+    // DELIVERY: go to Dispatch if not PAID
+    if (existing.channel === "DELIVERY") {
+      if (existing.status === "PAID") {
+        return json(
+          { ok: false, error: "Order already PAID" },
+          { status: 400 }
+        );
+      }
+      return redirect(`/orders/${id}/dispatch`);
+    }
+    // PICKUP must be UNPAID to open at cashier
+    if (existing.status !== "UNPAID") {
+      return json({ ok: false, error: "Order is not UNPAID" }, { status: 400 });
+    }
     const claimed = await db.order.updateMany({
       where: {
         id,
@@ -201,22 +245,15 @@ export async function action({ request }: ActionFunctionArgs) {
           { lockedAt: { lt: new Date(Date.now() - LOCK_TTL_MS) } },
         ],
       },
-      data: { lockedAt: new Date(), lockedBy: "CASHIER-01" },
+      data: { lockedAt: new Date(), lockedBy: terminalId },
     });
     if (claimed.count !== 1) {
-      const existing = await db.order.findUnique({
-        where: { id },
-        select: { lockedBy: true, lockedAt: true, status: true },
-      });
       return json(
         {
           ok: false,
-          error:
-            existing?.status !== "UNPAID"
-              ? "Order is not UNPAID"
-              : existing?.lockedBy
-              ? `Locked by ${existing.lockedBy}`
-              : "Unable to lock order",
+          error: existing.lockedBy
+            ? `Locked by ${existing.lockedBy}`
+            : "Unable to lock order",
         },
         { status: 423 }
       );
@@ -228,13 +265,21 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function CashierQueue() {
-  const { rows, remits } = useLoaderData<typeof loader>() as any;
+  const { pickups, forDispatch, remits } = useLoaderData<
+    typeof loader
+  >() as any;
   const nav = useNavigation();
   const actionData = useActionData<typeof action>();
 
   const revalidator = useRevalidator();
   const [sp, setSp] = useSearchParams();
-  const tab = sp.get("tab") === "remits" ? "remits" : "tickets";
+  const tabParam = sp.get("tab");
+  const tab: "pickup" | "dispatch" | "remits" =
+    tabParam === "dispatch"
+      ? "dispatch"
+      : tabParam === "remits"
+      ? "remits"
+      : "pickup";
 
   // Revalidate on focus + every 5s while visible
   React.useEffect(() => {
@@ -260,20 +305,33 @@ export default function CashierQueue() {
             Cashier Queue
           </h1>
 
-          {/* Tabs */}
+          {/* Tabs (3) */}
           <div className="mt-3 inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white text-sm">
             <button
               className={`px-3 py-1.5 ${
-                tab === "tickets"
+                tab === "pickup"
                   ? "bg-indigo-600 text-white"
                   : "text-slate-700 hover:bg-slate-50"
               }`}
               onClick={() => {
-                sp.set("tab", "tickets");
+                sp.set("tab", "pickup");
                 setSp(sp, { replace: true });
               }}
             >
-              Active Tickets
+              Pickup
+            </button>
+            <button
+              className={`px-3 py-1.5 border-l border-slate-200 ${
+                tab === "dispatch"
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
+              onClick={() => {
+                sp.set("tab", "dispatch");
+                setSp(sp, { replace: true });
+              }}
+            >
+              For Dispatch
             </button>
             <button
               className={`px-3 py-1.5 border-l border-slate-200 ${
@@ -286,15 +344,15 @@ export default function CashierQueue() {
                 setSp(sp, { replace: true });
               }}
             >
-              Active Remits
+              For Remit
             </button>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-4xl px-5 py-6">
-        {/* Open by code (tickets tab) */}
-        {tab === "tickets" && (
+        {/* Open by code (pickup tab only) */}
+        {tab === "pickup" && (
           <Form method="post" className="mb-5">
             <div className="flex items-center gap-2">
               <input
@@ -321,19 +379,19 @@ export default function CashierQueue() {
         )}
 
         {/* Lists */}
-        {tab === "tickets" ? (
+        {tab === "pickup" ? (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                Active tickets
+                Pickup tickets
               </h2>
               <span className="text-[11px] text-slate-500">
-                {rows.length} item(s)
+                {pickups.length} item(s)
               </span>
             </div>
 
             <div className="divide-y divide-slate-100">
-              {rows.map((r) => {
+              {pickups.map((r) => {
                 return (
                   <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
                     <div className="flex items-start justify-between gap-2">
@@ -441,12 +499,61 @@ export default function CashierQueue() {
               })}
             </div>
           </div>
-        ) : (
-          // Active Remits tab
+        ) : tab === "dispatch" ? (
+          // FOR DISPATCH tab
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                Active remits (Delivery, not yet PAID)
+                For Dispatch (Delivery)
+              </h2>
+              <span className="text-[11px] text-slate-500">
+                {forDispatch.length} item(s)
+              </span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {forDispatch.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-slate-600">
+                  Nothing here.
+                </div>
+              ) : (
+                forDispatch.map((r: any) => (
+                  <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-mono text-slate-700">
+                          {r.orderCode}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Rider: {r.riderName || "—"} • Status:{" "}
+                          {r.fulfillmentStatus || "—"} • Printed{" "}
+                          {new Date(r.printedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <a
+                        href={`/orders/${r.id}/dispatch`}
+                        className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+                        title={
+                          r.fulfillmentStatus === "DISPATCHED"
+                            ? "Already dispatched"
+                            : "Open Dispatch Staging"
+                        }
+                      >
+                        {r.fulfillmentStatus === "DISPATCHED"
+                          ? "Dispatched"
+                          : "Open Dispatch"}
+                      </a>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          // FOR REMIT tab
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <h2 className="text-sm font-medium tracking-wide text-slate-700">
+                For Remit (Dispatched Delivery, not yet PAID)
               </h2>
               <span className="text-[11px] text-slate-500">
                 {remits.length} item(s)
@@ -466,8 +573,12 @@ export default function CashierQueue() {
                           {r.orderCode}
                         </div>
                         <div className="text-xs text-slate-500">
-                          Rider: {r.riderName || "—"} • Status: {r.status} •
-                          Printed {new Date(r.printedAt).toLocaleString()}
+                          + Rider: {r.riderName || "—"} • Status: {r.status} •
+                          Dispatched{" "}
+                          {r.dispatchedAt
+                            ? new Date(r.dispatchedAt).toLocaleString()
+                            : "—"}{" "}
+                          • Printed {new Date(r.printedAt).toLocaleString()}
                         </div>
                       </div>
                       <a

@@ -110,7 +110,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
   const lpgProducts = await db.product.findMany({
     where: {
       isActive: true,
-      category: { name: "LPG" },
+      category: { is: { name: "LPG" } },
       stock: { gt: 0 }, // must have pack stock available
       srp: { gt: 0 }, // must have a pack price
     },
@@ -219,7 +219,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(form.get("intent") || "");
 
   // form fields
-  const riderName = String(form.get("riderName") ?? "").trim() || null;
+  const riderName = (String(form.get("riderName") ?? "").trim() || null) as
+    | string
+    | null;
 
   // vehicle snapshot (stored on Order for ticketing/reprint)
   const vehicleName =
@@ -325,7 +327,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await db.order.update({
         where: { id },
         data: {
-          riderName,
+          riderName: riderName ?? order.riderName ?? null,
           vehicleName,
           loadoutSnapshot: loadoutSnapshot as any,
           fulfillmentStatus: FulfillmentStatus.STAGED,
@@ -345,7 +347,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await db.order.update({
         where: { id },
         data: {
-          riderName,
+          riderName: riderName ?? order.riderName ?? null,
           vehicleName,
           loadoutSnapshot: loadoutSnapshot as any,
           fulfillmentStatus: FulfillmentStatus.STAGED,
@@ -550,7 +552,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         await tx.order.update({
           where: { id },
           data: {
-            riderName,
+            riderName: riderName ?? order.riderName ?? null,
             vehicleName,
             loadoutSnapshot: loadoutSnapshot as any,
             fulfillmentStatus: FulfillmentStatus.DISPATCHED,

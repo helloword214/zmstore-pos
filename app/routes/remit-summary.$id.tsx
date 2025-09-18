@@ -9,7 +9,7 @@ type LoaderData = {
     id: number;
     orderCode: string;
     riderName: string | null;
-    paidAt: Date | null;
+    paidAt: string | null; // ISO string for safe serialization
     status: string;
     receiptNo: string | null;
     totalBeforeDiscount: number | null;
@@ -26,9 +26,9 @@ type LoaderData = {
   children: Array<{
     id: number;
     orderCode: string;
-    status: string;
+    status: string; // normalized enum → string
     receiptNo: string | null;
-    paidAt: Date | null;
+    paidAt: string | null; // ISO string
     total: number;
     customerName: string;
     // most recent cash payment id for printing "Cash Received" correctly
@@ -72,7 +72,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     id: parentRaw.id,
     orderCode: parentRaw.orderCode,
     riderName: parentRaw.riderName,
-    paidAt: parentRaw.paidAt,
+    paidAt: parentRaw.paidAt ? parentRaw.paidAt.toISOString() : null,
     status: String(parentRaw.status), // enum → string
     receiptNo: parentRaw.receiptNo,
     totalBeforeDiscount:
@@ -156,16 +156,19 @@ export async function loader({ params }: LoaderFunctionArgs) {
     return {
       id: o.id,
       orderCode: o.orderCode,
-      status: o.status,
+      status: String(o.status),
       receiptNo: o.receiptNo,
-      paidAt: o.paidAt,
+      paidAt: o.paidAt ? o.paidAt.toISOString() : null,
       total: Number(o.totalBeforeDiscount ?? 0),
       customerName: cname,
       paymentId,
     };
   });
 
-  return json<LoaderData>({ parent, children });
+  return json<LoaderData>(
+    { parent, children },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export default function RemitSummaryPage() {
