@@ -137,7 +137,24 @@ export default function KioskPage() {
   const { categories, products } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
+  // Local alias for the product item type coming from the loader
+  type CategoryItem = (typeof categories)[number];
+  type ProductItem = (typeof products)[number];
+
+  // If you're on Remix v2, using a key gives you an isolated fetcher instance:
+  // const createSlip = useFetcher<CreateSlipResp>({ key: "create-slip" });
   const createSlip = useFetcher<CreateSlipResp>();
+
+  // Prevent re-handling the same success payload after rerenders/navigation
+  const handledSuccessIdRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    // Remix v1 has no `reset`; Remix v2 does.
+    // Call safely to avoid TS error and be a no-op on v1.
+    (createSlip as any)?.reset?.();
+    handledSuccessIdRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const navigate = useNavigate();
   const [printSlip, setPrintSlip] = React.useState(false);
   const [mobileCartOpen, setMobileCartOpen] = React.useState(false);
@@ -193,7 +210,7 @@ export default function KioskPage() {
 
   const filtered = React.useMemo(() => {
     const term = q.trim().toLowerCase();
-    return products.filter((p) => {
+    return products.filter((p: ProductItem) => {
       if (activeCat !== "" && p.categoryId !== activeCat) return false;
       if (
         activeBrand !== "" &&
@@ -317,6 +334,7 @@ export default function KioskPage() {
   const makeKey = (id: number, mode: Mode) => `${id}:${mode}`;
 
   // cart now keyed by id:mode
+
   const [cart, setCart] = useLocalStorageState<Record<string, CartItem>>(
     "op-cart",
     {}
@@ -333,7 +351,10 @@ export default function KioskPage() {
     setCart({});
     try {
       localStorage.removeItem("op-cart");
-    } catch {}
+    } catch (_err) {
+      // Intentionally ignore: storage might be unavailable (private mode)
+      // or user denied access. Clearing cart state above is sufficient.
+    }
   }, [setCart]);
 
   const peso = (n: number) =>
@@ -347,7 +368,7 @@ export default function KioskPage() {
     const pool =
       activeCat === ""
         ? products
-        : products.filter((p) => p.categoryId === activeCat);
+        : products.filter((p: ProductItem) => p.categoryId === activeCat);
     const map = new Map<number, string>();
     for (const p of pool) {
       if (p.brand?.id && p.brand?.name) map.set(p.brand.id, p.brand.name);
@@ -475,23 +496,32 @@ export default function KioskPage() {
   // Handle fetcher response: navigate on success; show modal on 400
   React.useEffect(() => {
     if (createSlip.state !== "idle" || !createSlip.data) return;
+
     if (createSlip.data.ok === true) {
       const createdId = createSlip.data.id;
+
+      // 🔒 Guard: don't handle the same success more than once
+      if (handledSuccessIdRef.current === createdId) return;
+      handledSuccessIdRef.current = createdId;
+
       const ch = createSlip.data.channel ?? channel;
       if (printSlip) {
         const dest = ch === "DELIVERY" ? "ticket" : "slip";
         navigate(`/orders/${createdId}/${dest}?autoprint=1&autoback=1`, {
           replace: true,
         });
-        return;
+      } else {
+        // No print → show code/QR for cashier
+        setJustCreated({
+          open: true,
+          id: createdId,
+          code: createSlip.data.orderCode,
+        });
+        clearCart();
       }
-      // No print → show code/QR for cashier
-      setJustCreated({
-        open: true,
-        id: createdId,
-        code: createSlip.data.orderCode,
-      });
-      clearCart();
+
+      // 🧹 Reset fetcher so future renders don't see old success
+      (createSlip as any)?.reset?.(); // Remix v2; harmless no-op on v1
     } else {
       setClientErrors([]);
       setErrorOpen(true);
@@ -499,6 +529,7 @@ export default function KioskPage() {
   }, [
     createSlip.state,
     createSlip.data,
+    createSlip,
     navigate,
     printSlip,
     clearCart,
@@ -623,7 +654,10 @@ export default function KioskPage() {
                     if (mode) add(p, mode);
                     try {
                       navigator.vibrate?.(40);
-                    } catch {}
+                    } catch (_err) {
+                      // Intentionally ignore: storage might be unavailable (private mode)
+                      // or user denied access. Clearing cart state above is sufficient.
+                    }
                     setScanOpen(false);
                     return;
                   }
@@ -879,7 +913,7 @@ export default function KioskPage() {
               <span>✨</span>
               <span className="font-medium">All</span>
             </button>
-            {categories.map((c) => {
+            {categories.map((c: CategoryItem) => {
               const selected = activeCat === c.id;
               return (
                 <button
@@ -938,7 +972,7 @@ export default function KioskPage() {
           >
             All
           </button>
-          {categories.map((c) => (
+          {categories.map((c: CategoryItem) => (
             <button
               key={c.id}
               className={`px-3 py-2 rounded-xl text-sm text-left border ${
@@ -1005,7 +1039,7 @@ export default function KioskPage() {
               </div>
             </div>
             <div className="space-y-2 pt-2">
-              {pageItems.map((p) => {
+              {pageItems.map((p: ProductItem) => {
                 // (all your original logic here unchanged)
                 const unit = p.unit?.name ?? "unit";
                 const packUnit = p.packingUnit?.name ?? "pack";
@@ -1380,7 +1414,10 @@ export default function KioskPage() {
               setCart({});
               try {
                 localStorage.removeItem("op-cart");
-              } catch {}
+              } catch (_err) {
+                // Intentionally ignore: storage might be unavailable (private mode)
+                // or user denied access. Clearing cart state above is sufficient.
+              }
             }}
             className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             disabled={items.length === 0}
@@ -2030,7 +2067,10 @@ export default function KioskPage() {
                   setCart({});
                   try {
                     localStorage.removeItem("op-cart");
-                  } catch {}
+                  } catch (_err) {
+                    // Intentionally ignore: storage might be unavailable (private mode)
+                    // or user denied access. Clearing cart state above is sufficient.
+                  }
                 }}
                 className="text-xs px-2 py-1 rounded-lg border border-red-100 text-red-600 bg-white hover:bg-red-50"
               >

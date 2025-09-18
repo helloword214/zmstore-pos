@@ -317,6 +317,17 @@ model Order {
   // Back-relation for DeliveryRunOrder join table
   runOrders DeliveryRunOrder[] @relation("OrderRunLinks")
 
+  remitGroup   String?  @db.VarChar(64) // group tag for rider remit batches
+
+  /// If this order was created from a rider “sold from load” row during a remit,
+  /// link it back to the main DELIVERY order being remitted.
+  remitParentId    Int?      
+  remitParent      Order?    @relation("RemitParentChildren", fields: [remitParentId], references: [id])
+
+  /// Children created from the parent remit
+  remitChildren    Order[]   @relation("RemitParentChildren")
+  
+  @@index([remitGroup])
   @@index([status, expiryAt])
   @@index([lockedAt])
   @@index([status])
@@ -370,6 +381,11 @@ model Payment {
   amount    Float
   refNo     String? // GCash ref, last 4 of card, etc.
   createdAt DateTime      @default(now())
+
+  /// NEW: what the cashier/rider actually handed
+  tendered  Decimal? @db.Decimal(10,2)
+  /// NEW: change given back
+  change    Decimal? @db.Decimal(10,2)
 
   @@index([orderId])
 }

@@ -557,3 +557,72 @@ Discounted customers: totals on cashier preview and receipt match; guards preven
   - Totals panel: subtotal, discounts, before vs after discounts.
 - Synced client rules with loader-fetched rules.
 - Ensured **discounts apply in both preview and settlePayment action**.
+
+## 2025-09-15 → Dispatch Summary
+
+- Added **Dispatch Summary Page** (`orders.$id.dispatch.tsx`):
+  - Shows assigned rider and extra load carried.
+  - Displays dispatched items with qty/price/line totals.
+  - Print-friendly summary for ticket confirmation.
+
+## 2025-09-16 → Remit Summary
+
+- Added **Remit Summary Page** (`remit.$id.summary.tsx`):
+  - Header card: parent remit info (order code, rider, status, totals).
+  - **Parent items table** for evaluation.
+  - Split child orders:
+    - **Cash Sales** with reprint links + “Print all” action.
+    - **Credit Sales** with ACK links + “Print all” action.
+  - Linked **Reprint Parent** and **Print Rider Consolidated** buttons.
+
+## 2025-09-17 → Rider Consolidated Receipt
+
+- Added **Rider Receipt Page** (`remit.$id.rider-receipt.tsx`):
+
+  - Consolidated layout showing parent items and all child orders.
+  - Per-child: order code, customer name, total, and paid amount.
+  - Includes **grand totals** (amount vs paid).
+  - Print-friendly design with a single “Print” button.
+
+- **Customer name fallback logic** refined:
+
+  - Prefer linked customer alias/full name.
+  - Fallback to parsed `deliverTo`.
+  - Last resort: “Walk-in”.
+
+  ## 2025-09-18 → Remit & Receipts (wire-up pass)
+
+### Added
+
+- `app/routes/remit-summary.$id.tsx`
+
+  - Rider Remit Summary page:
+    - Header card (parent remit: order code, rider, status, totals).
+    - Parent items evaluation table.
+    - Child sections split into **Cash Sales** (with reprint / “Print all”) and **Credit Sales** (ACK / “Print all”).
+    - “Reprint Parent” and “Print Rider Consolidated” actions.
+  - Customer name resolution refined:
+    - Prefer linked Customer (alias/full name).
+    - Fallback to parsed `deliverTo` (“Name — Address”, “Name - Address”, or comma).
+    - Final fallback: `Walk-in`.
+
+- `app/routes/remit-receipt.$id.tsx`
+
+  - Rider **Consolidated Receipt**:
+    - Print-friendly layout and one-click **Print**.
+    - Parent items (subtotal/total) + child orders list (order, customer, total, paid).
+    - **Grand Total** vs **Grand Paid**.
+
+- `app/routes/receipts._index.tsx`
+  - Receipts landing/index (entry point to reprints and summaries).
+
+### Database / Migrations
+
+- `prisma/migrations/20250916120637_add_remit_parent_and_payment_tendered_change/`
+  - Introduced remit parent link for child orders created during rider remit.
+  - Updated payment “tendered” structure to support remit/child cash receipts.
+
+### Notes
+
+- Display shows **actual customer name** when present; only shows “Walk-in” if no linked customer and `deliverTo` can’t be parsed.
+- Delivery flow (dispatch → remit → summary → rider receipt) is **functional**, with print actions wired.

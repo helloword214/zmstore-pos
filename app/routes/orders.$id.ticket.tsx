@@ -8,6 +8,17 @@ export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
+  // helper: normalize possible string/Decimal/null to finite number or null
+  const toNum = (v: unknown): number | null => {
+    const n =
+      typeof v === "string"
+        ? parseFloat(v)
+        : typeof v === "number"
+        ? v
+        : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const order = await db.order.findUnique({
     where: { id },
     include: {
@@ -28,22 +39,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
     throw new Response("Not a delivery order", { status: 400 });
   }
 
-  // Build map link: coords → exact; else → text search
-  const hasLat = Number.isFinite(order.deliverGeoLat as unknown as number);
-  const hasLng = Number.isFinite(order.deliverGeoLng as unknown as number);
-  const hasCoords = Boolean(
-    order.deliverGeoLat != null &&
-      order.deliverGeoLng != null &&
-      hasLat &&
-      hasLng
-  );
+  // Build map link: coords → exact; else → text search (robust to string/Decimal/null)
+  const lat = toNum(order.deliverGeoLat);
+  const lng = toNum(order.deliverGeoLng);
+  const hasCoords = lat != null && lng != null;
 
   const mapUrl = hasCoords
-    ? `https://www.google.com/maps/dir/?api=1&destination=${order.deliverGeoLat},${order.deliverGeoLng}`
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         [order.deliverTo || "", order.deliverLandmark || ""]
           .filter(Boolean)
           .join(" ")
+          .trim()
       )}`;
 
   return json({
@@ -56,8 +63,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
       deliverTo: order.deliverTo,
       deliverPhone: order.deliverPhone,
       deliverLandmark: order.deliverLandmark,
-      deliverGeoLat: order.deliverGeoLat,
-      deliverGeoLng: order.deliverGeoLng,
+      deliverGeoLat: lat, // normalized number or null
+      deliverGeoLng: lng, // normalized number or null
       channel: order.channel,
       items: order.items ?? [],
       subtotal: order.subtotal,
@@ -76,20 +83,25 @@ export default function DeliveryTicket() {
     const autoprint = sp.get("autoprint") === "1";
     const autoback = sp.get("autoback") === "1";
     if (!autoprint) return;
-    // Give images (QR) a moment to load, then print
-    const t = setTimeout(() => {
+    // Give images (QR) a moment to load, then print. Track both timers and clean up correctly.
+    let t2: number | undefined;
+    const t = window.setTimeout(() => {
       window.print();
       if (autoback) {
         // after print, go back to previous page (e.g., cashier)
-        const t2 = setTimeout(() => {
-          window.history.length > 1
-            ? window.history.back()
-            : (window.location.href = "/cashier");
+        t2 = window.setTimeout(() => {
+          if (window.history.length > 1) {
+            window.history.back();
+          } else {
+            window.location.href = "/cashier";
+          }
         }, 200);
-        return () => clearTimeout(t2);
       }
     }, 300);
-    return () => clearTimeout(t);
+    return () => {
+      window.clearTimeout(t);
+      if (t2) window.clearTimeout(t2);
+    };
   }, [sp]);
 
   const fmt = (n: number) =>

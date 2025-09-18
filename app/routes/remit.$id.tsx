@@ -15,6 +15,7 @@ import {
   type Rule,
 } from "~/services/pricing";
 import { allocateReceiptNo } from "~/utils/receipt";
+import { CustomerPicker } from "~/components/CustomerPicker";
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
@@ -22,7 +23,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   const order = await db.order.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      orderCode: true,
+      channel: true,
+      status: true,
+      riderName: true,
+      dispatchedAt: true,
+      deliveredAt: true,
+      customerId: true,
+      loadoutSnapshot: true,
+      subtotal: true,
+      totalBeforeDiscount: true,
       items: {
         include: {
           product: {
@@ -42,7 +54,6 @@ export async function loader({ params }: LoaderFunctionArgs) {
   });
   if (!order) throw new Response("Not found", { status: 404 });
   if (order.channel !== "DELIVERY") {
-    // you can allow remit anyway, but this prevents pickup accidents
     throw new Response("Not a delivery order", { status: 400 });
   }
   if (order.status === "PAID") {
@@ -68,7 +79,35 @@ export async function loader({ params }: LoaderFunctionArgs) {
   });
   const pricing = applyDiscounts(cart, rules, { id: order.customerId ?? null });
 
-  return json({ order, pricing });
+  const loadOptions: Array<{ productId: number; name: string }> = Array.isArray(
+    order.loadoutSnapshot
+  )
+    ? (order.loadoutSnapshot as any[])
+        .map((l) => ({
+          productId: Number(l?.productId),
+          name: String(l?.name ?? ""),
+        }))
+        .filter(
+          (x) => Number.isFinite(x.productId) && x.productId > 0 && x.name
+        )
+        .reduce((acc, cur) => {
+          if (!acc.find((a) => a.productId === cur.productId)) acc.push(cur);
+          return acc;
+        }, [] as Array<{ productId: number; name: string }>)
+    : [];
+
+  const loadIds = loadOptions.map((o) => o.productId);
+  const loadProducts = loadIds.length
+    ? await db.product.findMany({
+        where: { id: { in: loadIds } },
+        select: { id: true, price: true, srp: true },
+      })
+    : [];
+  const priceIndex = Object.fromEntries(
+    loadProducts.map((p) => [p.id, Number(p.srp ?? p.price ?? 0)])
+  ) as Record<number, number>;
+
+  return json({ order, pricing, loadOptions, priceIndex });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -79,7 +118,48 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const releaseWithBalance = fd.get("releaseWithBalance") === "1";
   const releasedApprovedBy =
     String(fd.get("releasedApprovedBy") || "").trim() || null;
-  const printReceipt = fd.get("printReceipt") === "1";
+
+  const soldLoadJson = String(fd.get("soldLoadJson") || "[]");
+  type SoldLoadRow = {
+    productId: number | null;
+    name: string;
+    qty: number;
+    unitPrice: number;
+    buyerName?: string | null;
+    buyerPhone?: string | null;
+    customerId?: number | null;
+    onCredit?: boolean;
+  };
+  let soldRows: SoldLoadRow[] = [];
+  try {
+    const parsed = JSON.parse(soldLoadJson);
+    if (Array.isArray(parsed)) {
+      soldRows = parsed
+        .map((r) => ({
+          productId:
+            r?.productId == null || isNaN(Number(r.productId))
+              ? null
+              : Number(r.productId),
+          name: typeof r?.name === "string" ? r.name : "",
+          qty: Math.max(0, Number(r?.qty ?? 0)),
+          unitPrice: Math.max(0, Number(r?.unitPrice ?? 0)),
+          buyerName:
+            (typeof r?.buyerName === "string" ? r.buyerName.trim() : "") ||
+            null,
+          buyerPhone:
+            (typeof r?.buyerPhone === "string" ? r.buyerPhone.trim() : "") ||
+            null,
+          customerId:
+            r?.customerId == null || isNaN(Number(r.customerId))
+              ? null
+              : Number(r.customerId), // ← keep even for cash rows
+          onCredit: Boolean(r?.onCredit),
+        }))
+        .filter((r) => r.qty > 0 && (r.productId != null || r.name));
+    }
+  } catch {
+    soldRows = [];
+  }
 
   if (!Number.isFinite(cashGiven) || cashGiven < 0) {
     return json(
@@ -98,7 +178,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ ok: false, error: "Order already paid" }, { status: 400 });
   }
 
-  // pricing rules & product bases for inference + stock
   const productIds = Array.from(new Set(order.items.map((i) => i.productId)));
   const products = await db.product.findMany({
     where: { id: { in: productIds } },
@@ -118,7 +197,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     order.customerId ?? null
   );
 
-  // Effective total using the shared engine
   const cart: Cart = buildCartFromOrderItems({
     items: order.items.map((it: any) => ({
       ...it,
@@ -146,11 +224,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const dueBefore = Math.max(0, total - alreadyPaid);
 
   const appliedPayment = Math.min(Math.max(0, cashGiven), dueBefore);
-  const change = Math.max(0, cashGiven - appliedPayment);
   const nowPaid = alreadyPaid + appliedPayment;
   const remaining = Math.max(0, total - nowPaid);
 
-  // Guard: partial payments MUST be tied to a customer for A/R
   if (remaining > 0 && !order.customerId) {
     return json(
       { ok: false, error: "Link a customer before accepting partial payment." },
@@ -158,11 +234,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  // Build stock deltas (unit inference allows for customer pricing)
   const errors: Array<{ id: number; reason: string }> = [];
   const deltas = new Map<number, { pack: number; retail: number }>();
 
-  // Unit inference: compare actual snapshot unitPrice vs allowed for both unit kinds, pick nearest
   for (const it of order.items) {
     const p = byId.get(it.productId);
     if (!p) {
@@ -205,7 +279,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       dRetail === Number.POSITIVE_INFINITY &&
       dPack === Number.POSITIVE_INFINITY
     ) {
-      // fallback to base compare
       const approx = (a: number, b: number, eps = 0.25) =>
         Math.abs(a - b) <= eps;
       if (p.allowPackSale && baseRetail > 0 && approx(unitPrice, baseRetail))
@@ -247,31 +320,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
   }
 
-  // Deduct now only if fully paid OR releasing-with-balance now (and not yet released)
-  const willDeductNow =
-    remaining <= 1e-6 || (releaseWithBalance && !order.releasedAt);
+  const willDeductNow = false;
   if (errors.length && willDeductNow) {
     return json({ ok: false, errors }, { status: 400 });
   }
 
-  let createdPaymentId: number | null = null;
-
   await db.$transaction(async (tx) => {
-    // 1) Record payment for the applied portion
     if (appliedPayment > 0) {
-      const p = await tx.payment.create({
+      await tx.payment.create({
         data: {
           orderId: order.id,
           method: "CASH",
           amount: appliedPayment,
           refNo: "RIDER-REMIT",
         },
-        select: { id: true },
       });
-      createdPaymentId = p.id;
     }
 
-    // 2) Deduct inventory if needed (release)
     if (willDeductNow) {
       for (const [pid, c] of deltas.entries()) {
         const p = byId.get(pid)!;
@@ -285,9 +350,122 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
     }
 
-    // 3) Update order state
+    const snapshot = Array.isArray(order.loadoutSnapshot)
+      ? (order.loadoutSnapshot as any[])
+      : [];
+    if (snapshot.length > 0) {
+      const snapshotQty = new Map<number, number>();
+      for (const row of snapshot) {
+        const pid = Number(row?.productId ?? NaN);
+        const qty = Math.max(0, Math.floor(Number(row?.qty ?? 0)));
+        if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
+        snapshotQty.set(pid, (snapshotQty.get(pid) || 0) + qty);
+      }
+
+      const soldQty = new Map<number, number>();
+      for (const row of soldRows) {
+        const pid = Number(row?.productId ?? NaN);
+        const qty = Math.max(0, Math.floor(Number(row?.qty ?? 0)));
+        if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
+        soldQty.set(pid, (soldQty.get(pid) || 0) + qty);
+      }
+
+      for (const [pid, snapQ] of snapshotQty.entries()) {
+        const soldQ = soldQty.get(pid) || 0;
+        const leftover = Math.max(0, snapQ - soldQ);
+        if (leftover > 0) {
+          await tx.product.update({
+            where: { id: pid },
+            data: { stock: { increment: leftover } },
+          });
+        }
+      }
+      await tx.order.update({
+        where: { id: order.id },
+        data: { loadoutSnapshot: [] as unknown as any },
+      });
+    }
+
+    // Keep credit guard: on-credit requires a customer
+    const creditError = soldRows.find((r) => r.onCredit && !r.customerId);
+    if (creditError) {
+      return json(
+        {
+          ok: false,
+          error: "On-credit sale requires a customer. Please select one.",
+        },
+        { status: 400 }
+      );
+    }
+
+    for (const row of soldRows) {
+      const lineTotal = Number((row.qty * row.unitPrice).toFixed(2));
+      const productId = Number(row.productId);
+      if (!Number.isFinite(productId)) {
+        throw new Error("Invalid productId for roadside sale item.");
+      }
+
+      const roadsideCode =
+        `RS-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-` +
+        crypto.randomUUID().slice(0, 6).toUpperCase();
+
+      const isCredit = !!row.onCredit;
+
+      const newOrder = await tx.order.create({
+        data: {
+          channel: "DELIVERY",
+          status: isCredit ? "PARTIALLY_PAID" : "PAID",
+          paidAt: isCredit ? null : new Date(),
+          orderCode: roadsideCode,
+          printedAt: new Date(),
+          expiryAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+          riderName: order.riderName ?? null,
+          // ✅ Always persist customerId if provided (cash or credit)
+          ...(row.customerId ? { customerId: Number(row.customerId) } : {}),
+          isOnCredit: isCredit ? true : false,
+          // If a customer is linked, we don't need a deliverTo fallback name;
+          // keep buyerName only for explicit walk-in manually entered names.
+          deliverTo: row.customerId ? null : row.buyerName || null,
+          deliverPhone: row.customerId ? null : row.buyerPhone || null,
+          subtotal: lineTotal,
+          totalBeforeDiscount: lineTotal,
+          dispatchedAt: order.dispatchedAt ?? new Date(),
+          deliveredAt: new Date(),
+          remitParentId: order.id,
+          items: {
+            create: [
+              {
+                productId,
+                name: row.name,
+                qty: row.qty,
+                unitPrice: row.unitPrice,
+                lineTotal,
+              },
+            ],
+          },
+        },
+        select: { id: true },
+      });
+
+      const receiptNoChild = await allocateReceiptNo(tx);
+      await tx.order.update({
+        where: { id: newOrder.id },
+        data: { receiptNo: receiptNoChild },
+      });
+
+      if (!isCredit) {
+        await tx.payment.create({
+          data: {
+            orderId: newOrder.id,
+            method: "CASH",
+            amount: lineTotal,
+            refNo: "RIDER-LOAD-SALE",
+          },
+        });
+      }
+    }
+
     if (remaining <= 1e-6) {
-      // fully paid
       const receiptNo = await allocateReceiptNo(tx);
       await tx.order.update({
         where: { id: order.id },
@@ -303,11 +481,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
                 releasedAt: new Date(),
               }
             : {}),
-          deliveredAt: order.deliveredAt ?? new Date(), // set delivered if not yet set
+          deliveredAt: order.deliveredAt ?? new Date(),
         },
       });
     } else {
-      // partial
       await tx.order.update({
         where: { id: order.id },
         data: {
@@ -329,34 +506,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
   });
 
-  // 4) Print
-  if (remaining <= 1e-6 && printReceipt) {
-    const qs = new URLSearchParams({
-      autoprint: "1",
-      autoback: "1",
-      cash: cashGiven.toFixed(2),
-      change: change.toFixed(2),
-      ...(createdPaymentId ? { pid: String(createdPaymentId) } : {}),
-    });
-    return redirect(`/orders/${id}/receipt?${qs.toString()}`);
-  }
-  if (remaining > 0 && printReceipt && createdPaymentId) {
-    const qs = new URLSearchParams({
-      autoprint: "1",
-      autoback: "1",
-      pid: String(createdPaymentId),
-      cash: cashGiven.toFixed(2),
-      change: change.toFixed(2),
-    });
-    return redirect(`/orders/${id}/ack?${qs.toString()}`);
-  }
-
-  return redirect("/cashier");
+  // After posting, always go to the summary (print hub)
+  return redirect(`/remit-summary/${id}`);
 }
 
 export default function RemitOrderPage() {
-  const { order, pricing } = useLoaderData<typeof loader>();
+  const { order, pricing, priceIndex } = useLoaderData<typeof loader>();
   const nav = useNavigation();
+
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -370,92 +527,495 @@ export default function RemitOrderPage() {
   const total = pricing.total ?? Number(order.totalBeforeDiscount);
   const due = Math.max(0, total - alreadyPaid);
 
+  type SoldRowUI = {
+    key: string;
+    productId: number | null;
+    name: string;
+    qty: number;
+    unitPrice: number;
+    buyerName?: string;
+    buyerPhone?: string;
+    customerId?: number | null;
+    onCredit?: boolean;
+    customerObj?: {
+      id: number;
+      firstName: string; // required
+      lastName: string; // required
+      alias?: string | null;
+      phone?: string | null;
+    } | null;
+  };
+
+  const loadout: Array<{
+    productId: number | null;
+    name: string;
+    qty: number;
+  }> = Array.isArray(order.loadoutSnapshot)
+    ? (order.loadoutSnapshot as any).map((l: any) => ({
+        productId: l?.productId == null ? null : Number(l.productId),
+        name: String(l?.name || ""),
+        qty: Number(l?.qty || 0),
+      }))
+    : [];
+
+  const [soldRows, setSoldRows] = React.useState<SoldRowUI[]>([]);
+
+  const defaultPriceFor = (pid: number | null): number =>
+    pid != null && priceIndex[pid] != null ? Number(priceIndex[pid]) : 0;
+
+  // (auto-print moved to /remit/:id/summary)
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-xl px-5 py-6">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <h1 className="text-sm font-medium tracking-wide text-slate-800">
-              Rider Remit — Order{" "}
-              <span className="font-mono text-indigo-700">
+      <div className="mx-auto max-w-5xl px-5 py-6">
+        {/* Header */}
+        <div className="mb-4 flex items-end justify-between">
+          <div>
+            <h1 className="text-base font-semibold tracking-wide text-slate-800">
+              Rider Remit
+            </h1>
+            <div className="mt-1 text-sm text-slate-500">
+              Order{" "}
+              <span className="font-mono font-medium text-indigo-700">
                 {order.orderCode}
               </span>
-            </h1>
+            </div>
           </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+              Channel:{" "}
+              <span className="font-medium text-slate-700">
+                {order.channel}
+              </span>
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
+              Rider:{" "}
+              <span className="font-medium text-slate-700">
+                {order.riderName || "—"}
+              </span>
+            </span>
+          </div>
+        </div>
 
-          <div className="px-4 py-4 space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-600">Total (after discounts)</span>
-              <span className="font-semibold">{peso(total)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-600">Already paid</span>
-              <span className="font-semibold">{peso(alreadyPaid)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-700">Due now</span>
-              <span className="font-semibold text-indigo-700">{peso(due)}</span>
-            </div>
+        <Form method="post" className="grid gap-4 md:grid-cols-12">
+          {/* Left column: remit summary */}
+          <section className="md:col-span-4">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <h2 className="text-sm font-medium text-slate-800">
+                  Remittance Summary
+                </h2>
+              </div>
+              <div className="px-4 py-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">
+                    Total (after discounts)
+                  </span>
+                  <span className="font-semibold">{peso(total)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Already paid</span>
+                  <span className="font-semibold">{peso(alreadyPaid)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-700">Due now</span>
+                  <span className="font-semibold text-indigo-700">
+                    {peso(due)}
+                  </span>
+                </div>
 
-            <Form method="post" className="mt-2 space-y-3">
-              <label className="block">
-                <span className="block text-slate-700">Cash collected</span>
-                <input
-                  name="cashGiven"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={due.toFixed(2)}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                />
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  name="printReceipt"
-                  value="1"
-                  className="h-4 w-4 accent-indigo-600"
-                  defaultChecked
-                />
-                <span>Print receipt/ack after posting</span>
-              </label>
-
-              <details className="rounded-xl border border-slate-200 bg-white">
-                <summary className="cursor-pointer select-none list-none px-3 py-2 text-sm text-slate-800">
-                  If releasing goods with balance
-                </summary>
-                <div className="px-3 pb-3 space-y-3">
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <div className="pt-2">
+                  <label className="block">
+                    <span className="block text-slate-700">Cash collected</span>
                     <input
-                      type="checkbox"
-                      name="releaseWithBalance"
-                      value="1"
-                      className="h-4 w-4 accent-indigo-600"
-                    />
-                    <span>Release goods now (with balance)</span>
-                  </label>
-                  <label className="block text-xs text-slate-600">
-                    Manager PIN/Name
-                    <input
-                      name="releasedApprovedBy"
-                      type="text"
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                      placeholder="e.g. 1234 or MGR-ANA"
+                      name="cashGiven"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      defaultValue={due.toFixed(2)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
                     />
                   </label>
                 </div>
-              </details>
 
+                <div className="pt-2">
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="printReceipt"
+                      value="1"
+                      className="h-4 w-4 accent-indigo-600"
+                      defaultChecked
+                    />
+                    <span>Go to summary & print after posting</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Release with balance */}
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <h3 className="text-sm font-medium text-slate-800">
+                  If releasing goods with balance
+                </h3>
+              </div>
+              <div className="px-4 py-4 space-y-3 text-sm">
+                <label className="inline-flex items-center gap-2 text-slate-700">
+                  <input
+                    type="checkbox"
+                    name="releaseWithBalance"
+                    value="1"
+                    className="h-4 w-4 accent-indigo-600"
+                  />
+                  <span>Release goods now (with balance)</span>
+                </label>
+                <label className="block text-xs text-slate-600">
+                  Manager PIN/Name
+                  <input
+                    name="releasedApprovedBy"
+                    type="text"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                    placeholder="e.g. 1234 or MGR-ANA"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <div className="sticky bottom-4 mt-4">
               <button
                 className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
                 disabled={nav.state !== "idle"}
               >
                 {nav.state !== "idle" ? "Posting…" : "Post Remit"}
               </button>
-            </Form>
-          </div>
-        </div>
+            </div>
+          </section>
+
+          {/* Right column: sold-from-load */}
+          <section className="md:col-span-8">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-medium text-slate-800">
+                    Sold from Rider Load
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Optional — one receipt per row. Pick a load line, set
+                    qty/price, and (optional) buyer.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSoldRows((prev) => [
+                      ...prev,
+                      {
+                        key: crypto.randomUUID(),
+                        productId: null,
+                        name: "",
+                        qty: 1,
+                        unitPrice: 0,
+                        customerId: null,
+                        customerObj: null,
+                        onCredit: false,
+                      },
+                    ])
+                  }
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  + Add sold row
+                </button>
+              </div>
+
+              <div className="px-4 py-4 space-y-3">
+                {soldRows.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-center text-sm text-slate-500">
+                    No sold-from-load rows yet.
+                  </div>
+                ) : null}
+
+                {soldRows.map((r, idx) => (
+                  <div
+                    key={r.key}
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                  >
+                    {/* Row header */}
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-xs font-medium text-slate-700">
+                        Item #{idx + 1}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSoldRows((prev) =>
+                            prev.filter((x) => x.key !== r.key)
+                          )
+                        }
+                        className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100"
+                        aria-label="Remove row"
+                        title="Remove row"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Customer + credit */}
+                    <div className="grid grid-cols-12 gap-3">
+                      {/* Customer picker (search + quick add, same as Cashier) */}
+                      <div className="col-span-12 lg:col-span-7">
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Customer (optional; required if On credit)
+                        </label>
+                        <CustomerPicker
+                          key={`sold-cust-${r.key}`}
+                          value={r.customerObj ?? null}
+                          onChange={(val) => {
+                            const norm = val
+                              ? {
+                                  id: val.id,
+                                  firstName: val.firstName ?? "",
+                                  lastName: val.lastName ?? "",
+                                  alias: val.alias ?? null,
+                                  phone: val.phone ?? null,
+                                }
+                              : null;
+                            setSoldRows((prev) =>
+                              prev.map((x) =>
+                                x.key === r.key
+                                  ? {
+                                      ...x,
+                                      customerObj: norm,
+                                      customerId: norm?.id ?? null,
+                                    }
+                                  : x
+                              )
+                            );
+                          }}
+                        />
+
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Select an existing customer or add a new one.
+                        </p>
+                      </div>
+
+                      {/* On-credit */}
+                      <div className="col-span-12 lg:col-span-5 flex items-end">
+                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={!!r.onCredit}
+                            onChange={(e) => {
+                              const onCredit = e.target.checked;
+                              setSoldRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === r.key ? { ...x, onCredit } : x
+                                )
+                              );
+                            }}
+                            className="h-4 w-4 accent-indigo-600"
+                          />
+                          <span>Mark as credit (A/R)</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Product + qty + price */}
+                    <div className="mt-3 grid grid-cols-12 gap-3">
+                      <div className="col-span-12 md:col-span-7">
+                        {(() => {
+                          const inputId = `sold-${r.key}-product`;
+                          return (
+                            <>
+                              <label
+                                htmlFor={inputId}
+                                className="mb-1 block text-xs font-medium text-slate-600"
+                              >
+                                Product
+                              </label>
+                              <input
+                                id={inputId}
+                                list="soldFromLoad"
+                                value={
+                                  r.productId != null
+                                    ? `${r.productId} | ${r.name}`
+                                    : r.name
+                                }
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim();
+                                  let pid: number | null = null;
+                                  let name = raw;
+                                  const m = raw.match(/^(\d+)\s*\|\s*(.+)$/);
+                                  if (m) {
+                                    pid = Number(m[1]);
+                                    name = m[2];
+                                  } else if (/^\d+$/.test(raw)) {
+                                    const found = loadout.find(
+                                      (x) => x.productId === Number(raw)
+                                    );
+                                    if (found) {
+                                      pid = found.productId!;
+                                      name = found.name;
+                                    }
+                                  } else {
+                                    const found = loadout.find(
+                                      (x) => x.name === raw
+                                    );
+                                    if (found) {
+                                      pid = found.productId!;
+                                      name = found.name;
+                                    }
+                                  }
+                                  setSoldRows((prev) =>
+                                    prev.map((x) =>
+                                      x.key === r.key
+                                        ? {
+                                            ...x,
+                                            productId: pid,
+                                            name,
+                                            unitPrice:
+                                              pid != null
+                                                ? defaultPriceFor(pid)
+                                                : x.unitPrice,
+                                          }
+                                        : x
+                                    )
+                                  );
+                                }}
+                                placeholder="Search load: 123 | Product name"
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <div className="col-span-6 md:col-span-2">
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Qty
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="1"
+                          value={r.qty}
+                          onChange={(e) => {
+                            const v = Math.max(0, Number(e.target.value));
+                            setSoldRows((prev) =>
+                              prev.map((x) =>
+                                x.key === r.key ? { ...x, qty: v } : x
+                              )
+                            );
+                          }}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                        />
+                      </div>
+                      <div className="col-span-6 md:col-span-3">
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Unit price
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={r.unitPrice}
+                          onChange={(e) => {
+                            const v = Math.max(0, Number(e.target.value));
+                            setSoldRows((prev) =>
+                              prev.map((x) =>
+                                x.key === r.key ? { ...x, unitPrice: v } : x
+                              )
+                            );
+                          }}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="Unit price"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Walk-in imprint only if no customer */}
+                    {!r.customerId && (
+                      <div className="mt-3 grid grid-cols-12 gap-3">
+                        <div className="col-span-12 md:col-span-6">
+                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Buyer name (optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={r.buyerName || ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setSoldRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === r.key ? { ...x, buyerName: v } : x
+                                )
+                              );
+                            }}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                            placeholder="Juan D."
+                          />
+                        </div>
+                        <div className="col-span-12 md:col-span-6">
+                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Buyer phone (optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={r.buyerPhone || ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setSoldRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === r.key ? { ...x, buyerPhone: v } : x
+                                )
+                              );
+                            }}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                            placeholder="09xx xxx xxxx"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* datalist for product search */}
+                <datalist id="soldFromLoad">
+                  {loadout.map((l, i) => (
+                    <option
+                      key={`${l.productId ?? "x"}-${i}`}
+                      value={
+                        l.productId != null
+                          ? `${l.productId} | ${l.name}`
+                          : l.name
+                      }
+                    />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            {/* Hidden payload for sold rows — **change: always include customerId** */}
+            <input
+              type="hidden"
+              name="soldLoadJson"
+              value={JSON.stringify(
+                soldRows
+                  .filter((r) => r.qty > 0 && (r.productId != null || r.name))
+                  .map((r) => ({
+                    productId: r.productId,
+                    name: r.name,
+                    qty: r.qty,
+                    unitPrice: r.unitPrice,
+                    buyerName: r.customerId ? null : r.buyerName || null,
+                    buyerPhone: r.customerId ? null : r.buyerPhone || null,
+                    customerId: r.customerId ?? null, // ← keep for cash & credit
+                    onCredit: !!r.onCredit,
+                  }))
+              )}
+            />
+          </section>
+        </Form>
       </div>
     </main>
   );
