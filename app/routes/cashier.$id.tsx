@@ -8,6 +8,7 @@ import {
   Form,
   useNavigation,
   useRouteError,
+  isRouteErrorResponse,
 } from "@remix-run/react";
 import React, { useMemo } from "react";
 import { allocateReceiptNo } from "~/utils/receipt";
@@ -28,8 +29,19 @@ import { db } from "~/utils/db.server";
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
 
+// 🔒 Make loader output explicit to avoid union/confusion in useLoaderData<>
+type LoaderData = {
+  order: any; // (you can narrow later if you like)
+  isStale: boolean;
+  lockExpiresAt: number | null;
+  activePricingRules: Rule[];
+};
+
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
+  if (!Number.isFinite(id)) {
+    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
+  }
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
   const order = await db.order.findUnique({
     where: { id },
@@ -63,6 +75,11 @@ export async function loader({ params }: LoaderFunctionArgs) {
     },
   });
 
+  // Cashier page is PICKUP-only. If this is a DELIVERY order, punt to Dispatch.
+  if (order?.channel === "DELIVERY") {
+    return redirect(`/orders/${id}/dispatch`);
+  }
+
   if (!order) throw new Response("Not found", { status: 404 });
   const now = Date.now();
   const isStale = order.lockedAt
@@ -82,7 +99,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     customerId
   );
 
-  return json({
+  return json<LoaderData>({
     order,
     isStale,
     lockExpiresAt,
@@ -94,6 +111,38 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const id = Number(params.id);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
+
+  if (act === "reprint") {
+    await db.order.update({
+      where: { id },
+      data: { printCount: { increment: 1 }, printedAt: new Date() },
+    });
+    return json({ ok: true, didReprint: true });
+  }
+  if (act === "release") {
+    await db.order.update({
+      where: { id },
+      data: { lockedAt: null, lockedBy: null },
+    });
+    return redirect("/cashier");
+  }
+
+  // Support buttons shown in the UI header
+  if (act === "reprint") {
+    await db.order.update({
+      where: { id },
+      data: { printCount: { increment: 1 }, printedAt: new Date() },
+    });
+    return json({ ok: true, didReprint: true });
+  }
+
+  if (act === "release") {
+    await db.order.update({
+      where: { id },
+      data: { lockedAt: null, lockedBy: null },
+    });
+    return redirect("/cashier");
+  }
 
   if (act === "settlePayment") {
     const cashGiven = Number(fd.get("cashGiven") || 0);
@@ -124,7 +173,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     if (!order)
       return json({ ok: false, error: "Order not found" }, { status: 404 });
-    // Cashier is now PICKUP-only: route deliveries to Dispatch/Remit flow.
+    // Cashier is now PICKUP-only: route deliveries to Dispatch flow.
     if (order.channel === "DELIVERY") {
       return redirect(`/orders/${id}/dispatch`);
     }
@@ -372,10 +421,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     // Deduct stock here ONLY for PICKUP orders.
     // For DELIVERY, inventory is deducted at DISPATCH (see dispatch action).
+    // Channel is guaranteed NOT 'DELIVERY' here (we redirected above),
+    // so deduction follows pickup rules.
     const willDeductNow =
-      order.channel === "DELIVERY"
-        ? false
-        : remaining <= 1e-6 || (releaseWithBalance && !order.releasedAt);
+      remaining <= 1e-6 || (releaseWithBalance && !order.releasedAt);
 
     if (errors.length && willDeductNow) {
       return json({ ok: false, errors }, { status: 400 });
@@ -468,9 +517,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             // if cashier picked a customer anyway, persist it
             ...(customerId ? { customerId } : {}),
             // If this full payment also did a release now, persist release metadata.
-            ...(order.channel === "PICKUP" &&
-            releaseWithBalance &&
-            !order.releasedAt
+            ...(releaseWithBalance && !order.releasedAt
               ? {
                   releaseWithBalance: true,
                   releasedApprovedBy,
@@ -534,7 +581,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 export default function CashierOrder() {
   const { order, isStale, lockExpiresAt, activePricingRules } =
-    useLoaderData<typeof loader>();
+    useLoaderData<LoaderData>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like order-pad toggle
@@ -914,11 +961,6 @@ export default function CashierOrder() {
                 (actionData as any).error ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {(actionData as any).error}
-                  </div>
-                ) : null}
-                {actionData && "paid" in actionData && actionData.paid ? (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                    Paid ✔ Inventory deducted.
                   </div>
                 ) : null}
               </div>

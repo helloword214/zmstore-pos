@@ -41,7 +41,7 @@ type LoaderData = {
   order: {
     id: number;
     orderCode: string;
-    fulfillmentStatus: string | null;
+    fulfillmentStatus: FulfillmentStatus | null;
     dispatchedAt?: string | null;
     deliveredAt?: string | null;
     stagedAt?: string | null;
@@ -72,6 +72,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
   const order = await db.order.findUnique({
     where: { id },
     select: {
+      channel: true,
       id: true,
       orderCode: true,
       fulfillmentStatus: true,
@@ -104,6 +105,12 @@ export async function loader({ params }: LoaderFunctionArgs) {
       },
     },
   });
+
+  // ensure this page is only for DELIVERY orders
+  if (!order) throw new Response("Not found", { status: 404 });
+  if (order.channel !== "DELIVERY") {
+    return redirect(`/cashier?tab=dispatch`);
+  }
 
   // Lightweight product catalog for loadout picker — LPG ONLY
   // Filter by category name = "LPG" so cashier can only add LPG items to loadout.
@@ -156,7 +163,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     new Set([...employeeNames, ...recentNames])
   ).slice(0, 50);
 
-  if (!order) throw new Response("Not found", { status: 404 });
+  // (order is guaranteed by the guard above)
 
   const customerName = order.customer
     ? order.customer.alias ??
@@ -260,13 +267,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Load current status to enforce read-only behavior after dispatch
   const order = await db.order.findUnique({
     where: { id },
-    select: { fulfillmentStatus: true, riderName: true },
+    select: { fulfillmentStatus: true, riderName: true, channel: true },
   });
   if (!order)
     return json<ActionData>(
       { ok: false, error: "Order not found" },
       { status: 404 }
     );
+
+  // Extra guard: action must only operate on DELIVERY orders
+  if (order.channel !== "DELIVERY") {
+    return json<ActionData>(
+      { ok: false, error: "Not a DELIVERY order." },
+      { status: 400 }
+    );
+  }
 
   const isReadOnly = order.fulfillmentStatus === "DISPATCHED";
 
@@ -315,7 +330,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   switch (intent) {
     case "cancel":
-      return redirect(`/cashier/${id}`);
+      return redirect(`/cashier?tab=dispatch`);
 
     case "save-exit":
       if (isReadOnly) {
@@ -334,7 +349,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           stagedAt: new Date(),
         },
       });
-      return redirect(`/cashier/${id}`);
+      return redirect(`/cashier?tab=dispatch`);
 
     case "save":
       if (isReadOnly) {
@@ -384,7 +399,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         new Set(fullOrder.items.map((i) => i.productId))
       );
       // …and IDs used in LOADOUT snapshot (from parsed form earlier)
-      const postedIds = Array.from(
+      const loadoutIds = Array.from(
         new Set(
           loadoutSnapshot
             .map((l) => (l?.productId == null ? null : Number(l.productId)))
@@ -392,7 +407,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         )
       );
       // Fetch for the UNION so stock checks “see” both sources
-      const allIds = Array.from(new Set([...itemIds, ...postedIds]));
+      const allIds = Array.from(new Set([...itemIds, ...loadoutIds]));
       const products = await db.product.findMany({
         where: { id: { in: allIds } },
         select: {
@@ -571,8 +586,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           { status: 400 }
         );
       }
-      // No side effects here; printing is handled by /orders/:id/ticket
-      return json<ActionData>({ ok: true });
+      // jump straight to ticket with autoprint
+      return redirect(`/orders/${id}/ticket?autoprint=1&autoback=1`);
 
     default:
       return json<ActionData>(
@@ -653,7 +668,7 @@ export default function DispatchStagingPage() {
     <div className="mx-auto p-3 md:p-6 min-h-screen bg-[#f7f7fb]">
       <div className="mb-3">
         <Link
-          to={`/cashier/${order.id}`}
+          to={"/cashier?tab=dispatch"}
           className="text-sm text-indigo-600 hover:underline"
         >
           ← Back to Cashier
@@ -1133,13 +1148,12 @@ export default function DispatchStagingPage() {
                 </button>
               </>
             ) : (
-              <button
-                name="intent"
-                value="reprint"
+              <a
+                href={`/orders/${order.id}/ticket?autoprint=1&autoback=1`}
                 className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm"
               >
                 Reprint Ticket
-              </button>
+              </a>
             )}
           </Form>
         </div>
