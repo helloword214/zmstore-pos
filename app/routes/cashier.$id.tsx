@@ -8,8 +8,6 @@ import {
   Form,
   useNavigation,
   useRouteError,
-  isRouteErrorResponse,
-  Link,
 } from "@remix-run/react";
 import React, { useMemo } from "react";
 import { allocateReceiptNo } from "~/utils/receipt";
@@ -96,182 +94,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const id = Number(params.id);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
-  // ─────────────────────────────────────────────────────────────
-  // NEW: Delivery Dispatch action
-  // ─────────────────────────────────────────────────────────────
-  if (act === "dispatch") {
-    // Load order with items; we need channel + items to perform stock deduction
-    const order = await db.order.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!order)
-      return json({ ok: false, error: "Order not found" }, { status: 404 });
-    if (order.channel !== "DELIVERY") {
-      return json(
-        { ok: false, error: "Not a delivery order" },
-        { status: 400 }
-      );
-    }
-    // If already dispatched, just reprint ticket (do not re-deduct).
-    if (order.dispatchedAt) {
-      return redirect(`/orders/${id}/ticket?autoprint=1&autoback=1`);
-    }
 
-    // Build product cache to infer unit kind per line (retail vs pack)
-    const productIds = Array.from(
-      new Set(order.items.map((i: any) => i.productId))
-    );
-    const products = await db.product.findMany({
-      where: { id: { in: productIds } },
-      select: {
-        id: true,
-        allowPackSale: true,
-        price: true,
-        srp: true,
-        stock: true,
-        packingStock: true,
-      },
-    });
-    const byId = new Map(products.map((p) => [p.id, p]));
-
-    // Infer unit kind (robust against per-customer pricing) using allowed prices
-    const effectiveCustomerId = order.customerId ?? null;
-    const errors: Array<{ id: number; reason: string }> = [];
-    const deltas = new Map<number, { pack: number; retail: number }>();
-    const approxEqual = (a: number, b: number, eps = 0.25) =>
-      Math.abs(a - b) <= eps;
-
-    for (const it of order.items as any[]) {
-      const p = byId.get(it.productId);
-      if (!p) {
-        errors.push({ id: it.productId, reason: "Product missing" });
-        continue;
-      }
-      const unitPrice = Number(it.unitPrice);
-      const qty = Number(it.qty);
-      const baseRetail = Number(p.price ?? 0);
-      const basePack = Number(p.srp ?? 0);
-      const packStock = Number(p.stock ?? 0);
-      const retailStock = Number(p.packingStock ?? 0);
-
-      const [allowedRetail, allowedPack] = await Promise.all([
-        baseRetail > 0
-          ? computeUnitPriceForCustomer(db as any, {
-              customerId: effectiveCustomerId,
-              productId: p.id,
-              unitKind: UnitKind.RETAIL,
-              baseUnitPrice: baseRetail,
-            })
-          : Promise.resolve(NaN),
-        basePack > 0
-          ? computeUnitPriceForCustomer(db as any, {
-              customerId: effectiveCustomerId,
-              productId: p.id,
-              unitKind: UnitKind.PACK,
-              baseUnitPrice: basePack,
-            })
-          : Promise.resolve(NaN),
-      ]);
-
-      let inferred: UnitKind | null = null;
-      if (Number.isFinite(allowedRetail) || Number.isFinite(allowedPack)) {
-        const dRetail = Number.isFinite(allowedRetail)
-          ? Math.abs(unitPrice - Number(allowedRetail))
-          : Number.POSITIVE_INFINITY;
-        const dPack = Number.isFinite(allowedPack)
-          ? Math.abs(unitPrice - Number(allowedPack))
-          : Number.POSITIVE_INFINITY;
-        if (Math.min(dRetail, dPack) !== Number.POSITIVE_INFINITY) {
-          inferred =
-            dRetail <= dPack && !!p.allowPackSale
-              ? UnitKind.RETAIL
-              : UnitKind.PACK;
-        }
-      }
-      if (!inferred) {
-        if (
-          p.allowPackSale &&
-          baseRetail > 0 &&
-          approxEqual(unitPrice, baseRetail)
-        )
-          inferred = UnitKind.RETAIL;
-        else if (basePack > 0 && approxEqual(unitPrice, basePack))
-          inferred = UnitKind.PACK;
-      }
-      if (!inferred) {
-        errors.push({
-          id: it.productId,
-          reason: "Cannot infer unit (retail/pack)",
-        });
-        continue;
-      }
-
-      if (inferred === UnitKind.RETAIL) {
-        if (qty > retailStock) {
-          errors.push({
-            id: it.productId,
-            reason: `Not enough retail stock (${retailStock} available)`,
-          });
-          continue;
-        }
-        const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
-        c.retail += qty;
-        deltas.set(p.id, c);
-      } else {
-        if (qty > packStock) {
-          errors.push({
-            id: it.productId,
-            reason: `Not enough pack stock (${packStock} available)`,
-          });
-          continue;
-        }
-        const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
-        c.pack += qty;
-        deltas.set(p.id, c);
-      }
-    }
-    if (errors.length) {
-      return json({ ok: false, errors }, { status: 400 });
-    }
-
-    // Deduct inventory & mark as dispatched atomically
-    await db.$transaction(async (tx) => {
-      for (const [pid, c] of deltas.entries()) {
-        const p = byId.get(pid)!;
-        await tx.product.update({
-          where: { id: pid },
-          data: {
-            stock: Number(p.stock ?? 0) - c.pack,
-            packingStock: Number(p.packingStock ?? 0) - c.retail,
-          },
-        });
-      }
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          dispatchedAt: new Date(),
-          fulfillmentStatus: "DISPATCHED",
-        },
-      });
-    });
-    // Print Delivery Ticket
-    return redirect(`/orders/${id}/ticket?autoprint=1&autoback=1`);
-  }
-  if (act === "reprint") {
-    await db.order.update({
-      where: { id },
-      data: { printCount: { increment: 1 }, printedAt: new Date() },
-    });
-    return json({ ok: true, didReprint: true });
-  }
-  if (act === "release") {
-    await db.order.update({
-      where: { id },
-      data: { lockedAt: null, lockedBy: null },
-    });
-    return redirect("/cashier");
-  }
   if (act === "settlePayment") {
     const cashGiven = Number(fd.get("cashGiven") || 0);
     const printReceipt = fd.get("printReceipt") === "1";
@@ -301,6 +124,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     if (!order)
       return json({ ok: false, error: "Order not found" }, { status: 404 });
+    // Cashier is now PICKUP-only: route deliveries to Dispatch/Remit flow.
+    if (order.channel === "DELIVERY") {
+      return redirect(`/orders/${id}/dispatch`);
+    }
     if (order.status !== "UNPAID" && order.status !== "PARTIALLY_PAID") {
       return json(
         { ok: false, error: "Order is already settled/voided" },
@@ -873,32 +700,6 @@ export default function CashierOrder() {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              {/* NEW: visible only for Delivery orders */}
-              {order.channel === "DELIVERY" ? (
-                <>
-                  <Link
-                    to={`/orders/${order.id}/dispatch`}
-                    className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
-                    aria-disabled={
-                      typeof nav !== "undefined" && nav.state !== "idle"
-                    }
-                    title={
-                      order.dispatchedAt
-                        ? "Open Dispatch Staging (read-only) to reprint ticket"
-                        : "Open Dispatch Staging (assign rider/vehicle, then dispatch & print)"
-                    }
-                  >
-                    {order.dispatchedAt ? "Dispatch (Reprint)" : "Dispatch"}
-                  </Link>
-                  <a
-                    href={`/remit/${order.id}`}
-                    className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
-                    title="Open remit posting"
-                  >
-                    Remit
-                  </a>
-                </>
-              ) : null}
               <Form method="post">
                 <input type="hidden" name="_action" value="reprint" />
                 <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
