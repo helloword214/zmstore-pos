@@ -16,6 +16,7 @@ import {
 } from "~/services/pricing";
 import { allocateReceiptNo } from "~/utils/receipt";
 import { CustomerPicker } from "~/components/CustomerPicker";
+import { CurrencyInput } from "~/components/ui/CurrencyInput";
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const id = Number(params.id);
@@ -161,6 +162,72 @@ export async function action({ request, params }: ActionFunctionArgs) {
     soldRows = [];
   }
 
+  // Guard: compute allowed per sold-from-load row
+  const soldProductIds = Array.from(
+    new Set(
+      soldRows
+        .map((r) => Number(r.productId))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    )
+  ) as number[];
+  const soldProducts = soldProductIds.length
+    ? await db.product.findMany({
+        where: { id: { in: soldProductIds } },
+        select: { id: true, srp: true, price: true },
+      })
+    : [];
+  const soldById = new Map(soldProducts.map((p) => [p.id, p]));
+
+  const soldViolations: string[] = [];
+  for (const r of soldRows) {
+    const pid = Number(r.productId);
+    if (!Number.isFinite(pid)) continue;
+    const p = soldById.get(pid);
+    if (!p) continue;
+    // Treat load sales as PACK units
+    const basePack = Number(p.srp ?? p.price ?? 0);
+    const allowed = await computeUnitPriceForCustomer(db as any, {
+      customerId: r.customerId ?? null,
+      productId: pid,
+      unitKind: UnitKind.PACK,
+      baseUnitPrice: basePack,
+    });
+    const isCreditRow = !!r.onCredit && !!r.customerId;
+    // Allow below-allowed only if on-credit AND linked to a customer
+    if (Number(r.unitPrice) + 1e-6 < allowed && !isCreditRow) {
+      soldViolations.push(
+        `• ${r.name || `#${pid}`}: allowed ₱${allowed.toFixed(
+          2
+        )}, actual ₱${Number(r.unitPrice).toFixed(2)}`
+      );
+    }
+  }
+  if (soldViolations.length) {
+    return json(
+      {
+        ok: false,
+        error:
+          "Sold-from-load below allowed (cash or no customer). Link a customer and mark On credit to allow.\n" +
+          soldViolations.join("\n"),
+      },
+      { status: 400 }
+    );
+  }
+
+  // ✅ Early guard (outside transaction): on-credit requires a linked customer
+  const creditRowMissingCustomer = soldRows.find(
+    (r) => r.onCredit && !r.customerId
+  );
+  if (creditRowMissingCustomer) {
+    return json(
+      {
+        ok: false,
+        error: "On-credit sale requires a customer. Please select one.",
+      },
+      { status: 400 }
+    );
+  }
+
   if (!Number.isFinite(cashGiven) || cashGiven < 0) {
     return json(
       { ok: false, error: "Invalid collected cash." },
@@ -192,6 +259,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   });
   const byId = new Map(products.map((p) => [p.id, p]));
 
+  // (price-guard for main order moved below after computing `remaining`)
   const rules: Rule[] = await fetchActiveCustomerRules(
     db,
     order.customerId ?? null
@@ -214,22 +282,86 @@ export async function action({ request, params }: ActionFunctionArgs) {
     })),
     rules,
   });
+
   const pricing = applyDiscounts(cart, rules, { id: order.customerId ?? null });
-  const total = pricing.total ?? Number(order.totalBeforeDiscount);
+  // Final total after discounts (same logic as UI)
+  const adjustedById = new Map(
+    (pricing.adjustedItems ?? []).map((a: any) => [a.id, a])
+  );
+  let _final = 0;
+  for (const it of order.items) {
+    const qty = Number(it.qty);
+    const origUnit = Number(it.unitPrice);
+    const effUnit = Number(
+      adjustedById.get(it.id)?.effectiveUnitPrice ?? origUnit
+    );
+    _final += effUnit * qty;
+  }
+  const finalTotal = Math.round(_final * 100) / 100;
 
   const alreadyPaid = (order.payments ?? []).reduce(
     (s, p) => s + Number(p.amount),
     0
   );
-  const dueBefore = Math.max(0, total - alreadyPaid);
+  const dueBefore = Math.max(0, finalTotal - alreadyPaid);
 
   const appliedPayment = Math.min(Math.max(0, cashGiven), dueBefore);
   const nowPaid = alreadyPaid + appliedPayment;
-  const remaining = Math.max(0, total - nowPaid);
+  const remaining = Math.max(0, finalTotal - nowPaid);
 
   if (remaining > 0 && !order.customerId) {
     return json(
       { ok: false, error: "Link a customer before accepting partial payment." },
+      { status: 400 }
+    );
+  }
+
+  // 🔒 Final price guard (main order):
+  // Allow below-allowed IF there's a customer AND we will leave a balance (on-credit).
+  const allowMainOrderUnderAllowed = !!order.customerId && remaining > 0;
+  const priceViolations: Array<{
+    itemId: number;
+    name: string;
+    allowed: number;
+    actual: number;
+  }> = [];
+  for (const it of order.items) {
+    const p = byId.get(it.productId);
+    if (!p) continue;
+    const approx = (a: number, b: number, eps = 0.01) => Math.abs(a - b) <= eps;
+    const baseRetail = Number(p.price ?? 0);
+    const basePack = Number(p.srp ?? 0);
+    const isRetail =
+      p.allowPackSale &&
+      baseRetail > 0 &&
+      approx(Number(it.unitPrice), baseRetail);
+    const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
+    const baseUnitPrice = unitKind === UnitKind.RETAIL ? baseRetail : basePack;
+    const allowed = await computeUnitPriceForCustomer(db as any, {
+      customerId: order.customerId ?? null,
+      productId: p.id,
+      unitKind,
+      baseUnitPrice,
+    });
+    const actual = Number(it.unitPrice);
+    if (actual + 1e-6 < allowed) {
+      priceViolations.push({ itemId: it.id, name: it.name, allowed, actual });
+    }
+  }
+  if (priceViolations.length && !allowMainOrderUnderAllowed) {
+    const details = priceViolations
+      .map(
+        (v) =>
+          `• ${v.name}: allowed ₱${v.allowed.toFixed(
+            2
+          )}, actual ₱${v.actual.toFixed(2)}`
+      )
+      .join("\n");
+    return json(
+      {
+        ok: false,
+        error: "Price below allowed for a fully-paid remit.\n" + details,
+      },
       { status: 400 }
     );
   }
@@ -326,13 +458,68 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   await db.$transaction(async (tx) => {
-    if (appliedPayment > 0) {
-      await tx.payment.create({
+    // (C.1) Persist allowedUnitPrice / pricePolicy
+    for (const it of order.items) {
+      const p = byId.get(it.productId);
+      if (!p) continue;
+      const approx = (a: number, b: number, eps = 0.01) =>
+        Math.abs(a - b) <= eps;
+      const isRetail =
+        p.allowPackSale &&
+        Number(p.price ?? 0) > 0 &&
+        approx(Number(it.unitPrice), Number(p.price ?? 0));
+      const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
+      const baseUnitPrice =
+        unitKind === UnitKind.RETAIL
+          ? Number(p.price ?? 0)
+          : Number(p.srp ?? 0);
+      const allowed = await computeUnitPriceForCustomer(tx as any, {
+        customerId: order.customerId ?? null,
+        productId: p.id,
+        unitKind,
+        baseUnitPrice,
+      });
+      const pricePolicy =
+        Math.abs(allowed - baseUnitPrice) <= 0.009 ? "BASE" : "PER_ITEM";
+      await tx.orderItem.update({
+        where: { id: it.id },
         data: {
-          orderId: order.id,
-          method: "CASH",
-          amount: appliedPayment,
-          refNo: "RIDER-REMIT",
+          allowedUnitPrice: allowed,
+          pricePolicy,
+        },
+      });
+    }
+
+    // 🧮 Persist discounted snapshot for parent order/items (single source of truth for summary)
+    {
+      const adjustedByIdTx = new Map(
+        (pricing.adjustedItems ?? []).map((a: any) => [a.id, a])
+      );
+      let origSubtotal = 0;
+      let finalSubtotal = 0;
+      for (const it of order.items) {
+        const qty = Number(it.qty);
+        const origUnit = Number(it.unitPrice);
+        const effUnit = Number(
+          adjustedByIdTx.get(it.id)?.effectiveUnitPrice ?? origUnit
+        );
+        const lineBefore = Math.round(origUnit * qty * 100) / 100;
+        const lineAfter = Math.round(effUnit * qty * 100) / 100;
+        origSubtotal += lineBefore;
+        finalSubtotal += lineAfter;
+        await tx.orderItem.update({
+          where: { id: it.id },
+          data: { lineTotal: lineAfter },
+        });
+      }
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          // convention:
+          // subtotal            = original subtotal (pre-discount)
+          // totalBeforeDiscount = final total (post-discount)
+          subtotal: Math.round(origSubtotal * 100) / 100,
+          totalBeforeDiscount: Math.round(finalSubtotal * 100) / 100,
         },
       });
     }
@@ -386,24 +573,34 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    // Keep credit guard: on-credit requires a customer
-    const creditError = soldRows.find((r) => r.onCredit && !r.customerId);
-    if (creditError) {
-      return json(
-        {
-          ok: false,
-          error: "On-credit sale requires a customer. Please select one.",
-        },
-        { status: 400 }
-      );
-    }
-
     for (const row of soldRows) {
-      const lineTotal = Number((row.qty * row.unitPrice).toFixed(2));
       const productId = Number(row.productId);
       if (!Number.isFinite(productId)) {
         throw new Error("Invalid productId for roadside sale item.");
       }
+
+      // --- NEW: derive final unit price using customer's allowed price when appropriate ---
+      const approx = (a: number, b: number, eps = 0.009) =>
+        Math.abs(a - b) <= eps;
+      const pForRow = soldById.get(productId);
+      const basePack = Number(pForRow?.srp ?? pForRow?.price ?? 0);
+      const allowedForRow = await computeUnitPriceForCustomer(tx as any, {
+        customerId: row.customerId ?? null,
+        productId,
+        unitKind: UnitKind.PACK, // roadside load = PACK pricing
+        baseUnitPrice: basePack,
+      });
+
+      // Auto-apply discount only when:
+      //  - may linked customer, and
+      //  - hindi mano-manong binago (unitPrice 0 or ~base price)
+      const autoUseAllowed =
+        !!row.customerId &&
+        (row.unitPrice <= 0 || approx(row.unitPrice, basePack));
+      const finalUnitPrice = autoUseAllowed
+        ? allowedForRow
+        : Number(row.unitPrice);
+      const lineTotal = Number((Number(row.qty) * finalUnitPrice).toFixed(2));
 
       const roadsideCode =
         `RS-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-` +
@@ -438,8 +635,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
                 productId,
                 name: row.name,
                 qty: row.qty,
-                unitPrice: row.unitPrice,
+                unitPrice: finalUnitPrice,
                 lineTotal,
+                // audit fields
+                allowedUnitPrice: allowedForRow,
+                pricePolicy:
+                  Math.abs(allowedForRow - basePack) <= 0.009
+                    ? "BASE"
+                    : "PER_ITEM",
               },
             ],
           },
@@ -524,7 +727,47 @@ export default function RemitOrderPage() {
     (s: number, p: any) => s + Number(p.amount),
     0
   );
-  const total = pricing.total ?? Number(order.totalBeforeDiscount);
+
+  // Helpers for currency <-> number
+  const parseMoney = (s: string | number | null | undefined) => {
+    if (s == null) return 0;
+    const n = parseFloat(String(s).replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // 💸 Discount breakdown (orig → discount → final), plus per-line totals
+  const discountView = React.useMemo(() => {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const adjusted = new Map(
+      (pricing.adjustedItems ?? []).map((a: any) => [a.id, a])
+    );
+    const rows = order.items.map((it: any) => {
+      const qty = Number(it.qty);
+      const origUnit = Number(it.unitPrice);
+      const effUnit =
+        adjusted.get(it.id)?.effectiveUnitPrice ?? Number(it.unitPrice);
+      const perUnitDisc = Math.max(0, r2(origUnit - effUnit));
+      const lineDisc = r2(perUnitDisc * qty);
+      const lineFinal = r2(effUnit * qty);
+      return {
+        id: it.id,
+        name: it.name,
+        qty,
+        origUnit: r2(origUnit),
+        effUnit: r2(effUnit),
+        perUnitDisc,
+        lineDisc,
+        lineFinal,
+      };
+    });
+    const subtotal = r2(rows.reduce((s, r) => s + r.origUnit * r.qty, 0));
+    const totalAfter = r2(rows.reduce((s, r) => s + r.effUnit * r.qty, 0));
+    const discountTotal = r2(subtotal - totalAfter);
+    return { rows, discountTotal, subtotal, totalAfter };
+  }, [order.items, pricing]);
+
+  // Use the row-derived totals everywhere in the UI
+  const total = discountView.totalAfter;
   const due = Math.max(0, total - alreadyPaid);
 
   type SoldRowUI = {
@@ -544,6 +787,8 @@ export default function RemitOrderPage() {
       alias?: string | null;
       phone?: string | null;
     } | null;
+    allowedUnitPrice?: number | null; // 👈 preview of computed allowed (PACK)
+    touched?: boolean; // 👈 if user manually changed unit price
   };
 
   const loadout: Array<{
@@ -559,9 +804,68 @@ export default function RemitOrderPage() {
     : [];
 
   const [soldRows, setSoldRows] = React.useState<SoldRowUI[]>([]);
+  const [cashGivenStr, setCashGivenStr] = React.useState<string>(
+    due.toFixed(2)
+  );
 
-  const defaultPriceFor = (pid: number | null): number =>
-    pid != null && priceIndex[pid] != null ? Number(priceIndex[pid]) : 0;
+  const defaultPriceFor = React.useCallback(
+    (pid: number | null): number => {
+      return pid != null && priceIndex[pid] != null
+        ? Number(priceIndex[pid])
+        : 0;
+    },
+    [priceIndex]
+  );
+
+  // 🔎 fetch allowed unit price for PACK (roadside load uses PACK logic)
+  const fetchAllowed = React.useCallback(
+    async (
+      customerId: number | null | undefined,
+      productId: number | null | undefined
+    ) => {
+      if (!productId) return null;
+      try {
+        const u = new URL("/resources/pricing/allowed", window.location.origin);
+        if (customerId) u.searchParams.set("cid", String(customerId));
+        u.searchParams.set("pid", String(productId));
+        u.searchParams.set("unit", "PACK");
+        const res = await fetch(u.toString());
+        if (!res.ok) return null;
+        const j = await res.json();
+        if (j?.ok && Number.isFinite(j.allowed)) return Number(j.allowed);
+      } catch {}
+      return null;
+    },
+    []
+  );
+
+  // 👇 helper to update a row's allowed and maybe prefill unit price
+  const refreshRowAllowed = React.useCallback(
+    async (rowKey: string, cid: number | null, pid: number | null) => {
+      const allowed = await fetchAllowed(cid, pid);
+      setSoldRows((prev) =>
+        prev.map((r) => {
+          if (r.key !== rowKey) return r;
+          const base = defaultPriceFor(pid);
+          // prefill rule:
+          // - if user hasn't touched price OR it still equals base/default, adopt allowed
+          const shouldPrefill =
+            !r.touched ||
+            !Number.isFinite(r.unitPrice) ||
+            Math.abs((r.unitPrice || 0) - base) <= 0.0001;
+          const hasAllowed =
+            typeof allowed === "number" && Number.isFinite(allowed);
+          return {
+            ...r,
+            allowedUnitPrice: allowed,
+            unitPrice:
+              shouldPrefill && hasAllowed ? (allowed as number) : r.unitPrice,
+          };
+        })
+      );
+    },
+    [fetchAllowed, defaultPriceFor]
+  );
 
   // (auto-print moved to /remit/:id/summary)
 
@@ -608,14 +912,43 @@ export default function RemitOrderPage() {
               </div>
               <div className="px-4 py-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600">
-                    Total (after discounts)
+                  <span className="text-slate-600">Original subtotal</span>
+                  <span className="font-semibold">
+                    {peso(discountView.subtotal)}
                   </span>
-                  <span className="font-semibold">{peso(total)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600">Already paid</span>
-                  <span className="font-semibold">{peso(alreadyPaid)}</span>
+                  <span className="text-slate-600">Discounts</span>
+                  <span className="font-semibold text-rose-600">
+                    −{peso(discountView.discountTotal)}
+                  </span>
+                </div>
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-xs text-slate-500">
+                    View discount breakdown
+                  </summary>
+                  <div className="mt-2 space-y-1 text-xs">
+                    {discountView.rows
+                      .filter((r) => r.lineDisc > 0)
+                      .map((r) => (
+                        <div key={r.id} className="flex justify-between">
+                          <span className="text-slate-600 truncate pr-2">
+                            {r.name}
+                          </span>
+                          <span className="tabular-nums">
+                            {r.qty} × ({peso(r.origUnit)} → {peso(r.effUnit)}) =
+                            −{peso(r.lineDisc)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </details>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-700">Total after discounts</span>
+                  <span className="font-semibold text-slate-900">
+                    {peso(discountView.totalAfter)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-700">Due now</span>
@@ -624,18 +957,46 @@ export default function RemitOrderPage() {
                   </span>
                 </div>
 
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-xs text-slate-500">
+                    View per-item breakdown
+                  </summary>
+                  <div className="mt-2 space-y-1 text-xs">
+                    {discountView.rows.map((r) => (
+                      <div key={r.id} className="flex flex-col">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 truncate pr-2">
+                            {r.name}
+                          </span>
+                          <span className="tabular-nums">
+                            Orig {peso(r.origUnit)} • Disc {peso(r.perUnitDisc)}{" "}
+                            • Final {peso(r.effUnit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Line</span>
+                          <span className="tabular-nums">
+                            {r.qty} × {peso(r.effUnit)} = {peso(r.lineFinal)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
                 <div className="pt-2">
-                  <label className="block">
-                    <span className="block text-slate-700">Cash collected</span>
-                    <input
-                      name="cashGiven"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      defaultValue={due.toFixed(2)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                    />
-                  </label>
+                  <CurrencyInput
+                    name="cashGiven_display"
+                    label="Cash collected"
+                    value={cashGivenStr}
+                    onChange={(e) => setCashGivenStr(e.target.value)}
+                    placeholder="0.00"
+                  />
+                  {/* clean numeric value actually posted to the server */}
+                  <input
+                    type="hidden"
+                    name="cashGiven"
+                    value={parseMoney(cashGivenStr).toFixed(2)}
+                  />
                 </div>
 
                 <div className="pt-2">
@@ -792,8 +1153,21 @@ export default function RemitOrderPage() {
                                   : x
                               )
                             );
+
+                            // ⛓ fetch PACK-allowed when both cid+pid available
+                            const cid = norm?.id ?? null;
+                            const pid = r.productId ?? null;
+                            if (pid) void refreshRowAllowed(r.key, cid, pid);
                           }}
                         />
+
+                        {/* PACK discount note */}
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Note: Roadside load uses{" "}
+                          <span className="font-medium">PACK</span> pricing.
+                          Discounts apply only if the customers rules are set
+                          for PACK.
+                        </p>
 
                         <p className="mt-1 text-[11px] text-slate-500">
                           Select an existing customer or add a new one.
@@ -802,22 +1176,29 @@ export default function RemitOrderPage() {
 
                       {/* On-credit */}
                       <div className="col-span-12 lg:col-span-5 flex items-end">
-                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={!!r.onCredit}
-                            onChange={(e) => {
-                              const onCredit = e.target.checked;
-                              setSoldRows((prev) =>
-                                prev.map((x) =>
-                                  x.key === r.key ? { ...x, onCredit } : x
-                                )
-                              );
-                            }}
-                            className="h-4 w-4 accent-indigo-600"
-                          />
-                          <span>Mark as credit (A/R)</span>
-                        </label>
+                        <div className="flex flex-col gap-1">
+                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={!!r.onCredit}
+                              onChange={(e) => {
+                                const onCredit = e.target.checked;
+                                setSoldRows((prev) =>
+                                  prev.map((x) =>
+                                    x.key === r.key ? { ...x, onCredit } : x
+                                  )
+                                );
+                              }}
+                              className="h-4 w-4 accent-indigo-600"
+                            />
+                            <span>Mark as credit (A/R)</span>
+                          </label>
+                          {r.onCredit && !r.customerId && (
+                            <span className="text-[11px] text-rose-600">
+                              Select a customer to post as credit.
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -875,13 +1256,18 @@ export default function RemitOrderPage() {
                                             productId: pid,
                                             name,
                                             unitPrice:
-                                              pid != null
+                                              pid != null && !x.touched
                                                 ? defaultPriceFor(pid)
                                                 : x.unitPrice,
+                                            allowedUnitPrice: undefined,
                                           }
                                         : x
                                     )
                                   );
+                                  // refresh allowed after selecting product
+                                  const cid = r.customerId ?? null;
+                                  if (pid)
+                                    void refreshRowAllowed(r.key, cid, pid);
                                 }}
                                 placeholder="Search load: 123 | Product name"
                                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
@@ -914,21 +1300,90 @@ export default function RemitOrderPage() {
                         <label className="mb-1 block text-xs font-medium text-slate-600">
                           Unit price
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={r.unitPrice}
+                        {(() => {
+                          const base = defaultPriceFor(r.productId);
+                          const unit = Number(r.unitPrice || 0);
+                          const line = Number(r.qty || 0) * unit || 0;
+                          const allowed = Number.isFinite(
+                            r.allowedUnitPrice as number
+                          )
+                            ? (r.allowedUnitPrice as number)
+                            : null;
+                          const disc = Math.max(0, base - unit);
+                          const custDisc =
+                            allowed != null
+                              ? Math.max(0, base - allowed)
+                              : null;
+                          const belowAllowed =
+                            allowed != null && unit + 1e-6 < allowed;
+                          return (
+                            <div className="mb-1 text-[11px] text-slate-500 grid gap-0.5">
+                              <div className="flex justify-between">
+                                <span>Original</span>
+                                <span className="tabular-nums">
+                                  {peso(base)}
+                                </span>
+                              </div>
+                              {allowed != null && (
+                                <div className="flex justify-between">
+                                  <span>Customer price (PACK)</span>
+                                  <span className="tabular-nums">
+                                    {peso(allowed)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between">
+                                <span>Discount</span>
+                                <span className="tabular-nums text-rose-600">
+                                  −{peso(disc)}
+                                </span>
+                              </div>
+                              {custDisc != null && (
+                                <div className="flex justify-between text-slate-400">
+                                  <span>of which rule-based</span>
+                                  <span className="tabular-nums">
+                                    −{peso(custDisc)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between">
+                                <span>Final (per unit)</span>
+                                <span className="tabular-nums">
+                                  {peso(unit)}
+                                </span>
+                              </div>
+                              {belowAllowed && (
+                                <div className="flex justify-between text-rose-600">
+                                  <span>Below allowed</span>
+                                  <span className="tabular-nums">
+                                    min {peso(allowed!)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between">
+                                <span>Line total</span>
+                                <span className="tabular-nums">
+                                  {peso(line)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <CurrencyInput
+                          name={`unitPrice-${r.key}`}
+                          label=""
+                          value={String(r.unitPrice ?? "")}
                           onChange={(e) => {
-                            const v = Math.max(0, Number(e.target.value));
+                            const v = Math.max(0, parseMoney(e.target.value));
                             setSoldRows((prev) =>
                               prev.map((x) =>
-                                x.key === r.key ? { ...x, unitPrice: v } : x
+                                x.key === r.key
+                                  ? { ...x, unitPrice: v, touched: true }
+                                  : x
                               )
                             );
                           }}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                          placeholder="Unit price"
+                          placeholder="0.00"
                         />
                       </div>
                     </div>
@@ -1006,7 +1461,7 @@ export default function RemitOrderPage() {
                     productId: r.productId,
                     name: r.name,
                     qty: r.qty,
-                    unitPrice: r.unitPrice,
+                    unitPrice: Number(parseMoney(r.unitPrice).toFixed(2)),
                     buyerName: r.customerId ? null : r.buyerName || null,
                     buyerPhone: r.customerId ? null : r.buyerPhone || null,
                     customerId: r.customerId ?? null, // ← keep for cash & credit

@@ -138,6 +138,11 @@ export default function RiderReceipt() {
       currency: "PHP",
     }).format(Number(n || 0));
 
+  // Persisted-only math (no recompute):
+  const original = Number(parent.subtotal || 0); // pre-discount
+  const final = Number(parent.totalBeforeDiscount || 0); // post-discount
+  const discount = Math.max(0, Number((original - final).toFixed(2)));
+
   const grandTotal = children.reduce(
     (s, o) => s + Number(o.totalBeforeDiscount || 0),
     0
@@ -189,15 +194,23 @@ export default function RiderReceipt() {
         {/* Totals strip */}
         <div className="border-t border-slate-100 px-4 py-3 md:px-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div className="text-[11px] text-slate-500">Parent Subtotal</div>
+            <div className="text-[11px] text-slate-500">Original subtotal</div>
             <div className="text-sm font-semibold tabular-nums">
-              {peso(Number(parent.subtotal || 0))}
+              {peso(original)}
             </div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div className="text-[11px] text-slate-500">Parent Total</div>
+            <div className="text-[11px] text-slate-500">
+              Total after discounts
+            </div>
             <div className="text-sm font-semibold tabular-nums">
-              {peso(Number(parent.totalBeforeDiscount || 0))}
+              {peso(final)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div className="text-[11px] text-slate-500">Discounts</div>
+            <div className="text-sm font-semibold tabular-nums text-rose-600">
+              −{peso(discount)}
             </div>
           </div>
           <div className="hidden sm:block rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
@@ -260,18 +273,26 @@ export default function RiderReceipt() {
             <tfoot>
               <tr className="border-t border-slate-200 font-medium">
                 <td className="px-3 py-2" colSpan={3}>
-                  Subtotal
+                  Original subtotal
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {peso(Number(parent.subtotal || 0))}
+                  {peso(original)}
                 </td>
               </tr>
               <tr className="font-medium">
                 <td className="px-3 py-2" colSpan={3}>
-                  Total
+                  Discounts
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-rose-600">
+                  −{peso(discount)}
+                </td>
+              </tr>
+              <tr className="font-semibold">
+                <td className="px-3 py-2" colSpan={3}>
+                  Total after discounts
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {peso(Number(parent.totalBeforeDiscount || 0))}
+                  {peso(final)}
                 </td>
               </tr>
             </tfoot>

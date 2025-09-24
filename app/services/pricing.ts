@@ -1,7 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // app/services/pricing.ts
 /* Core pricing types + engine used both in the client preview and server guards */
-import type { PrismaClient, Prisma } from "@prisma/client";
+import type {
+  PrismaClient,
+  Prisma,
+  UnitKind as PrismaUnitKind,
+} from "@prisma/client";
+
+// Use a type alias so this file never imports Prisma *values* at runtime.
+export type UnitKind = PrismaUnitKind;
+// (Alternative kung ayaw mo mag-depende sa Prisma dito:)
+// export type UnitKind = "RETAIL" | "PACK";
 
 /** Selectors let a rule target specific products/units (extend as needed). */
 export type Selector = {
