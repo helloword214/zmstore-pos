@@ -628,6 +628,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           totalBeforeDiscount: lineTotal,
           dispatchedAt: order.dispatchedAt ?? new Date(),
           deliveredAt: new Date(),
+          // link this load-out receipt back to the Main Delivery
           remitParentId: order.id,
           items: {
             create: [
@@ -650,10 +651,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
         select: { id: true },
       });
 
-      const receiptNoChild = await allocateReceiptNo(tx);
+      const receiptNoLoadOut = await allocateReceiptNo(tx);
       await tx.order.update({
         where: { id: newOrder.id },
-        data: { receiptNo: receiptNoChild },
+        data: { receiptNo: receiptNoLoadOut },
       });
 
       if (!isCredit) {
@@ -666,6 +667,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
           },
         });
       }
+    }
+
+    // 💵 Record Main Delivery cash payment (so Summary shows "Main Delivery Cash")
+    // Uses appliedPayment (capped to amount due). We also persist tendered/change.
+    if (appliedPayment > 0) {
+      await tx.payment.create({
+        data: {
+          orderId: order.id,
+          method: "CASH",
+          amount: appliedPayment,
+          tendered: cashGiven,
+          change: Math.max(0, cashGiven - appliedPayment),
+          refNo: "MAIN-DELIVERY",
+        },
+      });
     }
 
     if (remaining <= 1e-6) {
@@ -876,7 +892,7 @@ export default function RemitOrderPage() {
         <div className="mb-4 flex items-end justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Rider Remit
+              Main Delivery Remit
             </h1>
             <div className="mt-1 text-sm text-slate-500">
               Order{" "}
