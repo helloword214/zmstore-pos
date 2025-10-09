@@ -14,6 +14,8 @@ import {
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { computeUnitPriceForCustomer } from "~/services/pricing";
+import { SelectInput } from "~/components/ui/SelectInput";
+import { ProductPickerHybridLoadout } from "~/components/ui/ProductPickerHybridLoadout";
 
 // Temporary: built-in vehicle catalog for M1 (no schema yet)
 const VEHICLE_CAPACITY: Record<string, number> = {
@@ -36,6 +38,7 @@ type LoaderData = {
   productOptions: Array<{
     id: number;
     name: string;
+    srp: number;
     allowDecimal: boolean; // based on product.unit (retail supports decimal in your system)
   }>;
   order: {
@@ -63,6 +66,7 @@ type LoaderData = {
     };
   };
   readOnly: boolean;
+  categories?: string[];
 };
 
 export async function loader({ params }: LoaderFunctionArgs) {
@@ -111,57 +115,41 @@ export async function loader({ params }: LoaderFunctionArgs) {
   if (order.channel !== "DELIVERY") {
     return redirect(`/cashier?tab=dispatch`);
   }
-
-  // Lightweight product catalog for loadout picker — LPG ONLY
-  // Filter by category name = "LPG" so cashier can only add LPG items to loadout.
-  const lpgProducts = await db.product.findMany({
+  // Lightweight product catalog for loadout picker — PACK / whole items (any category)
+  // Accept any active product that has a PACK price (srp > 0). This excludes pure retail-only SKUs.
+  const packProducts = await db.product.findMany({
     where: {
       isActive: true,
-      category: { is: { name: "LPG" } },
-      stock: { gt: 0 }, // must have pack stock available
-      srp: { gt: 0 }, // must have a pack price
+      srp: { gt: 0 }, // has a pack/whole price
+      stock: { gt: 0 }, // has pack stock available
     },
     select: { id: true, name: true, stock: true, srp: true },
     orderBy: { name: "asc" },
-    take: 200,
+    take: 500,
   });
-  // LPG loadout is per tank; disallow decimals for safety
-  const productOptions = lpgProducts.map((p) => ({
+
+  // Loadout counts whole units only
+  const productOptions = packProducts.map((p) => ({
     id: p.id,
     name: p.name,
+    srp: Number(p.srp ?? 0),
     allowDecimal: false,
   }));
 
-  // Build rider suggestions:
-  // - include active Employees with role=RIDER
-  // - plus distinct rider names from recent orders
-  const [employees, recentRiders] = await Promise.all([
-    db.employee.findMany({
-      where: { role: "RIDER", active: true },
-      select: { alias: true, firstName: true, lastName: true },
-      orderBy: [{ alias: "asc" }, { firstName: "asc" }, { lastName: "asc" }],
-      take: 100,
-    }),
-    db.order.findMany({
-      where: { riderName: { not: null } },
-      select: { riderName: true },
-      take: 30,
-      orderBy: { dispatchedAt: "desc" },
-    }),
-  ]);
-  const employeeNames = employees
+  // Build rider options: STRICT from Employees with role=RIDER only
+  const employees = await db.employee.findMany({
+    where: { role: "RIDER", active: true },
+    select: { alias: true, firstName: true, lastName: true },
+    orderBy: [{ alias: "asc" }, { firstName: "asc" }, { lastName: "asc" }],
+    take: 100,
+  });
+  const riderOptions = employees
     .map((e) =>
       (
         e.alias?.trim() || [e.firstName, e.lastName].filter(Boolean).join(" ")
       ).trim()
     )
     .filter(Boolean);
-  const recentNames = recentRiders
-    .map((r) => (r.riderName ?? "").trim())
-    .filter(Boolean);
-  const riderOptions = Array.from(
-    new Set([...employeeNames, ...recentNames])
-  ).slice(0, 50);
 
   // (order is guaranteed by the guard above)
 
@@ -171,6 +159,20 @@ export async function loader({ params }: LoaderFunctionArgs) {
         .filter(Boolean)
         .join(" ")
     : null;
+
+  // Preload all categories na may at least 1 active, pack-eligible product (optional guard)
+  const categories = await db.category.findMany({
+    where: {
+      products: {
+        some: {
+          isActive: true,
+          srp: { gt: 0 }, // pack items lang kung gusto mong match sa loadout
+        },
+      },
+    },
+    select: { name: true },
+    orderBy: { name: "asc" },
+  });
 
   const data: LoaderData = {
     riderName: order.riderName ?? null,
@@ -207,6 +209,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       },
     },
     readOnly: order.fulfillmentStatus === "DISPATCHED",
+    categories: categories.map((c) => c.name).filter(Boolean),
   };
 
   return json(data);
@@ -264,6 +267,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // tolerate bad JSON but don’t persist it
     loadoutSnapshot = [];
   }
+
+  // 🔧 Drop all lines with qty <= 0 (hindi na sasama sa validations/dispatch)
+  loadoutSnapshot = loadoutSnapshot.filter((l) => Number(l.qty) > 0);
+
+  // ❗ Guard: any line with qty > 0 must have a valid productId
+  const incompleteLoadLines = loadoutSnapshot.filter(
+    (l) =>
+      Number(l.qty) > 0 &&
+      (l.productId == null || !Number.isFinite(Number(l.productId)))
+  );
+  if (incompleteLoadLines.length > 0) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "Loadout has items with quantity but no product selected. Please pick a product for each line.",
+      },
+      { status: 400 }
+    );
+  }
+
+  // (optional) If there are positive-qty loadout lines, require at least one valid productId
+  const hasQtyLines = loadoutSnapshot.some((l) => Number(l.qty) > 0);
+
   // Load current status to enforce read-only behavior after dispatch
   const order = await db.order.findUnique({
     where: { id },
@@ -285,6 +312,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const isReadOnly = order.fulfillmentStatus === "DISPATCHED";
 
+  // 🔒 Strict server-side validation: rider must be an active RIDER employee
+  const employeeRiders = await db.employee.findMany({
+    where: { role: "RIDER", active: true },
+    select: { alias: true, firstName: true, lastName: true },
+    take: 200,
+  });
+  const validRiderSet = new Set(
+    employeeRiders
+      .map((e) =>
+        (
+          e.alias?.trim() || [e.firstName, e.lastName].filter(Boolean).join(" ")
+        ).trim()
+      )
+      .filter(Boolean)
+  );
+  if (!riderName || !validRiderSet.has(riderName)) {
+    return json<ActionData>(
+      { ok: false, error: "Rider must be selected from the list." },
+      { status: 400 }
+    );
+  }
+
   // compute used capacity for server-side validation
   const usedCapacity = loadoutSnapshot.reduce(
     (s, l) => s + (Number.isFinite(l.qty) ? Number(l.qty) : 0),
@@ -300,7 +349,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  // 🔒 Server-side guard: loadout must reference LPG products only
+  // 🔒 Server-side guard: loadout must reference PACK/whole items (must have srp > 0).
   // Find non-null productIds in the snapshot
   const postedIds = Array.from(
     new Set(
@@ -312,20 +361,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (postedIds.length > 0) {
     const rows = await db.product.findMany({
       where: { id: { in: postedIds } },
-      select: { id: true, category: { select: { name: true } } },
+      select: { id: true, srp: true },
     });
     const invalid = rows
-      .filter((r) => r.category?.name !== "LPG")
+      .filter((r) => Number(r.srp ?? 0) <= 0)
       .map((r) => r.id);
     if (invalid.length > 0) {
       return json<ActionData>(
         {
           ok: false,
-          error: "Loadout can only include LPG items.",
+          error:
+            "Loadout can only include whole/pack items (with a pack price).",
         },
         { status: 400 }
       );
     }
+  } else if (hasQtyLines) {
+    // May qty>0 pero walang nabalidate na productId — huwag ituloy
+    return json<ActionData>(
+      {
+        ok: false,
+        error: "Loadout quantity present but no valid products selected.",
+      },
+      { status: 400 }
+    );
   }
 
   switch (intent) {
@@ -614,12 +673,14 @@ export default function DispatchStagingPage() {
     loadoutSnapshot,
     riderOptions,
     productOptions,
+    categories,
   } = useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
   const [searchParams] = useSearchParams();
   const savedFlag = searchParams.get("saved") === "1";
   const busy = nav.state !== "idle";
+
   const [riderName, setRiderName] = React.useState<string>(
     riderFromServer ?? ""
   );
@@ -635,6 +696,15 @@ export default function DispatchStagingPage() {
   }, [vehicleName]);
   // expose capacity to form posts
   const capacityAttr = capacity == null ? "" : String(capacity);
+
+  const vehicleOptions = React.useMemo(
+    () => [
+      { value: "", label: "— Select vehicle —" },
+      ...Object.keys(VEHICLE_CAPACITY).map((v) => ({ value: v, label: v })),
+    ],
+    []
+  );
+
   // Loadout UI state
   type LoadLine = {
     key: string;
@@ -663,6 +733,85 @@ export default function DispatchStagingPage() {
     [loadout]
   );
   const overCapacity = capacity != null && usedCapacity > capacity;
+  const hasUnboundLoad = React.useMemo(
+    () => loadout.some((L) => Number(L.qty) > 0 && !L.productId),
+    [loadout]
+  );
+
+  // SRP preview of current loadout
+  const srpById = React.useMemo(
+    () => new Map(productOptions.map((p) => [p.id, Number(p.srp ?? 0)])),
+    [productOptions]
+  );
+  const loadoutValue = React.useMemo(
+    () =>
+      loadout.reduce((s, L) => {
+        if (!L.productId) return s;
+        const srp = srpById.get(L.productId) ?? 0;
+        const qty = Number(L.qty || 0);
+        return s + srp * qty;
+      }, 0),
+    [loadout, srpById]
+  );
+
+  // PACK-only whitelist (ids provided by loader)
+  const packOnlyIdSet = React.useMemo(
+    () => new Set(productOptions.map((p) => p.id)),
+    [productOptions]
+  );
+
+  // Quick-add chips pulled from your productOptions (e.g., LPG 11kg/22kg)
+  const topQuickAdds = React.useMemo(() => {
+    const wanted = ["11", "22"]; // add more sizes/keywords if you want
+    const picks: { label: string; id: number; allowDecimal: boolean }[] = [];
+
+    for (const kg of wanted) {
+      const m = productOptions.find(
+        (p) =>
+          /lpg/i.test(p.name) &&
+          new RegExp(`\\b${kg}\\s?kg\\b`, "i").test(p.name)
+      );
+      if (m)
+        picks.push({
+          label: `LPG ${kg}kg`,
+          id: m.id,
+          allowDecimal: m.allowDecimal,
+        });
+    }
+    return picks;
+  }, [productOptions]);
+
+  // ⬇️ place this inside DispatchStagingPage, with other useMemos
+  const serializedLoadout = React.useMemo(() => {
+    const clean = loadout
+      // only keep rows with qty > 0 and a valid productId
+      .filter((L) => Number(L.qty) > 0 && Number.isFinite(Number(L.productId)))
+      .map((L) => ({
+        productId: Number(L.productId),
+        name: L.name,
+        qty: Number(L.qty),
+        allowDecimal: Boolean(L.allowDecimal),
+      }));
+
+    return JSON.stringify(clean);
+  }, [loadout]);
+
+  const nudgeQty = React.useCallback(
+    (rowKey: string, sign: 1 | -1) => {
+      setLoadout((prev) =>
+        prev.map((l) => {
+          if (l.key !== rowKey) return l;
+          const step = l.allowDecimal ? 0.01 : 1;
+          const next = Math.max(0, (Number(l.qty) || 0) + sign * step);
+          const fixed = l.allowDecimal
+            ? Number(next.toFixed(2))
+            : Math.round(next);
+          return { ...l, qty: fixed };
+        })
+      );
+    },
+    [setLoadout]
+  );
 
   return (
     <div className="mx-auto p-3 md:p-6 min-h-screen bg-[#f7f7fb]">
@@ -769,24 +918,21 @@ export default function DispatchStagingPage() {
               </div>
             ) : (
               <div className="grid gap-1">
-                <select
-                  name="riderName"
-                  form="dispatch-form"
+                <SelectInput
+                  options={riderOptions.map((r) => ({ value: r, label: r }))}
                   value={riderName}
-                  onChange={(e) => setRiderName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                  disabled={disableAll}
-                  required
-                >
-                  <option value="">— Select rider —</option>
-                  {riderOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setRiderName(String(val))}
+                  className={disableAll ? "opacity-70 pointer-events-none" : ""}
+                />
+                {/* mirror so the form actually posts the value */}
+                <input
+                  type="hidden"
+                  name="riderName"
+                  value={riderName}
+                  form="dispatch-form"
+                />
                 <p className="text-[11px] text-slate-500">
-                  Choose from active riders (seeded Employees with role=RIDER).
+                  Pick from active riders.
                 </p>
               </div>
             )}
@@ -801,7 +947,7 @@ export default function DispatchStagingPage() {
               {vehicleName ? (
                 <span className="text-xs text-slate-600">
                   {capacity != null
-                    ? `Capacity: Max LPG ${capacity}`
+                    ? `Capacity: Max load ${capacity}`
                     : "No capacity profile"}
                 </span>
               ) : (
@@ -817,21 +963,16 @@ export default function DispatchStagingPage() {
             ) : (
               <div className="grid gap-1">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <select
+                  <SelectInput
+                    options={vehicleOptions}
                     value={vehicleName}
-                    onChange={(e) => setVehicleName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                    disabled={disableAll}
-                    aria-label="Vehicle"
-                  >
-                    <option value="">— Select vehicle —</option>
-                    {Object.keys(VEHICLE_CAPACITY).map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setVehicleName(String(val))}
+                    className={
+                      disableAll ? "opacity-70 pointer-events-none" : ""
+                    }
+                  />
                 </div>
+                {/* hidden fields for POST */}
                 <input
                   type="hidden"
                   name="vehicleName"
@@ -848,73 +989,90 @@ export default function DispatchStagingPage() {
             )}
           </div>
 
-          {/* Loadout (Issue 4 — UI only) */}
+          {/* Loadout (PACK/whole only) */}
           <div className="rounded-2xl border border-slate-200">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
               <div className="text-sm font-medium text-slate-800">Loadout</div>
-              <div
-                className={`text-xs font-medium ${
-                  overCapacity ? "text-rose-700" : "text-slate-600"
-                }`}
-              >
-                Used / Max:{" "}
-                <span
-                  className={`${
-                    overCapacity ? "text-rose-700" : "text-slate-900"
+              <div className="min-w-[180px]">
+                <div
+                  className={`text-xs font-medium ${
+                    overCapacity ? "text-rose-700" : "text-slate-600"
                   }`}
                 >
-                  {usedCapacity}
-                  {capacity != null ? ` / ${capacity}` : " / —"}
-                </span>
+                  Used / Max:{" "}
+                  <span
+                    className={`${
+                      overCapacity ? "text-rose-700" : "text-slate-900"
+                    }`}
+                  >
+                    {usedCapacity}
+                    {capacity != null ? ` / ${capacity}` : " / —"}
+                  </span>
+                </div>
+                <div className="mt-1 h-2 w-40 rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className={`h-2 ${
+                      overCapacity ? "bg-rose-500" : "bg-indigo-500"
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        capacity ? (usedCapacity / capacity) * 100 : 0
+                      )}%`,
+                    }}
+                  />
+                </div>
               </div>
             </div>
             <div className="p-3 space-y-3">
-              {/* Quick-add shortcuts (best effort — looks for LPG SKUs) */}
+              {hasUnboundLoad && !readOnly && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Some loadout rows have quantity but no product selected.
+                  Please pick a product for each line.
+                </div>
+              )}
+              {/* Quick-add shortcuts */}
               {!readOnly && (
                 <div className="flex flex-wrap gap-2">
-                  {["11", "22"].map((kg) => {
-                    const match = productOptions.find(
-                      (p) =>
-                        /lpg/i.test(p.name) &&
-                        new RegExp(`\\b${kg}\\s?kg\\b`, "i").test(p.name)
-                    );
-                    if (!match) return null;
-                    return (
-                      <button
-                        key={kg}
-                        type="button"
-                        onClick={() => {
-                          setLoadout((prev) => {
-                            const existing = prev.find(
-                              (l) => l.productId === match.id
+                  {topQuickAdds.map((qa) => (
+                    <button
+                      key={qa.id}
+                      type="button"
+                      disabled={disableAll}
+                      onClick={() => {
+                        setLoadout((prev) => {
+                          const existing = prev.find(
+                            (l) => l.productId === qa.id
+                          );
+                          if (existing) {
+                            return prev.map((l) =>
+                              l.productId === qa.id
+                                ? { ...l, qty: Number(l.qty) + 1 }
+                                : l
                             );
-                            if (existing) {
-                              return prev.map((l) =>
-                                l.productId === match.id
-                                  ? { ...l, qty: Number(l.qty) + 1 }
-                                  : l
-                              );
-                            }
-                            return [
-                              ...prev,
-                              {
-                                key: crypto.randomUUID(),
-                                productId: match.id,
-                                name: match.name,
-                                qty: 1,
-                                allowDecimal: match.allowDecimal,
-                              },
-                            ];
-                          });
-                        }}
-                        className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-                      >
-                        + LPG {kg}kg
-                      </button>
-                    );
-                  })}
+                          }
+                          const p = productOptions.find((p) => p.id === qa.id)!;
+                          return [
+                            ...prev,
+                            {
+                              key: crypto.randomUUID(),
+                              productId: qa.id,
+                              name: p.name,
+                              qty: 1,
+                              allowDecimal: qa.allowDecimal,
+                            },
+                          ];
+                        });
+                      }}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                    >
+                      + {qa.label}
+                    </button>
+                  ))}
+                  {/* Fallback manual add */}
                   <button
                     type="button"
+                    disabled={disableAll}
                     onClick={() =>
                       setLoadout((prev) => [
                         ...prev,
@@ -942,14 +1100,18 @@ export default function DispatchStagingPage() {
                   loadout.map((L) => (
                     <div
                       key={L.key}
-                      className={`grid grid-cols-12 items-center gap-2 rounded-xl border px-2 py-2 ${
+                      className={`grid grid-cols-12 gap-2 rounded-xl border px-2 py-2 ${
                         overCapacity
                           ? "border-rose-300 bg-rose-50/40"
+                          : Number(L.qty) > 0 && !L.productId
+                          ? "border-amber-300 bg-amber-50/40"
+                          : Number(L.qty) <= 0
+                          ? "border-slate-200 bg-slate-50 opacity-70"
                           : "border-slate-200 bg-white"
                       }`}
                     >
-                      {/* Product selector (simple filterable select) */}
-                      <div className="col-span-7 sm:col-span-8">
+                      {/* Product selector — full width on mobile, 8/12 on ≥sm */}
+                      <div className="col-span-12 sm:col-span-8">
                         {readOnly ? (
                           <div className="text-sm text-slate-800 truncate">
                             {L.productId ? `#${L.productId} — ` : ""}
@@ -957,99 +1119,141 @@ export default function DispatchStagingPage() {
                           </div>
                         ) : (
                           <div className="grid gap-1">
-                            <input
-                              list="loadoutProducts"
-                              value={
+                            <ProductPickerHybridLoadout
+                              // no `name` needed; we serialize loadoutJson anyway
+                              defaultValue={
                                 L.productId
-                                  ? `${L.productId} | ${L.name}`
-                                  : L.name
+                                  ? { id: L.productId, name: L.name }
+                                  : null
                               }
-                              onChange={(e) => {
-                                const raw = e.target.value.trim();
-                                // Accept "123 | Name", just "123", or just "Name"
-                                let nextId: number | null = null;
-                                let nextName = raw;
-
-                                const m = raw.match(/^(\d+)\s*\|\s*(.+)$/);
-                                if (m) {
-                                  nextId = Number(m[1]);
-                                  nextName = m[2];
-                                } else if (/^\d+$/.test(raw)) {
-                                  const byId = productOptions.find(
-                                    (p) => p.id === Number(raw)
-                                  );
-                                  if (byId) {
-                                    nextId = byId.id;
-                                    nextName = byId.name;
-                                  }
-                                } else {
-                                  const byName = productOptions.find(
-                                    (p) => p.name === raw
-                                  );
-                                  if (byName) {
-                                    nextId = byName.id;
-                                    nextName = byName.name;
-                                  }
-                                }
-
-                                const allowDec =
-                                  nextId != null
-                                    ? productOptions.find(
-                                        (p) => p.id === nextId
-                                      )?.allowDecimal ?? false
-                                    : false;
-
+                              placeholder="Type ID or name…"
+                              disabled={disableAll}
+                              filterRow={(p) => packOnlyIdSet.has(p.id)}
+                              categoryOptions={categories ?? []} //
+                              onSelect={(p) => {
                                 setLoadout((prev) =>
                                   prev.map((x) =>
                                     x.key === L.key
                                       ? {
                                           ...x,
-                                          name: nextName,
-                                          productId: nextId,
-                                          allowDecimal: allowDec,
+                                          productId: p.id,
+                                          name: p.name,
+                                          allowDecimal: false, // loadout = PACK only
+                                          qty: Number(x.qty) > 0 ? x.qty : 1,
                                         }
                                       : x
                                   )
                                 );
                               }}
-                              placeholder="Search: 123 | Product name"
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                              autoComplete="off"
                             />
+                            {L.productId ? (
+                              <div className="text-[11px] text-slate-500">
+                                SRP:{" "}
+                                <span className="tabular-nums">
+                                  {peso(srpById.get(L.productId) ?? 0)}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
                         )}
                       </div>
-                      {/* Qty */}
-                      <div className="col-span-4 sm:col-span-3">
+                      {/* Qty — 8/12 on mobile, 3/12 on ≥sm */}
+                      <div className="col-span-8 sm:col-span-3">
                         {readOnly ? (
-                          <div className="text-sm text-right tabular-nums">
+                          <div className="flex justify-start sm:justify-end gap-1 w-full">
                             {L.qty}
                           </div>
                         ) : (
-                          <input
-                            type="number"
-                            step={L.allowDecimal ? "0.01" : "1"} // stays false for LPG
-                            min="0"
-                            value={L.qty}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setLoadout((prev) =>
-                                prev.map((x) =>
-                                  x.key === L.key
-                                    ? { ...x, qty: isNaN(val) ? 0 : val }
-                                    : x
-                                )
-                              );
-                            }}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                          />
+                          <div className="flex items-stretch justify-start sm:justify-end gap-1 w-full">
+                            <button
+                              type="button"
+                              disabled={disableAll}
+                              onClick={() => nudgeQty(L.key, -1)}
+                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
+                              aria-label="Decrease"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              step={L.allowDecimal ? "0.01" : "1"}
+                              // Kapag may product na, 0 is not allowed (or treated as remove)
+                              value={L.qty}
+                              onChange={(e) => {
+                                const raw = Number(e.target.value);
+                                const val = isNaN(raw) ? 0 : raw;
+                                if (L.productId) {
+                                  // may product: 0 ⇒ alisin ang row para klaro ang UX
+                                  if (val <= 0) {
+                                    setLoadout((prev) =>
+                                      prev.filter((x) => x.key !== L.key)
+                                    );
+                                  } else {
+                                    setLoadout((prev) =>
+                                      prev.map((x) =>
+                                        x.key === L.key ? { ...x, qty: val } : x
+                                      )
+                                    );
+                                  }
+                                } else {
+                                  // wala pang product: allow 0 bilang placeholder
+                                  setLoadout((prev) =>
+                                    prev.map((x) =>
+                                      x.key === L.key
+                                        ? { ...x, qty: Math.max(0, val) }
+                                        : x
+                                    )
+                                  );
+                                }
+                              }}
+                              inputMode={L.allowDecimal ? "decimal" : "numeric"}
+                              className={[
+                                // size: match buttons
+                                "h-10 w-full max-w-[7rem]",
+                                // base
+                                "rounded-md border border-slate-300 bg-white px-3 text-sm text-right",
+                                "outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200",
+                                // remove native spinners (cross-browser)
+                                "[appearance:textfield]", // modern browsers (incl. Firefox)
+                                "[-moz-appearance:textfield]", // Firefox explicit
+                                "[&::-webkit-inner-spin-button]:appearance-none", // Chrome/Safari
+                                "[&::-webkit-outer-spin-button]:appearance-none",
+                              ].join(" ")}
+                            />
+                            <button
+                              type="button"
+                              disabled={disableAll}
+                              onClick={() => nudgeQty(L.key, +1)}
+                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
+                              aria-label="Increase"
+                            >
+                              +
+                            </button>
+                          </div>
                         )}
+
+                        {L.productId && Number(L.qty) > 0 ? (
+                          <div className="mt-1 text-[11px] text-slate-500 text-right">
+                            Line:{" "}
+                            <span className="tabular-nums">
+                              {peso(
+                                (srpById.get(L.productId) ?? 0) *
+                                  (Number(L.qty) || 0)
+                              )}
+                            </span>
+                          </div>
+                        ) : Number(L.qty) > 0 ? (
+                          <div className="mt-1 text-[11px] text-amber-700 text-right">
+                            Select a product for this line.
+                          </div>
+                        ) : null}
                       </div>
-                      {/* Remove */}
-                      <div className="col-span-1 text-right">
+                      {/* Remove — 4/12 on mobile, 1/12 on ≥sm */}
+                      <div className="col-span-4 sm:col-span-1 text-right">
                         {!readOnly && (
                           <button
                             type="button"
+                            disabled={disableAll}
                             aria-label="Remove row"
                             onClick={() =>
                               setLoadout((prev) =>
@@ -1066,12 +1270,18 @@ export default function DispatchStagingPage() {
                   ))
                 )}
               </div>
-              {/* datalist for product search */}
-              <datalist id="loadoutProducts">
-                {productOptions.map((p) => (
-                  <option key={p.id} value={`${p.id} | ${p.name}`} />
-                ))}
-              </datalist>
+              {/* removed: hybrid picker handles search + browse */}
+            </div>
+          </div>
+
+          {/* Loadout Summary (SRP preview) */}
+          <div className="rounded-xl border border-slate-200 p-3 bg-white">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-700">Loadout SRP Total</div>
+              <div className="text-sm font-semibold">{peso(loadoutValue)}</div>
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Preview only • based on SRP; actual receipts may differ.
             </div>
           </div>
 
@@ -1084,28 +1294,12 @@ export default function DispatchStagingPage() {
               busy ? "opacity-60 pointer-events-none" : ""
             }`}
           >
-            {/* Hidden fields inside the form so they POST correctly */}
-            <input type="hidden" name="vehicleName" value={vehicleName} />
-            <input type="hidden" name="vehicleCapacity" value={capacityAttr} />
-            <input
-              type="hidden"
-              name="loadoutJson"
-              value={JSON.stringify(
-                loadout.map((L) => ({
-                  // intentionally omit `key` so ESLint doesn't complain
-                  productId: L.productId,
-                  name: L.name,
-                  qty: L.qty,
-                  allowDecimal: L.allowDecimal,
-                }))
-              )}
-            />
+            <input type="hidden" name="loadoutJson" value={serializedLoadout} />
             {actionData && !actionData.ok ? (
               <div className="text-sm text-red-600 mr-auto">
                 {actionData.error}
               </div>
             ) : null}
-
             <button
               name="intent"
               value="cancel"
@@ -1113,7 +1307,6 @@ export default function DispatchStagingPage() {
             >
               Cancel
             </button>
-
             {!readOnly ? (
               <>
                 <button
@@ -1134,12 +1327,14 @@ export default function DispatchStagingPage() {
                 <button
                   name="intent"
                   value="dispatch"
-                  disabled={!hasRider || overCapacity}
+                  disabled={!hasRider || overCapacity || hasUnboundLoad}
                   title={
                     !hasRider
                       ? "Choose a rider first"
                       : overCapacity
                       ? "Capacity exceeded — adjust loadout or vehicle"
+                      : hasUnboundLoad
+                      ? "Complete the loadout: select products for lines with quantity"
                       : "Ready to dispatch (server checks coming next)"
                   }
                   className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
