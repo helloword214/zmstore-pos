@@ -17,13 +17,21 @@ import { computeUnitPriceForCustomer } from "~/services/pricing";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { ProductPickerHybridLoadout } from "~/components/ui/ProductPickerHybridLoadout";
 
-// Temporary: built-in vehicle catalog for M1 (no schema yet)
-const VEHICLE_CAPACITY: Record<string, number> = {
-  Tricycle: 12, // Max LPG cylinders (hint)
-  Motorcycle: 4,
-  Sidecar: 8,
-  Multicab: 25,
+// Temporary: built-in vehicle catalog (values in **KILOGRAMS**)
+const VEHICLE_CAPACITY_KG: Record<string, number> = {
+  Tricycle: 150,
+  Motorcycle: 60,
+  Sidecar: 120,
+  Multicab: 300,
 };
+
+// Fallback: extract kg from product name, e.g., "LPG 11kg"
+function inferKgFromName(name: string): number {
+  const m = name?.match(/(\d+(?:\.\d+)?)\s*kg\b/i);
+  return m ? Number(m[1]) : 0;
+}
+
+type VehicleDTO = { id: number; name: string; capacityKg: number | null };
 
 type LoaderData = {
   riderName: string | null;
@@ -41,6 +49,12 @@ type LoaderData = {
     srp: number;
     allowDecimal: boolean; // based on product.unit (retail supports decimal in your system)
   }>;
+
+  // product.id → kg per pack (0 if unknown)
+  kgById: Record<number, number>;
+
+  vehicles: VehicleDTO[];
+
   order: {
     id: number;
     orderCode: string;
@@ -55,6 +69,7 @@ type LoaderData = {
     } | null;
     items: Array<{
       id: number;
+      productId: number;
       name: string;
       qty: number;
       unitPrice: number;
@@ -100,6 +115,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       items: {
         select: {
           id: true,
+          productId: true,
           name: true,
           qty: true,
           unitPrice: true,
@@ -123,7 +139,14 @@ export async function loader({ params }: LoaderFunctionArgs) {
       srp: { gt: 0 }, // has a pack/whole price
       stock: { gt: 0 }, // has pack stock available
     },
-    select: { id: true, name: true, stock: true, srp: true },
+    select: {
+      id: true,
+      name: true,
+      stock: true,
+      srp: true,
+      packingSize: true,
+      packingUnit: { select: { name: true } },
+    },
     orderBy: { name: "asc" },
     take: 500,
   });
@@ -135,6 +158,17 @@ export async function loader({ params }: LoaderFunctionArgs) {
     srp: Number(p.srp ?? 0),
     allowDecimal: false,
   }));
+
+  // Build kg map using schema first; fallback to regex
+  const kgById: Record<number, number> = {};
+  for (const p of packProducts) {
+    const isKgUnit =
+      p.packingUnit?.name &&
+      String(p.packingUnit.name).trim().toLowerCase() === "kg";
+    const bySchema =
+      isKgUnit && Number(p.packingSize) > 0 ? Number(p.packingSize) : 0;
+    kgById[p.id] = bySchema || inferKgFromName(p.name) || 0;
+  }
 
   // Build rider options: STRICT from Employees with role=RIDER only
   const employees = await db.employee.findMany({
@@ -174,6 +208,27 @@ export async function loader({ params }: LoaderFunctionArgs) {
     orderBy: { name: "asc" },
   });
 
+  // Vehicles from DB (safe fallback to the built-in list)
+  let vehiclesDb: VehicleDTO[] = [];
+  try {
+    const rows = await db.vehicle.findMany({
+      where: { active: true },
+      select: { id: true, name: true, capacityUnits: true },
+      orderBy: { name: "asc" },
+    });
+    vehiclesDb = rows.map((v) => ({
+      id: v.id,
+      name: v.name,
+      capacityKg: v.capacityUnits ?? null,
+    }));
+  } catch {
+    vehiclesDb = [];
+  }
+  const fallbackVehicles: VehicleDTO[] = Object.entries(
+    VEHICLE_CAPACITY_KG
+  ).map(([name, cap], i) => ({ id: -1000 - i, name, capacityKg: cap }));
+  const vehicles = vehiclesDb.length > 0 ? vehiclesDb : fallbackVehicles;
+
   const data: LoaderData = {
     riderName: order.riderName ?? null,
     vehicleName: order.vehicleName ?? null,
@@ -182,6 +237,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
       : null,
     riderOptions,
     productOptions,
+    kgById,
+    vehicles,
     order: {
       id: order.id,
       orderCode: order.orderCode,
@@ -198,6 +255,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
         : null,
       items: order.items.map((it) => ({
         id: it.id,
+        productId: it.productId,
         name: it.name,
         qty: Number(it.qty),
         unitPrice: Number(it.unitPrice),
@@ -239,7 +297,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ? String(form.get("vehicleName")).trim()
       : "") || null;
 
-  // capacity (optional hint from dropdown; treat as guard if present)
+  // selected vehicle id (DB id when available; negative if fallback)
+  const vehicleIdRaw = form.get("vehicleId");
+  const vehicleId = vehicleIdRaw ? Number(vehicleIdRaw) : null;
+
+  // capacity (kg; optional hint from dropdown; treat as guard if present)
   const vehicleCapacityRaw = form.get("vehicleCapacity");
   const vehicleCapacity = vehicleCapacityRaw
     ? Number(vehicleCapacityRaw)
@@ -329,28 +391,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   );
   if (!riderName || !validRiderSet.has(riderName)) {
     return json<ActionData>(
-      { ok: false, error: "Rider must be selected from the list." },
+      { ok: false, error: "Driver must be selected from the list." },
       { status: 400 }
     );
   }
 
-  // compute used capacity for server-side validation
-  const usedCapacity = loadoutSnapshot.reduce(
-    (s, l) => s + (Number.isFinite(l.qty) ? Number(l.qty) : 0),
-    0
-  );
-  if (vehicleCapacity != null && usedCapacity > vehicleCapacity) {
-    return json<ActionData>(
-      {
-        ok: false,
-        error: "Capacity exceeded — adjust loadout or change vehicle.",
-      },
-      { status: 400 }
-    );
-  }
-
-  // 🔒 Server-side guard: loadout must reference PACK/whole items (must have srp > 0).
-  // Find non-null productIds in the snapshot
+  // compute used capacity in **kg** for server-side validation
   const postedIds = Array.from(
     new Set(
       loadoutSnapshot
@@ -358,6 +404,66 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .filter((v): v is number => Number.isFinite(v))
     )
   );
+  const productsForKg =
+    postedIds.length > 0
+      ? await db.product.findMany({
+          where: { id: { in: postedIds } },
+          select: {
+            id: true,
+            name: true,
+            packingSize: true,
+            packingUnit: { select: { name: true } },
+          },
+        })
+      : [];
+  const kgByIdServer = new Map<number, number>();
+  for (const p of productsForKg) {
+    const unitIsKg =
+      p.packingUnit?.name &&
+      String(p.packingUnit.name).trim().toLowerCase() === "kg";
+    const bySchema =
+      unitIsKg && Number(p.packingSize) > 0 ? Number(p.packingSize) : 0;
+    const m = p.name?.match(/(\d+(?:\.\d+)?)\s*kg\b/i);
+    const byName = bySchema || (m ? Number(m[1]) : 0);
+
+    kgByIdServer.set(p.id, byName || 0);
+  }
+  const usedCapacityKg = loadoutSnapshot.reduce((s, l) => {
+    const kg = kgByIdServer.get(Number(l.productId)) ?? 0;
+    const qty = Number(l.qty) || 0;
+    return s + kg * qty;
+  }, 0);
+  // If a real vehicleId (>0) was posted, prefer DB capacity as source of truth
+  let effectiveCapacityKg = vehicleCapacity;
+  if (vehicleId && vehicleId > 0) {
+    try {
+      const v = await db.vehicle.findUnique({
+        where: { id: vehicleId },
+        select: { active: true, capacityUnits: true },
+      });
+      if (!v || !v.active) {
+        return json<ActionData>(
+          { ok: false, error: "Invalid vehicle selected." },
+          { status: 400 }
+        );
+      }
+      effectiveCapacityKg = v.capacityUnits ?? effectiveCapacityKg;
+    } catch {
+      // ignore and keep the hinted capacity
+    }
+  }
+  if (effectiveCapacityKg != null && usedCapacityKg > effectiveCapacityKg) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error: "Capacity exceeded (kg) — adjust loadout or change vehicle.",
+      },
+      { status: 400 }
+    );
+  }
+
+  // 🔒 Server-side guard: loadout must reference PACK/whole items (must have srp > 0).
+  // (postedIds computed above)
   if (postedIds.length > 0) {
     const rows = await db.product.findMany({
       where: { id: { in: postedIds } },
@@ -433,7 +539,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // Guard: rider is required
       if (!riderName && !order.riderName) {
         return json<ActionData>(
-          { ok: false, error: "Rider is required before dispatch." },
+          { ok: false, error: "Driver is required before dispatch." },
           { status: 400 }
         );
       }
@@ -628,6 +734,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           data: {
             riderName: riderName ?? order.riderName ?? null,
             vehicleName,
+            // If your Order model has vehicleId, uncomment the next line:
+            // vehicleId: vehicleId && vehicleId > 0 ? vehicleId : null,
             loadoutSnapshot: loadoutSnapshot as any,
             fulfillmentStatus: FulfillmentStatus.DISPATCHED,
             dispatchedAt: new Date(),
@@ -673,7 +781,9 @@ export default function DispatchStagingPage() {
     loadoutSnapshot,
     riderOptions,
     productOptions,
+    kgById,
     categories,
+    vehicles,
   } = useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
@@ -686,23 +796,34 @@ export default function DispatchStagingPage() {
   );
   const hasRider = riderName.trim().length > 0;
   const disableAll = busy;
-  // Vehicle UI state
-  const [vehicleName, setVehicleName] = React.useState<string>(
-    vehicleFromServer ?? ""
+  // Vehicle UI state (select by id; preload from vehicleName snapshot if matching)
+  const initialVehicleId = React.useMemo(() => {
+    const m = vehicles.find((v) => v.name === (vehicleFromServer ?? ""));
+    return m ? m.id : null;
+  }, [vehicles, vehicleFromServer]);
+  const [vehicleId, setVehicleId] = React.useState<number | null>(
+    initialVehicleId
   );
   const capacity = React.useMemo(() => {
-    const cap = VEHICLE_CAPACITY[vehicleName as keyof typeof VEHICLE_CAPACITY];
-    return Number.isFinite(cap) ? cap : null;
-  }, [vehicleName]);
-  // expose capacity to form posts
+    if (vehicleId == null) return null;
+    return vehicles.find((v) => v.id === vehicleId)?.capacityKg ?? null;
+  }, [vehicleId, vehicles]);
   const capacityAttr = capacity == null ? "" : String(capacity);
-
   const vehicleOptions = React.useMemo(
     () => [
       { value: "", label: "— Select vehicle —" },
-      ...Object.keys(VEHICLE_CAPACITY).map((v) => ({ value: v, label: v })),
+      ...vehicles.map((v) => ({ value: String(v.id), label: v.name })),
     ],
-    []
+    [vehicles]
+  );
+
+  // Rider select options with a placeholder on top
+  const riderSelectOptions = React.useMemo(
+    () => [
+      { value: "__", label: "— Select driver —" },
+      ...riderOptions.map((r) => ({ value: r, label: r })),
+    ],
+    [riderOptions]
   );
 
   // Loadout UI state
@@ -710,31 +831,67 @@ export default function DispatchStagingPage() {
     key: string;
     productId: number | null;
     name: string;
-    qty: number;
+    qty: string; // <-- string para puwedeng "" habang editing
     allowDecimal: boolean;
   };
+
   const [loadout, setLoadout] = React.useState<LoadLine[]>(
     Array.isArray(loadoutSnapshot)
       ? loadoutSnapshot.map((x) => ({
           key: crypto.randomUUID(),
           productId: x.productId ?? null,
           name: x.name ?? "",
-          qty: Number(x.qty ?? 0),
+          qty: String(Number(x.qty ?? 0)),
           allowDecimal: Boolean(x.allowDecimal),
         }))
       : []
   );
-  const usedCapacity = React.useMemo(
+
+  // helper para magbasa ng numeric value mula sa string qty
+  const qtyNum = (q: string | number) => {
+    const n = typeof q === "number" ? q : parseFloat(q);
+    return Number.isFinite(n) ? n : 0;
+  };
+  // Convert loader kg map into Map for quick lookup
+  const kgMap = React.useMemo(
     () =>
-      loadout.reduce(
-        (s, L) => s + (Number.isFinite(L.qty) ? Number(L.qty) : 0),
-        0
+      new Map<number, number>(
+        Object.entries(kgById).map(([k, v]) => [Number(k), Number(v) || 0])
       ),
-    [loadout]
+    [kgById]
   );
-  const overCapacity = capacity != null && usedCapacity > capacity;
+
+  // Compute total weight (kg): sum(qty * kgPerPack)
+  const usedCapacityKg = React.useMemo(() => {
+    return loadout.reduce((sum, L) => {
+      if (!L.productId) return sum;
+      const kg = kgMap.get(L.productId) ?? 0;
+      return sum + kg * qtyNum(L.qty);
+    }, 0);
+  }, [loadout, kgMap]);
+
+  const hasUnknownKg = React.useMemo(
+    () =>
+      loadout.some(
+        (L) => (kgMap.get(L.productId ?? -1) ?? 0) === 0 && qtyNum(L.qty) > 0
+      ),
+    [loadout, kgMap]
+  );
+
+  const overCapacity = capacity != null && usedCapacityKg > capacity;
+
+  // NEW: helpers para sa buttons
+  const capacityReached = capacity != null && usedCapacityKg >= capacity;
+  const willExceedWith = React.useCallback(
+    (productId: number, deltaQty = 1) => {
+      if (capacity == null) return false;
+      const kg = kgMap.get(productId) ?? 0;
+      return usedCapacityKg + kg * deltaQty > capacity;
+    },
+    [capacity, usedCapacityKg, kgMap]
+  );
   const hasUnboundLoad = React.useMemo(
-    () => loadout.some((L) => Number(L.qty) > 0 && !L.productId),
+    () => loadout.some((L) => qtyNum(L.qty) > 0 && !L.productId),
     [loadout]
   );
 
@@ -748,8 +905,7 @@ export default function DispatchStagingPage() {
       loadout.reduce((s, L) => {
         if (!L.productId) return s;
         const srp = srpById.get(L.productId) ?? 0;
-        const qty = Number(L.qty || 0);
-        return s + srp * qty;
+        return s + srp * qtyNum(L.qty);
       }, 0),
     [loadout, srpById]
   );
@@ -785,11 +941,11 @@ export default function DispatchStagingPage() {
   const serializedLoadout = React.useMemo(() => {
     const clean = loadout
       // only keep rows with qty > 0 and a valid productId
-      .filter((L) => Number(L.qty) > 0 && Number.isFinite(Number(L.productId)))
+      .filter((L) => qtyNum(L.qty) > 0 && Number.isFinite(Number(L.productId)))
       .map((L) => ({
         productId: Number(L.productId),
         name: L.name,
-        qty: Number(L.qty),
+        qty: qtyNum(L.qty),
         allowDecimal: Boolean(L.allowDecimal),
       }));
 
@@ -799,18 +955,35 @@ export default function DispatchStagingPage() {
   const nudgeQty = React.useCallback(
     (rowKey: string, sign: 1 | -1) => {
       setLoadout((prev) =>
-        prev.map((l) => {
-          if (l.key !== rowKey) return l;
+        prev.reduce<LoadLine[]>((acc, l) => {
+          if (l.key !== rowKey) {
+            acc.push(l);
+            return acc;
+          }
           const step = l.allowDecimal ? 0.01 : 1;
-          const next = Math.max(0, (Number(l.qty) || 0) + sign * step);
+          const current = qtyNum(l.qty);
+          // block PLUS kapag lalampas sa capacity
+          if (
+            sign === 1 &&
+            capacity != null &&
+            (kgMap.get(l.productId ?? -1) ?? 0) > 0 &&
+            usedCapacityKg + (kgMap.get(l.productId ?? -1) ?? 0) > capacity
+          ) {
+            acc.push(l);
+            return acc;
+          }
+          const next = Math.max(0, current + sign * step);
           const fixed = l.allowDecimal
             ? Number(next.toFixed(2))
             : Math.round(next);
-          return { ...l, qty: fixed };
-        })
+          // auto-remove lang kapag minus → 0
+          if (fixed <= 0) return acc;
+          acc.push({ ...l, qty: String(fixed) });
+          return acc;
+        }, [])
       );
     },
-    [setLoadout]
+    [capacity, usedCapacityKg, kgMap]
   );
 
   return (
@@ -876,9 +1049,14 @@ export default function DispatchStagingPage() {
                 >
                   <div className="min-w-0">
                     <div className="truncate font-medium text-slate-800">
+                      {it.productId ? (
+                        <span className="font-mono text-xs text-slate-500">
+                          #{it.productId} —{" "}
+                        </span>
+                      ) : null}
                       {it.name}
                     </div>
-                    <div className="text-xs text-slate-500">{it.qty}</div>
+                    <div className="text-xs text-slate-500">Qty: {it.qty}</div>
                   </div>
                   <div className="shrink-0 font-medium">
                     {peso(it.lineTotal)}
@@ -900,7 +1078,7 @@ export default function DispatchStagingPage() {
           <div className="rounded-xl border border-slate-200 p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-medium text-slate-800">
-                Rider <span className="text-rose-600">*</span>
+                Driver <span className="text-rose-600">*</span>
               </div>
               {!readOnly && (
                 <span
@@ -919,9 +1097,12 @@ export default function DispatchStagingPage() {
             ) : (
               <div className="grid gap-1">
                 <SelectInput
-                  options={riderOptions.map((r) => ({ value: r, label: r }))}
-                  value={riderName}
-                  onChange={(val) => setRiderName(String(val))}
+                  options={riderSelectOptions}
+                  // show placeholder when state is empty
+                  value={riderName || "__"}
+                  onChange={(val) =>
+                    setRiderName(val === "__" ? "" : String(val))
+                  }
                   className={disableAll ? "opacity-70 pointer-events-none" : ""}
                 />
                 {/* mirror so the form actually posts the value */}
@@ -944,10 +1125,10 @@ export default function DispatchStagingPage() {
               <div className="text-sm font-medium text-slate-800">
                 Vehicle <span className="text-slate-400">(optional)</span>
               </div>
-              {vehicleName ? (
+              {vehicleId != null ? (
                 <span className="text-xs text-slate-600">
                   {capacity != null
-                    ? `Capacity: Max load ${capacity}`
+                    ? `Capacity: Max load ${capacity} kg`
                     : "No capacity profile"}
                 </span>
               ) : (
@@ -965,8 +1146,8 @@ export default function DispatchStagingPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <SelectInput
                     options={vehicleOptions}
-                    value={vehicleName}
-                    onChange={(val) => setVehicleName(String(val))}
+                    value={vehicleId == null ? "" : String(vehicleId)}
+                    onChange={(val) => setVehicleId(val ? Number(val) : null)}
                     className={
                       disableAll ? "opacity-70 pointer-events-none" : ""
                     }
@@ -975,8 +1156,18 @@ export default function DispatchStagingPage() {
                 {/* hidden fields for POST */}
                 <input
                   type="hidden"
+                  name="vehicleId"
+                  value={vehicleId ?? ""}
+                  form="dispatch-form"
+                />
+                <input
+                  type="hidden"
                   name="vehicleName"
-                  value={vehicleName}
+                  value={
+                    vehicleId == null
+                      ? vehicleFromServer ?? ""
+                      : vehicles.find((v) => v.id === vehicleId)?.name ?? ""
+                  }
                   form="dispatch-form"
                 />
                 <input
@@ -999,13 +1190,13 @@ export default function DispatchStagingPage() {
                     overCapacity ? "text-rose-700" : "text-slate-600"
                   }`}
                 >
-                  Used / Max:{" "}
+                  Used / Max (kg):{" "}
                   <span
                     className={`${
                       overCapacity ? "text-rose-700" : "text-slate-900"
                     }`}
                   >
-                    {usedCapacity}
+                    {Math.round(usedCapacityKg)}
                     {capacity != null ? ` / ${capacity}` : " / —"}
                   </span>
                 </div>
@@ -1017,7 +1208,7 @@ export default function DispatchStagingPage() {
                     style={{
                       width: `${Math.min(
                         100,
-                        capacity ? (usedCapacity / capacity) * 100 : 0
+                        capacity ? (usedCapacityKg / capacity) * 100 : 0
                       )}%`,
                     }}
                   />
@@ -1025,6 +1216,11 @@ export default function DispatchStagingPage() {
               </div>
             </div>
             <div className="p-3 space-y-3">
+              {hasUnknownKg && !readOnly && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Some items don’t have known kg. Capacity bar may be off.
+                </div>
+              )}
               {hasUnboundLoad && !readOnly && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Some loadout rows have quantity but no product selected.
@@ -1038,8 +1234,18 @@ export default function DispatchStagingPage() {
                     <button
                       key={qa.id}
                       type="button"
-                      disabled={disableAll}
+                      disabled={
+                        disableAll ||
+                        capacityReached ||
+                        willExceedWith(qa.id, 1)
+                      }
+                      title={
+                        capacityReached || willExceedWith(qa.id, 1)
+                          ? "Capacity full (kg)"
+                          : undefined
+                      }
                       onClick={() => {
+                        if (capacityReached || willExceedWith(qa.id, 1)) return;
                         setLoadout((prev) => {
                           const existing = prev.find(
                             (l) => l.productId === qa.id
@@ -1047,7 +1253,7 @@ export default function DispatchStagingPage() {
                           if (existing) {
                             return prev.map((l) =>
                               l.productId === qa.id
-                                ? { ...l, qty: Number(l.qty) + 1 }
+                                ? { ...l, qty: String(qtyNum(l.qty) + 1) }
                                 : l
                             );
                           }
@@ -1058,7 +1264,7 @@ export default function DispatchStagingPage() {
                               key: crypto.randomUUID(),
                               productId: qa.id,
                               name: p.name,
-                              qty: 1,
+                              qty: "1",
                               allowDecimal: qa.allowDecimal,
                             },
                           ];
@@ -1072,7 +1278,8 @@ export default function DispatchStagingPage() {
                   {/* Fallback manual add */}
                   <button
                     type="button"
-                    disabled={disableAll}
+                    disabled={disableAll || capacityReached}
+                    title={capacityReached ? "Capacity full (kg)" : undefined}
                     onClick={() =>
                       setLoadout((prev) => [
                         ...prev,
@@ -1080,7 +1287,7 @@ export default function DispatchStagingPage() {
                           key: crypto.randomUUID(),
                           productId: null,
                           name: "",
-                          qty: 1,
+                          qty: "1",
                           allowDecimal: false,
                         },
                       ])
@@ -1103,9 +1310,9 @@ export default function DispatchStagingPage() {
                       className={`grid grid-cols-12 gap-2 rounded-xl border px-2 py-2 ${
                         overCapacity
                           ? "border-rose-300 bg-rose-50/40"
-                          : Number(L.qty) > 0 && !L.productId
+                          : qtyNum(L.qty) > 0 && !L.productId
                           ? "border-amber-300 bg-amber-50/40"
-                          : Number(L.qty) <= 0
+                          : qtyNum(L.qty) <= 0
                           ? "border-slate-200 bg-slate-50 opacity-70"
                           : "border-slate-200 bg-white"
                       }`}
@@ -1139,7 +1346,7 @@ export default function DispatchStagingPage() {
                                           productId: p.id,
                                           name: p.name,
                                           allowDecimal: false, // loadout = PACK only
-                                          qty: Number(x.qty) > 0 ? x.qty : 1,
+                                          qty: qtyNum(x.qty) > 0 ? x.qty : "1",
                                         }
                                       : x
                                   )
@@ -1167,7 +1374,13 @@ export default function DispatchStagingPage() {
                           <div className="flex items-stretch justify-start sm:justify-end gap-1 w-full">
                             <button
                               type="button"
-                              disabled={disableAll}
+                              // ✅ Minus allowed kahit full ang capacity; disable lang kapag 0 or busy
+                              disabled={disableAll || qtyNum(L.qty) <= 0}
+                              title={
+                                qtyNum(L.qty) <= 0
+                                  ? "Nothing to remove"
+                                  : undefined
+                              }
                               onClick={() => nudgeQty(L.key, -1)}
                               className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
                               aria-label="Decrease"
@@ -1180,31 +1393,25 @@ export default function DispatchStagingPage() {
                               // Kapag may product na, 0 is not allowed (or treated as remove)
                               value={L.qty}
                               onChange={(e) => {
-                                const raw = Number(e.target.value);
-                                const val = isNaN(raw) ? 0 : raw;
-                                if (L.productId) {
-                                  // may product: 0 ⇒ alisin ang row para klaro ang UX
-                                  if (val <= 0) {
-                                    setLoadout((prev) =>
-                                      prev.filter((x) => x.key !== L.key)
-                                    );
-                                  } else {
-                                    setLoadout((prev) =>
-                                      prev.map((x) =>
-                                        x.key === L.key ? { ...x, qty: val } : x
-                                      )
-                                    );
-                                  }
-                                } else {
-                                  // wala pang product: allow 0 bilang placeholder
+                                const raw = e.target.value;
+                                // allow empty habang nag-e-edit
+                                if (raw === "") {
                                   setLoadout((prev) =>
                                     prev.map((x) =>
-                                      x.key === L.key
-                                        ? { ...x, qty: Math.max(0, val) }
-                                        : x
+                                      x.key === L.key ? { ...x, qty: "" } : x
                                     )
                                   );
+                                  return;
                                 }
+                                // keep numeric; pack = integer
+                                const cleaned = L.allowDecimal
+                                  ? raw
+                                  : raw.replace(/[^\d]/g, "");
+                                setLoadout((prev) =>
+                                  prev.map((x) =>
+                                    x.key === L.key ? { ...x, qty: cleaned } : x
+                                  )
+                                );
                               }}
                               inputMode={L.allowDecimal ? "decimal" : "numeric"}
                               className={[
@@ -1222,7 +1429,23 @@ export default function DispatchStagingPage() {
                             />
                             <button
                               type="button"
-                              disabled={disableAll}
+                              disabled={
+                                disableAll ||
+                                (capacity != null &&
+                                  (kgMap.get(L.productId ?? -1) ?? 0) > 0 &&
+                                  usedCapacityKg +
+                                    (kgMap.get(L.productId ?? -1) ?? 0) >
+                                    capacity)
+                              }
+                              title={
+                                capacity != null &&
+                                (kgMap.get(L.productId ?? -1) ?? 0) > 0 &&
+                                usedCapacityKg +
+                                  (kgMap.get(L.productId ?? -1) ?? 0) >
+                                  capacity
+                                  ? "Capacity full (kg)"
+                                  : undefined
+                              }
                               onClick={() => nudgeQty(L.key, +1)}
                               className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
                               aria-label="Increase"
@@ -1232,17 +1455,16 @@ export default function DispatchStagingPage() {
                           </div>
                         )}
 
-                        {L.productId && Number(L.qty) > 0 ? (
+                        {L.productId && qtyNum(L.qty) > 0 ? (
                           <div className="mt-1 text-[11px] text-slate-500 text-right">
                             Line:{" "}
                             <span className="tabular-nums">
                               {peso(
-                                (srpById.get(L.productId) ?? 0) *
-                                  (Number(L.qty) || 0)
+                                (srpById.get(L.productId) ?? 0) * qtyNum(L.qty)
                               )}
                             </span>
                           </div>
-                        ) : Number(L.qty) > 0 ? (
+                        ) : qtyNum(L.qty) > 0 ? (
                           <div className="mt-1 text-[11px] text-amber-700 text-right">
                             Select a product for this line.
                           </div>
@@ -1332,7 +1554,7 @@ export default function DispatchStagingPage() {
                     !hasRider
                       ? "Choose a rider first"
                       : overCapacity
-                      ? "Capacity exceeded — adjust loadout or vehicle"
+                      ? "Capacity exceeded (kg) — adjust loadout or vehicle"
                       : hasUnboundLoad
                       ? "Complete the loadout: select products for lines with quantity"
                       : "Ready to dispatch (server checks coming next)"

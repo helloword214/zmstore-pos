@@ -990,9 +990,9 @@ async function seed() {
     // Comment out if you want to keep them across seeds.
     // db.overrideLog.deleteMany(),
     // db.deliveryRun.deleteMany(),
-    // db.vehicleCapacityProfile.deleteMany(),
-    // db.vehicle.deleteMany(),
-    // db.employee.deleteMany(),
+    db.vehicleCapacityProfile.deleteMany(),
+    db.vehicle.deleteMany(),
+    db.employee.deleteMany(),
   ]);
 
   console.log("🏷️ Creating units, locations, tags...");
@@ -1022,33 +1022,38 @@ async function seed() {
   // ─────────────────────────────────────────
   // NEW: Fleet & Riders
   // ─────────────────────────────────────────
-  console.log("🛵 Creating vehicles...");
+  console.log("🛵 Creating vehicles (capacity now in **kg**)...");
+  // NOTE:
+  // - capacityUnits === TOTAL WEIGHT CAPACITY IN **KG** (generic for any goods)
+  // - We'll also derive an LPG "slots" profile (per 11 kg net) for TAG:LPG.
+  const LPG_TANK_NET_KG = 11;
+
   const vehiclesData = [
     {
       name: "Tricycle A",
       type: VehicleType.TRICYCLE,
-      capacityUnits: 12,
+      capacityUnits: 150, // kg
       notes: "Main trike",
       active: true,
     },
     {
       name: "Motorcycle A",
       type: VehicleType.MOTORCYCLE,
-      capacityUnits: 4,
+      capacityUnits: 60, // kg
       notes: "Rack installed",
       active: true,
     },
     {
       name: "Sidecar A",
       type: VehicleType.SIDECAR,
-      capacityUnits: 8,
+      capacityUnits: 120, // kg
       notes: null,
       active: true,
     },
     {
       name: "Multicab A",
       type: VehicleType.MULTICAB,
-      capacityUnits: 25,
+      capacityUnits: 300, // kg
       notes: "High capacity",
       active: true,
     },
@@ -1066,22 +1071,22 @@ async function seed() {
     });
     vehiclesByKey[`${up.name}:${up.type}`] = { id: up.id };
   }
-  // Optional capacity profile (tag-based). Mirrors vehicle capacity for TAG:LPG.
+  // Optional capacity profile (tag-based): derive LPG slots from kg capacity.
   for (const key of Object.keys(vehiclesByKey)) {
     const v = vehiclesByKey[key];
+    const capacityKg =
+      vehiclesData.find((d) => `${d.name}:${d.type}` === key)?.capacityUnits ??
+      0;
+    const lpgSlots = Math.floor(capacityKg / LPG_TANK_NET_KG);
     await db.vehicleCapacityProfile.upsert({
       where: { vehicleId_key: { vehicleId: v.id, key: "TAG:LPG" } },
       update: {
-        maxUnits:
-          vehiclesData.find((d) => `${d.name}:${d.type}` === key)
-            ?.capacityUnits ?? 0,
+        maxUnits: lpgSlots,
       },
       create: {
         vehicleId: v.id,
         key: "TAG:LPG",
-        maxUnits:
-          vehiclesData.find((d) => `${d.name}:${d.type}` === key)
-            ?.capacityUnits ?? 0,
+        maxUnits: lpgSlots,
       },
     });
   }

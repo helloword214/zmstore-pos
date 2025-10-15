@@ -1058,7 +1058,7 @@ export default function KioskPage() {
             style={{ maxHeight: "calc(100vh - 14rem)" }}
           >
             {/* Sticky list header INSIDE the scroller for proper separation */}
-            <div className="sticky top-0 z-1 -mx-3 md:-mx-4 px-3 md:px-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
+            <div className="sticky top-0 z-10 -mx-3 md:-mx-4 px-3 md:px-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
               <div className="h-10 flex items-center justify-between gap-3">
                 <h2 className="font-semibold text-slate-800">Products</h2>
                 <div className="hidden md:block text-sm text-slate-600">

@@ -31,9 +31,7 @@ type Props = {
   placeholder?: string;
   disabled?: boolean;
 
-  /** show category filter UI (client-side) */
-  enableCategoryFilter?: boolean;
-  /** Optional: preload available categories; if absent we derive from results */
+  /** Optional: preload available categories for the BROWSE modal */
   categoryOptions?: string[];
 };
 
@@ -44,7 +42,6 @@ export function ProductPickerHybridLoadout({
   filterRow,
   placeholder = "Type ID or name…",
   disabled = false,
-  enableCategoryFilter = true,
   categoryOptions,
 }: Props) {
   const [query, setQuery] = React.useState("");
@@ -64,33 +61,29 @@ export function ProductPickerHybridLoadout({
   const [cat, setCat] = React.useState<string>("__ALL__");
   const applyCategory = React.useCallback(
     (rows: ProductRow[]) =>
-      !enableCategoryFilter || cat === "__ALL__"
+      cat === "__ALL__"
         ? rows
         : rows.filter((p) => (p.category?.name ?? "") === cat),
-    [cat, enableCategoryFilter]
+    [cat]
   );
 
   // derive category options from fetched items when not provided
   const [seenCats, setSeenCats] = React.useState<Set<string>>(new Set());
   // Stable updater: uses functional setState so it doesn't depend on seenCats
-  const addSeenCats = React.useCallback(
-    (rows: ProductRow[]) => {
-      if (!enableCategoryFilter) return;
-      setSeenCats((prev) => {
-        let changed = false;
-        const next = new Set(prev);
-        for (const r of rows) {
-          const c = (r.category?.name ?? "").trim();
-          if (c && !next.has(c)) {
-            next.add(c);
-            changed = true;
-          }
+  const addSeenCats = React.useCallback((rows: ProductRow[]) => {
+    setSeenCats((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const r of rows) {
+        const c = (r.category?.name ?? "").trim();
+        if (c && !next.has(c)) {
+          next.add(c);
+          changed = true;
         }
-        return changed ? next : prev; // avoid useless state updates
-      });
-    },
-    [enableCategoryFilter]
-  );
+      }
+      return changed ? next : prev; // avoid useless state updates
+    });
+  }, []);
 
   // Keep an always-current ref for the (possibly inline) filterRow from parent
   const filterRowRef = React.useRef<typeof filterRow>();
@@ -146,7 +139,7 @@ export function ProductPickerHybridLoadout({
       if (inFlightRef.current === ctrl) inFlightRef.current = null;
       ctrl.abort();
     };
-  }, [debounced, cat, inputFocused, applyAllFilters, addSeenCats]);
+  }, [debounced, cat, inputFocused, applyAllFilters]);
 
   // outside click → close list
   React.useEffect(() => {
@@ -254,40 +247,6 @@ export function ProductPickerHybridLoadout({
           />
         </div>
 
-        {/* Category filter (inline) */}
-        {enableCategoryFilter && (
-          <div
-            className="shrink-0 w-44"
-            onKeyDownCapture={(e) => {
-              // prevent Enter/Space inside the category dropdown from bubbling
-              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-            }}
-            onFocus={() => {
-              // don’t let the typeahead pop open when interacting with the category control
-              setOpenList(false);
-            }}
-          >
-            <SelectInput
-              className="h-11 text-sm"
-              options={catOptions}
-              value={cat}
-              onChange={(v) => {
-                const next = String(v);
-                setCat(next);
-                // kill any pending request (we may not want its result anymore)
-                reqIdRef.current++;
-                inFlightRef.current?.abort();
-                // With empty query, keep the typeahead closed and wipe stale items
-                if (!debounced || debounced.length === 0) {
-                  setResults([]);
-                  setOpenList(false);
-                }
-                // If the Browse modal is open, its own effect will refetch.
-              }}
-            />
-          </div>
-        )}
-
         <button
           type="button"
           className="shrink-0 h-11 rounded-xl border px-3 text-xs bg-white hover:bg-slate-50 disabled:opacity-50"
@@ -370,19 +329,17 @@ export function ProductPickerHybridLoadout({
                     setPage(1);
                   }}
                 />
-                {enableCategoryFilter && (
-                  <div className="min-w-[12rem] -mb-4">
-                    <SelectInput
-                      className="h-11 py-0 text-sm"
-                      options={catOptions}
-                      value={cat}
-                      onChange={(v) => {
-                        setCat(String(v));
-                        setPage(1);
-                      }}
-                    />
-                  </div>
-                )}
+                <div className="min-w-[12rem] -mb-4">
+                  <SelectInput
+                    className="h-11 py-0 text-sm"
+                    options={catOptions}
+                    value={cat}
+                    onChange={(v) => {
+                      setCat(String(v));
+                      setPage(1);
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
