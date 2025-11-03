@@ -1,0 +1,89 @@
+* b8af37d 2025-10-15 jm  (HEAD -> main) dispatch: polish staging flow - rider select uses placeholder; no auto-preselect - include productId in order.items (LoaderData + select + mapping) - show #productId hint in Items list - remove inline category filter; keep it in Browse modal of product picker
+* 2d3cfe8 2025-10-09 jm  (origin/main) dispatch + picker: serialize loadout, disableAll gating, row state fixes, products-search category/pagination
+* a8b0eb7 2025-09-28 jm  feat(remit): rename to “Main Delivery / Load-out”; fix totals & cash labels
+* eb545e3 2025-09-24 jm  feat(remit): persist discounted snapshot + show discounts in Summary & Rider Receipt
+* dc85b04 2025-09-19 jm  cashier,dispatch: split delivery flow; strong guards; type fixes
+* d1012d9 2025-09-19 jm  feat(cashier): make cashier pickup-only; remove dispatch/remit UI and action; redirect delivery to /orders/:id/dispatch
+* efcb858 2025-09-18 jm  chore(snapshot): pre-refactor savepoint before cashier/dispatch/remit split
+* e35bca9 2025-09-18 jm  (feat/cashier-queue-scan) feat(remit,receipts,db): wire Remit Summary + Rider Receipt, receipts index, and remit parent migration - Summary: parent header, items, cash/credit children, print actions - Receipt: consolidated child lines, grand totals, print - Customer naming: prefer customer record > deliverTo parse > Walk-in - Migration: remit parent link + tendered structure
+* 116a0a8 2025-09-18 jm  chore(db): add remit parent relation and payment tendered change migration
+* 12b870a 2025-09-18 jm  feat(receipts): add receipts index route
+* 75ed963 2025-09-18 jm  feat(remit): add Remit Summary and Rider Consolidated Receipt pages - Parent remit header + items evaluation - Cash vs Credit child sections with reprint and Print-all actions - Print Rider Consolidated + Reprint Parent - Improve customer name resolution (customer > deliverTo parse > Walk-in) - Print-friendly layout
+* a734637 2025-09-16 jm  feat(delivery): add dispatch staging flow, centralized customer search hook, and docs
+* 5197af9 2025-09-11 jm  delivery logic working - 50%
+* cc9aba7 2025-09-10 jm  partial or about 30 percent working on Delivery Logic
+* dd036da 2025-09-09 jm  feat(order): delivery geo-address snapshot (link to CustomerAddress + deliverTo/phone/landmark/coords/photo); docs: POS_Delivery_GeoAddress + changelog
+* b28ca7e 2025-09-09 jm  feat(ar/soa): Statement of Account w/ itemized charges, local date parsing, inclusive end date, and capped applied credits
+* bbbe304 2025-09-08 jm  refactor(pricing): centralize discount engine & rule fetching across cashier/receipt/AR; keep legacy AR path
+* 0b386a5 2025-09-08 jm  feat: rule-aware pricing parity (cashier, receipt, ack, AR); use discounted totals for receipts/ACK/ledgers; fix TS union narrowing
+* ddb4b99 2025-09-07 jm  feat(ui): mobile-first Order Pad - Mobile bottom bar + full-screen cart sheet - Product cards: mobile − qty + stepper (keeps desktop Add logic) - Compact category pill bar with icons, smart fades, inner padding - Mobile-only scanner (removed desktop Scan), guarded camera effect - Mobile infinite scroll; hide desktop count/pagination on mobile - Fix TDZ: use filtered.length in mobile scroll effect - Remove redundant mobile captions in cart lines - Add .no-scrollbar utility (if not present)
+* f4ba4cc 2025-09-07 jm  feat(ar): implement AR list & customer ledger with payments feat(customers): unify layout (sticky tabs), move pricing to index, per-item discount rules fix(ui): remove overlapping sticky headers; consistent max-width/padding chore(routes): delete customers..pricing.tsx (obsolete Outlet) docs(changelog): record minimal UI fixes, AR, and customer discounts
+* 3ab784f 2025-09-04 jm  renamed kiosk to order_pad in all files
+* 5bcabbe 2025-09-04 jm  docs: align POS docs with Cashier/Receipt MVP, delivery/COD, and discount simplification; remove obsolete files
+* a3aca3e 2025-09-03 jm  feat(ui): unify POS UI across app (indigo theme, compact controls, consistent inputs; no logic changes)
+* a261229 2025-08-29 jm  Cashier & Receipt MVP: optional kiosk printing, 57 mm slip, TTL locks, auto-cancel/purge, receipt numbering, cash input
+* 4094588 2025-08-28 jm  docs: update DataModel, BusinessPlan, OrderFlow, KioskUI for Cashier Queue & Payment MVP
+* 91a49c9 2025-08-28 jm  Cashier Queue & Scan (MVP): queue page, open-by-code with TTL locking; cashier order view; add Order locking fields
+* 304e730 2025-08-28 jm  Cashier Queue & Scan (MVP): queue page, open-by-code with locking, cashier order view
+* 9005bf8 2025-08-27 jm  (feat/m1-order-slip) docs: add API_Slip.md (Create Slip API & kiosk preflight)
+* eabf6c8 2025-08-27 jm  slip: add Code39 barcode render + copy; wire in orderBarcode util
+* 3e873ea 2025-08-27 jm  chore(dev): add stock-check route (dev utility)
+* 39ec961 2025-08-27 jm  docs: update business plan, kiosk UI spec, order flow; add changelog entries for kiosk preflight + mixed-mode
+* 561e58c 2025-08-27 jm  orders: /orders/new returns JSON on ?respond=json; validates lines per mode; creates UNPAID order
+* 9409f7d 2025-08-27 jm  kiosk: mixed-mode add (retail/pack) + client-side preflight validation + error modal; JSON submit to /orders/new
+* bcce8e4 2025-08-26 jm  kiosk(ui): retail+pack dual-add per product; fix stock mapping; inline Low/Out; unit-aware add buttons
+* 7c2c49e 2025-08-25 jm  docs(kiosk): add tablet-first UI spec; log current implementation deltas (DB prices only, explicit stock labels)
+* 3a7d676 2025-08-25 jm  kiosk(ui): single-column cards; show DB retail & pack prices (no computed pack price); explicit pack/retail stock labels; container info; gate Add by price
+* 1ce918a 2025-08-24 jm  Milestone 1: add /dev/slip-test, fix session typings, and update OrderFlow/ChangeLog docs
+* 491e29b 2025-08-24 jm  Docs: add Milestone K1 (tablet-first Kiosk UI) and kiosk spec
+* 983d532 2025-08-24 jm  Kiosk: pass Request to getSession; fix ESLint no-empty-pattern
+* 76ebbb3 2025-08-24 jm  Session typings: commitSession/destroySession take Session (not Promise<Session>)
+* 87b6dca 2025-08-24 jm  Dev: add /dev/slip-test to create Order Slip from recent products
+* 355b28c 2025-08-24 jm  Milestone 1: Create-slip action (/orders.new) + orderCode helper
+* 3dec005 2025-08-24 jm  Milestone 1: Add printable Order Slip page with reprint counter
+* 058c7ef 2025-08-23 jm  Milestone 1: Add Order & OrderItem models for Order Slip
+* 2992418 2025-08-23 jm  (tag: backup/pre-replace-main) docs: add full POS blueprint and project documentation  and docfile
+* 06e2e30 2025-08-19 jm  item view price version
+* e6adf2c 2025-08-18 jm  (tag: backup-refactor-pos, refactor-pos) feat: ready to merge
+* 57df5d1 2025-08-18 jm  fix layout on add pic
+* 334aa70 2025-08-18 jm  image upload feature done
+* 31d92ee 2025-08-17 jm  Add imageKey to Product
+* 9aa79c7 2025-08-17 jm  fix(products): stop brand-delete toast loop; unify toast lifecycle; sync brands
+* 2902646 2025-08-17 jm  fixes bugs on data enter and delete
+* 23a28a8 2025-08-16 jm  fixes some ui ux
+* 338da22 2025-08-16 jm  fixes some ui ux
+* 941fcec 2025-08-12 jm  add recompute feature
+* 428938c 2025-08-12 jm  feat(products): add “open sack” restock + autocompute + form resets
+* 331bfde 2025-08-12 jm  feat: retail auto-compute; fix(action): short-circuit delete before validations
+* 357fe0c 2025-08-12 jm  Clean up products flow: fewer fetchers, memoized options, safer brand/category guards
+* af5bbe7 2025-08-12 jm  Products: refactor modal + fetcher flows, memoize options, fix FormData types, add optimistic delete
+* 10440df 2025-08-11 jm  fix(products): type-safe Step 1 validation using typed tuple keys
+* 605ba0b 2025-08-11 jm  fix indication duplication on modal input
+* a1487df 2025-08-11 jm  fix(loader): keep Promise.all order via elision to prevent locations receiving targets
+* fc45b90 2025-08-11 jm  fix: sync target filter pills with category + brand selection
+* 3343d4a 2025-08-07 jm  Add remix-serve to devDependencies
+* 22c9c1c 2025-08-07 jm  add remix devdendencies
+* abe8758 2025-08-06 jm  fixed delete target
+* 8f877d0 2025-08-06 jm  fix delete on brand
+* 93b5fa3 2025-08-06 jm  fix delete fuction on location
+* 34a5a29 2025-08-05 jm  fixes pages index
+* 421c8c5 2025-07-17 jm  fix some ui components
+* 0aae617 2025-07-16 jm  feat: polished product form UI and fixed currency input behavior
+* 451d9af 2025-07-16 jm  fix sone labels issue
+* c017d6b 2025-07-16 jm  ui integration on 3 steps done
+* 4c67cac 2025-07-15 jm  pagination done
+* fa07a1b 2025-07-15 jm  pagination phase 1 done
+* a90ec03 2025-07-15 jm  fixed bug on data regaridng throwing error
+* cb971dc 2025-07-15 jm  fix small wackymole bug
+* 8006f9f 2025-07-15 jm  just fix some db seeds and change product list content
+* 488e2d6 2025-07-14 jm  feat: add wild search filter for products by name, description, and brand
+* 94f9558 2025-07-14 jm  fix: cleaned up originalPrice errors, seed now runs smoothly 🚀
+* 0a263a7 2025-07-14 jm  fix button add bug + some small ui fix
+* 603ec5b 2025-07-14 jm  ✅ Working: product list shows, add form works, ready for UX improvements
+* 12e3a6c 2025-07-13 jm  feat(cart): redesigned cart UI to receipt-style with fractional quantity buttons
+* 202a1fc 2025-07-13 jm  Add stable cart with fractional quantity support
+* 8e9844d 2025-07-13 jm  Fix cart add/increment behavior with unique product IDs and forms
+* 656e023 2025-07-13 jm  feat(cart): implement shopping cart with session persistence
+* 11cfa8f 2025-07-13 jm  feat: implement product add, edit, and delete functionality
+* 6c2f1b2 2025-07-13 jm  feat: initial Prisma setup with Product model, migrations, seed, and products page working
+* 6d46fcd 2025-07-13 jm  Initial commit from create-remix

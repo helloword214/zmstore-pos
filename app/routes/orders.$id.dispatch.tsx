@@ -25,10 +25,15 @@ const VEHICLE_CAPACITY_KG: Record<string, number> = {
   Multicab: 300,
 };
 
-// Fallback: extract kg from product name, e.g., "LPG 11kg"
-function inferKgFromName(name: string): number {
-  const m = name?.match(/(\d+(?:\.\d+)?)\s*kg\b/i);
-  return m ? Number(m[1]) : 0;
+// Convert measurement unit → factor to KG (schema-only; no name parsing)
+function massUnitToKgFactor(raw?: string | null) {
+  const u = String(raw ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[.\s]/g, ""); // "kgs." -> "kgs"
+  if (/^(kg|kgs|kilo|kilos|kilogram|kilograms)$/.test(u)) return 1;
+  if (/^(g|gram|grams)$/.test(u)) return 1 / 1000;
+  return 0; // liters, meters, pcs, etc. => 0 (no weight)
 }
 
 type VehicleDTO = { id: number; name: string; capacityKg: number | null };
@@ -52,6 +57,8 @@ type LoaderData = {
 
   // product.id → kg per pack (0 if unknown)
   kgById: Record<number, number>;
+  // product.id → current PACK stock (for max qty guard)
+  stockById: Record<number, number>;
 
   vehicles: VehicleDTO[];
 
@@ -145,7 +152,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       stock: true,
       srp: true,
       packingSize: true,
-      packingUnit: { select: { name: true } },
+      unit: { select: { name: true } },
     },
     orderBy: { name: "asc" },
     take: 500,
@@ -159,15 +166,40 @@ export async function loader({ params }: LoaderFunctionArgs) {
     allowDecimal: false,
   }));
 
-  // Build kg map using schema first; fallback to regex
+  // Build kg map (SCHEMA-ONLY) for ALL relevant products:
+  // union of: order items + existing loadout snapshot + picker products
+  const snapshotRaw: any[] = Array.isArray(order.loadoutSnapshot)
+    ? (order.loadoutSnapshot as any[])
+    : [];
+  const snapshotIds = snapshotRaw
+    .map((x) => Number(x?.productId))
+    .filter((n) => Number.isFinite(n));
+  const orderItemIds = order.items.map((i) => i.productId);
+  const pickerIds = packProducts.map((p) => p.id);
+  const relevantIds = Array.from(
+    new Set([...snapshotIds, ...orderItemIds, ...pickerIds])
+  );
+
+  const productsForKgMap =
+    relevantIds.length > 0
+      ? await db.product.findMany({
+          where: { id: { in: relevantIds } },
+          select: {
+            id: true,
+            packingSize: true,
+            unit: { select: { name: true } }, // ← use measurement unit
+            stock: true,
+          },
+        })
+      : [];
+
   const kgById: Record<number, number> = {};
-  for (const p of packProducts) {
-    const isKgUnit =
-      p.packingUnit?.name &&
-      String(p.packingUnit.name).trim().toLowerCase() === "kg";
-    const bySchema =
-      isKgUnit && Number(p.packingSize) > 0 ? Number(p.packingSize) : 0;
-    kgById[p.id] = bySchema || inferKgFromName(p.name) || 0;
+  const stockById: Record<number, number> = {};
+  for (const p of productsForKgMap) {
+    const size = Number(p.packingSize ?? 0);
+    const factor = massUnitToKgFactor(p.unit?.name);
+    kgById[p.id] = factor > 0 && size > 0 ? size * factor : 0;
+    stockById[p.id] = Number(p.stock ?? 0);
   }
 
   // Build rider options: STRICT from Employees with role=RIDER only
@@ -238,6 +270,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     riderOptions,
     productOptions,
     kgById,
+    stockById,
     vehicles,
     order: {
       id: order.id,
@@ -410,23 +443,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
           where: { id: { in: postedIds } },
           select: {
             id: true,
-            name: true,
             packingSize: true,
-            packingUnit: { select: { name: true } },
+            unit: { select: { name: true } }, // ← measurement unit
           },
         })
       : [];
   const kgByIdServer = new Map<number, number>();
   for (const p of productsForKg) {
-    const unitIsKg =
-      p.packingUnit?.name &&
-      String(p.packingUnit.name).trim().toLowerCase() === "kg";
-    const bySchema =
-      unitIsKg && Number(p.packingSize) > 0 ? Number(p.packingSize) : 0;
-    const m = p.name?.match(/(\d+(?:\.\d+)?)\s*kg\b/i);
-    const byName = bySchema || (m ? Number(m[1]) : 0);
-
-    kgByIdServer.set(p.id, byName || 0);
+    const size = Number(p.packingSize ?? 0);
+    const factor = massUnitToKgFactor(p.unit?.name);
+    kgByIdServer.set(p.id, factor > 0 && size > 0 ? size * factor : 0);
   }
   const usedCapacityKg = loadoutSnapshot.reduce((s, l) => {
     const kg = kgByIdServer.get(Number(l.productId)) ?? 0;
@@ -782,6 +808,7 @@ export default function DispatchStagingPage() {
     riderOptions,
     productOptions,
     kgById,
+    stockById,
     categories,
     vehicles,
   } = useLoaderData<LoaderData>();
@@ -861,6 +888,25 @@ export default function DispatchStagingPage() {
     [kgById]
   );
 
+  const stockMap = React.useMemo(
+    () =>
+      new Map<number, number>(
+        Object.entries(stockById).map(([k, v]) => [Number(k), Number(v) || 0])
+      ),
+    [stockById]
+  );
+  // current qty per product in the draft loadout
+  const qtyByProductId = React.useMemo(() => {
+    const m = new Map<number, number>();
+    for (const L of loadout) {
+      if (!L.productId) continue;
+      const pid = Number(L.productId);
+      const q = qtyNum(L.qty);
+      m.set(pid, (m.get(pid) || 0) + q);
+    }
+    return m;
+  }, [loadout]);
+
   // Compute total weight (kg): sum(qty * kgPerPack)
   const usedCapacityKg = React.useMemo(() => {
     return loadout.reduce((sum, L) => {
@@ -884,16 +930,32 @@ export default function DispatchStagingPage() {
   const capacityReached = capacity != null && usedCapacityKg >= capacity;
   const willExceedWith = React.useCallback(
     (productId: number, deltaQty = 1) => {
-      if (capacity == null) return false;
-      const kg = kgMap.get(productId) ?? 0;
-      return usedCapacityKg + kg * deltaQty > capacity;
+      // capacity check
+      if (capacity != null) {
+        const kg = kgMap.get(productId) ?? 0;
+        if (usedCapacityKg + kg * deltaQty > capacity) return true;
+      }
+      // stock check
+      const inCart = qtyByProductId.get(productId) || 0;
+      const stock = stockMap.get(productId) || 0;
+      return inCart + deltaQty > stock;
     },
-    [capacity, usedCapacityKg, kgMap]
+    [capacity, usedCapacityKg, kgMap, qtyByProductId, stockMap]
   );
   const hasUnboundLoad = React.useMemo(
     () => loadout.some((L) => qtyNum(L.qty) > 0 && !L.productId),
     [loadout]
   );
+
+  const hasOverStock = React.useMemo(() => {
+    return loadout.some((L) => {
+      if (!L.productId) return false;
+      const pid = Number(L.productId);
+      const q = qtyNum(L.qty);
+      const stock = stockMap.get(pid) || 0;
+      return q > stock;
+    });
+  }, [loadout, stockMap]);
 
   // SRP preview of current loadout
   const srpById = React.useMemo(
@@ -1234,30 +1296,43 @@ export default function DispatchStagingPage() {
                     <button
                       key={qa.id}
                       type="button"
-                      disabled={
-                        disableAll ||
-                        capacityReached ||
-                        willExceedWith(qa.id, 1)
-                      }
+                      disabled={disableAll || willExceedWith(qa.id, 1)}
                       title={
-                        capacityReached || willExceedWith(qa.id, 1)
-                          ? "Capacity full (kg)"
+                        willExceedWith(qa.id, 1)
+                          ? (() => {
+                              const stock = stockMap.get(qa.id) || 0;
+                              const have = qtyByProductId.get(qa.id) || 0;
+                              if (have >= stock) return "No more stock";
+                              if (capacity != null) return "Capacity full (kg)";
+                              return "Not allowed";
+                            })()
                           : undefined
                       }
                       onClick={() => {
-                        if (capacityReached || willExceedWith(qa.id, 1)) return;
+                        if (willExceedWith(qa.id, 1)) return;
                         setLoadout((prev) => {
                           const existing = prev.find(
                             (l) => l.productId === qa.id
                           );
                           if (existing) {
+                            // clamp to stock
+                            const stock = stockMap.get(qa.id) || 0;
+                            const have = qtyByProductId.get(qa.id) || 0;
+                            const canAdd = Math.max(0, stock - have);
+                            if (canAdd <= 0) return prev;
                             return prev.map((l) =>
                               l.productId === qa.id
-                                ? { ...l, qty: String(qtyNum(l.qty) + 1) }
+                                ? {
+                                    ...l,
+                                    qty: String(
+                                      Math.min(qtyNum(l.qty) + 1, stock)
+                                    ),
+                                  }
                                 : l
                             );
                           }
-                          const p = productOptions.find((p) => p.id === qa.id)!;
+                          const stock = stockMap.get(qa.id) || 0;
+                          if (stock <= 0) return prev;
                           return [
                             ...prev,
                             {
@@ -1359,6 +1434,10 @@ export default function DispatchStagingPage() {
                                 <span className="tabular-nums">
                                   {peso(srpById.get(L.productId) ?? 0)}
                                 </span>
+                                {" · "}
+                                <span>
+                                  Stock: {stockMap.get(L.productId) ?? 0}
+                                </span>
                               </div>
                             ) : null}
                           </div>
@@ -1390,7 +1469,6 @@ export default function DispatchStagingPage() {
                             <input
                               type="number"
                               step={L.allowDecimal ? "0.01" : "1"}
-                              // Kapag may product na, 0 is not allowed (or treated as remove)
                               value={L.qty}
                               onChange={(e) => {
                                 const raw = e.target.value;
@@ -1403,7 +1481,7 @@ export default function DispatchStagingPage() {
                                   );
                                   return;
                                 }
-                                // keep numeric; pack = integer
+                                // keep numeric; PACK = integer input
                                 const cleaned = L.allowDecimal
                                   ? raw
                                   : raw.replace(/[^\d]/g, "");
@@ -1413,17 +1491,54 @@ export default function DispatchStagingPage() {
                                   )
                                 );
                               }}
+                              onBlur={() => {
+                                // commit: normalize + clamp to stock + auto-remove kapag 0 / invalid
+                                setLoadout((prev) =>
+                                  prev.reduce<LoadLine[]>((acc, x) => {
+                                    if (x.key !== L.key) {
+                                      acc.push(x);
+                                      return acc;
+                                    }
+                                    const pid = Number(x.productId);
+                                    let q = qtyNum(x.qty);
+                                    if (q <= 0) return acc; // auto-remove
+                                    // clamp sa natitirang stock
+                                    const totalStock = stockMap.get(pid) || 0;
+                                    // qty in other rows of same product
+                                    const others = prev
+                                      .filter(
+                                        (o) =>
+                                          o.key !== x.key && o.productId === pid
+                                      )
+                                      .reduce((s, o) => s + qtyNum(o.qty), 0);
+                                    const maxForThisRow = Math.max(
+                                      0,
+                                      totalStock - others
+                                    );
+                                    q = Math.min(q, maxForThisRow);
+                                    const fixed = x.allowDecimal
+                                      ? Number(q.toFixed(2))
+                                      : Math.round(q);
+                                    if (fixed <= 0) return acc; // remove if no allowance
+                                    acc.push({ ...x, qty: String(fixed) });
+                                    return acc;
+                                  }, [])
+                                );
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  // commit same as blur
+                                  (e.currentTarget as HTMLInputElement).blur();
+                                }
+                              }}
                               inputMode={L.allowDecimal ? "decimal" : "numeric"}
                               className={[
-                                // size: match buttons
                                 "h-10 w-full max-w-[7rem]",
-                                // base
                                 "rounded-md border border-slate-300 bg-white px-3 text-sm text-right",
                                 "outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200",
-                                // remove native spinners (cross-browser)
-                                "[appearance:textfield]", // modern browsers (incl. Firefox)
-                                "[-moz-appearance:textfield]", // Firefox explicit
-                                "[&::-webkit-inner-spin-button]:appearance-none", // Chrome/Safari
+                                "[appearance:textfield]",
+                                "[-moz-appearance:textfield]",
+                                "[&::-webkit-inner-spin-button]:appearance-none",
                                 "[&::-webkit-outer-spin-button]:appearance-none",
                               ].join(" ")}
                             />
@@ -1431,19 +1546,21 @@ export default function DispatchStagingPage() {
                               type="button"
                               disabled={
                                 disableAll ||
-                                (capacity != null &&
-                                  (kgMap.get(L.productId ?? -1) ?? 0) > 0 &&
-                                  usedCapacityKg +
-                                    (kgMap.get(L.productId ?? -1) ?? 0) >
-                                    capacity)
+                                (L.productId != null &&
+                                  willExceedWith(Number(L.productId), 1))
                               }
                               title={
-                                capacity != null &&
-                                (kgMap.get(L.productId ?? -1) ?? 0) > 0 &&
-                                usedCapacityKg +
-                                  (kgMap.get(L.productId ?? -1) ?? 0) >
-                                  capacity
-                                  ? "Capacity full (kg)"
+                                L.productId != null &&
+                                willExceedWith(Number(L.productId), 1)
+                                  ? (() => {
+                                      const pid = Number(L.productId);
+                                      const stock = stockMap.get(pid) || 0;
+                                      const have = qtyByProductId.get(pid) || 0;
+                                      if (have >= stock) return "No more stock";
+                                      if (capacity != null)
+                                        return "Capacity full (kg)";
+                                      return "Not allowed";
+                                    })()
                                   : undefined
                               }
                               onClick={() => nudgeQty(L.key, +1)}
@@ -1549,7 +1666,9 @@ export default function DispatchStagingPage() {
                 <button
                   name="intent"
                   value="dispatch"
-                  disabled={!hasRider || overCapacity || hasUnboundLoad}
+                  disabled={
+                    !hasRider || overCapacity || hasUnboundLoad || hasOverStock
+                  }
                   title={
                     !hasRider
                       ? "Choose a rider first"
@@ -1557,6 +1676,8 @@ export default function DispatchStagingPage() {
                       ? "Capacity exceeded (kg) — adjust loadout or vehicle"
                       : hasUnboundLoad
                       ? "Complete the loadout: select products for lines with quantity"
+                      : hasOverStock
+                      ? "One or more lines exceed available stock"
                       : "Ready to dispatch (server checks coming next)"
                   }
                   className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"

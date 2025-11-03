@@ -1,9 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
   useLoaderData,
-  useLocation,
   useNavigate,
 } from "@remix-run/react";
 import * as React from "react";
@@ -173,7 +173,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
 export default function CreditOrderPage() {
   const { order, remaining } = useLoaderData<typeof loader>();
   const nav = useNavigate();
-  const location = useLocation();
 
   // Pre-fill picker with existing order.customer if present
   const [customer, setCustomer] = React.useState<{

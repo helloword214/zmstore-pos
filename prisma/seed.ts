@@ -7,6 +7,215 @@ import { generateSKU } from "~/utils/skuHelpers";
 const db = new PrismaClient();
 
 // ─────────────────────────────────────────
+// 0️⃣ Pangasinan Geo Master Data (Region I)
+// ─────────────────────────────────────────
+const PANGASINAN = {
+  province: { name: "Pangasinan", code: "0155" as string | undefined },
+  municipalities: [
+    // Core focus for now; add more later if needed
+    { name: "Asingan" },
+    { name: "San Nicolas" },
+    { name: "Tayug" },
+    { name: "Rosales" },
+    { name: "Urdaneta City" },
+    { name: "Villasis" },
+    { name: "Binalonan" },
+    { name: "San Manuel" },
+    { name: "Umingan" },
+    { name: "Natividad" },
+    { name: "Balungao" },
+  ],
+  // Source: LGU Asingan / PhilAtlas / PSA lists
+  barangaysByMunicipality: {
+    Asingan: [
+      "Ariston Este",
+      "Ariston Weste",
+      "Bantog",
+      "Baro",
+      "Bobonan",
+      "Calepaan",
+      "Carosucan Norte",
+      "Carosucan Sur",
+      "Coldit",
+      "Domanpot",
+      "Dupac",
+      "Macalong",
+      "Poblacion East",
+      "Poblacion West",
+      "San Vicente East",
+      "San Vicente West",
+      "Sanchez",
+      "Cabalitian",
+      "Sobol",
+    ],
+    // Source: PhilAtlas (San Nicolas, Pangasinan)
+    "San Nicolas": [
+      "Bensican",
+      "Caanamangaan",
+      "Cabaldongan",
+      "Calanutian",
+      "Camangaan",
+      "Casaratan",
+      "Fianza",
+      "Malico",
+      "Salpad",
+      "San Felipe East",
+      "San Felipe West",
+      "San Rafael Centro",
+      "San Rafael East",
+      "San Rafael West",
+      "San Roque",
+      "Santa Maria East",
+      "Santa Maria West",
+      "Poblacion East",
+      "Poblacion West",
+      "San Eugenio",
+      "San Jose",
+      "San Pedro",
+      "San Vicente",
+      "Santa Barbara",
+      "Santa Pilar",
+      "Santa Rosa",
+      "Santo Domingo",
+      "Santo Niño East",
+      "Santo Niño West",
+      "Santo Tomas",
+      "Toketec",
+      "Tulong",
+    ],
+    // keep a few for neighbors we reference in dummy data
+    Rosales: ["Carmen East", "Carmen West", "Poblacion", "Rabago", "Tomling"],
+    Tayug: ["Barangobong", "Caoayan", "Lawak", "Poblacion", "Saleng"],
+    "Urdaneta City": [
+      "Anonas",
+      "Cabaruan",
+      "Bayaoas",
+      "Casantaan",
+      "Cayambanan",
+      "Poblacion",
+    ],
+    Villasis: ["Amamperez", "Barangobong", "Poblacion", "San Blas", "Unzad"],
+    Binalonan: [
+      "Balangobong",
+      "Bugayong",
+      "Camangaan",
+      "Poblacion",
+      "Santiago",
+    ],
+    "San Manuel": ["Cabacaraan", "Laoac", "Narra", "Poblacion", "San Roque"],
+    Umingan: ["Abot Molina", "Barira", "Palacpalac", "Poblacion", "San Juan"],
+    Natividad: [
+      "Acacia",
+      "Batchelor East",
+      "Batchelor West",
+      "Poblacion",
+      "Tumbar",
+    ],
+    Balungao: [
+      "Capayaran",
+      "Esmeralda",
+      "Kita-Kita",
+      "Poblacion",
+      "San Aurelio 1st",
+    ],
+  } as Record<string, string[]>,
+};
+
+// Zip code helpers (optional snapshots)
+const ZIP_BY_MUNI: Record<string, string> = {
+  Asingan: "2439",
+  "San Nicolas": "2447",
+  Rosales: "2441",
+  Tayug: "2445",
+  "Urdaneta City": "2428",
+  Villasis: "2427",
+  Binalonan: "2436",
+  "San Manuel": "2438",
+  Umingan: "2443",
+  Natividad: "2446",
+  Balungao: "2442",
+};
+
+// ── upsert full Province → Municipalities → Barangays → Zones → Landmarks
+async function seedGeoPangasinan() {
+  const province = await db.province.upsert({
+    where: { name: PANGASINAN.province.name },
+    update: { code: PANGASINAN.province.code ?? null, isActive: true },
+    create: {
+      name: PANGASINAN.province.name,
+      code: PANGASINAN.province.code ?? null,
+    },
+  });
+
+  const muniMap: Record<string, number> = {};
+  for (const m of PANGASINAN.municipalities) {
+    const muni = await db.municipality.upsert({
+      where: { provinceId_name: { provinceId: province.id, name: m.name } },
+      update: { isActive: true },
+      create: { name: m.name, provinceId: province.id },
+    });
+    muniMap[m.name] = muni.id;
+
+    const brgys = PANGASINAN.barangaysByMunicipality[m.name] ?? [];
+    for (const b of brgys) {
+      const brgy = await db.barangay.upsert({
+        where: { municipalityId_name: { municipalityId: muni.id, name: b } },
+        update: { isActive: true },
+        create: { name: b, municipalityId: muni.id },
+      });
+
+      // Create a few default zones/purok to start
+      for (const z of ["Purok 1", "Purok 2", "Purok 3"]) {
+        await db.zone.upsert({
+          where: { barangayId_name: { barangayId: brgy.id, name: z } },
+          update: { isActive: true },
+          create: { name: z, barangayId: brgy.id },
+        });
+      }
+    }
+  }
+
+  // Landmarks (sample, tie to key barangays)
+  const LMK = [
+    { muni: "Asingan", brgy: "Poblacion East", name: "Asingan Town Plaza" },
+    { muni: "Asingan", brgy: "Poblacion West", name: "Asingan Public Market" },
+    {
+      muni: "Asingan",
+      brgy: "Carosucan Norte",
+      name: "Carosucan Norte Trike Terminal",
+    },
+    {
+      muni: "San Nicolas",
+      brgy: "Poblacion East",
+      name: "San Nicolas Municipal Hall",
+    },
+    {
+      muni: "San Nicolas",
+      brgy: "San Rafael Centro",
+      name: "SN Public Market",
+    },
+  ];
+  for (const l of LMK) {
+    const barangay = await db.barangay.findFirst({
+      where: {
+        name: l.brgy,
+        municipality: { name: l.muni, province: { name: "Pangasinan" } },
+      },
+      select: { id: true },
+    });
+    if (barangay) {
+      await db.landmark.upsert({
+        where: { name_barangayId: { name: l.name, barangayId: barangay.id } },
+        update: { isActive: true },
+        create: { name: l.name, barangayId: barangay.id, isActive: true },
+      });
+    }
+  }
+
+  return { provinceId: province.id, muniMap };
+}
+
+// ─────────────────────────────────────────
 // 1️⃣ Static Config
 // ─────────────────────────────────────────
 const categories = [
@@ -986,6 +1195,13 @@ async function seed() {
     db.packingUnit.deleteMany(),
     db.location.deleteMany(),
 
+    // ── Geo refs (wipe before reseed)
+    db.landmark.deleteMany(),
+    db.zone.deleteMany(),
+    db.barangay.deleteMany(),
+    db.municipality.deleteMany(),
+    db.province.deleteMany(),
+
     // ── Optional: if you also want a clean slate for fleet/workforce
     // Comment out if you want to keep them across seeds.
     // db.overrideLog.deleteMany(),
@@ -1000,6 +1216,14 @@ async function seed() {
   const packingUnitMap = await getOrCreateMap("packingUnit", packingUnitNames);
 
   const tagList = await getOrCreateGlobalTags();
+
+  // ─────────────────────────────────────────
+  // NEW: Seed Pangasinan geo master data
+  // ─────────────────────────────────────────
+  console.log(
+    "🗺️  Seeding Province/Municipality/Barangay/Zone/Landmarks (Pangasinan)..."
+  );
+  const { provinceId } = await seedGeoPangasinan();
 
   console.log("📦 Creating categories...");
   const categoryMap: Record<string, number> = {};
@@ -1351,7 +1575,10 @@ async function seed() {
   // ─────────────────────────────────────────
   // NEW: A few customers with addresses (safe upserts)
   // ─────────────────────────────────────────
-  console.log("👨‍👩‍👧‍👦 Creating customers + addresses…");
+  // ─────────────────────────────────────────
+  // NEW: Customers located in Pangasinan (Asingan/San Nicolas/nearby)
+  // ─────────────────────────────────────────
+  console.log("👨‍👩‍👧‍👦 Creating customers + addresses (Pangasinan) …");
   const customers = [
     {
       alias: "Bahay ni Mang Tonyo",
@@ -1363,13 +1590,13 @@ async function seed() {
       addr: {
         label: "Home",
         line1: "Blk 4 Lot 12, Mabini St.",
-        barangay: "San Isidro",
-        city: "Quezon City",
-        province: "Metro Manila",
-        postalCode: "1100",
+        barangay: "Poblacion East",
+        city: "Asingan",
+        province: "Pangasinan",
+        postalCode: ZIP_BY_MUNI["Asingan"],
         landmark: "Near sari-sari store",
-        geoLat: 14.6501,
-        geoLng: 121.0493,
+        geoLat: 16.012, // approx only
+        geoLng: 120.669,
       },
     },
     {
@@ -1382,13 +1609,13 @@ async function seed() {
       addr: {
         label: "Condo",
         line1: "Unit 2B, Sunrise Tower",
-        barangay: "Bel-Air",
-        city: "Makati",
-        province: "Metro Manila",
-        postalCode: "1210",
+        barangay: "San Rafael Centro",
+        city: "San Nicolas",
+        province: "Pangasinan",
+        postalCode: ZIP_BY_MUNI["San Nicolas"],
         landmark: "Across coffee shop",
-        geoLat: 14.5585,
-        geoLng: 121.0244,
+        geoLat: 16.053,
+        geoLng: 120.749,
       },
     },
     {
@@ -1401,16 +1628,17 @@ async function seed() {
       addr: {
         label: "Store",
         line1: "P. Burgos St.",
-        barangay: "San Roque",
-        city: "Marikina",
-        province: "Metro Manila",
-        postalCode: "1800",
+        barangay: "Poblacion",
+        city: "Rosales",
+        province: "Pangasinan",
+        postalCode: ZIP_BY_MUNI["Rosales"],
         landmark: "Beside pharmacy",
-        geoLat: 14.6517,
-        geoLng: 121.1029,
+        geoLat: 15.894,
+        geoLng: 120.633,
       },
     },
   ];
+
   for (const c of customers) {
     const customer = await db.customer.upsert({
       where: { phone: c.phone }, // phone is unique
@@ -1439,39 +1667,75 @@ async function seed() {
       where: { customerId: customer.id, label: c.addr.label },
       select: { id: true },
     });
+    // Resolve FK refs (province/municipality/barangay) if available
+    const found = await db.barangay.findFirst({
+      where: {
+        name: c.addr.barangay,
+        municipality: {
+          name: c.addr.city,
+          province: { name: c.addr.province },
+        },
+      },
+      select: {
+        id: true,
+        municipalityId: true,
+        municipality: { select: { provinceId: true } },
+      },
+    });
+
+    // Try to attach default Zone ('Purok 1') and ensure Landmark ref exists
+    // Ensure merong "Purok 1" only when needed
+    const zoneRef = found
+      ? await db.zone.upsert({
+          where: { barangayId_name: { barangayId: found.id, name: "Purok 1" } },
+          update: {},
+          create: { barangayId: found.id, name: "Purok 1" },
+          select: { id: true },
+        })
+      : null;
+    let landmarkRef: { id: number } | null = null;
+    if (found && c.addr.landmark) {
+      landmarkRef =
+        (await db.landmark.findFirst({
+          where: { barangayId: found.id, name: c.addr.landmark },
+          select: { id: true },
+        })) ??
+        (await db.landmark.create({
+          data: { barangayId: found.id, name: c.addr.landmark, isActive: true },
+          select: { id: true },
+        }));
+    }
+
+    const addrData = {
+      line1: c.addr.line1,
+      barangay: c.addr.barangay,
+      city: c.addr.city,
+      province: c.addr.province,
+      postalCode: c.addr.postalCode ?? null,
+      landmark: c.addr.landmark ?? null,
+      geoLat: c.addr.geoLat ?? null,
+      geoLng: c.addr.geoLng ?? null,
+      // FK links
+      provinceId: found?.municipality.provinceId ?? provinceId,
+      municipalityId: found?.municipalityId ?? null,
+      barangayId: found?.id ?? null,
+      zoneId: zoneRef?.id ?? null,
+      landmarkId: landmarkRef?.id ?? null,
+    } as const;
+
     if (existing) {
       await db.customerAddress.update({
         where: { id: existing.id },
-        data: {
-          line1: c.addr.line1,
-          barangay: c.addr.barangay,
-          city: c.addr.city,
-          province: c.addr.province,
-          postalCode: c.addr.postalCode ?? null,
-          landmark: c.addr.landmark ?? null,
-          geoLat: c.addr.geoLat ?? null,
-          geoLng: c.addr.geoLng ?? null,
-        },
+        data: addrData,
       });
     } else {
       await db.customerAddress.create({
-        data: {
-          customerId: customer.id,
-          label: c.addr.label,
-          line1: c.addr.line1,
-          barangay: c.addr.barangay,
-          city: c.addr.city,
-          province: c.addr.province,
-          postalCode: c.addr.postalCode ?? null,
-          landmark: c.addr.landmark ?? null,
-          geoLat: c.addr.geoLat ?? null,
-          geoLng: c.addr.geoLng ?? null,
-        },
+        data: { customerId: customer.id, label: c.addr.label, ...addrData },
       });
     }
   }
   // ─────────────────────────────────────────
-  // EXTRA: generate 25 more dummy customers (unique phones)
+  // EXTRA: generate 25 more dummy customers (unique phones) in Pangasinan
   // ─────────────────────────────────────────
   const firstNames = [
     "Alex",
@@ -1531,24 +1795,17 @@ async function seed() {
     return String(n).padStart(len, "0");
   }
 
+  const pangasinanMuns = Object.keys(PANGASINAN.barangaysByMunicipality);
   for (let i = 1; i <= 25; i++) {
     const fn = firstNames[(i - 1) % firstNames.length];
     const ln = lastNames[(i - 1) % lastNames.length];
-    const phone = `0918${pad(100000 + i)}`; // unique phone each
+    const phone = `0918${pad(100000 + i)}`;
     const email = `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@example.com`;
     const alias = `${fn} ${ln}`;
-    const city = ["Quezon City", "Makati", "Pasig", "Marikina", "Taguig"][
-      i % 5
-    ];
-    const barangay = [
-      "San Isidro",
-      "Bel-Air",
-      "Ugong",
-      "San Roque",
-      "Bagumbayan",
-    ][i % 5];
-    const label = ["Home", "Condo", "Shop", "Office"][i % 4];
-
+    const muni = pangasinanMuns[i % pangasinanMuns.length];
+    const brgyList = PANGASINAN.barangaysByMunicipality[muni] ?? ["Poblacion"];
+    const barangay = brgyList[i % brgyList.length];
+    const label = ["Home", "Shop", "Office", "Store"][i % 4];
     const customer = await db.customer.upsert({
       where: { phone },
       update: { alias, firstName: fn, lastName: ln, email, isActive: true },
@@ -1567,16 +1824,56 @@ async function seed() {
       select: { id: true },
     });
 
+    const found = await db.barangay.findFirst({
+      where: {
+        name: barangay,
+        municipality: { name: muni, province: { name: "Pangasinan" } },
+      },
+      select: {
+        id: true,
+        municipalityId: true,
+        municipality: { select: { provinceId: true, name: true } },
+      },
+    });
+    // find zone + (optional) create a landmark entry per barangay
+    // Same lazy-create for dummy customers
+    const zone2 = found
+      ? await db.zone.upsert({
+          where: { barangayId_name: { barangayId: found.id, name: "Purok 1" } },
+          update: {},
+          create: { barangayId: found.id, name: "Purok 1" },
+          select: { id: true },
+        })
+      : null;
+    const lmText = "Near trike terminal";
+    let lm2: { id: number } | null = null;
+    if (found) {
+      lm2 =
+        (await db.landmark.findFirst({
+          where: { barangayId: found.id, name: lmText },
+          select: { id: true },
+        })) ??
+        (await db.landmark.create({
+          data: { barangayId: found.id, name: lmText, isActive: true },
+          select: { id: true },
+        }));
+    }
+
     const addrData = {
       line1: `#${100 + i} Mabini St.`,
       barangay,
-      city,
-      province: "Metro Manila",
-      postalCode: "1000",
-      landmark: "Near trike terminal",
-      geoLat: 14.5 + i * 0.001,
-      geoLng: 121.0 + i * 0.001,
-    };
+      city: found?.municipality.name ?? muni,
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI[muni] ?? null,
+      landmark: lmText,
+      geoLat: 15.9 + i * 0.001,
+      geoLng: 120.6 + i * 0.001,
+      provinceId: found?.municipality.provinceId ?? provinceId,
+      municipalityId: found?.municipalityId ?? null,
+      barangayId: found?.id ?? null,
+      zoneId: zone2?.id ?? null,
+      landmarkId: lm2?.id ?? null,
+    } as const;
 
     if (existing) {
       await db.customerAddress.update({

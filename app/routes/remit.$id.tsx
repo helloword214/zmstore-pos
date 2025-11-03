@@ -136,27 +136,37 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const parsed = JSON.parse(soldLoadJson);
     if (Array.isArray(parsed)) {
       soldRows = parsed
-        .map((r) => ({
-          productId:
+        .map((r) => {
+          const pid =
             r?.productId == null || isNaN(Number(r.productId))
               ? null
-              : Number(r.productId),
-          name: typeof r?.name === "string" ? r.name : "",
-          qty: Math.max(0, Number(r?.qty ?? 0)),
-          unitPrice: Math.max(0, Number(r?.unitPrice ?? 0)),
-          buyerName:
-            (typeof r?.buyerName === "string" ? r.buyerName.trim() : "") ||
-            null,
-          buyerPhone:
-            (typeof r?.buyerPhone === "string" ? r.buyerPhone.trim() : "") ||
-            null,
-          customerId:
-            r?.customerId == null || isNaN(Number(r.customerId))
-              ? null
-              : Number(r.customerId), // ← keep even for cash rows
-          onCredit: Boolean(r?.onCredit),
-        }))
-        .filter((r) => r.qty > 0 && (r.productId != null || r.name));
+              : Number(r.productId);
+          return {
+            productId: pid, // must be a valid product
+            name: typeof r?.name === "string" ? r.name : "",
+            // PACK-only → integer qty
+            qty: Math.max(0, Math.floor(Number(r?.qty ?? 0))),
+            unitPrice: Math.max(0, Number(r?.unitPrice ?? 0)),
+            buyerName:
+              (typeof r?.buyerName === "string" ? r.buyerName.trim() : "") ||
+              null,
+            buyerPhone:
+              (typeof r?.buyerPhone === "string" ? r.buyerPhone.trim() : "") ||
+              null,
+            customerId:
+              r?.customerId == null || isNaN(Number(r.customerId))
+                ? null
+                : Number(r.customerId), // keep even for cash rows
+            onCredit: Boolean(r?.onCredit),
+          };
+        })
+        // disallow name-only rows; require a valid productId
+        .filter(
+          (r) =>
+            r.qty > 0 &&
+            Number.isFinite(Number(r.productId)) &&
+            Number(r.productId) > 0
+        ) as SoldLoadRow[];
     }
   } catch {
     soldRows = [];
@@ -235,14 +245,59 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
+  // fetch order with snapshot for load validation
   const order = await db.order.findUnique({
     where: { id },
-    include: { items: true, payments: true },
+    select: {
+      id: true,
+      status: true,
+      customerId: true,
+      riderName: true,
+      dispatchedAt: true,
+      deliveredAt: true,
+      releasedAt: true,
+      items: true,
+      payments: true,
+      loadoutSnapshot: true, // 👈 needed below
+    },
   });
   if (!order)
     return json({ ok: false, error: "Order not found" }, { status: 404 });
   if (order.status === "PAID") {
     return json({ ok: false, error: "Order already paid" }, { status: 400 });
+  }
+
+  // 🛡️ Guard: sold-from-load cannot exceed loaded snapshot per product
+  {
+    const snapshot = Array.isArray(order.loadoutSnapshot)
+      ? (order.loadoutSnapshot as any[])
+      : [];
+    const snapshotQty = new Map<number, number>();
+    for (const row of snapshot) {
+      const pid = Number(row?.productId ?? NaN);
+      const qty = Math.max(0, Math.floor(Number(row?.qty ?? 0)));
+      if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
+      snapshotQty.set(pid, (snapshotQty.get(pid) || 0) + qty);
+    }
+    const soldQty = new Map<number, number>();
+    for (const row of soldRows) {
+      const pid = Number(row?.productId ?? NaN);
+      const qty = Math.max(0, Math.floor(Number(row?.qty ?? 0)));
+      if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
+      soldQty.set(pid, (soldQty.get(pid) || 0) + qty);
+    }
+    for (const [pid, sQty] of soldQty.entries()) {
+      const loaded = snapshotQty.get(pid) || 0;
+      if (sQty > loaded) {
+        return json(
+          {
+            ok: false,
+            error: `Sold qty (${sQty}) exceeds loaded qty (${loaded}) for product #${pid}. Adjust the sold rows.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
   }
 
   const productIds = Array.from(new Set(order.items.map((i) => i.productId)));
@@ -575,11 +630,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     for (const row of soldRows) {
       const productId = Number(row.productId);
-      if (!Number.isFinite(productId)) {
-        throw new Error("Invalid productId for roadside sale item.");
-      }
+      // rows are validated earlier; keep a no-op safeguard
+      if (!Number.isFinite(productId)) continue;
 
-      // --- NEW: derive final unit price using customer's allowed price when appropriate ---
+      // derive final unit price using customer's allowed price when appropriate
       const approx = (a: number, b: number, eps = 0.009) =>
         Math.abs(a - b) <= eps;
       const pForRow = soldById.get(productId);
@@ -1142,9 +1196,9 @@ export default function RemitOrderPage() {
                     <div className="grid grid-cols-12 gap-3">
                       {/* Customer picker (search + quick add, same as Cashier) */}
                       <div className="col-span-12 lg:col-span-7">
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                        <div className="mb-1 block text-xs font-medium text-slate-600">
                           Customer (optional; required if On credit)
-                        </label>
+                        </div>
                         <CustomerPicker
                           key={`sold-cust-${r.key}`}
                           value={r.customerObj ?? null}
@@ -1293,7 +1347,10 @@ export default function RemitOrderPage() {
                         })()}
                       </div>
                       <div className="col-span-6 md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                        <label
+                          htmlFor={`sold-${r.key}-qty`}
+                          className="mb-1 block text-xs font-medium text-slate-600"
+                        >
                           Qty
                         </label>
                         <input
@@ -1313,9 +1370,10 @@ export default function RemitOrderPage() {
                         />
                       </div>
                       <div className="col-span-6 md:col-span-3">
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                        {/* Header text only; avoid <label> for custom CurrencyInput */}
+                        <div className="mb-1 block text-xs font-medium text-slate-600">
                           Unit price
-                        </label>
+                        </div>
                         {(() => {
                           const base = defaultPriceFor(r.productId);
                           const unit = Number(r.unitPrice || 0);
@@ -1408,10 +1466,14 @@ export default function RemitOrderPage() {
                     {!r.customerId && (
                       <div className="mt-3 grid grid-cols-12 gap-3">
                         <div className="col-span-12 md:col-span-6">
-                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                          <label
+                            htmlFor={`sold-${r.key}-buyerName`}
+                            className="mb-1 block text-xs font-medium text-slate-600"
+                          >
                             Buyer name (optional)
                           </label>
                           <input
+                            id={`sold-${r.key}-buyerName`}
                             type="text"
                             value={r.buyerName || ""}
                             onChange={(e) => {
@@ -1427,7 +1489,10 @@ export default function RemitOrderPage() {
                           />
                         </div>
                         <div className="col-span-12 md:col-span-6">
-                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                          <label
+                            htmlFor={`sold-${r.key}-buyerPhone`}
+                            className="mb-1 block text-xs font-medium text-slate-600"
+                          >
                             Buyer phone (optional)
                           </label>
                           <input

@@ -202,9 +202,31 @@ model CustomerAddress {
   customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   label          String
   line1          String
+
+   // snapshots (keep!)
   barangay       String
   city           String
   province       String
+  purok          String? 
+
+
+ // FKs (all optional for now)
+  provinceId     Int?
+  provinceRef    Province?    @relation(fields: [provinceId], references: [id], onDelete: SetNull)
+
+  municipalityId Int?
+  municipality   Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
+
+  barangayId     Int?
+  barangayRef    Barangay?    @relation(fields: [barangayId], references: [id], onDelete: SetNull)
+
+  zoneId         Int?
+  zone           Zone?        @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  landmarkId     Int?
+  landmarkRef Landmark? @relation("LandmarkToAddresses", fields: [landmarkId], references: [id], onDelete: SetNull)
+
+
   postalCode     String?
   landmark       String?
   geoLat         Float?
@@ -214,6 +236,13 @@ model CustomerAddress {
   photoUpdatedAt DateTime?
 
   deliveryOrders Order[] @relation("OrderDeliveryAddress")
+
+
+  @@index([provinceId])
+  @@index([municipalityId])
+  @@index([barangayId])
+  @@index([zoneId])
+  @@index([landmarkId])
 }
 
 model CustomerItemPrice {
@@ -649,3 +678,98 @@ enum OverrideKind {
   PRICE_BELOW_ALLOWED
   MANUAL_RETURN_ADJUST
 }
+
+model Province {
+  id         Int               @id @default(autoincrement())
+  name       String
+  code       String?           @db.VarChar(16)
+  isActive   Boolean           @default(true)
+  municipalities  Municipality[]
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  addresses  CustomerAddress[]
+
+  @@unique([name])            // app also guards case-insensitive dupes
+  @@index([isActive])
+}
+
+
+model Municipality {
+  id         Int        @id @default(autoincrement())
+  name       String
+  code       String?    @db.VarChar(16)
+  isActive   Boolean    @default(true)
+
+  provinceId Int
+  province   Province   @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+
+  barangays  Barangay[]
+  addresses  CustomerAddress[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([provinceId, name])
+  @@index([provinceId])
+  @@index([isActive])
+}
+
+model Barangay {
+  id              Int        @id @default(autoincrement())
+  name            String
+  code            String?    @db.VarChar(16)
+  isActive        Boolean    @default(true)
+
+  municipalityId  Int
+  municipality    Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
+
+  zones           Zone[]
+  landmarks       Landmark[]
+  addresses       CustomerAddress[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([municipalityId, name])
+  @@index([municipalityId])
+  @@index([isActive])
+}
+
+model Zone {
+  id         Int       @id @default(autoincrement())
+  name       String    // e.g. "Purok 1", "Zone 3"
+  isActive   Boolean   @default(true)
+
+  barangayId Int
+  barangay   Barangay  @relation(fields: [barangayId], references: [id], onDelete: Cascade)
+
+  addresses  CustomerAddress[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([barangayId, name])
+  @@index([barangayId])
+  @@index([isActive])
+}
+
+model Landmark {
+  id         Int       @id @default(autoincrement())
+  name       String
+  isActive   Boolean   @default(true)
+
+  // tie to barangay (simplest). can make optional if you want cross-brgy landmarks.
+  barangayId Int?
+  barangay   Barangay? @relation(fields: [barangayId], references: [id], onDelete: SetNull)
+
+  addresses  CustomerAddress[] @relation("LandmarkToAddresses")
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  @@unique([name, barangayId])
+  @@index([barangayId])
+  @@index([isActive])
+
+
+}
+

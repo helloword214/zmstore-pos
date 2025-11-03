@@ -1,0 +1,137 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { ActionFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { db } from "~/utils/db.server";
+
+export const loader = () =>
+  json({ ok: false, message: "POST only" }, { status: 405 });
+
+type Kind =
+  | "unit"
+  | "packingUnit"
+  | "location"
+  | "brand"
+  | "indication"
+  | "target";
+
+export async function action({ request }: ActionFunctionArgs) {
+  const fd = await request.formData();
+  const kind = String(fd.get("kind") || "") as Kind;
+  const rawName = String(fd.get("name") || "").trim();
+  const rawCategoryId = fd.get("categoryId");
+  const categoryId = rawCategoryId ? Number(rawCategoryId) : null;
+
+  if (!rawName) {
+    return json({ ok: false, message: "Name is required." }, { status: 400 });
+  }
+
+  try {
+    switch (kind) {
+      case "unit": {
+        const found = await db.unit.findFirst({
+          where: { name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ?? (await db.unit.create({ data: { name: rawName } }));
+        return json({
+          ok: true,
+          message: found ? "Unit already exists." : "Unit created.",
+          row,
+        });
+      }
+      case "packingUnit": {
+        const found = await db.packingUnit.findFirst({
+          where: { name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ?? (await db.packingUnit.create({ data: { name: rawName } }));
+        return json({
+          ok: true,
+          message: found
+            ? "Packing unit already exists."
+            : "Packing unit created.",
+          row,
+        });
+      }
+      case "location": {
+        const found = await db.location.findFirst({
+          where: { name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ?? (await db.location.create({ data: { name: rawName } }));
+        return json({
+          ok: true,
+          message: found ? "Location already exists." : "Location created.",
+          row,
+        });
+      }
+      case "brand": {
+        if (!categoryId)
+          return json(
+            { ok: false, message: "categoryId is required." },
+            { status: 400 }
+          );
+        const found = await db.brand.findFirst({
+          where: { categoryId, name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ??
+          (await db.brand.create({
+            data: { name: rawName, categoryId },
+          }));
+        return json({
+          ok: true,
+          message: found ? "Brand already exists." : "Brand created.",
+          row,
+        });
+      }
+      case "indication": {
+        if (!categoryId)
+          return json(
+            { ok: false, message: "categoryId is required." },
+            { status: 400 }
+          );
+        const found = await db.indication.findFirst({
+          where: { categoryId, name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ??
+          (await db.indication.create({
+            data: { name: rawName, categoryId },
+          }));
+        return json({
+          ok: true,
+          message: found ? "Indication already exists." : "Indication created.",
+          row,
+        });
+      }
+      case "target": {
+        if (!categoryId)
+          return json(
+            { ok: false, message: "categoryId is required." },
+            { status: 400 }
+          );
+        const found = await db.target.findFirst({
+          where: { categoryId, name: { equals: rawName, mode: "insensitive" } },
+        });
+        const row =
+          found ??
+          (await db.target.create({
+            data: { name: rawName, categoryId },
+          }));
+        return json({
+          ok: true,
+          message: found ? "Target already exists." : "Target created.",
+          row,
+        });
+      }
+      default:
+        return json({ ok: false, message: "Unknown kind." }, { status: 400 });
+    }
+  } catch (e: any) {
+    return json(
+      { ok: false, message: e?.message ?? "Upsert failed." },
+      { status: 500 }
+    );
+  }
+}
