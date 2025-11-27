@@ -1,4 +1,3 @@
-import * as React from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
@@ -8,6 +7,7 @@ import {
   buildCartFromOrderItems,
   fetchCustomerRulesAt,
 } from "~/services/pricing";
+import { requireRole } from "~/utils/auth.server";
 
 type Txn = {
   kind: "charge" | "payment";
@@ -58,6 +58,7 @@ function ymd(d: Date) {
 }
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN", "CASHIER"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 

@@ -197,35 +197,33 @@ model Customer {
 }
 
 model CustomerAddress {
-  id             Int       @id @default(autoincrement())
-  customerId     Int
-  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label          String
-  line1          String
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String
+  line1      String
 
-   // snapshots (keep!)
-  barangay       String
-  city           String
-  province       String
-  purok          String? 
+  // snapshots (keep!)
+  barangay String
+  city     String
+  province String
+  purok    String?
 
-
- // FKs (all optional for now)
-  provinceId     Int?
-  provinceRef    Province?    @relation(fields: [provinceId], references: [id], onDelete: SetNull)
+  // FKs (all optional for now)
+  provinceId  Int?
+  provinceRef Province? @relation(fields: [provinceId], references: [id], onDelete: SetNull)
 
   municipalityId Int?
   municipality   Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
 
-  barangayId     Int?
-  barangayRef    Barangay?    @relation(fields: [barangayId], references: [id], onDelete: SetNull)
+  barangayId  Int?
+  barangayRef Barangay? @relation(fields: [barangayId], references: [id], onDelete: SetNull)
 
-  zoneId         Int?
-  zone           Zone?        @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  zoneId Int?
+  zone   Zone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
 
-  landmarkId     Int?
+  landmarkId  Int?
   landmarkRef Landmark? @relation("LandmarkToAddresses", fields: [landmarkId], references: [id], onDelete: SetNull)
-
 
   postalCode     String?
   landmark       String?
@@ -236,7 +234,6 @@ model CustomerAddress {
   photoUpdatedAt DateTime?
 
   deliveryOrders Order[] @relation("OrderDeliveryAddress")
-
 
   @@index([provinceId])
   @@index([municipalityId])
@@ -346,16 +343,16 @@ model Order {
   // Back-relation for DeliveryRunOrder join table
   runOrders DeliveryRunOrder[] @relation("OrderRunLinks")
 
-  remitGroup   String?  @db.VarChar(64) // group tag for rider remit batches
+  remitGroup String? @db.VarChar(64) // group tag for rider remit batches
 
   /// If this order was created from a rider “sold from load” row during a remit,
   /// link it back to the main DELIVERY order being remitted.
-  remitParentId    Int?      
-  remitParent      Order?    @relation("RemitParentChildren", fields: [remitParentId], references: [id])
+  remitParentId Int?
+  remitParent   Order? @relation("RemitParentChildren", fields: [remitParentId], references: [id])
 
   /// Children created from the parent remit
-  remitChildren    Order[]   @relation("RemitParentChildren")
-  
+  remitChildren Order[] @relation("RemitParentChildren")
+
   @@index([remitGroup])
   @@index([status, expiryAt])
   @@index([lockedAt])
@@ -412,11 +409,21 @@ model Payment {
   createdAt DateTime      @default(now())
 
   /// NEW: what the cashier/rider actually handed
-  tendered  Decimal? @db.Decimal(10,2)
+  tendered Decimal? @db.Decimal(10, 2)
   /// NEW: change given back
-  change    Decimal? @db.Decimal(10,2)
+  change   Decimal? @db.Decimal(10, 2)
+
+  // --- AUDIT TAGS (for shift tracing) ---
+  shiftId   Int?
+  cashierId Int?
+
+  shift   CashierShift? @relation(fields: [shiftId], references: [id])
+  // name the relation to disambiguate from other User relations
+  cashier User?         @relation("UserPaymentsProcessed", fields: [cashierId], references: [id])
 
   @@index([orderId])
+  @@index([shiftId])
+  @@index([cashierId, createdAt])
 }
 
 // Track borrowed LPG cylinders per customer
@@ -502,6 +509,7 @@ model Employee {
   // Back-relations
   ordersAsRider Order[]       @relation("OrderRider")
   runsAsRider   DeliveryRun[] @relation("RunRider")
+  users         User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -605,6 +613,11 @@ model DeliveryRun {
   dispatchedAt DateTime?
   closedAt     DateTime?
 
+  // NEW: Rider check-in snapshot before remit
+  riderCheckinSnapshot Json?
+  riderCheckinAt       DateTime?
+  riderCheckinNotes    String?
+
   rider   Employee? @relation("RunRider", fields: [riderId], references: [id], onDelete: SetNull)
   vehicle Vehicle?  @relation("RunVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
 
@@ -620,6 +633,7 @@ model DeliveryRun {
 enum RunStatus {
   PLANNED
   DISPATCHED
+  CHECKED_IN
   CLOSED
   CANCELLED
 }
@@ -680,34 +694,33 @@ enum OverrideKind {
 }
 
 model Province {
-  id         Int               @id @default(autoincrement())
-  name       String
-  code       String?           @db.VarChar(16)
-  isActive   Boolean           @default(true)
-  municipalities  Municipality[]
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
-  addresses  CustomerAddress[]
+  id             Int               @id @default(autoincrement())
+  name           String
+  code           String?           @db.VarChar(16)
+  isActive       Boolean           @default(true)
+  municipalities Municipality[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  addresses      CustomerAddress[]
 
-  @@unique([name])            // app also guards case-insensitive dupes
+  @@unique([name]) // app also guards case-insensitive dupes
   @@index([isActive])
 }
 
-
 model Municipality {
-  id         Int        @id @default(autoincrement())
-  name       String
-  code       String?    @db.VarChar(16)
-  isActive   Boolean    @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String
+  code     String? @db.VarChar(16)
+  isActive Boolean @default(true)
 
   provinceId Int
-  province   Province   @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  province   Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
 
-  barangays  Barangay[]
-  addresses  CustomerAddress[]
+  barangays Barangay[]
+  addresses CustomerAddress[]
 
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([provinceId, name])
   @@index([provinceId])
@@ -715,20 +728,20 @@ model Municipality {
 }
 
 model Barangay {
-  id              Int        @id @default(autoincrement())
-  name            String
-  code            String?    @db.VarChar(16)
-  isActive        Boolean    @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String
+  code     String? @db.VarChar(16)
+  isActive Boolean @default(true)
 
-  municipalityId  Int
-  municipality    Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
+  municipalityId Int
+  municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
 
-  zones           Zone[]
-  landmarks       Landmark[]
-  addresses       CustomerAddress[]
+  zones     Zone[]
+  landmarks Landmark[]
+  addresses CustomerAddress[]
 
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([municipalityId, name])
   @@index([municipalityId])
@@ -736,17 +749,17 @@ model Barangay {
 }
 
 model Zone {
-  id         Int       @id @default(autoincrement())
-  name       String    // e.g. "Purok 1", "Zone 3"
-  isActive   Boolean   @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String // e.g. "Purok 1", "Zone 3"
+  isActive Boolean @default(true)
 
   barangayId Int
-  barangay   Barangay  @relation(fields: [barangayId], references: [id], onDelete: Cascade)
+  barangay   Barangay @relation(fields: [barangayId], references: [id], onDelete: Cascade)
 
-  addresses  CustomerAddress[]
+  addresses CustomerAddress[]
 
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([barangayId, name])
   @@index([barangayId])
@@ -754,22 +767,115 @@ model Zone {
 }
 
 model Landmark {
-  id         Int       @id @default(autoincrement())
-  name       String
-  isActive   Boolean   @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String
+  isActive Boolean @default(true)
 
   // tie to barangay (simplest). can make optional if you want cross-brgy landmarks.
   barangayId Int?
   barangay   Barangay? @relation(fields: [barangayId], references: [id], onDelete: SetNull)
 
-  addresses  CustomerAddress[] @relation("LandmarkToAddresses")
+  addresses CustomerAddress[] @relation("LandmarkToAddresses")
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([name, barangayId])
   @@index([barangayId])
   @@index([isActive])
-
-
 }
 
+// ────────────── AUTH & RBAC (Minimal v1) ──────────────
+
+enum UserRole {
+  ADMIN
+  CASHIER
+  STORE_MANAGER
+  EMPLOYEE  
+}
+
+enum CashDrawerTxnType {
+  CASH_IN
+  CASH_OUT
+  DROP
+  ADJUST
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String?  @unique
+  passwordHash String? // for ADMIN/SELLER
+  pinHash      String? // for CASHIER fast login (6-digit recommended)
+  role         UserRole
+  active       Boolean  @default(true)
+
+  employeeId Int?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  // Scoping & usage
+  branches              UserBranch[] // NEW
+  shifts                CashierShift[]
+  paymentsProcessed     Payment[]       @relation("UserPaymentsProcessed")
+  cashDrawerTxnsCreated CashDrawerTxn[] @relation("UserCreatedDrawerTxns")
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([role, active])
+}
+
+// (Removed) UserLocation — legacy mapping; replaced by UserBranch/Branch
+
+// Cashier shift locking (required to finalize/pay/remit)
+model CashierShift {
+  id        Int @id @default(autoincrement())
+  cashierId Int
+  branchId  Int // NEW (use Branch for scoping)
+
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+  openingFloat Decimal?  @db.Decimal(12, 2)
+  closingTotal Decimal?  @db.Decimal(12, 2)
+  deviceId     String?   @db.VarChar(64)
+  notes        String?
+
+  cashier        User            @relation(fields: [cashierId], references: [id], onDelete: Cascade)
+  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+  cashDrawerTxns CashDrawerTxn[]
+
+  @@index([cashierId, closedAt])
+}
+
+model CashDrawerTxn {
+  id          Int               @id @default(autoincrement())
+  shift       CashierShift      @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  shiftId     Int
+  type        CashDrawerTxnType
+  amount      Decimal           @db.Decimal(12, 2)
+  note        String?
+  createdAt   DateTime          @default(now())
+  createdBy   User?             @relation(name: "UserCreatedDrawerTxns", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById Int?
+
+  @@index([shiftId])
+  @@index([createdById])
+}
+
+model Branch {
+  id     Int            @id @default(autoincrement())
+  name   String         @unique
+  users  UserBranch[]
+  shifts CashierShift[]
+}
+
+model UserBranch {
+  userId   Int
+  branchId Int
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@index([branchId])
+}

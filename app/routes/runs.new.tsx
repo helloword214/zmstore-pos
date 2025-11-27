@@ -1,6 +1,6 @@
 // app/routes/runs.new.tsx
 
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
@@ -11,13 +11,15 @@ import {
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
+import { requireRole } from "~/utils/auth.server";
 
 type LoaderData = {
   riders: Array<{ id: number; label: string }>;
   vehicles: Array<{ id: number; name: string }>;
 };
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN", "STORE_MANAGER"]); // 🔒 guard
   const employees = await db.employee.findMany({
     where: { role: "RIDER", active: true },
     select: { id: true, firstName: true, lastName: true, alias: true },
@@ -51,6 +53,7 @@ function makeRunCode() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN", "STORE_MANAGER"]); // 🔒 guard for writes
   const fd = await request.formData();
   const riderId = Number(fd.get("riderId") || NaN);
   const vehicleId = fd.get("vehicleId") ? Number(fd.get("vehicleId")) : null;

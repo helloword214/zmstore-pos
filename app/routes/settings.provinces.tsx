@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   useFetcher,
@@ -12,6 +12,7 @@ import * as React from "react";
 import { db } from "~/utils/db.server";
 import { TextInput } from "~/components/ui/TextInput";
 import { Button } from "~/components/ui/Button";
+import { requireRole } from "~/utils/auth.server";
 
 type ProvinceRow = {
   id: number;
@@ -23,7 +24,8 @@ type ProvinceRow = {
 
 type LoaderData = { provinces: ProvinceRow[] };
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const provinces = await db.province.findMany({
     orderBy: [{ name: "asc" }],
     select: { id: true, name: true, code: true, isActive: true },
@@ -71,6 +73,7 @@ type ActionData =
   | { ok: false; error: string; field?: string };
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
 

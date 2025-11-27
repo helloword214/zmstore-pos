@@ -7,8 +7,10 @@ import { PriceMode, UnitKind } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import React from "react";
 import { ProductPickerHybrid } from "~/components/ProductPickerHybrid";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const customerId = Number(params.id);
   const [customer, rawRules] = await Promise.all([
     db.customer.findUnique({
@@ -42,6 +44,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const customerId = Number(params.id);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");

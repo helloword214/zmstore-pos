@@ -1,17 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { VehicleType } from "@prisma/client";
+import { requireRole } from "~/utils/auth.server";
 
 const LPG_TANK_NET_KG = 11;
 function computeLpgSlots(capKg: number) {
   return Math.floor((capKg || 0) / LPG_TANK_NET_KG);
 }
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const vehicles = await db.vehicle.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: {
@@ -25,6 +27,7 @@ export async function loader() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
   try {

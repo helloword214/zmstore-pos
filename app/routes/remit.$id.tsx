@@ -17,8 +17,10 @@ import {
 import { allocateReceiptNo } from "~/utils/receipt";
 import { CustomerPicker } from "~/components/CustomerPicker";
 import { CurrencyInput } from "~/components/ui/CurrencyInput";
+import { requireOpenShift } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireOpenShift(request);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -112,6 +114,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  const me = await requireOpenShift(request);
   const id = Number(params.id);
   const fd = await request.formData();
 
@@ -718,6 +721,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
             method: "CASH",
             amount: lineTotal,
             refNo: "RIDER-LOAD-SALE",
+            shiftId: me.shiftId ?? null,
+            cashierId: me.userId,
           },
         });
       }
@@ -734,6 +739,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           tendered: cashGiven,
           change: Math.max(0, cashGiven - appliedPayment),
           refNo: "MAIN-DELIVERY",
+          shiftId: me.shiftId ?? null,
+          cashierId: me.userId,
         },
       });
     }

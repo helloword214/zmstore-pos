@@ -1,599 +1,287 @@
+// app/routes/cashier._index.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ActionFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Form, Link, useLoaderData } from "@remix-run/react";
 import {
-  Form,
-  useLoaderData,
-  useNavigation,
-  useActionData,
-  useRevalidator,
-  useSearchParams,
-} from "@remix-run/react";
-import React from "react";
+  getActiveShift,
+  homePathFor,
+  requireUser,
+  type SessionUser,
+} from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
-// Lock TTL: how long a cashier can hold an order before it becomes claimable again
-const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+type LoaderData = {
+  me: SessionUser;
+  activeShift: {
+    id: number;
+    branchId: number;
+    openedAt: string;
+    closingTotal: number | null;
+  } | null;
+  userInfo: {
+    name: string;
+    alias: string | null;
+    email: string;
+  };
+};
 
-export async function loader() {
-  const nowMs = Date.now();
-  // PICKUP tickets (cashier flow only)
-  const pickupsRaw = await db.order.findMany({
-    where: {
-      channel: "PICKUP",
-      status: "UNPAID",
-      NOT: { isOnCredit: true },
-    },
-    orderBy: { printedAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      orderCode: true,
-      subtotal: true,
-      printedAt: true,
-      printCount: true,
-      lockedAt: true,
-      lockedBy: true,
-    },
-  });
-  const pickups = pickupsRaw.map((o) => ({
-    ...o,
-    isLocked: !!o.lockedAt && nowMs - o.lockedAt.getTime() < LOCK_TTL_MS,
-  }));
+export async function loader({ request }: LoaderFunctionArgs) {
+  const me = await requireUser(request);
 
-  // FOR DISPATCH: delivery orders not yet dispatched (staging or new)
-  const forDispatch = await db.order.findMany({
-    where: {
-      channel: "DELIVERY",
-      status: { in: ["UNPAID", "PARTIALLY_PAID"] },
-      dispatchedAt: null,
-    },
-    orderBy: { id: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      orderCode: true,
-      riderName: true,
-      stagedAt: true,
-      dispatchedAt: true,
-      fulfillmentStatus: true,
-      subtotal: true,
-      totalBeforeDiscount: true,
-      printedAt: true,
-    },
-  });
-
-  // FOR REMIT: delivery orders already dispatched but not yet paid
-  const remits = await db.order.findMany({
-    where: {
-      channel: "DELIVERY",
-      status: { in: ["UNPAID", "PARTIALLY_PAID"] },
-      dispatchedAt: { not: null },
-    },
-    orderBy: { id: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      orderCode: true,
-      riderName: true,
-      status: true,
-      subtotal: true,
-      totalBeforeDiscount: true,
-      printedAt: true,
-      dispatchedAt: true,
-    },
-  });
-
-  return json(
-    {
-      pickups,
-      forDispatch,
-      remits,
-    },
-    { headers: { "Cache-Control": "no-store" } }
-  );
-}
-
-export async function action({ request }: ActionFunctionArgs) {
-  const fd = await request.formData();
-  const action = String(fd.get("_action") || "");
-  const id = Number(fd.get("id") || 0);
-  const terminalId = request.headers.get("x-terminal-id") ?? "CASHIER-01";
-
-  // Cancel an UNPAID slip (safe, reversible by reprinting later if needed)
-  if (action === "cancelSlip") {
-    if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
-    const reason = String(fd.get("cancelReason") || "").trim();
-    if (!reason) {
-      return json(
-        { ok: false, error: "Reason is required to cancel a ticket." },
-        { status: 400 }
-      );
-    }
-    const ttlAgo = new Date(Date.now() - LOCK_TTL_MS);
-    const updated = await db.order.updateMany({
-      where: {
-        id,
-        status: "UNPAID",
-        OR: [
-          { lockedAt: null },
-          { lockedAt: { lt: ttlAgo } },
-          { lockedBy: terminalId },
-        ],
-      },
-      data: { status: "CANCELLED", lockedAt: null, lockedBy: null },
-    });
-    if (updated.count !== 1) {
-      return json(
-        {
-          ok: false,
-          error: "Unable to cancel (already locked by another or processed).",
-        },
-        { status: 423 }
-      );
-    }
-    return redirect("/cashier");
-  }
-  // Hard delete an accidental UNPAID slip (irreversible)
-  if (action === "deleteSlip") {
-    if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
-    try {
-      await db.$transaction(async (tx) => {
-        const o = await tx.order.findUnique({
-          where: { id },
-          select: { status: true },
-        });
-        if (!o || o.status !== "UNPAID") {
-          throw new Error("Only UNPAID slips can be deleted.");
-        }
-        await tx.orderItem.deleteMany({ where: { orderId: id } });
-        await tx.payment.deleteMany({ where: { orderId: id } }).catch(() => {});
-        await tx.order.delete({ where: { id } });
-      });
-      return redirect("/cashier");
-    } catch (e: any) {
-      return json(
-        { ok: false, error: e.message || "Delete failed" },
-        { status: 400 }
-      );
-    }
-  }
-
-  if (action === "openByCode") {
-    const code = String(fd.get("code") || "").trim();
-    if (!code)
-      return json({ ok: false, error: "Enter a code" }, { status: 400 });
-    // Peek order to decide flow (PICKUP → cashier, DELIVERY → dispatch)
-    const found = await db.order.findFirst({
-      where: { orderCode: code, status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
-      select: {
-        id: true,
-        channel: true,
-        lockedAt: true,
-        lockedBy: true,
-        status: true,
-      },
-    });
-    if (!found) {
-      return json(
-        { ok: false, error: "No UNPAID order with that code" },
-        { status: 404 }
-      );
-    }
-    // DELIVERY: go straight to Dispatch Staging (no cashier lock needed)
-    if (found.channel === "DELIVERY") {
-      return redirect(`/orders/${found.id}/dispatch`);
-    }
-
-    // PICKUP: atomically claim the lock by orderCode
-    const claimed = await db.order.updateMany({
-      where: {
-        id: found.id,
-        status: "UNPAID",
-        OR: [
-          { lockedAt: null },
-          { lockedAt: { lt: new Date(Date.now() - LOCK_TTL_MS) } }, // expired lock
-        ],
-      },
-      data: { lockedAt: new Date(), lockedBy: terminalId },
-    });
-    if (claimed.count !== 1) {
-      return json(
-        {
-          ok: false,
-          error: found.lockedBy
-            ? `Locked by ${found.lockedBy}`
-            : "Unable to lock order",
-        },
-        { status: 423 }
-      );
-    }
-    // redirect to cashier for PICKUP
-    return redirect(`/cashier/${found.id}`);
-  }
-
-  if (action === "openById") {
-    const id = Number(fd.get("id") || 0);
-    if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
-    // Peek channel to decide flow
-    const existing = await db.order.findUnique({
-      where: { id },
-      select: { status: true, channel: true, lockedBy: true, lockedAt: true },
-    });
-    if (!existing)
-      return json({ ok: false, error: "Order not found" }, { status: 404 });
-    // DELIVERY: go to Dispatch if not PAID
-    if (existing.channel === "DELIVERY") {
-      if (existing.status === "PAID") {
-        return json(
-          { ok: false, error: "Order already PAID" },
-          { status: 400 }
-        );
+  // Kung hindi cashier, wag dito — ibalik sa sariling home
+  if (me.role !== "CASHIER") {
+    throw json(
+      { ok: false, error: "Cashier dashboard is for cashiers only." },
+      {
+        status: 302,
+        headers: { Location: homePathFor(me.role) },
       }
-      return redirect(`/orders/${id}/dispatch`);
-    }
-    // PICKUP must be UNPAID to open at cashier
-    if (existing.status !== "UNPAID") {
-      return json({ ok: false, error: "Order is not UNPAID" }, { status: 400 });
-    }
-    const claimed = await db.order.updateMany({
-      where: {
-        id,
-        status: "UNPAID",
-        OR: [
-          { lockedAt: null },
-          { lockedAt: { lt: new Date(Date.now() - LOCK_TTL_MS) } },
-        ],
-      },
-      data: { lockedAt: new Date(), lockedBy: terminalId },
-    });
-    if (claimed.count !== 1) {
-      return json(
-        {
-          ok: false,
-          error: existing.lockedBy
-            ? `Locked by ${existing.lockedBy}`
-            : "Unable to lock order",
-        },
-        { status: 423 }
-      );
-    }
-    return redirect(`/cashier/${id}`);
+    );
   }
 
-  return json({ ok: false, error: "Unknown action" }, { status: 400 });
+  // Load auth user + linked employee para makita natin si Joy/Leo
+  const userRow = await db.user.findUnique({
+    where: { id: me.userId },
+    include: { employee: true },
+  });
+
+  if (!userRow) {
+    throw new Response("User not found", { status: 404 });
+  }
+
+  const emp = userRow.employee;
+  const fullName: string =
+    emp && (emp.firstName || emp.lastName)
+      ? `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim()
+      : userRow.email ?? "";
+  const alias: string | null = emp?.alias ?? null;
+
+  const shift = await getActiveShift(request);
+  const activeShift = shift
+    ? {
+        id: shift.id,
+        branchId: shift.branchId,
+        openedAt: shift.openedAt.toISOString(),
+        closingTotal:
+          shift.closingTotal == null ? null : Number(shift.closingTotal),
+      }
+    : null;
+  return json<LoaderData>({
+    me,
+    activeShift,
+    userInfo: {
+      name: fullName,
+      alias,
+      email: userRow.email ?? "",
+    },
+  });
 }
 
-export default function CashierQueue() {
-  const { pickups, forDispatch, remits } = useLoaderData<
-    typeof loader
-  >() as any;
-  const nav = useNavigation();
-  const actionData = useActionData<typeof action>();
+export default function CashierDashboardPage() {
+  const { me, activeShift, userInfo } = useLoaderData<LoaderData>();
 
-  const revalidator = useRevalidator();
-  const [sp, setSp] = useSearchParams();
-  const tabParam = sp.get("tab");
-  const tab: "pickup" | "dispatch" | "remits" =
-    tabParam === "dispatch"
-      ? "dispatch"
-      : tabParam === "remits"
-      ? "remits"
-      : "pickup";
-
-  // Revalidate on focus + every 5s while visible
-  React.useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === "visible") revalidator.revalidate();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") revalidator.revalidate();
-    }, 5000);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      clearInterval(id);
-    };
-  }, [revalidator]);
+  const hasShift = !!activeShift;
+  const openedAt = activeShift
+    ? new Date(activeShift.openedAt).toLocaleString()
+    : null;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Cashier Queue
-          </h1>
-
-          {/* Tabs (3) */}
-          <div className="mt-3 inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white text-sm">
-            <button
-              className={`px-3 py-1.5 ${
-                tab === "pickup"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-50"
-              }`}
-              onClick={() => {
-                sp.set("tab", "pickup");
-                setSp(sp, { replace: true });
-              }}
-            >
-              Pickup
-            </button>
-            <button
-              className={`px-3 py-1.5 border-l border-slate-200 ${
-                tab === "dispatch"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-50"
-              }`}
-              onClick={() => {
-                sp.set("tab", "dispatch");
-                setSp(sp, { replace: true });
-              }}
-            >
-              For Dispatch
-            </button>
-            <button
-              className={`px-3 py-1.5 border-l border-slate-200 ${
-                tab === "remits"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-50"
-              }`}
-              onClick={() => {
-                sp.set("tab", "remits");
-                setSp(sp, { replace: true });
-              }}
-            >
-              For Remit
-            </button>
+      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+              Cashier Dashboard
+            </h1>
+            <p className="text-xs text-slate-500">
+              Logged in as{" "}
+              <span className="font-medium text-slate-700">
+                {userInfo.alias
+                  ? `${userInfo.alias} (${userInfo.name})`
+                  : userInfo.name}
+              </span>
+              {" · "}
+              <span className="uppercase tracking-wide">{me.role}</span>
+              {" · "}
+              <span>{userInfo.email}</span>
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span
+                className={
+                  "inline-flex items-center gap-1 rounded-full px-2 py-1 " +
+                  (hasShift
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-rose-200 bg-rose-50 text-rose-700")
+                }
+              >
+                <span
+                  className={
+                    "h-1.5 w-1.5 rounded-full " +
+                    (hasShift ? "bg-emerald-500" : "bg-rose-500")
+                  }
+                />
+                {hasShift ? "Shift OPEN" : "No active shift"}
+              </span>
+              <Form method="post" action="/logout">
+                <button
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  title="Sign out"
+                >
+                  Logout
+                </button>
+              </Form>
+            </div>
+            {hasShift && openedAt && (
+              <span className="text-slate-500">
+                Shift #{activeShift?.id} • Opened {openedAt}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-5 py-6">
-        {/* Open by code (pickup tab only) */}
-        {tab === "pickup" && (
-          <Form method="post" className="mb-5">
-            <div className="flex items-center gap-2">
-              <input
-                name="code"
-                placeholder="Scan or type Order Code"
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                autoFocus
-              />
-              <input type="hidden" name="_action" value="openByCode" />
-              <button
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-60"
-                disabled={nav.state !== "idle"}
+      {/* Body */}
+      <div className="mx-auto max-w-6xl px-5 py-6 space-y-6">
+        {/* Callout kung walang shift */}
+        {!hasShift && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-medium">No active cashier shift</div>
+                <div className="text-xs">
+                  Open a shift first before taking payments or recording remit.
+                </div>
+              </div>
+              <Link
+                to="/cashier/shift?open=1"
+                className="rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800"
               >
-                Open
-              </button>
+                Open Shift
+              </Link>
             </div>
-          </Form>
-        )}
-
-        {actionData && "error" in actionData && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {actionData.error}
           </div>
         )}
 
-        {/* Lists */}
-        {tab === "pickup" ? (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                Pickup tickets
-              </h2>
-              <span className="text-[11px] text-slate-500">
-                {pickups.length} item(s)
-              </span>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {pickups.map((r) => {
-                return (
-                  <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
-                    <div className="flex items-start justify-between gap-2">
-                      {/* Open */}
-                      <Form method="post" className="flex-1">
-                        <input type="hidden" name="_action" value="openById" />
-                        <input type="hidden" name="id" value={r.id} />
-                        <button
-                          type="submit"
-                          className="w-full text-left disabled:opacity-60"
-                          disabled={r.isLocked}
-                          title={
-                            r.isLocked
-                              ? `Locked by ${r.lockedBy ?? "someone"}`
-                              : ""
-                          }
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="font-mono text-slate-700">
-                              {r.orderCode}
-                            </div>
-                            <div className="text-sm">
-                              {r.isLocked && (
-                                <span className="mr-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
-                                  LOCKED
-                                </span>
-                              )}
-                              <span className="text-slate-600">
-                                Ticket #{r.printCount}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            Printed {new Date(r.printedAt).toLocaleString()}
-                          </div>
-                        </button>
-                      </Form>
-
-                      {/* Actions: Cancel / Delete */}
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Form
-                          method="post"
-                          onSubmit={(e) => {
-                            const reason = prompt(
-                              "Reason for cancelling this ticket?"
-                            );
-                            if (!reason) {
-                              e.preventDefault();
-                              return;
-                            }
-                            const input = document.createElement("input");
-                            input.type = "hidden";
-                            input.name = "cancelReason";
-                            input.value = reason;
-                            e.currentTarget.appendChild(input);
-                          }}
-                        >
-                          <input
-                            type="hidden"
-                            name="_action"
-                            value="cancelSlip"
-                          />
-                          <input type="hidden" name="id" value={r.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                            disabled={r.isLocked}
-                            title="Cancel this ticket (moves to CANCELLED; auto-purges later)"
-                          >
-                            Cancel
-                          </button>
-                        </Form>
-
-                        <Form
-                          method="post"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                `Delete ticket ${r.orderCode}? This cannot be undone.`
-                              )
-                            ) {
-                              e.preventDefault();
-                            }
-                          }}
-                        >
-                          <input
-                            type="hidden"
-                            name="_action"
-                            value="deleteSlip"
-                          />
-                          <input type="hidden" name="id" value={r.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex items-center rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-                            disabled={r.isLocked}
-                            title="Permanently delete this UNPAID ticket"
-                          >
-                            Delete
-                          </button>
-                        </Form>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : tab === "dispatch" ? (
-          // FOR DISPATCH tab
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                For Dispatch (Delivery)
-              </h2>
-              <span className="text-[11px] text-slate-500">
-                {forDispatch.length} item(s)
-              </span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {forDispatch.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-600">
-                  Nothing here.
+        {/* Primary actions */}
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Cashier Actions
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Walk-in POS */}
+            <Link
+              to="/cashier/pos"
+              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
+                  Walk-In
                 </div>
-              ) : (
-                forDispatch.map((r: any) => (
-                  <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-mono text-slate-700">
-                          {r.orderCode}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Rider: {r.riderName || "—"} • Status:{" "}
-                          {r.fulfillmentStatus || "—"} • Printed{" "}
-                          {new Date(r.printedAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <a
-                        href={`/orders/${r.id}/dispatch`}
-                        className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
-                        title={
-                          r.fulfillmentStatus === "DISPATCHED"
-                            ? "Already dispatched"
-                            : "Open Dispatch Staging"
-                        }
-                      >
-                        {r.fulfillmentStatus === "DISPATCHED"
-                          ? "Dispatched"
-                          : "Open Dispatch"}
-                      </a>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        ) : (
-          // FOR REMIT tab
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                For Remit (Dispatched Delivery, not yet PAID)
-              </h2>
-              <span className="text-[11px] text-slate-500">
-                {remits.length} item(s)
-              </span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {remits.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-600">
-                  Nothing here.
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  New Sale (POS)
                 </div>
-              ) : (
-                remits.map((r: any) => (
-                  <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-mono text-slate-700">
-                          {r.orderCode}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          + Rider: {r.riderName || "—"} • Status: {r.status} •
-                          Dispatched{" "}
-                          {r.dispatchedAt
-                            ? new Date(r.dispatchedAt).toLocaleString()
-                            : "—"}{" "}
-                          • Printed {new Date(r.printedAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <a
-                        href={`/remit/${r.id}`}
-                        className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
-                      >
-                        Open Remit
-                      </a>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Scan items, collect payment, and print receipt for in-store
+                  customers.
+                </p>
+              </div>
+              <div className="mt-3 text-[11px] font-medium text-indigo-600 group-hover:text-indigo-700">
+                Go to POS →
+              </div>
+            </Link>
+
+            {/* AR / Customer balance collection */}
+            <Link
+              to="/ar"
+              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">
+                  Accounts Receivable
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  Collect on AR
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Find a customer, view their ledger, and record AR payments.
+                </p>
+              </div>
+              <div className="mt-3 text-[11px] font-medium text-emerald-600 group-hover:text-emerald-700">
+                Open AR list →
+              </div>
+            </Link>
+            {/* Delivery remit console */}
+            <Link
+              to="/remit"
+              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-sky-500">
+                  Delivery Remit
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  Rider Remittance
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Record rider remit for dispatched delivery runs and review
+                  roadside sales.
+                </p>
+              </div>
+              <div className="mt-3 text-[11px] font-medium text-sky-600 group-hover:text-sky-700">
+                Open remit console →
+              </div>
+            </Link>
           </div>
-        )}
+        </section>
+
+        {/* Shift & drawer tools */}
+        <section className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-medium text-slate-900">
+                Shift Console
+              </h2>
+              <Link
+                to="/cashier/shift"
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                Open →
+              </Link>
+            </div>
+            <p className="text-xs text-slate-500">
+              Open/close shift, record drawer deposits/withdrawals, and see
+              running drawer balance.
+            </p>
+            {hasShift && (
+              <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                Active shift: #{activeShift?.id} • Branch{" "}
+                <span className="font-mono">{activeShift?.branchId}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-medium text-slate-900">
+                Shift History
+              </h2>
+              <Link
+                to="/cashier/shifts"
+                className="text-xs font-medium text-slate-600 hover:text-slate-800"
+              >
+                View all →
+              </Link>
+            </div>
+            <p className="text-xs text-slate-500">
+              Review previous shifts: totals collected, drawer movements, and
+              variances.
+            </p>
+          </div>
+        </section>
       </div>
     </main>
   );

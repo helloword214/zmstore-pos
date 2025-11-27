@@ -8,6 +8,8 @@ import {
   fetchActiveCustomerRules,
 } from "~/services/pricing";
 
+import { requireRole } from "~/utils/auth.server";
+
 type Row = {
   customerId: number;
   firstName: string;
@@ -21,6 +23,7 @@ type Row = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "ADMIN"]);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
 
@@ -150,7 +153,14 @@ export default function ARListPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Accounts Receivable
           </h1>
+
           <Form method="get" className="flex gap-2">
+            <Link
+              to="/cashier"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              ← Dashboard
+            </Link>
             <input
               name="q"
               defaultValue={q}

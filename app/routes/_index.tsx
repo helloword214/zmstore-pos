@@ -1,9 +1,17 @@
+import { Link, Form } from "@remix-run/react";
 import * as React from "react";
-import { Link } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { requireRole } from "~/utils/auth.server";
 
 /* ────────────────────────────────────────────────────────────── */
 /* Small, dependency-free charts                                 */
 /* ────────────────────────────────────────────────────────────── */
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
+  return null;
+}
+
 function Sparkline({
   data,
   width = 220,
@@ -101,6 +109,15 @@ export default function Index() {
             >
               Open Order Pad
             </Link>
+            <Form method="post" action="/logout">
+              <button
+                type="submit"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                title="Sign out"
+              >
+                Logout
+              </button>
+            </Form>
           </div>
         </div>
       </div>

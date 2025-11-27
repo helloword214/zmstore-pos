@@ -5,8 +5,10 @@ import {
   buildCustomerSearchWhere,
   scoreAndSortCustomers,
 } from "~/services/customerSearch.server";
+import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "ADMIN", "STORE_MANAGER", "EMPLOYEE"]);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
   const withAddresses = url.searchParams.get("withAddresses") === "1";

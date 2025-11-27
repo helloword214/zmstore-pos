@@ -6,12 +6,14 @@ import {
   useRevalidator,
   useFetcher,
   useNavigate,
+  Form,
 } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { TextInput } from "~/components/ui/TextInput";
 import { useCustomerSearch } from "~/hooks/useCustomerSearch";
+import { requireRole } from "~/utils/auth.server";
 
 import { useLocalStorageState } from "~/utils/hooks";
 
@@ -44,7 +46,9 @@ type CreateSlipResp =
 // ─────────────────────────────────────────────────────────────
 // Loader: fetch + normalize numerics, disable caching
 // ─────────────────────────────────────────────────────────────
-export const loader: LoaderFunction = async () => {
+export const loader: LoaderFunction = async ({ request }) => {
+  // 🔒 Gate: only ADMIN and SELLER can access Order Pad
+  await requireRole(request, ["ADMIN", "CASHIER", "STORE_MANAGER"]);
   const [categories, rawProducts] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true },
@@ -908,6 +912,16 @@ export default function KioskPage() {
             >
               Clear
             </button>
+            {/* Logout */}
+            <Form method="post" action="/logout">
+              <button
+                type="submit"
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                title="Sign out"
+              >
+                Logout
+              </button>
+            </Form>
           </div>
         </div>
       </header>

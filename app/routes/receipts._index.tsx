@@ -4,8 +4,10 @@ import { json } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import type { Prisma } from "@prisma/client";
+import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "ADMIN"]);
   const u = new URL(request.url);
   const q = (u.searchParams.get("q") || "").trim();
   // helper for case-insensitive string filter

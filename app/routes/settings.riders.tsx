@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { EmployeeRole } from "@prisma/client";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const [riders, vehicles] = await Promise.all([
     db.employee.findMany({
       where: { role: EmployeeRole.RIDER },
@@ -25,6 +27,7 @@ export async function loader() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard for writes
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
   try {

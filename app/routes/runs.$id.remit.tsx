@@ -1,32 +1,97 @@
+// app/routes/runs.$id.remit.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
+  Link,
   useActionData,
   useLoaderData,
   useNavigation,
 } from "@remix-run/react";
-import * as React from "react";
 import { db } from "~/utils/db.server";
 import { UnitKind } from "@prisma/client";
-import { CustomerPicker } from "~/components/CustomerPicker";
-import { CurrencyInput } from "~/components/ui/CurrencyInput";
 import { computeUnitPriceForCustomer } from "~/services/pricing";
 import { allocateReceiptNo } from "~/utils/receipt";
+
+import { requireRole } from "~/utils/auth.server";
+import {
+  applyDiscounts,
+  fetchActiveCustomerRules,
+  buildCartFromOrderItems,
+  type Cart,
+  type Rule,
+} from "~/services/pricing";
+
+type RecapRow = {
+  productId: number;
+  name: string;
+  loaded: number;
+  sold: number;
+  returned: number;
+  diff: number; // loaded - sold - returned
+};
+
+type QuickSaleRow = {
+  idx: number;
+  productId: number | null;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+  customerId: number | null;
+  customerLabel: string;
+  isCredit: boolean;
+  cashAmount: number;
+  creditAmount: number;
+  baseUnitPrice?: number;
+  discountAmount?: number;
+};
+
+type ParentOrderLine = {
+  productId: number | null;
+  name: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+  baseUnitPrice?: number;
+  discountAmount?: number;
+};
+
+type ParentOrderRow = {
+  orderId: number;
+  isCredit: boolean;
+  customerLabel: string;
+  lines: ParentOrderLine[];
+  orderTotal: number;
+};
 
 type LoaderData = {
   run: {
     id: number;
     runCode: string;
-    status: "PLANNED" | "DISPATCHED" | "CLOSED" | "CANCELLED";
+    status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
     riderLabel: string | null;
-    loadout: Array<{ productId: number; name: string; qty: number }>;
   };
-  priceIndex: Record<number, number>; // pid -> default unit price (srp || price)
+  recapRows: RecapRow[];
+  quickSales: QuickSaleRow[];
+  hasDiffIssues: boolean;
+  parentOrders: ParentOrderRow[];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+type ActionData =
+  | { ok: true }
+  | {
+      ok: false;
+      error: string;
+    };
+
+// ─────────────────────────────────────────
+// Loader: overview only (no editing)
+// ─────────────────────────────────────────
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  // 🔒 Remit page: MANAGER / ADMIN only
+  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -38,18 +103,20 @@ export async function loader({ params }: LoaderFunctionArgs) {
       status: true,
       riderId: true,
       loadoutSnapshot: true,
+      riderCheckinSnapshot: true,
     },
   });
   if (!run) throw new Response("Not found", { status: 404 });
-  if (run.status !== "DISPATCHED") {
-    // Allow remit if already closed to show final summary UI
-    if (run.status === "CLOSED") {
-      // still show page but with empty loadout
-    } else {
-      throw new Response("Run is not dispatched yet.", { status: 400 });
-    }
+
+  if (
+    run.status !== "DISPATCHED" &&
+    run.status !== "CHECKED_IN" &&
+    run.status !== "CLOSED"
+  ) {
+    throw new Response("Run is not dispatched yet.", { status: 400 });
   }
 
+  // Rider label
   let riderLabel: string | null = null;
   if (run.riderId) {
     const r = await db.employee.findUnique({
@@ -57,12 +124,12 @@ export async function loader({ params }: LoaderFunctionArgs) {
       select: { firstName: true, lastName: true, alias: true },
     });
     riderLabel =
-      (r?.alias?.trim() ||
-        [r?.firstName, r?.lastName].filter(Boolean).join(" ") ||
-        null) ??
+      r?.alias?.trim() ||
+      [r?.firstName, r?.lastName].filter(Boolean).join(" ") ||
       null;
   }
 
+  // 1) Loaded from snapshot
   const loadout: Array<{ productId: number; name: string; qty: number }> =
     Array.isArray(run.loadoutSnapshot)
       ? (run.loadoutSnapshot as any[])
@@ -76,16 +143,400 @@ export async function loader({ params }: LoaderFunctionArgs) {
           )
       : [];
 
-  const pids = Array.from(new Set(loadout.map((l) => l.productId)));
-  const products = pids.length
+  const loadedByPid = new Map<number, { name: string; qty: number }>();
+  for (const l of loadout) {
+    loadedByPid.set(l.productId, {
+      name: l.name,
+      qty: (loadedByPid.get(l.productId)?.qty || 0) + l.qty,
+    });
+  }
+
+  // 2) Rider check-in snapshot: stockRows + soldRows + parentOverrides
+  const rawSnap = run.riderCheckinSnapshot as any;
+
+  // Parent AR/Cash overrides saved during Rider Check-in
+  const parentOverrideMap = new Map<number, boolean>();
+  if (
+    rawSnap &&
+    typeof rawSnap === "object" &&
+    Array.isArray((rawSnap as any).parentOverrides)
+  ) {
+    for (const row of (rawSnap as any).parentOverrides as any[]) {
+      const oid = Number(row?.orderId ?? 0);
+      if (!oid) continue;
+      parentOverrideMap.set(oid, !!row?.isCredit);
+    }
+  }
+
+  let stockRows: Array<{ productId: number; returned: number }> = [];
+  let soldRowsRaw: any[] = [];
+
+  if (rawSnap && typeof rawSnap === "object") {
+    if (Array.isArray(rawSnap.stockRows)) {
+      stockRows = (rawSnap.stockRows as any[]).map((r) => ({
+        productId: Number(r?.productId ?? 0),
+        returned: Math.max(0, Number(r?.returned ?? 0)),
+      }));
+    } else if (Array.isArray(rawSnap)) {
+      // legacy: array of { productId, sold, returned }
+      stockRows = (rawSnap as any[]).map((r) => ({
+        productId: Number(r?.productId ?? 0),
+        returned: Math.max(0, Number(r?.returned ?? 0)),
+      }));
+    }
+
+    if (Array.isArray(rawSnap.soldRows)) {
+      soldRowsRaw = rawSnap.soldRows as any[];
+    }
+  }
+
+  // Normalize snapshot returns only (ignore invalid pid)
+  const returnedByPid = new Map<number, number>();
+  for (const r of stockRows) {
+    const pid = Number(r.productId);
+    if (!Number.isFinite(pid) || pid <= 0) continue;
+    const returned = Math.max(0, Number(r.returned ?? 0));
+    returnedByPid.set(pid, (returnedByPid.get(pid) || 0) + returned);
+  }
+
+  // 3) Quick roadside sales list for manager overview
+  //    Also build roadsideSoldByPid for recap.
+  const roadsideSoldByPid = new Map<number, number>();
+  const quickSales: QuickSaleRow[] = soldRowsRaw
+    .map((r, idx) => {
+      const pid =
+        r?.productId == null || Number.isNaN(Number(r.productId))
+          ? null
+          : Number(r.productId);
+      const qty = Math.max(0, Number(r?.qty ?? 0));
+      const unitPrice = Math.max(0, Number(r?.unitPrice ?? 0));
+      const customerId =
+        r?.customerId == null || Number.isNaN(Number(r.customerId))
+          ? null
+          : Number(r.customerId);
+      const flagIsCredit = !!(r?.onCredit ?? r?.isCredit);
+
+      const lineTotal = Number((qty * unitPrice).toFixed(2));
+
+      // cashAmount from snapshot (optional)
+      const rawCash =
+        r?.cashAmount != null && !Number.isNaN(Number(r.cashAmount))
+          ? Number(r.cashAmount)
+          : NaN;
+
+      const defaultCash = flagIsCredit ? 0 : lineTotal;
+      let cashAmount = Number.isFinite(rawCash) ? rawCash : defaultCash;
+      cashAmount = Math.max(0, Math.min(lineTotal, cashAmount));
+
+      const creditAmount = Number(
+        Math.max(0, lineTotal - cashAmount).toFixed(2)
+      );
+      const isCredit = creditAmount > 0.009;
+
+      if (pid != null) {
+        roadsideSoldByPid.set(pid, (roadsideSoldByPid.get(pid) || 0) + qty);
+      }
+      const productName =
+        typeof r?.name === "string" && r.name.trim()
+          ? r.name
+          : pid != null
+          ? `#${pid}`
+          : "Unknown";
+
+      const snapName =
+        typeof r?.customerName === "string" && r.customerName.trim()
+          ? r.customerName.trim()
+          : null;
+      const snapPhone =
+        typeof r?.customerPhone === "string" && r.customerPhone.trim()
+          ? r.customerPhone.trim()
+          : null;
+
+      let customerLabel = snapName || "";
+      if (!customerLabel && customerId) {
+        customerLabel = `Customer #${customerId}`;
+      }
+      if (!customerLabel) customerLabel = "Walk-in / Unknown";
+
+      if (snapPhone) {
+        customerLabel += ` • ${snapPhone}`;
+      }
+
+      return {
+        idx,
+        productId: pid,
+        productName,
+        qty,
+        unitPrice,
+        lineTotal,
+        customerId,
+        customerLabel,
+        isCredit,
+        cashAmount,
+        creditAmount,
+      } as QuickSaleRow;
+    })
+    .filter((r) => r.qty > 0 && (r.productId != null || r.productName !== ""));
+
+  // Kailangan din natin ang productIds ng roadside para sa base price lookup
+  const roadsideProductIds = Array.from(
+    new Set(
+      quickSales
+        .map((q) => q.productId)
+        .filter((pid): pid is number => pid != null)
+    )
+  );
+
+  // 4) Main SOLD from already-linked delivery orders (non-roadside)
+  const links = await db.deliveryRunOrder.findMany({
+    where: { runId: id },
+    include: {
+      order: {
+        select: {
+          id: true,
+          isOnCredit: true,
+          customerId: true,
+          customer: {
+            select: {
+              alias: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+            },
+          },
+          items: {
+            select: {
+              id: true, // 🔴 kailangan natin ito para ma-map sa pricing engine
+              productId: true,
+              qty: true,
+              name: true,
+              unitPrice: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ────────────────────────────────────────────────
+  // Base prices (SRP/price) per product para sa discount badge
+  // ────────────────────────────────────────────────
+  const parentProductIds = Array.from(
+    new Set(
+      links.flatMap((L) =>
+        (L.order?.items || [])
+          .map((it) => Number(it.productId ?? 0))
+          .filter((pid) => Number.isFinite(pid) && pid > 0)
+      )
+    )
+  );
+
+  const allBasePids = Array.from(
+    new Set([...parentProductIds, ...roadsideProductIds])
+  );
+  const baseProducts = allBasePids.length
     ? await db.product.findMany({
-        where: { id: { in: pids } },
+        where: { id: { in: allBasePids } },
         select: { id: true, price: true, srp: true },
       })
     : [];
-  const priceIndex = Object.fromEntries(
-    products.map((p) => [p.id, Number(p.srp ?? p.price ?? 0)])
-  ) as Record<number, number>;
+  const basePriceIndex = new Map<number, number>();
+  for (const p of baseProducts) {
+    const rawBase = Number(p.srp ?? p.price ?? 0);
+    const base =
+      Number.isFinite(rawBase) && rawBase > 0
+        ? rawBase
+        : Number(p.price ?? 0) || 0;
+    basePriceIndex.set(p.id, base);
+  }
+
+  // Apply baseUnitPrice/discountAmount sa quickSales
+  const quickSalesWithDiscount: QuickSaleRow[] = quickSales.map((q) => {
+    const base =
+      q.productId != null
+        ? basePriceIndex.get(q.productId) ?? q.unitPrice
+        : q.unitPrice;
+    const discount = Math.max(0, Number((base - q.unitPrice).toFixed(2)));
+    return {
+      ...q,
+      baseUnitPrice: base,
+      discountAmount: discount > 0.01 ? discount : undefined,
+    };
+  });
+
+  // ────────────────────────────────────────────────
+  // Pricing engine for parent POS orders (display)
+  // ────────────────────────────────────────────────
+  const parentPricingByOrderId = new Map<
+    number,
+    { unitPriceByItemId: Map<number, number>; orderTotal: number }
+  >();
+
+  for (const L of links) {
+    const o = L.order;
+    if (!o || !o.items || o.items.length === 0) continue;
+
+    const customerId = o.customerId ?? null;
+    const rules: Rule[] = await fetchActiveCustomerRules(db, customerId);
+
+    const unitPriceByItemId = new Map<number, number>();
+
+    // fallback total: raw POS price (qty * unitPrice)
+    const fallbackTotal = o.items.reduce((sum, it: any) => {
+      const qty = Number(it.qty ?? 0);
+      const up = Number(it.unitPrice ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(up)) return sum;
+      return sum + qty * up;
+    }, 0);
+
+    if (!rules.length) {
+      parentPricingByOrderId.set(o.id, {
+        unitPriceByItemId,
+        orderTotal: fallbackTotal,
+      });
+      continue;
+    }
+
+    const cart: Cart = buildCartFromOrderItems({
+      items: o.items as any,
+      rules,
+    });
+
+    const pricing = applyDiscounts(cart, rules, { id: customerId });
+
+    for (const adj of pricing.adjustedItems || []) {
+      if (adj.id == null || !Number.isFinite(adj.effectiveUnitPrice)) continue;
+      unitPriceByItemId.set(adj.id as number, adj.effectiveUnitPrice);
+    }
+
+    const orderTotal =
+      (Number.isFinite(pricing.total ?? NaN)
+        ? (pricing.total as number)
+        : fallbackTotal) || 0;
+
+    parentPricingByOrderId.set(o.id, {
+      unitPriceByItemId,
+      orderTotal,
+    });
+  }
+
+  const mainSoldByPid = new Map<number, number>();
+  const mainSoldNameByPid = new Map<number, string>();
+  const parentOrders: ParentOrderRow[] = [];
+
+  for (const L of links) {
+    const o = L.order;
+    if (!o) continue;
+
+    // Tally main SOLD by product (for recap)
+    for (const it of o.items || []) {
+      const pid = Number(it.productId ?? 0);
+      if (!pid) continue;
+      const qty = Math.max(0, Number(it.qty ?? 0));
+      mainSoldByPid.set(pid, (mainSoldByPid.get(pid) || 0) + qty);
+
+      // Pangalan galing sa POS item name
+      if (!mainSoldNameByPid.has(pid) && it.name) {
+        mainSoldNameByPid.set(pid, it.name);
+      }
+    }
+
+    if (!o.items || o.items.length === 0) continue;
+
+    // Build customer label
+    const c = o.customer;
+    let customerLabel = "";
+    if (c) {
+      customerLabel =
+        (c.alias && c.alias.trim()) ||
+        [c.firstName, c.lastName].filter(Boolean).join(" ");
+    }
+    if (!customerLabel && o.customerId) {
+      customerLabel = `Customer #${o.customerId}`;
+    }
+    if (!customerLabel) customerLabel = "Walk-in / Unknown";
+
+    // Effective AR/Cash status:
+    // kung may snapshot override, yun ang sundin; else original POS isOnCredit
+    const override = parentOverrideMap.get(o.id);
+    const isCredit = override !== undefined ? override : !!o.isOnCredit;
+
+    const priceInfo = parentPricingByOrderId.get(o.id);
+    const lines: ParentOrderLine[] = (o.items || []).map((it: any) => {
+      const pid =
+        it.productId == null || Number.isNaN(Number(it.productId))
+          ? null
+          : Number(it.productId);
+      const qty = Math.max(0, Number(it.qty ?? 0));
+      // Base unit price = SRP kung meron, else product.price, fallback sa raw POS unitPrice
+      const baseUnit =
+        pid != null ? basePriceIndex.get(pid) ?? 0 : Number(it.unitPrice ?? 0);
+
+      // customer-specific unit price kung meron sa pricing engine;
+      // else fallback sa raw unitPrice from POS
+      const effectiveUnit =
+        priceInfo?.unitPriceByItemId.get(it.id) ??
+        Math.max(0, Number(it.unitPrice ?? 0));
+
+      const discountAmount = Math.max(
+        0,
+        Number((baseUnit - effectiveUnit).toFixed(2))
+      );
+
+      const lineTotal = Number((qty * effectiveUnit).toFixed(2));
+      return {
+        productId: pid,
+        name: it.name ?? "",
+        qty,
+        unitPrice: effectiveUnit,
+        baseUnitPrice: baseUnit || undefined,
+        discountAmount: discountAmount > 0.01 ? discountAmount : undefined,
+        lineTotal,
+      };
+    });
+
+    const orderTotal =
+      priceInfo?.orderTotal ?? lines.reduce((s, ln) => s + ln.lineTotal, 0);
+    parentOrders.push({
+      orderId: o.id,
+      isCredit,
+      customerLabel,
+      lines,
+      orderTotal,
+    });
+  }
+  // 5) Build recap rows using:
+  //    loaded (snapshot) vs sold(main + roadside) vs returned(snapshot)
+  const allPids = new Set<number>([
+    ...loadedByPid.keys(),
+    ...returnedByPid.keys(),
+    ...mainSoldByPid.keys(),
+    ...roadsideSoldByPid.keys(),
+  ]);
+
+  const recapRows: RecapRow[] = Array.from(allPids).map((pid) => {
+    const loadedEntry = loadedByPid.get(pid);
+
+    // Source of truth: loadout snapshot kung meron.
+    // Kung wala, assume at least yung parent POS qty was actually loaded.
+    const loaded =
+      loadedEntry !== undefined ? loadedEntry.qty : mainSoldByPid.get(pid) ?? 0;
+
+    const sold =
+      (mainSoldByPid.get(pid) || 0) + (roadsideSoldByPid.get(pid) || 0);
+    const returned = returnedByPid.get(pid) || 0;
+    const diff = loaded - sold - returned;
+
+    const name =
+      loadedEntry?.name ??
+      mainSoldNameByPid.get(pid) ??
+      // fallback: no name in loadout or POS items
+      `#${pid}`;
+
+    return { productId: pid, name, loaded, sold, returned, diff };
+  });
+
+  const hasDiffIssues = recapRows.some((r) => r.diff !== 0);
 
   return json<LoaderData>({
     run: {
@@ -93,21 +544,31 @@ export async function loader({ params }: LoaderFunctionArgs) {
       runCode: run.runCode,
       status: run.status as any,
       riderLabel,
-      loadout,
     },
-    priceIndex,
+    recapRows,
+    quickSales: quickSalesWithDiscount,
+    hasDiffIssues,
+    parentOrders,
   });
 }
 
-type ActionData = { ok: true } | { ok: false; error: string };
-
+// ─────────────────────────────────────────
+// Action: use snapshot only; manager just approves
+// ─────────────────────────────────────────
 export async function action({ request, params }: ActionFunctionArgs) {
+  // 🔒 Extra guard: only MANAGER / ADMIN can post remit / revert
+  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
   const id = Number(params.id);
-  if (!Number.isFinite(id))
+
+  const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "post-remit");
+  if (!Number.isFinite(id)) {
     return json<ActionData>(
       { ok: false, error: "Invalid ID" },
       { status: 400 }
     );
+  }
+
   const run = await db.deliveryRun.findUnique({
     where: { id },
     select: {
@@ -116,52 +577,47 @@ export async function action({ request, params }: ActionFunctionArgs) {
       runCode: true,
       riderId: true,
       loadoutSnapshot: true,
+      riderCheckinSnapshot: true,
     },
   });
   if (!run)
     return json<ActionData>({ ok: false, error: "Not found" }, { status: 404 });
-  if (run.status !== "DISPATCHED") {
+
+  // ─────────────────────────────────────
+  // INTENT: Revert back to DISPATCHED
+  // ─────────────────────────────────────
+  if (intent === "revert-to-dispatched") {
+    if (run.status !== "CHECKED_IN") {
+      return json<ActionData>(
+        { ok: false, error: "Only CHECKED_IN runs can be reverted." },
+        { status: 400 }
+      );
+    }
+
+    await db.deliveryRun.update({
+      where: { id },
+      data: {
+        status: "DISPATCHED",
+      },
+    });
+
+    // balik kay rider para ma-edit niya ulit ang check-in
+    return redirect(`/runs/${id}/rider-checkin?reverted=1`);
+  }
+
+  // ─────────────────────────────────────
+  // INTENT: Post remit & close run
+  // ─────────────────────────────────────
+
+  // Dito lang pwede mag-remit kapag CHECKED_IN na si rider.
+  if (run.status !== "CHECKED_IN") {
     return json<ActionData>(
-      { ok: false, error: "Run is not dispatched." },
+      { ok: false, error: "Run must be CHECKED_IN before remit." },
       { status: 400 }
     );
   }
 
-  const fd = await request.formData();
-  const soldLoadJson = String(fd.get("soldLoadJson") || "[]");
-
-  type SoldRow = {
-    productId: number | null;
-    name: string;
-    qty: number;
-    unitPrice: number;
-    customerId?: number | null;
-    onCredit?: boolean;
-  };
-  let soldRows: SoldRow[] = [];
-  try {
-    const parsed = JSON.parse(soldLoadJson);
-    if (Array.isArray(parsed)) {
-      soldRows = parsed
-        .map((r) => ({
-          productId:
-            r?.productId == null || isNaN(Number(r.productId))
-              ? null
-              : Number(r.productId),
-          name: typeof r?.name === "string" ? r.name : "",
-          qty: Math.max(0, Math.floor(Number(r?.qty ?? 0))),
-          unitPrice: Math.max(0, Number(r?.unitPrice ?? 0)),
-          customerId:
-            r?.customerId == null || isNaN(Number(r.customerId))
-              ? null
-              : Number(r.customerId),
-          onCredit: Boolean(r?.onCredit),
-        }))
-        .filter((r) => r.qty > 0 && r.productId != null);
-    }
-  } catch {}
-
-  // derive loaded qty per product from snapshot
+  // Derive loadout (what was loaded)
   const loadout: Array<{ productId: number; name: string; qty: number }> =
     Array.isArray(run.loadoutSnapshot)
       ? (run.loadoutSnapshot as any[])
@@ -176,30 +632,108 @@ export async function action({ request, params }: ActionFunctionArgs) {
       : [];
 
   const loadedByPid = new Map<number, number>();
-  for (const l of loadout)
+  for (const l of loadout) {
     loadedByPid.set(l.productId, (loadedByPid.get(l.productId) || 0) + l.qty);
+  }
 
-  // sum sold per pid
+  // Pull soldRows from rider check-in snapshot
+  const rawSnap = run.riderCheckinSnapshot as any;
+  let soldRowsRaw: any[] = [];
+  if (
+    rawSnap &&
+    typeof rawSnap === "object" &&
+    Array.isArray(rawSnap.soldRows)
+  ) {
+    soldRowsRaw = rawSnap.soldRows as any[];
+  }
+
+  type SoldRow = {
+    productId: number;
+    name: string;
+    qty: number;
+    unitPrice: number;
+    customerId: number | null;
+    onCredit: boolean;
+    cashAmount: number | null;
+    customerName?: string | null;
+    customerPhone?: string | null;
+  };
+
+  const soldRows: SoldRow[] = soldRowsRaw
+    .map((r) => {
+      const pid =
+        r?.productId == null || Number.isNaN(Number(r.productId))
+          ? null
+          : Number(r.productId);
+      const qty = Math.max(0, Math.floor(Number(r?.qty ?? 0)));
+      const unitPrice = Math.max(0, Number(r?.unitPrice ?? 0));
+      const customerId =
+        r?.customerId == null || Number.isNaN(Number(r.customerId))
+          ? null
+          : Number(r.customerId);
+      const flagIsCredit = !!(r?.onCredit ?? r?.isCredit);
+
+      const snapshotTotal = Number((qty * unitPrice).toFixed(2));
+      const rawCash =
+        r?.cashAmount != null && !Number.isNaN(Number(r.cashAmount))
+          ? Number(r.cashAmount)
+          : NaN;
+      const defaultCash = flagIsCredit ? 0 : snapshotTotal;
+      let cashAmount = Number.isFinite(rawCash) ? rawCash : defaultCash;
+      cashAmount = Math.max(0, Math.min(snapshotTotal, cashAmount));
+
+      const hasCredit = cashAmount + 0.009 < snapshotTotal;
+
+      return {
+        productId: pid as number | null,
+        name: typeof r?.name === "string" ? r.name : "",
+        qty,
+        unitPrice,
+        customerId,
+        onCredit: hasCredit,
+        cashAmount,
+        customerName:
+          (typeof r?.customerName === "string" ? r.customerName.trim() : "") ||
+          null,
+        customerPhone:
+          (typeof r?.customerPhone === "string"
+            ? r.customerPhone.trim()
+            : "") || null,
+      };
+    })
+    .filter((r) => r.qty > 0 && r.productId != null) as SoldRow[];
+
+  // If walang soldRows, okay lang — magre-return lang tayo ng full leftover
+  // sum sold per product
   const soldByPid = new Map<number, number>();
-  for (const r of soldRows)
-    soldByPid.set(r.productId!, (soldByPid.get(r.productId!) || 0) + r.qty);
+  for (const r of soldRows) {
+    soldByPid.set(r.productId, (soldByPid.get(r.productId) || 0) + r.qty);
+  }
 
   // Guard: sold ≤ loaded
   const over: string[] = [];
   for (const [pid, soldQ] of soldByPid.entries()) {
     const loadedQ = loadedByPid.get(pid) || 0;
-    if (soldQ > loadedQ)
-      over.push(`• #${pid}: sold ${soldQ} > loaded ${loadedQ}`);
+    if (soldQ > loadedQ) {
+      over.push(`• Product #${pid}: sold ${soldQ} > loaded ${loadedQ}`);
+    }
   }
   if (over.length) {
     return json<ActionData>(
-      { ok: false, error: "Sold quantity exceeds loaded:\n" + over.join("\n") },
+      {
+        ok: false,
+        error:
+          "Cannot post remit: Sold quantity exceeds loaded for some products:\n" +
+          over.join("\n"),
+      },
       { status: 400 }
     );
   }
 
-  // price guard (PACK): below-allowed ok only if onCredit && has customer
-  const pids = Array.from(new Set(soldRows.map((r) => r.productId!)));
+  // Price guard for remit:
+  // - Hindi na mag-e-enforce ng "below allowed price" dito.
+  // - Simple rule lang: kung naka-credit, kailangan may customer.
+  const pids = Array.from(new Set(soldRows.map((r) => r.productId)));
   const products = pids.length
     ? await db.product.findMany({
         where: { id: { in: pids } },
@@ -209,25 +743,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const byId = new Map(products.map((p) => [p.id, p]));
 
   for (const r of soldRows) {
-    const p = byId.get(r.productId!);
-    if (!p) continue;
-    const basePack = Number(p.srp ?? p.price ?? 0);
-    const allowed = await computeUnitPriceForCustomer(db as any, {
-      customerId: r.customerId ?? null,
-      productId: r.productId!,
-      unitKind: UnitKind.PACK,
-      baseUnitPrice: basePack,
-    });
-    const creditRow = !!r.onCredit && !!r.customerId;
-    if (r.unitPrice + 1e-6 < allowed && !creditRow) {
-      return json<ActionData>(
-        {
-          ok: false,
-          error: `Below allowed price for #${r.productId}. Link customer & mark On credit to allow.`,
-        },
-        { status: 400 }
-      );
-    }
     if (r.onCredit && !r.customerId) {
       return json<ActionData>(
         { ok: false, error: "On-credit sale requires a customer." },
@@ -236,18 +751,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
   }
 
+  // Precompute rider name once (for receipts)
+  let riderName: string | null = null;
+  if (run.riderId) {
+    const e = await db.employee.findUnique({
+      where: { id: run.riderId },
+      select: { alias: true, firstName: true, lastName: true },
+    });
+    riderName =
+      e?.alias?.trim() ||
+      [e?.firstName, e?.lastName].filter(Boolean).join(" ") ||
+      null;
+  }
+
   await db.$transaction(async (tx) => {
-    // For each sold row → create Order (+Payment if cash), link to run
+    // Create roadside orders from soldRows
     for (const r of soldRows) {
-      const p = byId.get(r.productId!)!;
+      const p = byId.get(r.productId)!;
       const basePack = Number(p.srp ?? p.price ?? 0);
       const allowed = await computeUnitPriceForCustomer(tx as any, {
         customerId: r.customerId ?? null,
-        productId: r.productId!,
+        productId: r.productId,
         unitKind: UnitKind.PACK,
         baseUnitPrice: basePack,
       });
-      // auto-apply allowed when price ~ base and we have customer
+
       const approx = (a: number, b: number, eps = 0.009) =>
         Math.abs(a - b) <= eps;
       const autoUseAllowed =
@@ -255,47 +783,42 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const unitPrice = autoUseAllowed ? allowed : r.unitPrice;
       const lineTotal = Number((unitPrice * r.qty).toFixed(2));
 
+      // Actual cash on hand for this line
+      const snapshotPaid =
+        r.cashAmount != null
+          ? Number(r.cashAmount)
+          : r.onCredit
+          ? 0
+          : lineTotal;
+      const paid = Math.max(
+        0,
+        Math.min(lineTotal, Number.isFinite(snapshotPaid) ? snapshotPaid : 0)
+      );
+      const hasCredit = paid + 0.009 < lineTotal;
+
       const code =
         `RS-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-` +
         crypto.randomUUID().slice(0, 6).toUpperCase();
-      const isCredit = !!r.onCredit;
 
-      const order = await tx.order.create({
+      const isCredit = hasCredit;
+
+      const newOrder = await tx.order.create({
         data: {
           channel: "DELIVERY",
-          status: isCredit ? "PARTIALLY_PAID" : "PAID",
-          paidAt: isCredit ? null : new Date(),
+          // Remit stage: lahat ng roadside orders papasok bilang UNPAID.
+          // Si cashier lang ang puwedeng mag-mark ng PAID / PARTIALLY_PAID
+          // sa cashier screen via payments.
+          status: "UNPAID",
+          paidAt: null,
           orderCode: code,
           printedAt: new Date(),
           expiryAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
-          // snapshot riderLabel into riderName for ticket (optional)
-          riderName: run.riderId
-            ? (
-                await tx.employee.findUnique({
-                  where: { id: run.riderId },
-                  select: { alias: true, firstName: true, lastName: true },
-                })
-              )?.alias ??
-              ((await tx.employee.findUnique({
-                where: { id: run.riderId },
-                select: { firstName: true, lastName: true },
-              })) &&
-                (
-                  await tx.employee.findUnique({
-                    where: { id: run.riderId },
-                    select: { firstName: true, lastName: true },
-                  })
-                )?.firstName +
-                  " " +
-                  (
-                    await tx.employee.findUnique({
-                      where: { id: run.riderId },
-                      select: { firstName: true, lastName: true },
-                    })
-                  )?.lastName)
-            : null,
+          riderName,
           ...(r.customerId ? { customerId: r.customerId } : {}),
           isOnCredit: isCredit,
+          // If may customer, hindi na need deliverTo; else may imprint from rider
+          deliverTo: r.customerId ? null : r.customerName || null,
+          deliverPhone: r.customerId ? null : r.customerPhone || null,
           subtotal: lineTotal,
           totalBeforeDiscount: lineTotal,
           dispatchedAt: new Date(),
@@ -303,7 +826,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           items: {
             create: [
               {
-                productId: r.productId!,
+                productId: r.productId,
                 name: r.name,
                 qty: r.qty,
                 unitPrice,
@@ -318,29 +841,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
         },
         select: { id: true },
       });
+
       const receiptNo = await allocateReceiptNo(tx);
-      await tx.order.update({ where: { id: order.id }, data: { receiptNo } });
-      // payment for cash rows
-      if (!isCredit) {
-        await tx.payment.create({
-          data: {
-            orderId: order.id,
-            method: "CASH",
-            amount: lineTotal,
-            refNo: "RUN-LOAD-SALE",
-          },
-        });
-      }
-      // link order to run
+      await tx.order.update({
+        where: { id: newOrder.id },
+        data: { receiptNo },
+      });
+
       await tx.deliveryRunOrder.create({
-        data: { runId: id, orderId: order.id },
+        data: { runId: id, orderId: newOrder.id },
       });
     }
 
-    // compute leftovers = loaded - sold → return to stock + create RETURN_IN
+    // Return leftovers to stock
     const soldMap = new Map<number, number>();
-    for (const r of soldRows)
-      soldMap.set(r.productId!, (soldMap.get(r.productId!) || 0) + r.qty);
+    for (const r of soldRows) {
+      soldMap.set(r.productId, (soldMap.get(r.productId) || 0) + r.qty);
+    }
+
     for (const l of loadout) {
       const sold = soldMap.get(l.productId) || 0;
       const leftover = Math.max(0, l.qty - sold);
@@ -361,14 +879,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
       }
     }
+
+    // Finally, CLOSE the run – dito nagiging CLOSED ang status
+    // after ma-post lahat ng roadside orders + stock returns.
+    await tx.deliveryRun.update({
+      where: { id },
+      data: {
+        status: "CLOSED",
+      },
+    });
   });
 
-  // After posting, go to the Run Summary page (plan spec)
   return redirect(`/runs/${id}/summary?posted=1`);
 }
 
+// ─────────────────────────────────────────
+// React Page: overview + approve
+// ─────────────────────────────────────────
 export default function RunRemitPage() {
-  const { run, priceIndex } = useLoaderData<LoaderData>();
+  const { run, recapRows, quickSales, hasDiffIssues, parentOrders } =
+    useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
   const posted =
@@ -382,89 +912,31 @@ export default function RunRemitPage() {
       currency: "PHP",
     }).format(n);
 
-  type SoldRowUI = {
-    key: string;
-    productId: number | null;
-    name: string;
-    qty: number;
-    unitPrice: number;
-    customerId?: number | null;
-    onCredit?: boolean;
-    customerObj?: {
-      id: number;
-      firstName: string;
-      lastName: string;
-      alias?: string | null;
-      phone?: string | null;
-    } | null;
-    allowedUnitPrice?: number | null;
-    touched?: boolean;
-  };
-
-  const [soldRows, setSoldRows] = React.useState<SoldRowUI[]>([]);
-
-  const defaultPriceFor = React.useCallback(
-    (pid: number | null) => {
-      return pid != null && priceIndex[pid] != null
-        ? Number(priceIndex[pid])
-        : 0;
-    },
-    [priceIndex]
-  );
-
-  const fetchAllowed = React.useCallback(
-    async (
-      customerId: number | null | undefined,
-      productId: number | null | undefined
-    ) => {
-      if (!productId) return null;
-      try {
-        const u = new URL("/resources/pricing/allowed", window.location.origin);
-        if (customerId) u.searchParams.set("cid", String(customerId));
-        u.searchParams.set("pid", String(productId));
-        u.searchParams.set("unit", "PACK");
-        const res = await fetch(u.toString());
-        if (!res.ok) return null;
-        const j = await res.json();
-        if (j?.ok && Number.isFinite(j.allowed)) return Number(j.allowed);
-      } catch {}
-      return null;
-    },
-    []
-  );
-
-  const refreshRowAllowed = React.useCallback(
-    async (rowKey: string, cid: number | null, pid: number | null) => {
-      const allowed = await fetchAllowed(cid, pid);
-      setSoldRows((prev) =>
-        prev.map((r) => {
-          if (r.key !== rowKey) return r;
-          const base = defaultPriceFor(pid);
-          const shouldPrefill =
-            !r.touched ||
-            !Number.isFinite(r.unitPrice) ||
-            Math.abs((r.unitPrice || 0) - base) <= 0.0001;
-          const hasAllowed =
-            typeof allowed === "number" && Number.isFinite(allowed);
-          return {
-            ...r,
-            allowedUnitPrice: allowed,
-            unitPrice:
-              shouldPrefill && hasAllowed ? (allowed as number) : r.unitPrice,
-          };
-        })
-      );
-    },
-    [fetchAllowed, defaultPriceFor]
+  const totalCash = quickSales.reduce((s, q) => s + (q.cashAmount ?? 0), 0);
+  const totalCredit = quickSales.reduce(
+    (s, q) => s + (q.creditAmount ?? (q.isCredit ? q.lineTotal : 0)),
+    0
   );
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="mb-4 flex items-end justify-between">
+        {/* Back links */}
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <Link
+              to="/store"
+              className="text-sm text-indigo-600 hover:underline"
+            >
+              ← Back to Dashboard
+            </Link>
+          </div>
+        </div>
+        {/* Header */}
+        <div className="mb-2 flex items-end justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Run Remit
+              Run Remit — Manager Review
             </h1>
             <div className="mt-1 text-sm text-slate-500">
               Run{" "}
@@ -475,7 +947,13 @@ export default function RunRemitPage() {
                 <span className="ml-2">• Rider: {run.riderLabel}</span>
               ) : null}
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Overview lang ito: check kung tama ang{" "}
+              <span className="font-medium">Loaded / Sold / Returned</span> at
+              listahan ng roadside sales bago i-approve.
+            </p>
           </div>
+
           {(() => {
             const badgeText =
               run.status === "CLOSED" ? "Closed" : posted ? "Posted" : null;
@@ -488,6 +966,7 @@ export default function RunRemitPage() {
         </div>
 
         <Form method="post" className="grid gap-4">
+          {/* Errors from action */}
           {actionData && !actionData.ok ? (
             <div
               className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 whitespace-pre-line"
@@ -496,355 +975,331 @@ export default function RunRemitPage() {
               {actionData.error}
             </div>
           ) : null}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+
+          {/* Stock recap card */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
-                  Sold from Load
+                  1. Stock Recap
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  One receipt per row. PACK pricing applies.
+                  Auto-compute ng{" "}
+                  <span className="font-medium">
+                    Loaded vs Sold vs Returned
+                  </span>{" "}
+                  per product. Dapat{" "}
+                  <span className="font-mono">Loaded = Sold + Returned</span>.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setSoldRows((prev) => [
-                    ...prev,
-                    {
-                      key: crypto.randomUUID(),
-                      productId: null,
-                      name: "",
-                      qty: 1,
-                      unitPrice: 0,
-                      customerId: null,
-                      onCredit: false,
-                    },
-                  ])
-                }
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
-              >
-                + Add sold row
-              </button>
+              {hasDiffIssues && (
+                <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                  May mga product na hindi nagtutugma ang Loaded vs Sold vs
+                  Returned. Gamitin muna ang{" "}
+                  <span className="font-semibold">“Revert to Dispatched”</span>{" "}
+                  sa ibaba para ma-edit ulit ng rider ang Check-in bago
+                  mag-approve ng remit.
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto px-4 py-3">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Product</th>
+                    <th className="px-3 py-2 text-right">Loaded</th>
+                    <th className="px-3 py-2 text-right">Sold</th>
+                    <th className="px-3 py-2 text-right">Returned</th>
+                    <th className="px-3 py-2 text-right">
+                      Loaded − Sold − Ret
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recapRows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-3 py-4 text-center text-slate-500"
+                      >
+                        No loadout snapshot or rider check-in data for this run.
+                      </td>
+                    </tr>
+                  ) : (
+                    recapRows.map((r) => {
+                      const bad = r.diff !== 0;
+                      return (
+                        <tr
+                          key={r.productId}
+                          className={`border-t border-slate-100 ${
+                            bad ? "bg-amber-50/70" : ""
+                          }`}
+                        >
+                          <td className="px-3 py-2">
+                            {r.name}{" "}
+                            <span className="text-[10px] text-slate-400">
+                              #{r.productId}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right">{r.loaded}</td>
+                          <td className="px-3 py-2 text-right">{r.sold}</td>
+                          <td className="px-3 py-2 text-right">{r.returned}</td>
+                          <td
+                            className={`px-3 py-2 text-right font-mono ${
+                              bad ? "text-amber-700 font-semibold" : ""
+                            }`}
+                          >
+                            {r.diff}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {hasDiffIssues && (
+              <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                May mga product na hindi nagtutugma ang Loaded vs Sold vs
+                Returned. Paki-open muna ang{" "}
+                <span className="font-semibold">Rider Check-in</span> page para
+                i-correct bago mag-approve ng remit.
+              </div>
+            )}
+          </section>
+
+          {/* Parent POS orders (from Order Pad / Cashier) */}
+          {parentOrders.length > 0 && (
+            <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-medium text-slate-800">
+                    2. Parent Orders (from POS)
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Mga order na na-post sa cashier / order pad at naka-link sa
+                    run na ito. Read-only view ng qty at presyo per line.
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-4 py-4 space-y-3">
+                {parentOrders.map((o, idx) => (
+                  <div
+                    key={`${o.orderId}-${idx}`}
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-medium text-slate-700">
+                        Order #{o.orderId}
+                      </div>
+                      <div
+                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          o.isCredit
+                            ? "border border-amber-200 bg-amber-50 text-amber-700"
+                            : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        {o.isCredit ? "Credit (A/R)" : "Cash"}
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-600 mb-1">
+                      <span className="font-semibold">Customer:</span>{" "}
+                      {o.customerLabel}
+                    </div>
+
+                    <div className="space-y-1 text-[11px] text-slate-600">
+                      {o.lines.map((ln, li) => (
+                        <div
+                          key={`${o.orderId}-${li}`}
+                          className="flex justify-between gap-2"
+                        >
+                          <div className="flex-1">
+                            <span className="font-medium">{ln.name}</span>
+                            {ln.productId != null && (
+                              <span className="ml-1 text-[10px] text-slate-400">
+                                #{ln.productId}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right font-mono">
+                            <div>Qty: {ln.qty}</div>
+                            <div>
+                              Price: {peso(ln.unitPrice)}
+                              {ln.discountAmount != null && (
+                                <span className="ml-1 inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  −{peso(ln.discountAmount)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-semibold">
+                              Total: {peso(ln.lineTotal)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-1 text-right text-[11px] text-slate-500">
+                      Order total:{" "}
+                      <span className="font-mono font-semibold">
+                        {peso(o.orderTotal)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Quick sales overview */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-medium text-slate-800">
+                  {parentOrders.length > 0
+                    ? "3. Roadside Sales (from Rider Check-in)"
+                    : "2. Roadside Sales (from Rider Check-in)"}
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Read-only list mula sa rider check-in. Ito ang gagawing mga
+                  barcode/receipt sa pag-post ng remit.
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-600">
+                <div>
+                  Cash total:{" "}
+                  <span className="font-semibold text-slate-900">
+                    {peso(totalCash)}
+                  </span>
+                </div>
+                <div>
+                  Credit (A/R):{" "}
+                  <span className="font-semibold text-slate-900">
+                    {peso(totalCredit)}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="px-4 py-4 space-y-3">
-              {soldRows.length === 0 ? (
+              {quickSales.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-center text-sm text-slate-500">
-                  No sold rows yet.
+                  No roadside sales encoded in Rider Check-in.
                 </div>
-              ) : null}
-
-              {soldRows.map((r, idx) => (
-                <div
-                  key={r.key}
-                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="text-xs font-medium text-slate-700">
-                      Item #{idx + 1}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSoldRows((prev) =>
-                          prev.filter((x) => x.key !== r.key)
-                        )
-                      }
-                      className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100"
-                      aria-label="Remove row"
-                      title="Remove row"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-12 gap-3">
-                    <div className="col-span-12 lg:col-span-7">
-                      {/* Custom component: use plain text instead of <label> to satisfy jsx-a11y */}
-                      <div className="mb-1 block text-xs font-medium text-slate-600">
-                        Customer (optional; required if On credit)
+              ) : (
+                quickSales.map((q) => (
+                  <div
+                    key={q.idx}
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-medium text-slate-700">
+                        Sale #{q.idx + 1}
                       </div>
-                      <CustomerPicker
-                        key={`sold-cust-${r.key}`}
-                        value={r.customerObj ?? null}
-                        onChange={(val) => {
-                          const norm = val
-                            ? {
-                                id: val.id,
-                                firstName: val.firstName ?? "",
-                                lastName: val.lastName ?? "",
-                                alias: val.alias ?? null,
-                                phone: val.phone ?? null,
-                              }
-                            : null;
-                          setSoldRows((prev) =>
-                            prev.map((x) =>
-                              x.key === r.key
-                                ? {
-                                    ...x,
-                                    customerObj: norm,
-                                    customerId: norm?.id ?? null,
-                                  }
-                                : x
-                            )
-                          );
-                          const cid = norm?.id ?? null;
-                          const pid = r.productId ?? null;
-                          if (pid) void refreshRowAllowed(r.key, cid, pid);
-                        }}
-                      />
+                      <div
+                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          q.isCredit
+                            ? "border border-amber-200 bg-amber-50 text-amber-700"
+                            : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        {q.isCredit ? "Credit (A/R)" : "Cash"}
+                      </div>
                     </div>
-                    <div className="col-span-12 lg:col-span-5 flex items-end">
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={!!r.onCredit}
-                          onChange={(e) => {
-                            const onCredit = e.target.checked;
-                            setSoldRows((prev) =>
-                              prev.map((x) =>
-                                x.key === r.key ? { ...x, onCredit } : x
-                              )
-                            );
-                          }}
-                          className="h-4 w-4 accent-indigo-600"
-                        />
-                        <span>Mark as credit (A/R)</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-12 gap-3">
-                    <div className="col-span-12 md:col-span-7">
-                      {(() => {
-                        const inputId = `sold-${r.key}-product`;
-                        return (
-                          <>
-                            <label
-                              htmlFor={inputId}
-                              className="mb-1 block text-xs font-medium text-slate-600"
-                            >
-                              Product
-                            </label>
-                            <input
-                              id={inputId}
-                              list="runLoadList"
-                              value={
-                                r.productId != null
-                                  ? `${r.productId} | ${r.name}`
-                                  : r.name
-                              }
-                              onChange={(e) => {
-                                const raw = e.target.value.trim();
-                                let pid: number | null = null;
-                                let name = raw;
-                                const m = raw.match(/^(\d+)\s*\|\s*(.+)$/);
-                                if (m) {
-                                  pid = Number(m[1]);
-                                  name = m[2];
-                                } else if (/^\d+$/.test(raw)) {
-                                  const found = run.loadout.find(
-                                    (x) => x.productId === Number(raw)
-                                  );
-                                  if (found) {
-                                    pid = found.productId;
-                                    name = found.name;
-                                  }
-                                } else {
-                                  const found = run.loadout.find(
-                                    (x) => x.name === raw
-                                  );
-                                  if (found) {
-                                    pid = found.productId;
-                                    name = found.name;
-                                  }
-                                }
-                                setSoldRows((prev) =>
-                                  prev.map((x) =>
-                                    x.key === r.key
-                                      ? {
-                                          ...x,
-                                          productId: pid,
-                                          name,
-                                          unitPrice:
-                                            pid != null && !x.touched
-                                              ? defaultPriceFor(pid)
-                                              : x.unitPrice,
-                                          allowedUnitPrice: undefined,
-                                        }
-                                      : x
-                                  )
-                                );
-                                const cid = r.customerId ?? null;
-                                if (pid)
-                                  void refreshRowAllowed(r.key, cid, pid);
-                              }}
-                              placeholder="Search load: 123 | Product name"
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                            />
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <div className="col-span-6 md:col-span-2">
-                      {(() => {
-                        const qtyId = `sold-${r.key}-qty`;
-                        return (
-                          <>
-                            <label
-                              htmlFor={qtyId}
-                              className="mb-1 block text-xs font-medium text-slate-600"
-                            >
-                              Qty
-                            </label>
-                            <input
-                              id={qtyId}
-                              type="number"
-                              min={0}
-                              step="1"
-                              value={r.qty}
-                              onChange={(e) => {
-                                const v = Math.max(
-                                  0,
-                                  Math.floor(Number(e.target.value))
-                                );
-                                setSoldRows((prev) =>
-                                  prev.map((x) =>
-                                    x.key === r.key ? { ...x, qty: v } : x
-                                  )
-                                );
-                              }}
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                            />
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <div className="col-span-6 md:col-span-3">
-                      {(() => {
-                        const base = defaultPriceFor(r.productId);
-                        const unit = Number(r.unitPrice || 0);
-                        const line = Number(r.qty || 0) * unit || 0;
-                        const allowed = Number.isFinite(
-                          r.allowedUnitPrice as number
-                        )
-                          ? (r.allowedUnitPrice as number)
-                          : null;
-                        const disc = Math.max(0, base - unit);
-                        const custDisc =
-                          allowed != null ? Math.max(0, base - allowed) : null;
-                        const belowAllowed =
-                          allowed != null && unit + 1e-6 < allowed;
-                        return (
-                          <div className="mb-1 text-[11px] text-slate-500 grid gap-0.5">
-                            <div className="flex justify-between">
-                              <span>Original</span>
-                              <span className="tabular-nums">{peso(base)}</span>
-                            </div>
-                            {allowed != null && (
-                              <div className="flex justify-between">
-                                <span>Customer price (PACK)</span>
-                                <span className="tabular-nums">
-                                  {peso(allowed)}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span>Discount</span>
-                              <span className="tabular-nums text-rose-600">
-                                −{peso(disc)}
-                              </span>
-                            </div>
-                            {custDisc != null && (
-                              <div className="flex justify-between text-slate-400">
-                                <span>of which rule-based</span>
-                                <span className="tabular-nums">
-                                  −{peso(custDisc)}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span>Final (per unit)</span>
-                              <span className="tabular-nums">{peso(unit)}</span>
-                            </div>
-                            {belowAllowed && (
-                              <div className="flex justify-between text-rose-600">
-                                <span>Below allowed</span>
-                                <span className="tabular-nums">
-                                  min {peso(allowed!)}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span>Line total</span>
-                              <span className="tabular-nums">{peso(line)}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                      <CurrencyInput
-                        name={`unitPrice-${r.key}`}
-                        label="Unit price"
-                        value={String(r.unitPrice ?? "")}
-                        onChange={(e) => {
-                          const v = Math.max(
-                            0,
-                            Number(
-                              String(e.target.value).replace(/[^0-9.]/g, "")
-                            ) || 0
-                          );
-                          setSoldRows((prev) =>
-                            prev.map((x) =>
-                              x.key === r.key
-                                ? { ...x, unitPrice: v, touched: true }
-                                : x
-                            )
-                          );
-                        }}
-                        placeholder="0.00"
-                      />
+                    <div className="text-xs text-slate-600">
+                      <div className="mb-0.5">
+                        <span className="font-semibold">Customer:</span>{" "}
+                        {q.customerLabel}
+                      </div>
+                      <div className="mb-0.5">
+                        <span className="font-semibold">Product:</span>{" "}
+                        {q.productName}{" "}
+                        {q.productId != null && (
+                          <span className="text-[10px] text-slate-400">
+                            #{q.productId}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex justify-between text-[11px] text-slate-600">
+                        <span>
+                          Qty:{" "}
+                          <span className="font-mono font-semibold">
+                            {q.qty}
+                          </span>
+                        </span>
+                        <span>
+                          Unit price:{" "}
+                          <span className="font-mono">{peso(q.unitPrice)}</span>
+                          {q.discountAmount != null && (
+                            <span className="ml-1 inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              −{peso(q.discountAmount)}
+                            </span>
+                          )}
+                        </span>
+                        <span>
+                          Line total:{" "}
+                          <span className="font-mono font-semibold">
+                            {peso(q.lineTotal)}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex justify-between text-[11px] text-slate-600">
+                        <span>
+                          Cash:{" "}
+                          <span className="font-mono font-semibold">
+                            {peso(q.cashAmount)}
+                          </span>
+                        </span>
+                        <span>
+                          Credit (A/R):{" "}
+                          <span className="font-mono font-semibold">
+                            {peso(q.creditAmount)}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-
-              {/* datalist for product search from loadout */}
-              <datalist id="runLoadList">
-                {run.loadout.map((l, i) => (
-                  <option
-                    key={`${l.productId}-${i}`}
-                    value={`${l.productId} | ${l.name}`}
-                  />
-                ))}
-              </datalist>
+                ))
+              )}
             </div>
-          </div>
+          </section>
 
-          {/* Hidden payload */}
-          <input
-            type="hidden"
-            name="soldLoadJson"
-            value={JSON.stringify(
-              soldRows
-                .filter((r) => r.qty > 0 && r.productId != null)
-                .map((r) => ({
-                  productId: r.productId,
-                  name: r.name,
-                  qty: r.qty,
-                  unitPrice: Number(Number(r.unitPrice).toFixed(2)),
-                  customerId: r.customerId ?? null,
-                  onCredit: !!r.onCredit,
-                }))
+          {/* Submit / Approve */}
+          <div className="sticky bottom-4 flex flex-col gap-2">
+            {/* Revert button – allow manager to send back to rider */}
+            {run.status === "CHECKED_IN" && (
+              <button
+                type="submit"
+                name="_intent"
+                value="revert-to-dispatched"
+                className="inline-flex w-full items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:opacity-50"
+                disabled={nav.state !== "idle"}
+              >
+                ⤺ Revert to Dispatched (allow rider to edit Check-in)
+              </button>
             )}
-          />
-
-          <div className="sticky bottom-4">
             <button
+              type="submit"
+              name="_intent"
+              value="post-remit"
               className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
-              disabled={nav.state !== "idle"}
+              disabled={
+                nav.state !== "idle" ||
+                run.status !== "CHECKED_IN" ||
+                hasDiffIssues
+              }
             >
-              {nav.state !== "idle" ? "Posting…" : "Post Remit & Close Run"}
+              {hasDiffIssues
+                ? "Cannot post: fix mismatches in Rider Check-in first"
+                : run.status === "CLOSED"
+                ? "Run already closed"
+                : nav.state !== "idle"
+                ? "Posting…"
+                : "Approve Remit & Close Run"}
             </button>
           </div>
         </Form>

@@ -17,6 +17,7 @@
     "@remix-run/node": "^2.16.8",
     "@remix-run/react": "^2.16.8",
     "@remix-run/serve": "^2.16.8",
+    "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "isbot": "^4.1.0",
     "prisma": "^6.11.1",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@remix-run/dev": "^2.16.8",
     "@remix-run/serve": "^2.16.8",
+    "@types/bcryptjs": "^2.4.6",
     "@types/react": "^18.2.20",
     "@types/react-dom": "^18.2.7",
     "@typescript-eslint/eslint-plugin": "^6.7.4",

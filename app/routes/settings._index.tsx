@@ -9,7 +9,10 @@ import {
 import * as React from "react";
 import { db } from "~/utils/db.server";
 
+import { requireRole } from "~/utils/auth.server";
+
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const url = new URL(request.url);
   const catParam = url.searchParams.get("cat");
 

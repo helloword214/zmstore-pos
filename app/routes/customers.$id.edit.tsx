@@ -10,8 +10,10 @@ import {
   useActionData,
 } from "@remix-run/react";
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -33,6 +35,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const id = Number(params.id);
   if (!Number.isFinite(id))
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });

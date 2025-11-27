@@ -1,16 +1,11 @@
+// app/routes/runs.$id.summary.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import {
-  Form,
-  Link,
-  useActionData,
-  useLoaderData,
-  useNavigation,
-  useSearchParams,
-} from "@remix-run/react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
 type Row = {
   productId: number;
@@ -19,11 +14,12 @@ type Row = {
   sold: number;
   returned: number;
 };
+
 type LoaderData = {
   run: {
     id: number;
     runCode: string;
-    status: "PLANNED" | "DISPATCHED" | "CLOSED" | "CANCELLED";
+    status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
     riderLabel: string | null;
   };
   rows: Row[];
@@ -32,13 +28,14 @@ type LoaderData = {
     sold: number;
     returned: number;
     delta: number;
-    balanced: boolean;
     cash: number;
     ar: number;
   };
+  role: string;
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  const me = await requireRole(request, ["ADMIN", "STORE_MANAGER", "EMPLOYEE"]); // 🔒 guard
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -50,9 +47,40 @@ export async function loader({ params }: LoaderFunctionArgs) {
       status: true,
       riderId: true,
       loadoutSnapshot: true,
+      riderCheckinSnapshot: true,
     },
   });
   if (!run) throw new Response("Not found", { status: 404 });
+
+  // ─────────────────────────────────────────────────────────────
+  // Rider check-in snapshot: parent overrides, payments, quick sales
+  // ─────────────────────────────────────────────────────────────
+  const rawSnap = run.riderCheckinSnapshot as any;
+  const parentOverrideMap = new Map<number, boolean>(); // orderId -> isCredit
+  const parentPaymentMap = new Map<number, number>(); // orderId -> cashCollected
+  let soldRowsSnap: any[] = [];
+
+  if (rawSnap && typeof rawSnap === "object") {
+    if (Array.isArray(rawSnap.parentOverrides)) {
+      for (const row of rawSnap.parentOverrides) {
+        const oid = Number(row?.orderId ?? 0);
+        if (!oid) continue;
+        parentOverrideMap.set(oid, !!row?.isCredit);
+      }
+    }
+    if (Array.isArray(rawSnap.parentPayments)) {
+      for (const row of rawSnap.parentPayments) {
+        const oid = Number(row?.orderId ?? 0);
+        if (!oid) continue;
+        const amt = Number(row?.cashCollected ?? 0);
+        if (!Number.isFinite(amt) || amt < 0) continue;
+        parentPaymentMap.set(oid, amt);
+      }
+    }
+    if (Array.isArray(rawSnap.soldRows)) {
+      soldRowsSnap = rawSnap.soldRows;
+    }
+  }
 
   // Rider label
   let riderLabel: string | null = null;
@@ -128,8 +156,16 @@ export async function loader({ params }: LoaderFunctionArgs) {
         select: {
           id: true,
           status: true,
+          isOnCredit: true,
           totalBeforeDiscount: true,
-          items: { select: { productId: true, name: true, qty: true } },
+          items: {
+            select: {
+              productId: true,
+              name: true,
+              qty: true,
+              unitPrice: true, // para consistent sa pricing na ginamit sa POS
+            },
+          },
           payments: { select: { amount: true } },
         },
       },
@@ -142,7 +178,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
   for (const L of links) {
     const o = L.order;
     if (!o) continue;
-    // sold qty by product
+
+    // sold qty by product (parent POS orders)
     for (const it of o.items) {
       const pid = Number(it.productId);
       const name = String(it.name || "");
@@ -153,36 +190,136 @@ export async function loader({ params }: LoaderFunctionArgs) {
       cur.name = cur.name || name;
       soldMap.set(pid, cur);
     }
-    // payments / AR
-    const paid = (o.payments ?? []).reduce(
-      (s, p) => s + Number(p.amount || 0),
-      0
-    );
-    cash += paid;
-    const due = Math.max(0, Number(o.totalBeforeDiscount || 0) - paid);
-    ar += due;
+
+    // CASH ON HAND vs A/R (per run)
+    //
+    // Logic:
+    // - Kung may riderCheckinSnapshot (parentOverrides / parentPayments)
+    //   at HINDI pa CLOSED ang run → gamitin yun.
+    // - Kapag wala pang check-in snapshot (o CLOSED na) →
+    //   fallback sa original isOnCredit behavior.
+
+    // Prefer actual line totals (qty * unitPrice) para aligned sa pricing engine.
+    const computedTotal = o.items.reduce((sum, it: any) => {
+      const qty = Number(it.qty || 0);
+      const up = Number(it.unitPrice || 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(up)) return sum;
+      return sum + qty * up;
+    }, 0);
+
+    const orderTotal =
+      (Number.isFinite(computedTotal) && computedTotal > 0
+        ? computedTotal
+        : Number(o.totalBeforeDiscount || 0)) || 0;
+
+    // Snapshot-based override (only while run is not CLOSED)
+    const hasSnapshotControls =
+      run.status !== "CLOSED" &&
+      (parentOverrideMap.has(o.id) || parentPaymentMap.has(o.id));
+
+    if (hasSnapshotControls) {
+      const isCredit = parentOverrideMap.has(o.id)
+        ? !!parentOverrideMap.get(o.id)
+        : !!o.isOnCredit;
+
+      const rawPaid = parentPaymentMap.get(o.id);
+      const paid =
+        rawPaid != null
+          ? Math.max(0, Math.min(orderTotal, rawPaid))
+          : isCredit
+          ? 0
+          : orderTotal;
+
+      cash += paid;
+      if (isCredit) {
+        ar += Math.max(0, orderTotal - paid);
+      }
+    } else {
+      // Fallback: original behavior (pre-check-in o CLOSED na)
+      if (o.isOnCredit) {
+        ar += orderTotal;
+      } else {
+        cash += orderTotal;
+      }
+    }
+  }
+
+  // 🔹 Idagdag: SOLD qty + CASH / AR galing sa rider snapshot (roadside quick sales)
+  //
+  // Idea:
+  // - Habang hindi pa CLOSED ang run, pwede nating gamitin yung snapshot
+  //   (soldRows sa riderCheckinSnapshot) para ipakita agad yung
+  //   cash-on-hand ng rider.
+  // - Pag CLOSED na, assume na na-post na sa remit/cashier, at
+  //   orders/payments na lang ang source of truth.
+  if (run.status !== "CLOSED" && soldRowsSnap.length > 0) {
+    for (const r of soldRowsSnap) {
+      const pid = Number(r?.productId ?? 0);
+      const name = String(r?.name ?? "");
+      const qty = Math.max(0, Math.floor(Number(r?.qty ?? 0)));
+      const unitPrice = Math.max(0, Number(r?.unitPrice ?? 0));
+      if (qty <= 0 || unitPrice <= 0) continue;
+
+      const lineTotal = qty * unitPrice;
+      const isCredit = !!(r?.onCredit ?? r?.isCredit);
+
+      // 1) qty side: idagdag sa SOLD map para di mawala sa stock recap
+      if (pid > 0) {
+        const cur = soldMap.get(pid) ?? { name, qty: 0 };
+        cur.qty += qty;
+        cur.name = cur.name || name;
+        soldMap.set(pid, cur);
+      }
+
+      // 2) money side: gamitin cashAmount kung CREDIT, para tama ang AR
+      if (isCredit) {
+        const rawCash = Number(r?.cashAmount ?? 0);
+        const paid = Number.isFinite(rawCash)
+          ? Math.max(0, Math.min(lineTotal, rawCash))
+          : 0;
+
+        cash += paid;
+        ar += Math.max(0, lineTotal - paid);
+      } else {
+        // cash sale → full line total as cash on hand
+        cash += lineTotal;
+      }
+    }
   }
 
   // Merge into rows
+  // Rule:
+  // - If may loadoutSnapshot / LOADOUT_OUT: yun ang loaded.
+  // - Kung wala (0 or undefined) pero may SOLD / RETURNED:
+  //   assume loaded = sold + returned (para hindi magmukhang "sold from 0").
   const allPids = new Set<number>([
     ...Array.from(loadedMap.keys()),
     ...Array.from(soldMap.keys()),
     ...Array.from(returnedMap.keys()),
   ]);
-  const rows: Row[] = Array.from(allPids).map((pid) => ({
-    productId: pid,
-    name: loadedMap.get(pid)?.name || soldMap.get(pid)?.name || `#${pid}`,
-    loaded: loadedMap.get(pid)?.qty || 0,
-    sold: soldMap.get(pid)?.qty || 0,
-    returned: returnedMap.get(pid) || 0,
-  }));
+  const rows: Row[] = Array.from(allPids).map((pid) => {
+    const loadedEntry = loadedMap.get(pid);
+    const soldEntry = soldMap.get(pid);
 
-  // Totals & balance
+    const rawLoaded = loadedEntry?.qty ?? 0;
+    const sold = soldEntry?.qty ?? 0;
+    const returned = returnedMap.get(pid) ?? 0;
+
+    // kung walang na-log na loadout pero may benta/return,
+    // gawa tayong inferred loaded = sold + returned
+    const loaded =
+      rawLoaded > 0 ? rawLoaded : sold + returned > 0 ? sold + returned : 0;
+
+    const name = loadedEntry?.name || soldEntry?.name || `#${pid}`;
+
+    return { productId: pid, name, loaded, sold, returned };
+  });
+
+  // Totals & delta
   const totalsLoaded = rows.reduce((s, r) => s + r.loaded, 0);
   const totalsSold = rows.reduce((s, r) => s + r.sold, 0);
   const totalsReturned = rows.reduce((s, r) => s + r.returned, 0);
   const delta = totalsLoaded - (totalsSold + totalsReturned);
-  const balanced = delta === 0;
 
   return json<LoaderData>({
     run: {
@@ -197,112 +334,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
       sold: totalsSold,
       returned: totalsReturned,
       delta,
-      balanced,
       cash: Math.round(cash * 100) / 100,
       ar: Math.round(ar * 100) / 100,
     },
+    role: me.role,
   });
-}
-
-type ActionData = { ok: true } | { ok: false; error: string };
-
-export async function action({ request, params }: ActionFunctionArgs) {
-  const id = Number(params.id);
-  if (!Number.isFinite(id))
-    return json<ActionData>(
-      { ok: false, error: "Invalid ID" },
-      { status: 400 }
-    );
-  const fd = await request.formData();
-  const intent = String(fd.get("intent") || "");
-  if (intent !== "close") return redirect(`/runs/${id}/summary`);
-
-  // Recompute balance server-side (same guards as loader)
-  const run = await db.deliveryRun.findUnique({
-    where: { id },
-    select: { id: true, status: true, loadoutSnapshot: true },
-  });
-  if (!run)
-    return json<ActionData>({ ok: false, error: "Not found" }, { status: 404 });
-  if (run.status === "CLOSED") return redirect(`/runs/${id}/summary`);
-
-  const loadedMap = new Map<number, number>();
-  const snap = Array.isArray(run.loadoutSnapshot)
-    ? (run.loadoutSnapshot as any[])
-    : [];
-  if (snap.length > 0) {
-    for (const row of snap) {
-      const pid = Number(row?.productId);
-      const qty = Math.max(0, Math.floor(Number(row?.qty ?? 0)));
-      if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
-      loadedMap.set(pid, (loadedMap.get(pid) || 0) + qty);
-    }
-  } else {
-    const outs = await db.stockMovement.findMany({
-      where: { refKind: "RUN", refId: id, type: "LOADOUT_OUT" },
-      select: { productId: true, qty: true },
-    });
-    for (const m of outs) {
-      const pid = Number(m.productId);
-      const qty = Math.max(0, Math.floor(Number(m.qty || 0)));
-      if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
-      loadedMap.set(pid, (loadedMap.get(pid) || 0) + qty);
-    }
-  }
-  const returnedMap = new Map<number, number>();
-  const returns = await db.stockMovement.findMany({
-    where: { refKind: "RUN", refId: id, type: "RETURN_IN" },
-    select: { productId: true, qty: true },
-  });
-  for (const m of returns) {
-    const pid = Number(m.productId);
-    const qty = Math.max(0, Math.floor(Number(m.qty || 0)));
-    if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
-    returnedMap.set(pid, (returnedMap.get(pid) || 0) + qty);
-  }
-  const links = await db.deliveryRunOrder.findMany({
-    where: { runId: id },
-    include: {
-      order: { select: { items: { select: { productId: true, qty: true } } } },
-    },
-  });
-  const soldMap = new Map<number, number>();
-  for (const L of links) {
-    for (const it of L.order?.items ?? []) {
-      const pid = Number(it.productId);
-      const qty = Math.max(0, Math.floor(Number(it.qty || 0)));
-      if (!Number.isFinite(pid) || pid <= 0 || qty <= 0) continue;
-      soldMap.set(pid, (soldMap.get(pid) || 0) + qty);
-    }
-  }
-  let loaded = 0,
-    sold = 0,
-    returned = 0;
-  for (const v of loadedMap.values()) loaded += v;
-  for (const v of soldMap.values()) sold += v;
-  for (const v of returnedMap.values()) returned += v;
-  const delta = loaded - (sold + returned);
-  if (delta !== 0) {
-    return json<ActionData>(
-      { ok: false, error: "Not balanced: Loaded must equal Sold + Returned." },
-      { status: 400 }
-    );
-  }
-
-  await db.deliveryRun.update({
-    where: { id },
-    data: { status: "CLOSED", closedAt: new Date() },
-  });
-  return redirect(`/runs/${id}/summary?closed=1`);
 }
 
 export default function RunSummaryPage() {
-  const { run, rows, totals } = useLoaderData<LoaderData>();
-  const actionData = useActionData<ActionData>();
-  const nav = useNavigation();
-  const busy = nav.state !== "idle";
+  const { run, rows, totals, role } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
-  const justClosed = sp.get("closed") === "1";
+  const justPosted = sp.get("posted") === "1";
+  const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -319,7 +362,14 @@ export default function RunSummaryPage() {
           >
             ← Back to Runs
           </Link>
+          <Link
+            to={backHref}
+            className="ml-3 text-sm text-slate-600 hover:underline"
+          >
+            Back to Dashboard
+          </Link>
         </div>
+
         <header className="mb-4 flex items-end justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-wide text-slate-800">
@@ -348,32 +398,23 @@ export default function RunSummaryPage() {
           </div>
         </header>
 
-        {justClosed && (
+        {justPosted && (
           <div
             className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
             role="status"
             aria-live="polite"
           >
-            Run closed. Dispatch & remit are now locked.
+            Run remit posted. This run is now closed and read-only.
           </div>
         )}
-        {run.status === "CLOSED" && !justClosed && (
+        {run.status === "CLOSED" && !justPosted && (
           <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             View-only: this run is closed.
           </div>
         )}
 
-        {actionData && !actionData.ok && (
-          <div
-            className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-            role="alert"
-            aria-live="polite"
-          >
-            {actionData.error}
-          </div>
-        )}
-
         <div className="grid gap-4">
+          {/* Stock / qty recap */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-600">
@@ -449,7 +490,8 @@ export default function RunSummaryPage() {
             </table>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Cash / AR recap */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="rounded-xl border border-slate-200 bg-white p-3">
               <div className="text-xs text-slate-500">Cash collected</div>
               <div className="text-lg font-semibold">{peso(totals.cash)}</div>
@@ -458,41 +500,7 @@ export default function RunSummaryPage() {
               <div className="text-xs text-slate-500">A/R created</div>
               <div className="text-lg font-semibold">{peso(totals.ar)}</div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="text-xs text-slate-500">Balance</div>
-              <div
-                className={`text-lg font-semibold ${
-                  totals.balanced ? "text-emerald-700" : "text-rose-700"
-                }`}
-              >
-                {totals.balanced ? "Balanced" : `Δ ${totals.delta}`}
-              </div>
-            </div>
           </div>
-
-          {run.status !== "CLOSED" && (
-            <div className="flex items-center justify-end">
-              <Form method="post" replace>
-                <button
-                  name="intent"
-                  value="close"
-                  disabled={busy || !totals.balanced}
-                  onClick={(e) => {
-                    if (
-                      !window.confirm(
-                        "Close run? This will lock dispatch/remit and finalize returns."
-                      )
-                    ) {
-                      e.preventDefault();
-                    }
-                  }}
-                  className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50"
-                >
-                  {busy ? "Closing…" : "Close Run"}
-                </button>
-              </Form>
-            </div>
-          )}
         </div>
       </div>
     </main>

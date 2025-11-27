@@ -11,11 +11,13 @@ import {
   type Cart,
   type Rule,
 } from "~/services/pricing";
+import { requireRole } from "~/utils/auth.server";
 
 // If you already have a shared helper, you can import it instead of duplicating:
 // import { applyDiscounts } from "~/services/pricing";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "ADMIN"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 

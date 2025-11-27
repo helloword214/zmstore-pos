@@ -13,6 +13,7 @@ import {
 import { Prisma } from "@prisma/client";
 
 import { db } from "~/utils/db.server";
+import { requireOpenShift } from "~/utils/auth.server";
 
 import {
   applyDiscounts,
@@ -22,7 +23,9 @@ import {
 
 // ── Minimal pricing helpers (mirror cashier logic) ─────────────
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  // Require cashier/admin with an open shift before viewing AR ledger
+  await requireOpenShift(request);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -161,6 +164,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  // Require open shift and capture user+shift for tagging payments
+  const me = await requireOpenShift(request);
   const customerId = Number(params.id);
   if (!Number.isFinite(customerId))
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });
@@ -263,7 +268,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const apply = Math.min(remainingToApply, rem);
         if (apply > 0) {
           await tx.payment.create({
-            data: { orderId, method, amount: apply, refNo },
+            data: {
+              orderId,
+              method,
+              amount: apply,
+              refNo,
+              // tag AR payment to current shift / cashier
+              shiftId: me.shiftId ?? null,
+              cashierId: me.userId,
+            },
           });
           remainingToApply -= apply;
           appliedOrderIds.push(orderId);
@@ -286,7 +299,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
           if (rem <= 0) continue;
           const apply = Math.min(remainingToApply, rem);
           await tx.payment.create({
-            data: { orderId: o.id, method, amount: apply, refNo },
+            data: {
+              orderId: o.id,
+              method,
+              amount: apply,
+              refNo,
+              // tag AR payment to current shift / cashier
+              shiftId: me.shiftId ?? null,
+              cashierId: me.userId,
+            },
           });
           remainingToApply -= apply;
           appliedOrderIds.push(o.id);

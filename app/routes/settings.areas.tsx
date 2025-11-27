@@ -4,8 +4,10 @@ import { json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const url = new URL(request.url);
   const provinceId = url.searchParams.get("pid")
     ? Number(url.searchParams.get("pid"))
@@ -69,6 +71,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]); // 🔒 guard
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
   const id = fd.get("id") ? Number(fd.get("id")) : null;

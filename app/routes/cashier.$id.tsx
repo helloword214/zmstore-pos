@@ -25,6 +25,7 @@ import {
 } from "~/services/pricing";
 
 import { db } from "~/utils/db.server";
+import { requireOpenShift } from "~/utils/auth.server";
 
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
@@ -37,11 +38,9 @@ type LoaderData = {
   activePricingRules: Rule[];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireOpenShift(request); // 🔒 must have an open shift for money actions
   const id = Number(params.id);
-  if (!Number.isFinite(id)) {
-    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
-  }
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
   const order = await db.order.findUnique({
     where: { id },
@@ -108,6 +107,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  // Get the logged-in cashier with a verified open shift
+  const me = await requireOpenShift(request);
   const id = Number(params.id);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
@@ -127,23 +128,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect("/cashier");
   }
 
-  // Support buttons shown in the UI header
-  if (act === "reprint") {
-    await db.order.update({
-      where: { id },
-      data: { printCount: { increment: 1 }, printedAt: new Date() },
-    });
-    return json({ ok: true, didReprint: true });
-  }
-
-  if (act === "release") {
-    await db.order.update({
-      where: { id },
-      data: { lockedAt: null, lockedBy: null },
-    });
-    return redirect("/cashier");
-  }
-
   if (act === "settlePayment") {
     const cashGiven = Number(fd.get("cashGiven") || 0);
     const printReceipt = fd.get("printReceipt") === "1";
@@ -154,6 +138,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
       String(fd.get("discountApprovedBy") || "").trim() || null;
 
     const customerId = Number(fd.get("customerId") || 0) || null;
+
+    // ─────────────────────────────────────────────
+    // Resolve active shift reliably for tagging payments
+    // ─────────────────────────────────────────────
+    // `requireOpenShift` already guarantees there is an open shift for CASHIER,
+    // but we still resolve the actual row to avoid any stale/missing `shiftId`
+    // on the SessionUser object.
+    const { getActiveShift } = await import("~/utils/auth.server");
+    const activeShift = await getActiveShift(request);
+    const shiftIdForPayment =
+      activeShift?.id ?? (me.role === "CASHIER" ? me.shiftId ?? null : null);
 
     // Cashier requires an actual payment (> 0). Full-utang is a separate flow.
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
@@ -442,15 +437,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
       }
 
-      // 1) Record payment (cashier path always > 0 now)
       // 1) Record payment actually applied against the balance
       if (appliedPayment > 0) {
         const p = await tx.payment.create({
-          data: { orderId: order.id, method: "CASH", amount: appliedPayment },
+          data: {
+            orderId: order.id,
+            method: "CASH",
+            amount: appliedPayment,
+            // 🔎 Audit tags for shift tracing:
+            cashierId: me.userId, // who processed
+            // Always tag to the resolved active shift, if any
+            ...(shiftIdForPayment ? { shiftId: shiftIdForPayment } : {}),
+            // 🧾 What happened at the till:
+            tendered: cashGiven, // handed by customer
+            change: change, // given back
+          },
           select: { id: true },
         });
         createdPaymentId = p.id;
       }
+
       // 2) Deduct inventory only when needed (see rule above)
       if (willDeductNow) {
         for (const [pid, c] of deltas.entries()) {

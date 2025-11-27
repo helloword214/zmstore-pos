@@ -11,6 +11,7 @@ import {
 } from "@remix-run/react";
 import type { Prisma } from "@prisma/client";
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
 // ----- Types used by the component (no `typeof loader` needed)
 type LoaderData = {
@@ -26,6 +27,7 @@ type LoaderData = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
 

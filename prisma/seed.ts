@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // prisma/seed.ts
 import "dotenv/config";
-import { PrismaClient, EmployeeRole, VehicleType } from "@prisma/client";
+import {
+  PrismaClient,
+  EmployeeRole,
+  VehicleType,
+  UserRole,
+} from "@prisma/client";
 import { generateSKU } from "~/utils/skuHelpers";
+import * as bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
@@ -1156,6 +1162,10 @@ async function seed() {
   console.log("🧹 Resetting (FK-safe order)...");
   // Wrap in a single transaction for speed & consistency
   await db.$transaction([
+    // ── Auth/RBAC first (to free Location FKs later)
+    db.cashierShift.deleteMany(),
+    db.userBranch.deleteMany(),
+    db.user.deleteMany(),
     // ── M3/M2 artifacts first (may reference Product & Order)
     db.deliveryRunOrder.deleteMany(),
     db.runAdhocSale.deleteMany(),
@@ -1194,6 +1204,7 @@ async function seed() {
     db.unit.deleteMany(),
     db.packingUnit.deleteMany(),
     db.location.deleteMany(),
+    db.branch.deleteMany(),
 
     // ── Geo refs (wipe before reseed)
     db.landmark.deleteMany(),
@@ -1242,6 +1253,35 @@ async function seed() {
     });
     locationMap[name] = location.id;
   }
+
+  // ─────────────────────────────────────────
+  // NEW: Seed real Branch data (store branches)
+  // ─────────────────────────────────────────
+  console.log("🏬 Creating branches (real store branches)...");
+  const BRANCH_NAMES = [
+    "Asingan Branch",
+    "San Nicolas Branch",
+    "Rosales Branch",
+  ] as const;
+  const branchByName: Record<string, number> = {};
+  for (const name of BRANCH_NAMES) {
+    const b = await db.branch.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+    branchByName[name] = b.id;
+  }
+  const mainBranchId =
+    branchByName["Asingan Branch"] ??
+    (await (async () => {
+      const b = await db.branch.upsert({
+        where: { name: "Asingan Branch" },
+        update: {},
+        create: { name: "Asingan Branch" },
+      });
+      return b.id;
+    })());
 
   // ─────────────────────────────────────────
   // NEW: Fleet & Riders
@@ -1315,7 +1355,8 @@ async function seed() {
     });
   }
 
-  console.log("👷 Creating riders (employees)...");
+  console.log("👷 Creating employees (riders / cashiers / managers)...");
+  // RIDERS
   const riders = [
     {
       firstName: "Juan",
@@ -1366,6 +1407,185 @@ async function seed() {
         role: r.role,
         active: true,
         defaultVehicleId: vehiclesByKey[r.dv]?.id ?? null,
+      },
+    });
+  }
+
+  // MANAGERS (EmployeeRole.MANAGER)
+  const managerEmployees: { id: number }[] = [];
+  const managersSeed = [
+    {
+      firstName: "Liza",
+      lastName: "Cruz",
+      alias: "Liza",
+      phone: "09170000011",
+      email: "liza.manager@example.com",
+    },
+    {
+      firstName: "Mark",
+      lastName: "Reyes",
+      alias: "Mark",
+      phone: "09170000012",
+      email: "mark.manager@example.com",
+    },
+  ];
+  for (const m of managersSeed) {
+    const emp = await db.employee.upsert({
+      where: { email: m.email },
+      update: {
+        firstName: m.firstName,
+        lastName: m.lastName,
+        alias: m.alias,
+        phone: m.phone,
+        role: EmployeeRole.MANAGER,
+        active: true,
+      },
+      create: {
+        firstName: m.firstName,
+        lastName: m.lastName,
+        alias: m.alias,
+        phone: m.phone,
+        email: m.email,
+        role: EmployeeRole.MANAGER,
+        active: true,
+      },
+    });
+    managerEmployees.push({ id: emp.id });
+  }
+
+  // CASHIERS (EmployeeRole.STAFF) – pwede itong maging cashier/utility staff
+  const cashierEmployees: { id: number }[] = [];
+  const cashiersSeed = [
+    {
+      firstName: "Joy",
+      lastName: "Santos",
+      alias: "Joy",
+      phone: "09170000021",
+      email: "joy.cashier@example.com",
+    },
+    {
+      firstName: "Leo",
+      lastName: "Garcia",
+      alias: "Leo",
+      phone: "09170000022",
+      email: "leo.cashier@example.com",
+    },
+  ];
+  for (const c of cashiersSeed) {
+    const emp = await db.employee.upsert({
+      where: { email: c.email },
+      update: {
+        firstName: c.firstName,
+        lastName: c.lastName,
+        alias: c.alias,
+        phone: c.phone,
+        role: EmployeeRole.STAFF,
+        active: true,
+      },
+      create: {
+        firstName: c.firstName,
+        lastName: c.lastName,
+        alias: c.alias,
+        phone: c.phone,
+        email: c.email,
+        role: EmployeeRole.STAFF,
+        active: true,
+      },
+    });
+    cashierEmployees.push({ id: emp.id });
+  }
+
+  // ─────────────────────────────────────────
+  // NEW: Auth users (Admin + Cashiers + Managers + Employees linked to Employee)
+  // ─────────────────────────────────────────
+  console.log(
+    "👤 Creating auth users (Admin/Cashiers/Managers/Riders linked to Employees)..."
+  );
+  const hash = (s: string) => bcrypt.hashSync(s, 12);
+  if (!mainBranchId) throw new Error("No Branch found. Seed branches first.");
+
+  // ADMIN (walang Employee; system-level)
+  await db.user.upsert({
+    where: { email: "admin@local" },
+    update: {},
+    create: {
+      email: "admin@local",
+      passwordHash: hash("admin123"),
+      role: UserRole.ADMIN,
+      active: true,
+      branches: { create: { branchId: mainBranchId } },
+    },
+  });
+
+  // CASHIER USERS (linked sa cashierEmployees + PIN login)
+  const cashierPins = ["111111", "222222"];
+  for (let i = 0; i < cashierEmployees.length; i++) {
+    const emp = cashierEmployees[i];
+    const pin = cashierPins[i] ?? "999999";
+    const idx = i + 1;
+    await db.user.upsert({
+      where: { email: `cashier${idx}@local` },
+      update: {
+        employeeId: emp.id,
+        role: UserRole.CASHIER,
+        active: true,
+      },
+      create: {
+        email: `cashier${idx}@local`,
+        pinHash: hash(pin),
+        role: UserRole.CASHIER,
+        active: true,
+        employeeId: emp.id,
+        branches: { create: { branchId: mainBranchId } },
+      },
+    });
+  }
+
+  // MANAGER USERS (STORE_MANAGER role, linked sa managerEmployees)
+  for (let i = 0; i < managerEmployees.length; i++) {
+    const emp = managerEmployees[i];
+    const idx = i + 1;
+    await db.user.upsert({
+      where: { email: `manager${idx}@local` },
+      update: {
+        employeeId: emp.id,
+        role: UserRole.STORE_MANAGER,
+        active: true,
+      },
+      create: {
+        email: `manager${idx}@local`,
+        passwordHash: hash(`manager${idx}123`),
+        role: UserRole.STORE_MANAGER,
+        active: true,
+        employeeId: emp.id,
+        branches: { create: { branchId: mainBranchId } },
+      },
+    });
+  }
+
+  // EMPLOYEE USERS (frontline: riders / sellers etc.) → UserRole.EMPLOYEE
+  const allRiderEmployees = await db.employee.findMany({
+    where: { role: EmployeeRole.RIDER, active: true },
+    orderBy: { id: "asc" },
+  });
+
+  for (let i = 0; i < allRiderEmployees.length; i++) {
+    const emp = allRiderEmployees[i];
+    const idx = i + 1;
+    await db.user.upsert({
+      where: { email: `rider${idx}@local` },
+      update: {
+        employeeId: emp.id,
+        role: UserRole.EMPLOYEE,
+        active: true,
+      },
+      create: {
+        email: `rider${idx}@local`,
+        passwordHash: hash(`rider${idx}123`),
+        role: UserRole.EMPLOYEE,
+        active: true,
+        employeeId: emp.id,
+        branches: { create: { branchId: mainBranchId } },
       },
     });
   }
