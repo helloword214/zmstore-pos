@@ -276,8 +276,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       (run.receipts || [])
         .filter((r) => r.kind === "PARENT" && r.parentOrderId != null)
         .map((r) => Number(r.parentOrderId))
-        .filter((id) => Number.isFinite(id) && id > 0)
-    )
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
   );
 
   const parentOrderRecords = parentOrderIds.length
@@ -421,7 +421,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const cash = Math.max(0, Number(r.cashCollected ?? 0));
     parentCashByOrderIdLocal.set(
       oid,
-      (parentCashByOrderIdLocal.get(oid) || 0) + cash
+      (parentCashByOrderIdLocal.get(oid) || 0) + cash,
     );
   }
 
@@ -433,10 +433,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // Totals for display (single source of truth = computed from frozen ROAD receipts)
   const roadsideCash = r2(
-    quickReceipts.reduce((s, r) => s + Number(r.cash || 0), 0)
+    quickReceipts.reduce((s, r) => s + Number(r.cash || 0), 0),
   );
   const roadsideAR = r2(
-    quickReceipts.reduce((s, r) => s + Number(r.ar || 0), 0)
+    quickReceipts.reduce((s, r) => s + Number(r.ar || 0), 0),
   );
 
   // Parent cash total (cap per order total)
@@ -452,7 +452,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // ✅ IMPORTANT: keep a single source of truth (same cash cap logic as parentCash + o.collectedCash)
     const cash = Math.max(
       0,
-      Math.min(o.orderTotal, Number(o.collectedCash ?? 0))
+      Math.min(o.orderTotal, Number(o.collectedCash ?? 0)),
     );
     const ar = Math.max(0, Number((o.orderTotal - cash).toFixed(2)));
     return s + ar;
@@ -499,7 +499,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!Number.isFinite(id)) {
     return json<ActionData>(
       { ok: false, error: "Invalid ID" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -529,7 +529,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (run.status !== "CHECKED_IN") {
       return json<ActionData>(
         { ok: false, error: "Only CHECKED_IN runs can be reverted." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -549,14 +549,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   // ─────────────────────────────────────
-  // INTENT: Post remit & close run
+  // INTENT: Post remit & close runƒ
   // ─────────────────────────────────────
 
   // Dito lang pwede mag-remit kapag CHECKED_IN na si rider.
   if (run.status !== "CHECKED_IN") {
     return json<ActionData>(
       { ok: false, error: "Run must be CHECKED_IN before remit." },
-      { status: 400 }
+      { status: 400 },
+    );
+  }
+
+  // CCS v2.7 remit gate:
+  // No remit while any receipt in this run is still pending clearance.
+  const pendingClearanceCount = await db.clearanceCase.count({
+    where: { runId: id, status: "NEEDS_CLEARANCE" } as any,
+  });
+  if (pendingClearanceCount > 0) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "Cannot post remit: there are pending clearance cases (NEEDS_CLEARANCE).",
+      },
+      { status: 400 },
     );
   }
 
@@ -574,7 +590,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           "Cannot post remit: Stock recap mismatch. Revert to Dispatched and re-check rider check-in.\n" +
           recap.diffIssues.join("\n"),
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -674,7 +690,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   for (const row of recap.recapRows) {
     if (row.sold > row.loaded) {
       over.push(
-        `• ${row.name} (#${row.productId}): sold ${row.sold} > loaded ${row.loaded}`
+        `• ${row.name} (#${row.productId}): sold ${row.sold} > loaded ${row.loaded}`,
       );
     }
   }
@@ -686,7 +702,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           "Cannot post remit: Sold quantity exceeds loaded for some products:\n" +
           over.join("\n"),
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -695,7 +711,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Manager remit must NEVER recompute unit prices.
   // Simple rule: if credit, must have customer.
   const pids = Array.from(
-    new Set(soldReceipts.flatMap((r) => r.lines.map((ln) => ln.productId)))
+    new Set(soldReceipts.flatMap((r) => r.lines.map((ln) => ln.productId))),
   );
   const products = pids.length
     ? await db.product.findMany({
@@ -709,11 +725,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // IMPORTANT: Credit OR partial payment (balance remains) requires customer
     const recSubtotal = rec.lines.reduce(
       (s, ln) => s + Number(ln.lineTotal || 0),
-      0
+      0,
     );
     const paid = Math.max(
       0,
-      Math.min(recSubtotal, Number(rec.cashCollected || 0))
+      Math.min(recSubtotal, Number(rec.cashCollected || 0)),
     );
     const hasBalance = paid + 0.009 < recSubtotal;
     const isCreditEffective = rec.isCredit || hasBalance;
@@ -724,7 +740,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           ok: false,
           error: "On-credit / partial payment requires a customer.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
   }
@@ -1204,7 +1220,7 @@ export default function RunRemitPage() {
                         const rawCash = o.collectedCash ?? 0;
                         const cash = Math.max(
                           0,
-                          Math.min(o.orderTotal, rawCash)
+                          Math.min(o.orderTotal, rawCash),
                         );
                         const credit = Math.max(0, o.orderTotal - cash);
                         return (
