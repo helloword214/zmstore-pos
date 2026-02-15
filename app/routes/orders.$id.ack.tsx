@@ -9,6 +9,8 @@ import {
   fetchCustomerRulesAt,
 } from "~/services/pricing";
 
+import type { Order } from "@prisma/client";
+
 type AckDiscount = { ruleId: string; name: string; amount: number };
 type AckPricing = {
   subtotal: number;
@@ -24,6 +26,10 @@ type LoaderData = {
     paidSoFar: number;
     remaining: number;
     createdAt: string | Date;
+    isOnCredit: boolean;
+    releaseWithBalance: boolean;
+    releasedApprovedBy: string | null;
+    releasedAt: string | Date | null;
   };
   featured: {
     id: number;
@@ -161,6 +167,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     0
   );
   const remaining = Math.max(0, total - paidSoFar);
+  const o: Order = order; // <— SAFE CAST (no any)
 
   const payload: LoaderData = {
     order: {
@@ -170,6 +177,10 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       paidSoFar,
       remaining,
       createdAt: order.createdAt,
+      isOnCredit: o.isOnCredit,
+      releaseWithBalance: o.releaseWithBalance,
+      releasedApprovedBy: o.releasedApprovedBy,
+      releasedAt: o.releasedAt,
     },
     featured, // may be null if no payments yet
     tendered,
@@ -184,6 +195,10 @@ export default function PaymentAckPage() {
     useLoaderData<LoaderData>();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // May utang ba / A/R? (kahit partial, kahit roadside, etc.)
+  const hasBalance = order.remaining > 0.009;
+  const isCredit = order.releaseWithBalance || order.isOnCredit || hasBalance;
 
   const qs = new URLSearchParams(location.search);
   const autoPrint = qs.get("autoprint") === "1";
@@ -239,7 +254,7 @@ export default function PaymentAckPage() {
               Poblacion East, Asingan, Pangasinan • 0919 939 1932
             </div>
             <div className="text-xs mt-1 tracking-wide text-slate-700">
-              {featured ? "Payment Acknowledgment" : "Credit Acknowledgment"}
+              {isCredit ? "Credit Acknowledgment" : "Payment Acknowledgment"}
             </div>
           </div>
 
@@ -341,13 +356,33 @@ export default function PaymentAckPage() {
                 </span>
               </div>
             )}
+
+            {/* A/R approval imprint (manager-side release with balance) */}
+            {order.releaseWithBalance && (
+              <div className="mt-2 border-t border-dashed border-slate-200 pt-2 text-xs text-slate-600">
+                <div className="flex justify-between">
+                  <span>Approved as A/R by</span>
+                  <span className="font-medium text-slate-900">
+                    {order.releasedApprovedBy || "Manager"}
+                  </span>
+                </div>
+                {order.releasedAt && (
+                  <div className="flex justify-between">
+                    <span>Approval Date/Time</span>
+                    <span className="text-slate-900">
+                      {new Date(order.releasedAt).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}
           <div className="mt-4 text-center text-[11px] text-slate-600">
-            {featured
-              ? "This is a payment acknowledgment, not an official receipt."
-              : "This is a credit acknowledgment (no payment recorded), not an official receipt."}
+            {isCredit
+              ? "This is a credit/payment acknowledgment (may remaining balance / A/R), not an official receipt."
+              : "This is a payment acknowledgment, not an official receipt."}
           </div>
 
           {/* Controls (hidden on print) */}

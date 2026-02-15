@@ -31,6 +31,13 @@ export type SessionUser = {
   shiftId?: number | null;
 };
 
+function safeNext(raw: string | null | undefined, fallback = "/cashier") {
+  if (!raw) return fallback;
+  if (!raw.startsWith("/")) return fallback;
+  if (raw.startsWith("//")) return fallback;
+  return raw;
+}
+
 export function homePathFor(role: Role): string {
   if (role === "ADMIN") return "/";
   if (role === "STORE_MANAGER") return "/store";
@@ -74,7 +81,7 @@ export async function createUserSession(request: Request, userId: number) {
   session.set("role", user.role as Role); // now also supports STORE_MANAGER
   session.set(
     "branchIds",
-    (user.branches ?? []).map((b) => b.branchId)
+    (user.branches ?? []).map((b) => b.branchId),
   );
   // shiftId is set/cleared by cashier open/close shift flows
   return {
@@ -103,7 +110,7 @@ export async function requireUser(request: Request): Promise<SessionUser> {
 
 export async function requireRole(
   request: Request,
-  allowed: Role[]
+  allowed: Role[],
 ): Promise<SessionUser> {
   const user = await requireUser(request);
   if (!allowed.includes(user.role)) {
@@ -112,14 +119,39 @@ export async function requireRole(
   return user;
 }
 
-export async function requireOpenShift(request: Request): Promise<SessionUser> {
-  const user = await requireRole(request, ["ADMIN", "CASHIER"]);
-  // Admins can bypass shift requirement.
-  if (user.role !== "CASHIER") return user;
+export async function requireOpenShift(
+  request: Request,
+  opts?: { next?: string | null },
+): Promise<SessionUser> {
+  const user = await requireRole(request, ["CASHIER"]);
 
   const session = await getAuthSession(request);
+  const url = new URL(request.url);
+  const next = safeNext(opts?.next ?? url.searchParams.get("next"), "/cashier");
   const raw = session.get("shiftId");
   const shiftId = Number(raw);
+
+  const redirectNeedShift = async () => {
+    throw redirect(`/cashier?needShift=1&next=${encodeURIComponent(next)}`, {
+      headers: { "Set-Cookie": await authStorage.commitSession(session) },
+    });
+  };
+
+  // ✅ helper: if DB has an open shift for this cashier, restore cookie and retry page
+  const resumeIfOpenShiftExists = async () => {
+    const open = await db.cashierShift.findFirst({
+      where: { cashierId: user.userId, closedAt: null },
+      select: { id: true },
+      orderBy: { openedAt: "desc" },
+    });
+    if (!open) return false;
+    session.set("shiftId", open.id);
+    // Redirect back to same URL so caller doesn't need to handle headers
+    throw redirect(url.pathname + url.search, {
+      headers: { "Set-Cookie": await authStorage.commitSession(session) },
+    });
+  };
+
   // ❗ Guard: old builds stored Date.now() (13 digits) → won't fit INT4
   const invalid =
     !Number.isFinite(shiftId) ||
@@ -128,13 +160,15 @@ export async function requireOpenShift(request: Request): Promise<SessionUser> {
     shiftId > 2147483647;
   if (invalid) {
     session.unset("shiftId");
-    // clear bad cookie then send user DIRECT to shift console
-    throw redirect("/cashier/shift?open=1", {
-      headers: { "Set-Cookie": await authStorage.commitSession(session) },
-    });
+    // If shift is actually still open in DB, restore it first.
+    await resumeIfOpenShiftExists();
+    // Otherwise clear bad cookie then send user to dashboard lane (no money access)
+    await redirectNeedShift();
   }
   if (!shiftId) {
-    throw redirect("/cashier/shift?open=1");
+    // ✅ logout/login lost cookie: try to resume the open shift row
+    await resumeIfOpenShiftExists();
+    await redirectNeedShift();
   }
   // Ensure the shift row actually exists and is still open for this cashier
   const shift = await db.cashierShift.findFirst({
@@ -144,9 +178,9 @@ export async function requireOpenShift(request: Request): Promise<SessionUser> {
   if (!shift) {
     // Stale cookie → clear then redirect to open
     session.unset("shiftId");
-    throw redirect("/cashier/shift?open=1", {
-      headers: { "Set-Cookie": await authStorage.commitSession(session) },
-    });
+    // ✅ If there is another OPEN shift row (latest), resume it
+    await resumeIfOpenShiftExists();
+    await redirectNeedShift();
   }
   // expose non-null shiftId to callers
   return { ...user, shiftId } as SessionUser;
@@ -154,7 +188,7 @@ export async function requireOpenShift(request: Request): Promise<SessionUser> {
 
 export async function setShiftId(
   request: Request,
-  shiftId: number | null
+  shiftId: number | null,
 ): Promise<{ headers: Record<string, string> }> {
   const session = await getAuthSession(request);
   if (shiftId) session.set("shiftId", Number(shiftId)); // ensure integer
@@ -179,14 +213,9 @@ export async function openCashierShift(
     openingFloat?: number;
     deviceId?: string;
     notes?: string;
-  } = {}
+  } = {},
 ): Promise<{ headers: Record<string, string>; shift: CashierShift }> {
-  const me = await requireRole(request, ["CASHIER", "ADMIN"]);
-  if (me.role !== "CASHIER") {
-    throw new Response("Only CASHIER can open a cashier shift", {
-      status: 403,
-    });
-  }
+  const me = await requireRole(request, ["CASHIER"]);
   const branchId = opts.branchId ?? me.branchIds[0];
   if (!branchId) {
     throw new Response("No branch assigned to cashier. Cannot open shift.", {
@@ -211,14 +240,9 @@ export async function openCashierShift(
 + */
 export async function closeCashierShift(
   request: Request,
-  opts: { closingTotal?: number; notes?: string } = {}
+  opts: { closingTotal?: number; notes?: string } = {},
 ): Promise<{ headers: Record<string, string>; shift?: CashierShift | null }> {
-  const me = await requireRole(request, ["CASHIER", "ADMIN"]);
-  if (me.role !== "CASHIER") {
-    // nothing to close for non-cashier; just clear cookie if any
-    const { headers } = await setShiftId(request, null);
-    return { headers, shift: null };
-  }
+  const me = await requireRole(request, ["CASHIER"]);
   const session = await getAuthSession(request);
   const shiftId = (session.get("shiftId") as number | null) ?? null;
   if (!shiftId) {
@@ -248,14 +272,26 @@ export async function closeCashierShift(
  * Convenience: read the currently active shift row (or null).
  */
 export async function getActiveShift(
-  request: Request
+  request: Request,
 ): Promise<CashierShift | null> {
   const me = await getUser(request);
   if (!me || me.role !== "CASHIER") return null;
   const session = await getAuthSession(request);
   const shiftId = (session.get("shiftId") as number | null) ?? null;
-  if (!shiftId) return null;
-  return db.cashierShift.findFirst({
+  // If cookie is missing (logout/login), still show the open shift from DB.
+  if (!shiftId) {
+    return db.cashierShift.findFirst({
+      where: { cashierId: me.userId, closedAt: null },
+      orderBy: { openedAt: "desc" },
+    });
+  }
+  const cur = await db.cashierShift.findFirst({
     where: { id: shiftId, cashierId: me.userId, closedAt: null },
+  });
+  if (cur) return cur;
+  // Cookie exists but stale → fallback to latest open shift (display-only)
+  return db.cashierShift.findFirst({
+    where: { cashierId: me.userId, closedAt: null },
+    orderBy: { openedAt: "desc" },
   });
 }

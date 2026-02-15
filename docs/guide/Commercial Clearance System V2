@@ -1,0 +1,256 @@
+# Commercial Clearance System (CCS)
+
+**Version:** 2.7  
+**Status:** LOCKED – Field-Enforced Governance  
+**Scope:** All sales involving payment shortage, bargain requests, or delayed settlement  
+**Applies To:** PARENT (POS Orders), ROAD (Quick Sales), Delivery Runs
+
+---
+
+## Purpose
+
+The Commercial Clearance System (CCS) defines a **single, auditable decision layer**
+for all cases where **payment does not satisfy frozen commercial rules**.
+
+It ensures that:
+
+- No utang, kulang bayad, or bargain price is released **without explicit manager decision**
+- No commercial risk is silently absorbed by riders or cashiers
+- Accounts Receivable (A/R) exists **only by decision**, never by inference
+- Discount overrides are **intentional, visible, and reviewable**
+- Accountability is explicit and traceable **per receipt**
+- Cash discrepancies are immediately visible during remit and audit
+- No unresolved shortage leaves the field
+
+---
+
+## Core Principles (Non-Negotiable)
+
+### 1. Frozen Pricing Is Sacred
+
+- Pricing engine output is immutable once created
+- Stored at:
+  - `OrderItem` (PARENT orders)
+  - `RunReceiptLine` (ROAD / quick sales)
+- Includes all policy discounts
+
+Clearance never edits frozen pricing.  
+Clearance only authorizes exceptions to settlement, not price computation.
+
+---
+
+### 2. Clearance Is a Decision Gate, Not a Calculator
+
+- CCS does not recompute pricing
+- CCS does not infer outcomes from payment state
+- CCS exists solely to authorize commercial exceptions
+
+All deviations must pass through clearance **before commitment**.
+
+---
+
+### 3. Single Commercial Authority
+
+Only the Store Manager may:
+
+- Approve utang (open balance)
+- Approve discount override
+- Approve hybrid settlement
+- Reject exception
+- Authorize goods release under shortage
+
+No other role may create or absorb commercial liability.
+
+---
+
+### 4. Role Isolation (Hard Rule)
+
+Cashier and Rider may:
+
+- Encode actual cash collected
+- Declare clearance intent (facts + explanation)
+- Flag receipts as NEEDS_CLEARANCE
+
+They may NOT:
+
+- Change frozen prices
+- Approve discounts
+- Create A/R
+- Waive balances
+- Leave shortage unresolved in the field
+
+---
+
+## Field Enforcement Rule (New – v2.7, Binding)
+
+When `remaining > EPS`:
+
+- Rider MUST contact the Store Manager immediately.
+- No goods may be released until a decision is made.
+- Rider must remain on-site until resolution.
+
+There are only three possible outcomes:
+
+1. Manager APPROVES → Goods released under approved condition.
+2. Manager REJECTS → Customer pays full amount.
+3. Manager REJECTS and customer refuses → Receipt is marked VOIDED.
+
+No fourth state exists.  
+No “submit now, decide later” behavior is allowed.
+
+---
+
+## CCS Status Source of Truth (Critical)
+
+A receipt is **PENDING** iff there exists a `ClearanceCase` with:
+
+- `receiptKey = <receiptKey>`
+- `status = NEEDS_CLEARANCE`
+
+Anything else is NOT pending.
+
+---
+
+## Clearance Is Per Receipt
+
+- Clearance is never global.
+- Each receipt is evaluated independently.
+- A run is blocked if any receipt is unresolved.
+
+> A receipt is UNRESOLVED if it is NOT SETTLED.
+
+---
+
+## Receipt Settlement State (Binding)
+
+Each receipt exists in exactly one state:
+
+### 1) Editable (Pre-Clearance)
+
+- No ClearanceCase exists
+- Rider/Cashier may edit items, cash, customer
+
+### 2) Pending Clearance (Frozen)
+
+- `ClearanceCase(status = NEEDS_CLEARANCE)`
+- Receipt becomes READ-ONLY immediately
+- NOT SETTLED
+
+### 3) Settled
+
+A receipt is SETTLED only when:
+
+- Manager ACCEPTS clearance (A/R / Discount / Hybrid), OR
+- Manager REJECTS and:
+  - Customer pays full, OR
+  - Receipt is marked VOIDED
+
+Only SETTLED receipts allow run submission.
+
+---
+
+## Clearance Trigger Rule (Locked)
+
+Clearance exists ONLY when:
+
+`remaining = frozenTotal - cashCollected > EPS`
+
+- remaining == 0 → NO clearance
+- remaining > 0 → Clearance REQUIRED
+- No exceptions
+
+---
+
+## Clearance Intent
+
+When shortage exists, rider/cashier must declare:
+
+### OPEN_BALANCE
+
+- Customer will owe remaining balance
+- Customer record required
+- A/R created only if manager approves
+
+### PRICE_BARGAIN
+
+- Request to waive remaining balance
+- Customer optional
+- Balance becomes zero only if manager approves
+
+---
+
+## Pre-Decision State
+
+Before manager decision:
+
+- Transaction is NOT A/R
+- Discount does NOT exist
+- Receipt status = NEEDS_CLEARANCE
+- Goods must NOT be released
+
+---
+
+## VOIDED (Operational Outcome)
+
+VOIDED is not a clearance decision.
+
+It applies when:
+
+- Manager REJECTS clearance, AND
+- Customer cannot pay full, AND
+- Goods are NOT released
+
+Meaning:
+
+- Sale did not occur
+- Items must be returned
+- No A/R
+- No discount
+
+---
+
+## Cash Collected Rule
+
+Cash collected is immutable after submission.
+
+Any discrepancy becomes visible during remit.
+
+---
+
+## Rider Check-in Submit Gate (Binding)
+
+A run cannot be submitted (CHECKED_IN) unless ALL receipts are SETTLED.
+
+For each receipt:
+
+- Fully paid → SETTLED
+- Pending clearance → NOT SETTLED
+- Accepted clearance → SETTLED
+- Rejected clearance → must resolve before SETTLED
+
+---
+
+## Remit Gate
+
+A run cannot be remitted if ANY receipt has:
+
+`ClearanceCase(status = NEEDS_CLEARANCE)`
+
+VOIDED receipts are reconciled during remit audit.
+
+---
+
+## Summary
+
+Clearance exists only to explain a shortage.
+
+- No shortage → no clearance
+- No decision → no goods release
+- No settlement → no submission
+- No manager approval → no commercial liability
+
+Every receipt is resolved before leaving the field.
+
+---
+
+End of Document — CCS v2.7

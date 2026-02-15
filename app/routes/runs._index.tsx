@@ -119,8 +119,8 @@ export default function RunsIndexPage() {
 
     // Manager / Admin / Cashier view – new flow
     if (r.status === "PLANNED") return `/runs/${r.id}/dispatch`;
-    // DISPATCHED: naka-load na, waiting for rider check-in
-    if (r.status === "DISPATCHED") return `/runs/${r.id}/dispatch`;
+    // DISPATCHED: waiting for rider check-in (manager view-only here)
+    if (r.status === "DISPATCHED") return `/runs/${r.id}/summary`;
     // CHECK_IN: tapos na si rider, manager magre-remit/approve/close
     if (r.status === "CHECKED_IN") return `/runs/${r.id}/remit`;
     // CLOSED / CANCELLED: read-only summary

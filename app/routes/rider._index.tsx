@@ -5,6 +5,7 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
+import { EmployeeRole, RiderChargeStatus } from "@prisma/client";
 
 type LoaderData = {
   user: {
@@ -12,8 +13,9 @@ type LoaderData = {
     role: string;
     name: string;
     alias: string | null;
-    email: string;
+    email: string | null;
   };
+  pendingVarianceCount: number;
   hr: {
     nextShiftLabel: string | null;
     paydayLabel: string | null;
@@ -23,7 +25,7 @@ type LoaderData = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Only RIDER can land here (Rider+Seller combo user)
+  // Only EMPLOYEE users can reach here, but we ALSO enforce Employee.role === RIDER below.
   const me = await requireRole(request, ["EMPLOYEE"]);
 
   // Load auth user + linked employee to show real name on header
@@ -36,19 +38,62 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw new Response("User not found", { status: 404 });
   }
 
+  // ✅ Hard gate: must be linked to an Employee row AND must be a RIDER employee.
+  // Prevents STAFF/other EMPLOYEE accounts from opening the Rider console.
   const emp = userRow.employee;
+  if (!emp) {
+    throw new Response("Employee profile not linked", { status: 403 });
+  }
+  if ((emp.role as EmployeeRole) !== "RIDER") {
+    throw new Response("Rider access only", { status: 403 });
+  }
+
   const fullName: string =
     emp && (emp.firstName || emp.lastName)
       ? `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim()
       : userRow.email ?? "";
   const alias: string | null = emp?.alias ?? null;
 
+  // Variances waiting for rider acceptance (only when manager decided CHARGE_RIDER)
+  const pendingVarianceCount = await db.riderRunVariance.count({
+    where: {
+      riderId: emp.id,
+      status: "MANAGER_APPROVED",
+      resolution: "CHARGE_RIDER",
+      riderAcceptedAt: null,
+    },
+  });
+
+  // OPTION B: outstanding rider charges = sum(unpaid balances)
+  // RiderChargeStatus: OPEN | PARTIALLY_SETTLED | SETTLED | WAIVED
+  const openCharges = await db.riderCharge.findMany({
+    where: {
+      riderId: emp.id,
+      status: {
+        in: [RiderChargeStatus.OPEN, RiderChargeStatus.PARTIALLY_SETTLED],
+      },
+    },
+    select: {
+      amount: true,
+      payments: { select: { amount: true } },
+    },
+  });
+  const outstandingCharges = openCharges.reduce((sum, ch) => {
+    const amt = Number(ch.amount ?? 0);
+    const paid = (ch.payments ?? []).reduce(
+      (s: number, p: any) => s + Number(p.amount ?? 0),
+      0
+    );
+    const bal = Math.max(0, amt - paid);
+    return sum + bal;
+  }, 0);
+
   // TODO: Wire these to real tables in the future
   const hr: LoaderData["hr"] = {
     nextShiftLabel: "Tomorrow, 8:00 AM – Asingan Branch", // placeholder
     paydayLabel: "15 & 30 of the month", // placeholder
     absentCountThisMonth: 0, // placeholder
-    outstandingCharges: 0, // placeholder, e.g. 350.0
+    outstandingCharges, // ✅ real computed
   };
 
   return json<LoaderData>({
@@ -57,14 +102,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       role: me.role,
       name: fullName,
       alias,
-      email: userRow.email ?? "",
+      email: userRow.email ?? null,
     },
+    pendingVarianceCount,
     hr,
   });
 }
 
 export default function RiderDashboard() {
-  const { user, hr } = useLoaderData<LoaderData>();
+  const { user, hr, pendingVarianceCount } = useLoaderData<LoaderData>();
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -178,7 +224,28 @@ export default function RiderDashboard() {
                   open run list, then tap <strong>Open</strong> per run
                 </span>
               </Link>
-
+              {/* Pending variance accepts */}
+              <Link
+                to="/rider/variances"
+                className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm hover:bg-slate-100 ${
+                  pendingVarianceCount > 0
+                    ? "border-rose-200 bg-rose-50 font-medium text-rose-800"
+                    : "border-slate-200 bg-slate-50 text-slate-800"
+                }`}
+              >
+                <span>🧾 Variances (Pending Accept)</span>
+                <span
+                  className={`text-[11px] ${
+                    pendingVarianceCount > 0
+                      ? "text-rose-700"
+                      : "text-slate-500"
+                  }`}
+                >
+                  {pendingVarianceCount > 0
+                    ? `${pendingVarianceCount} needs action`
+                    : "no pending"}
+                </span>
+              </Link>
               <div className="mt-1 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                 💸 Paalala: cash remit at final posting ay ginagawa ng{" "}
                 <span className="font-semibold">Store Manager / Cashier</span>.

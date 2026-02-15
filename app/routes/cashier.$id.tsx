@@ -1,10 +1,13 @@
+/* app/routes/cashier.$id.tsx */
+/* WALK-IN SETTLEMENT (PICKUP order) — Cashier page for claimLock + settlePayment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* Patch: taga-sa-bato guard — block cashier settle if any lineTotal is missing (read-only totals). */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
+import { r2, peso } from "~/utils/money";
 import {
   useLoaderData,
   useActionData,
-  useFetcher,
   Form,
   useNavigation,
   useRouteError,
@@ -12,54 +15,141 @@ import {
 } from "@remix-run/react";
 import React, { useMemo } from "react";
 import { allocateReceiptNo } from "~/utils/receipt";
-import { CustomerPicker } from "~/components/CustomerPicker";
-
-import { UnitKind } from "@prisma/client";
-import {
-  applyDiscounts,
-  buildCartFromOrderItems,
-  fetchActiveCustomerRules,
-  computeUnitPriceForCustomer,
-  type Cart,
-  type Rule,
-} from "~/services/pricing";
-
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
+import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
+import { sumAllPayments, EPS } from "~/services/settlementSoT";
 
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
+
+function isMineLock(lockedBy: unknown, meId: string) {
+  const v = String(lockedBy ?? "");
+  if (!v) return false;
+  // ✅ new format
+  if (v === meId) return true;
+  // ✅ legacy format from old queue
+  if (v === `CASHIER-${meId}`) return true;
+  return false;
+}
 
 // 🔒 Make loader output explicit to avoid union/confusion in useLoaderData<>
 type LoaderData = {
   order: any; // (you can narrow later if you like)
   isStale: boolean;
   lockExpiresAt: number | null;
-  activePricingRules: Rule[];
+  lockedByLabel: string | null;
+  canClaim: boolean;
+  meId: string;
 };
 
+type FrozenLine = {
+  id: number;
+  productId?: number | null;
+  name: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number | null;
+  baseUnitPrice?: number | null;
+  discountAmount?: number | null; // per-unit discount, if present
+};
+
+type DiscountRow = {
+  id: number;
+  productId?: number | null;
+  name: string;
+  qty: number;
+  origUnit: number; // base
+  perUnitDisc: number;
+  effUnit: number; // final/frozen unitPrice
+  lineDisc: number;
+  lineFinal: number; // frozen lineTotal
+};
+
+function buildDiscountViewFromLines(linesIn: FrozenLine[]) {
+  const rows: DiscountRow[] = [];
+  let subtotal = 0;
+  let discountTotal = 0;
+  let hasMissingLineTotals = false;
+
+  for (const it of linesIn) {
+    const qty = Number(it.qty ?? 0);
+    const unit = Number(it.unitPrice ?? 0);
+
+    // 🔒 CASHIER RULE: never recompute totals. lineTotal must be frozen.
+    const hasLineTotal = it.lineTotal != null;
+    const lineFinal = hasLineTotal ? Number(it.lineTotal) : 0;
+    if (!hasLineTotal && qty > 0) hasMissingLineTotals = true;
+
+    // IMPORTANT:
+    // Cashier should NEVER "infer" discounts from product SRP/price.
+    // Only trust frozen snapshot fields when present.
+    const base =
+      it.baseUnitPrice != null && Number(it.baseUnitPrice) > 0
+        ? Number(it.baseUnitPrice)
+        : unit; // UI fallback only; not accounting truth.
+
+    const perUnitDisc =
+      it.discountAmount != null ? Math.max(0, Number(it.discountAmount)) : 0;
+
+    const lineDisc = Math.max(0, r2(perUnitDisc * qty));
+
+    subtotal = r2(subtotal + r2(base * qty));
+    discountTotal = r2(discountTotal + r2(lineDisc));
+
+    rows.push({
+      id: Number(it.id),
+      productId: it.productId != null ? Number(it.productId) : null,
+      name: String(it.name ?? ""),
+      qty,
+      origUnit: base,
+      perUnitDisc,
+      effUnit: unit,
+      lineDisc,
+      lineFinal,
+    });
+  }
+
+  return {
+    subtotal: r2(subtotal),
+    discountTotal: r2(discountTotal),
+    rows,
+    hasMissingLineTotals,
+  };
+}
+
+function formatCustomerLabel(c: any) {
+  if (!c) return "No customer";
+  const full =
+    [c.firstName, c.middleName, c.lastName].filter(Boolean).join(" ").trim() ||
+    "";
+  const alias = c.alias ? ` (${c.alias})` : "";
+  const phone = c.phone ? ` • ${c.phone}` : "";
+  return `${full || "Customer"}${alias}${phone}`.trim();
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  await requireOpenShift(request); // 🔒 must have an open shift for money actions
+  const url = new URL(request.url);
+  const me = await requireOpenShift(request, {
+    next: `${url.pathname}${url.search || ""}`,
+  }); // 🔒 must have an open shift for money actions
+
+  // ─────────────────────────────────────────────
+  // 🔒 STRICT MODE: SHIFT WRITABLE GUARD (NO SHIFT = bawal view, LOCKED = bawal view)
+  // - NO SHIFT     → redirect to open shift
+  // - LOCKED SHIFT → redirect shift console (?locked=1)
+  // ─────────────────────────────────────────────
+  await assertActiveShiftWritable({
+    request,
+    next: `${url.pathname}${url.search || ""}`,
+  });
+
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
-  const order = await db.order.findUnique({
-    where: { id },
+  const order = await db.order.findFirst({
+    where: { id, channel: "PICKUP" },
     include: {
-      items: {
-        include: {
-          // Need base prices to infer which unit this line used
-          product: {
-            select: {
-              price: true,
-              srp: true,
-              allowPackSale: true,
-              categoryId: true,
-              brandId: true,
-              sku: true,
-            },
-          },
-        },
-      },
+      items: true,
       payments: true,
       customer: {
         select: {
@@ -74,51 +164,116 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   });
 
-  // Cashier page is PICKUP-only. If this is a DELIVERY order, punt to Dispatch.
-  if (order?.channel === "DELIVERY") {
-    return redirect(`/orders/${id}/dispatch`);
+  if (!order) throw new Response("Not found", { status: 404 });
+
+  // lockedBy is a USER id string (new) or "CASHIER-<id>" (legacy).
+  function extractUserIdFromLock(lockedBy: unknown) {
+    const v = String(lockedBy ?? "").trim();
+    if (!v) return null;
+    if (/^\d+$/.test(v)) return Number(v);
+    if (v.startsWith("CASHIER-")) {
+      const raw = v.slice("CASHIER-".length);
+      if (/^\d+$/.test(raw)) return Number(raw);
+    }
+    return null;
   }
 
-  if (!order) throw new Response("Not found", { status: 404 });
-  const now = Date.now();
-  const isStale = order.lockedAt
-    ? now - order.lockedAt.getTime() > LOCK_TTL_MS
-    : true;
-  const lockExpiresAt = order.lockedAt
+  async function resolveUserLabelFromLock(lockedBy: unknown) {
+    const userId = extractUserIdFromLock(lockedBy);
+    if (!userId) return null;
+    const u = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        employee: { select: { firstName: true, lastName: true, alias: true } },
+      },
+    });
+    if (!u) return null;
+    const emp = u.employee;
+    return (
+      emp?.alias ||
+      [emp?.firstName, emp?.lastName].filter(Boolean).join(" ") ||
+      u.email ||
+      `User#${u.id}`
+    );
+  }
+
+  // 🔒 READ-ONLY LOADER (NO WRITES)
+  // We only *report* lock state here.
+  // Lock claiming must be explicit via POST action to avoid "accidental locks"
+  // ─────────────────────────────────────────────
+  const meId = String(me.userId);
+  const nowMs = Date.now();
+  const lockExpiresAtMs = order.lockedAt
     ? order.lockedAt.getTime() + LOCK_TTL_MS
     : null;
 
-  // ─────────────────────────────────────────────────────────────
-  // Build active, customer-specific pricing rules for preview UI
-  // ─────────────────────────────────────────────────────────────
-  const customerId = order.customerId ?? null;
+  const hasFreshLock =
+    !!order.lockedAt &&
+    !!order.lockedBy &&
+    lockExpiresAtMs != null &&
+    lockExpiresAtMs > nowMs;
 
-  const activePricingRules: Rule[] = await fetchActiveCustomerRules(
-    db,
-    customerId
-  );
+  const isOtherFresh = hasFreshLock && !isMineLock(order.lockedBy, meId);
+
+  const lockedByLabel = order.lockedBy
+    ? await resolveUserLabelFromLock(order.lockedBy)
+    : null;
+
+  // Stale = lock exists but already expired
+  const isStale = !!order.lockedAt && !!order.lockedBy && !hasFreshLock;
+  const lockExpiresAt = hasFreshLock ? lockExpiresAtMs : null;
+
+  // You can claim if: unlocked OR expired OR mine
+  const canClaim = !isOtherFresh;
 
   return json<LoaderData>({
     order,
     isStale,
     lockExpiresAt,
-    activePricingRules,
+    lockedByLabel,
+    canClaim,
+    meId,
   });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
   // Get the logged-in cashier with a verified open shift
-  const me = await requireOpenShift(request);
+
   const id = Number(params.id);
+  if (!Number.isFinite(id)) {
+    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
+  }
+  const url = new URL(request.url);
+  const me = await requireOpenShift(request, {
+    next: `${url.pathname}${url.search || ""}`,
+  });
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
+
+  // NOTE: any action here may write, so shift must be writable when it matters.
+  // ─────────────────────────────────────────────
+  // 🔒 STRICT MODE: NO SHIFT / LOCKED SHIFT = bawal kahit VIEW-ACTIONS dito.
+  // We guard ALL actions (reprint/release/claim/settle) so off-duty cashier cannot interact.
+  // ─────────────────────────────────────────────
+  await assertActiveShiftWritable({
+    request,
+    next: `${url.pathname}${url.search || ""}`,
+  });
 
   if (act === "reprint") {
     await db.order.update({
       where: { id },
       data: { printCount: { increment: 1 }, printedAt: new Date() },
     });
-    return json({ ok: true, didReprint: true });
+    // Centralized print route (handles OR / ACK / CREDIT based on order state)
+    const qs = new URLSearchParams({
+      autoprint: "1",
+      autoback: "1",
+      returnTo: `${url.pathname}${url.search || ""}`,
+    });
+    return redirect(`/orders/${id}/receipt?${qs.toString()}`);
   }
   if (act === "release") {
     await db.order.update({
@@ -128,103 +283,191 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect("/cashier");
   }
 
+  if (act === "claimLock") {
+    // already guarded above (strict)
+
+    const order = await db.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        lockedAt: true,
+        lockedBy: true,
+        channel: true,
+      },
+    });
+    if (!order)
+      return json({ ok: false, error: "Order not found" }, { status: 404 });
+    if (order.channel !== "PICKUP") {
+      return json(
+        { ok: false, error: "This page is for WALK-IN orders only." },
+        { status: 400 },
+      );
+    }
+
+    const meId = String(me.userId);
+    const nowMs = Date.now();
+    const lockExpiresAtMs = order.lockedAt
+      ? order.lockedAt.getTime() + LOCK_TTL_MS
+      : null;
+    const hasFreshLock =
+      !!order.lockedAt &&
+      !!order.lockedBy &&
+      lockExpiresAtMs != null &&
+      lockExpiresAtMs > nowMs;
+
+    if (hasFreshLock && !isMineLock(order.lockedBy, meId)) {
+      return json(
+        {
+          ok: false,
+          error:
+            "This order is currently locked by another cashier. Please wait for the lock to expire or ask them to release it.",
+        },
+        { status: 409 },
+      );
+    }
+
+    await db.order.update({
+      where: { id: order.id },
+      data: { lockedAt: new Date(), lockedBy: meId },
+    });
+
+    return redirect(`${url.pathname}${url.search || ""}`);
+  }
+
   if (act === "settlePayment") {
     const cashGiven = Number(fd.get("cashGiven") || 0);
     const printReceipt = fd.get("printReceipt") === "1";
     const releaseWithBalance = fd.get("releaseWithBalance") === "1";
     const releasedApprovedBy =
       String(fd.get("releaseApprovedBy") || "").trim() || null;
-    const discountApprovedBy =
-      String(fd.get("discountApprovedBy") || "").trim() || null;
-
-    const customerId = Number(fd.get("customerId") || 0) || null;
 
     // ─────────────────────────────────────────────
-    // Resolve active shift reliably for tagging payments
+    // 🔒 SHIFT WRITABLE GUARD (SoT + audit safety)
+    // - NO SHIFT     → redirect to open shift
+    // - LOCKED SHIFT → redirect shift console (?locked=1)
     // ─────────────────────────────────────────────
-    // `requireOpenShift` already guarantees there is an open shift for CASHIER,
-    // but we still resolve the actual row to avoid any stale/missing `shiftId`
-    // on the SessionUser object.
-    const { getActiveShift } = await import("~/utils/auth.server");
-    const activeShift = await getActiveShift(request);
-    const shiftIdForPayment =
-      activeShift?.id ?? (me.role === "CASHIER" ? me.shiftId ?? null : null);
+    // already guarded above (strict), but we still need shiftId for audit tagging
+    const { shiftId: shiftIdForPayment } = await assertActiveShiftWritable({
+      request,
+      next: `${url.pathname}${url.search || ""}`,
+    });
 
-    // Cashier requires an actual payment (> 0). Full-utang is a separate flow.
+    // Cashier requires an actual payment (> 0). Full utang is a separate flow.
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
       return json(
         {
           ok: false,
           error: "Enter cash > 0. For full utang, use “Record as Credit”.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Load order (with items + payments for running balance)
     const order = await db.order.findUnique({
       where: { id },
-      include: { items: true, payments: true },
+      include: {
+        items: true,
+        payments: true,
+      },
     });
     if (!order)
       return json({ ok: false, error: "Order not found" }, { status: 404 });
-    // Cashier is now PICKUP-only: route deliveries to Dispatch flow.
-    if (order.channel === "DELIVERY") {
-      return redirect(`/orders/${id}/dispatch`);
+    // Strict WALK-IN only
+    if (order.channel !== "PICKUP") {
+      return json(
+        { ok: false, error: "This page is for WALK-IN orders only." },
+        { status: 400 },
+      );
     }
     if (order.status !== "UNPAID" && order.status !== "PARTIALLY_PAID") {
       return json(
         { ok: false, error: "Order is already settled/voided" },
-        { status: 400 }
+        { status: 400 },
       );
     }
-    // ✅ declare once, before any usage (rules, pricing, guards)
-    const effectiveCustomerId = customerId ?? order.customerId ?? null;
 
-    const alreadyPaid = (order.payments ?? []).reduce(
-      (s, p) => s + Number(p.amount),
-      0
+    // 🔒 Require lock before settlement (explicit step prevents accidental locks)
+    // If no fresh lock OR not mine, block and ask to "Start settlement".
+    // (Still safe under concurrency because we re-check below.)
+
+    // ─────────────────────────────────────────────
+    // 🔒 SERVER-SIDE LOCK GUARD (no UI-only stale)
+    // Rule:
+    // - If locked by someone else AND lock is still fresh => BLOCK
+    // - If unlocked OR expired OR locked by me => allow and (re)claim lock
+    // ─────────────────────────────────────────────
+    const meId = String(me.userId);
+    const nowMs = Date.now();
+    const lockExpiresAtMs = order.lockedAt
+      ? order.lockedAt.getTime() + LOCK_TTL_MS
+      : null;
+    const hasFreshLock =
+      !!order.lockedAt &&
+      !!order.lockedBy &&
+      lockExpiresAtMs != null &&
+      lockExpiresAtMs > nowMs;
+
+    if (!hasFreshLock || !isMineLock(order.lockedBy, meId)) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Please click “Start settlement” first to claim the lock before posting a payment.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // NOTE: the check above already covers "fresh but not mine".
+    // Keep only one lock guard to avoid confusion and unreachable branches.
+
+    // (no re-claim here; lock is claimed explicitly via claimLock)
+
+    // ✅ HARD GUARD (taga-sa-bato):
+    // Cashier settlement is READ-ONLY on totals.
+    // If any lineTotal is missing, cashier must NOT proceed (no recompute, no infer).
+    const hasFrozenLineTotals =
+      (order.items ?? []).length > 0 &&
+      (order.items as any[]).every((it) => it?.lineTotal != null);
+
+    if (!hasFrozenLineTotals) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Totals are not frozen yet (missing line totals). Please finalize/freeze this order first before cashier settlement.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // ✅ CUSTOMER IS READ-ONLY AT CASHIER (SoT).
+    const effectiveCustomerId = order.customerId ?? null;
+
+    // ✅ WALK-IN settlement truth: ALL payments count against remaining balance
+    const alreadyPaid = sumAllPayments(order.payments);
+
+    // ✅ CASHIER RULE: use ONLY frozen line totals for payable total.
+    // (Cashier is read-only on totals; do not recompute.)
+    const total = r2(
+      (order.items ?? []).reduce(
+        (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+        0,
+      ),
     );
 
-    // ─────────────────────────────────────────────────────────────
-    // Compute EFFECTIVE total using active customer pricing rules
-    // ─────────────────────────────────────────────────────────────
-    // We need product base prices to infer unitKind → fetch BEFORE building the cart.
     const productIds = Array.from(new Set(order.items.map((i) => i.productId)));
     const products = await db.product.findMany({
       where: { id: { in: productIds } },
       select: {
         id: true,
-        allowPackSale: true,
-        price: true,
-        srp: true,
-        stock: true, // packs (used later for deduction)
-        packingStock: true, // retail units (used later for deduction)
+        stock: true, // packs (pre-check only; final enforcement happens in tx)
+        packingStock: true, // retail units (pre-check only; final enforcement happens in tx)
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    // Build rules (centralized) and Cart (centralized)
-    const rules: Rule[] = await fetchActiveCustomerRules(
-      db,
-      effectiveCustomerId
-    );
-    const cart: Cart = buildCartFromOrderItems({
-      items: order.items.map((it: any) => ({
-        ...it,
-        product: byId.get(it.productId)
-          ? {
-              price: byId.get(it.productId)!.price,
-              srp: byId.get(it.productId)!.srp,
-              allowPackSale: byId.get(it.productId)!.allowPackSale,
-            }
-          : { price: 0, srp: 0, allowPackSale: true },
-      })),
-      rules,
-    });
-    const pricing = applyDiscounts(cart, rules, { id: effectiveCustomerId });
-
-    const total = pricing.total ?? Number(order.totalBeforeDiscount);
     const dueBefore = Math.max(0, total - alreadyPaid);
     const appliedPayment = Math.min(Math.max(0, cashGiven), dueBefore);
     const change = Math.max(0, cashGiven - appliedPayment);
@@ -236,9 +479,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json(
         {
           ok: false,
-          error: "Select or create a customer before allowing utang.",
+          error:
+            "This order has a remaining balance but has no customer attached. Customer is read-only at cashier — please attach a customer in the order/PAD flow first.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // If releasing goods with balance, require manager approval note
@@ -248,73 +492,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
           ok: false,
           error: "Manager PIN/Name is required to release with balance.",
         },
-        { status: 400 }
+        { status: 400 },
       );
-    }
-
-    // byId/products already fetched above; reuse here
-    // 🔒 Final price guard: ensure no item is cheaper than allowed price for this customer
-    // (effectiveCustomerId declared once above)
-    const priceViolations: Array<{
-      itemId: number;
-      name: string;
-      allowed: number;
-      actual: number;
-    }> = [];
-    for (const it of order.items) {
-      const p = byId.get(it.productId);
-      if (!p) continue;
-      // infer unit kind from snapshot vs product base
-      const approx = (a: number, b: number, eps = 0.01) =>
-        Math.abs(a - b) <= eps;
-      const isRetail =
-        p.allowPackSale &&
-        Number(p.price ?? 0) > 0 &&
-        approx(Number(it.unitPrice), Number(p.price ?? 0));
-      const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
-      const base =
-        unitKind === UnitKind.RETAIL
-          ? Number(p.price ?? 0)
-          : Number(p.srp ?? 0);
-      const allowed = await computeUnitPriceForCustomer(db, {
-        customerId: effectiveCustomerId,
-        productId: p.id,
-        unitKind,
-        baseUnitPrice: base,
-      });
-      const actual = Number(it.unitPrice);
-      // if cashier somehow priced below allowed (e.g., older item or UI hack), block
-      if (actual + 1e-6 < allowed) {
-        priceViolations.push({ itemId: it.id, name: it.name, allowed, actual });
-      }
-    }
-    if (priceViolations.length) {
-      // allow only with manager override
-      if (!discountApprovedBy) {
-        const details = priceViolations
-          .map(
-            (v) =>
-              `• ${v.name}: allowed ₱${v.allowed.toFixed(
-                2
-              )}, actual ₱${v.actual.toFixed(2)}`
-          )
-          .join("\n");
-        return json(
-          {
-            ok: false,
-            error:
-              "Price below allowed. Manager approval required.\n" + details,
-          },
-          { status: 400 }
-        );
-      }
     }
 
     // Build deltas (retail vs pack) using robust price inference
     const errors: Array<{ id: number; reason: string }> = [];
     const deltas = new Map<number, { pack: number; retail: number }>();
-    const approxEqual = (a: number, b: number, eps = 0.25) =>
-      Math.abs(a - b) <= eps; // allow a bit more slack due to rounding
 
     for (const it of order.items) {
       const p = byId.get(it.productId);
@@ -322,74 +506,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
         errors.push({ id: it.productId, reason: "Product missing" });
         continue;
       }
-      const unitPrice = Number(it.unitPrice);
       const qty = Number(it.qty);
-      const baseRetail = Number(p.price ?? 0);
-      const basePack = Number(p.srp ?? 0);
+
       const packStock = Number(p.stock ?? 0);
       const retailStock = Number(p.packingStock ?? 0);
 
-      // 🔎 Old logic compared only to BASE prices → fails when customer discounts change unitPrice.
-      // New logic: compare against the *allowed* (customer-adjusted) unit prices for both unit kinds,
-      // then pick the closer one.
-      const [allowedRetail, allowedPack] = await Promise.all([
-        baseRetail > 0
-          ? computeUnitPriceForCustomer(db as any, {
-              customerId: effectiveCustomerId,
-              productId: p.id,
-              unitKind: UnitKind.RETAIL,
-              baseUnitPrice: baseRetail,
-            })
-          : Promise.resolve(NaN),
-        basePack > 0
-          ? computeUnitPriceForCustomer(db as any, {
-              customerId: effectiveCustomerId,
-              productId: p.id,
-              unitKind: UnitKind.PACK,
-              baseUnitPrice: basePack,
-            })
-          : Promise.resolve(NaN),
-      ]);
-
-      // If both are NaN/0, fall back to previous heuristic
-      let inferred: UnitKind | null = null;
-      if (Number.isFinite(allowedRetail) || Number.isFinite(allowedPack)) {
-        const dRetail = Number.isFinite(allowedRetail)
-          ? Math.abs(unitPrice - Number(allowedRetail))
-          : Number.POSITIVE_INFINITY;
-        const dPack = Number.isFinite(allowedPack)
-          ? Math.abs(unitPrice - Number(allowedPack))
-          : Number.POSITIVE_INFINITY;
-        if (Math.min(dRetail, dPack) === Number.POSITIVE_INFINITY) {
-          inferred = null;
-        } else if (dRetail <= dPack && (p.allowPackSale || true)) {
-          inferred = UnitKind.RETAIL;
-        } else {
-          inferred = UnitKind.PACK;
-        }
-      } else {
-        // legacy fallback to base comparison (kept as safety net)
-        if (
-          p.allowPackSale &&
-          baseRetail > 0 &&
-          approxEqual(unitPrice, baseRetail)
-        ) {
-          inferred = UnitKind.RETAIL;
-        } else if (basePack > 0 && approxEqual(unitPrice, basePack)) {
-          inferred = UnitKind.PACK;
-        }
-      }
-
-      if (!inferred) {
-        errors.push({
-          id: it.productId,
-          reason:
-            "Cannot infer retail/pack from price (check customer rule or base prices).",
-        });
-        continue;
-      }
-
-      if (inferred === UnitKind.RETAIL) {
+      // 🔒 Unit source of truth: OrderItem.unitKind (frozen)
+      const unitKind = String((it as any).unitKind || "PACK");
+      if (unitKind === "RETAIL") {
         if (qty > retailStock) {
           errors.push({
             id: it.productId,
@@ -414,12 +538,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
     }
 
-    // Deduct stock here ONLY for PICKUP orders.
-    // For DELIVERY, inventory is deducted at DISPATCH (see dispatch action).
-    // Channel is guaranteed NOT 'DELIVERY' here (we redirected above),
-    // so deduction follows pickup rules.
+    // WALK-IN/PICKUP: deduct stock only when fully paid OR released with balance.
     const willDeductNow =
-      remaining <= 1e-6 || (releaseWithBalance && !order.releasedAt);
+      remaining <= EPS || (releaseWithBalance && !order.releasedAt);
 
     if (errors.length && willDeductNow) {
       return json({ ok: false, errors }, { status: 400 });
@@ -429,14 +550,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     // Perform everything atomically
     await db.$transaction(async (tx) => {
-      // 0) Attach/keep customer if provided
-      if (customerId) {
-        await tx.order.update({
-          where: { id: order.id },
-          data: { customerId },
-        });
-      }
-
       // 1) Record payment actually applied against the balance
       if (appliedPayment > 0) {
         const p = await tx.payment.create({
@@ -446,11 +559,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
             amount: appliedPayment,
             // 🔎 Audit tags for shift tracing:
             cashierId: me.userId, // who processed
-            // Always tag to the resolved active shift, if any
-            ...(shiftIdForPayment ? { shiftId: shiftIdForPayment } : {}),
+            // ✅ Always tag to an ACTIVE + WRITABLE shift (guarded above)
+            shiftId: shiftIdForPayment,
             // 🧾 What happened at the till:
-            tendered: cashGiven, // handed by customer
-            change: change, // given back
+            tendered: cashGiven.toFixed(2),
+            change: change.toFixed(2),
           },
           select: { id: true },
         });
@@ -460,56 +573,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // 2) Deduct inventory only when needed (see rule above)
       if (willDeductNow) {
         for (const [pid, c] of deltas.entries()) {
-          const p = byId.get(pid)!;
-          await tx.product.update({
-            where: { id: pid },
+          // ✅ Atomic decrement to avoid stale overwrite
+          // ✅ Enforce "gte" using updateMany so we can detect insufficient stock under concurrency
+          const res = await tx.product.updateMany({
+            where: {
+              id: pid,
+              stock: { gte: c.pack },
+              packingStock: { gte: c.retail },
+            },
             data: {
-              stock: Number(p.stock ?? 0) - c.pack,
-              packingStock: Number(p.packingStock ?? 0) - c.retail,
+              stock: { decrement: c.pack },
+              packingStock: { decrement: c.retail },
             },
           });
+          if (res.count !== 1) {
+            // Either missing product or not enough stock (race-safe)
+            throw new Error(
+              `Insufficient stock while deducting (product #${pid}). Please refresh and retry.`,
+            );
+          }
         }
       }
 
-      // 2.a) Price audit per item (allowed unit price + policy + optional manager override)
-      for (const it of order.items) {
-        const p = byId.get(it.productId);
-        if (!p) continue;
-        const approx = (a: number, b: number, eps = 0.01) =>
-          Math.abs(a - b) <= eps;
-        const isRetail =
-          p.allowPackSale &&
-          Number(p.price ?? 0) > 0 &&
-          approx(Number(it.unitPrice), Number(p.price ?? 0));
-        const unitKind = isRetail ? UnitKind.RETAIL : UnitKind.PACK;
-        const baseUnitPrice =
-          unitKind === UnitKind.RETAIL
-            ? Number(p.price ?? 0)
-            : Number(p.srp ?? 0);
-
-        const allowed = await computeUnitPriceForCustomer(tx as any, {
-          customerId: effectiveCustomerId,
-          productId: p.id,
-          unitKind,
-          baseUnitPrice,
-        });
-        const pricePolicy =
-          Math.abs(allowed - baseUnitPrice) <= 0.009 ? "BASE" : "PER_ITEM";
-
-        await tx.orderItem.update({
-          where: { id: it.id },
-          data: {
-            allowedUnitPrice: allowed,
-            pricePolicy,
-            ...(Number(it.unitPrice) + 1e-6 < allowed && discountApprovedBy
-              ? { discountApprovedBy }
-              : {}),
-          },
-        });
-      }
-
       // 3) Update order status & fields
-      if (remaining <= 1e-6) {
+      if (remaining <= EPS) {
         // Fully paid
         const receiptNo = await allocateReceiptNo(tx);
         await tx.order.update({
@@ -520,8 +607,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
             receiptNo,
             lockedAt: null,
             lockedBy: null,
-            // if cashier picked a customer anyway, persist it
-            ...(customerId ? { customerId } : {}),
             // If this full payment also did a release now, persist release metadata.
             ...(releaseWithBalance && !order.releasedAt
               ? {
@@ -539,7 +624,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
           data: {
             status: "PARTIALLY_PAID",
             isOnCredit: true,
-            ...(customerId ? { customerId } : {}),
             lockedAt: null,
             lockedBy: null,
             ...(releaseWithBalance && !order.releasedAt
@@ -555,27 +639,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
 
     // Navigate
-    if (remaining <= 1e-6 && printReceipt) {
-      // Official Receipt for fully-paid — include tendered + change
+    if (printReceipt) {
+      // Centralized print route:
+      // - Fully paid (PAID + receiptNo) => OFFICIAL RECEIPT
+      // - Partial payment (PARTIALLY_PAID / isOnCredit) => ACK mode
+      // - Full credit (no payment) is handled by /orders/:id/credit flow, not here
       const qs = new URLSearchParams({
         autoprint: "1",
         autoback: "1",
-        cash: cashGiven.toFixed(2),
-        change: Math.max(0, cashGiven - appliedPayment).toFixed(2),
+        returnTo: "/cashier",
       });
+      if (createdPaymentId) qs.set("pid", String(createdPaymentId));
+      // Always pass what happened at the till (customer-facing)
+      qs.set("cash", cashGiven.toFixed(2));
+      qs.set("change", Math.max(0, cashGiven - appliedPayment).toFixed(2));
       return redirect(`/orders/${id}/receipt?${qs.toString()}`);
-    }
-
-    // Partial payment → Acknowledgment
-    if (remaining > 0 && printReceipt && createdPaymentId) {
-      const qs = new URLSearchParams({
-        autoprint: "1",
-        autoback: "1",
-        pid: String(createdPaymentId),
-      });
-      if (cashGiven > 0) qs.set("tendered", cashGiven.toFixed(2));
-      if (change > 0) qs.set("change", change.toFixed(2));
-      return redirect(`/orders/${id}/ack?${qs.toString()}`);
     }
 
     // Otherwise just go back to queue (ensures we don't fall through)
@@ -586,24 +664,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function CashierOrder() {
-  const { order, isStale, lockExpiresAt, activePricingRules } =
+  const { order, isStale, lockExpiresAt, lockedByLabel, canClaim, meId } =
     useLoaderData<LoaderData>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like order-pad toggle
   // Cash input + change preview
   const [cashGiven, setCashGiven] = React.useState("");
-  const [customer, setCustomer] = React.useState<{
-    id: number;
-    firstName: string;
-    middleName?: string | null;
-    lastName: string;
-    alias?: string | null;
-    phone?: string | null;
-  } | null>(order.customer ?? null);
 
   const [remaining, setRemaining] = React.useState(
-    lockExpiresAt ? lockExpiresAt - Date.now() : 0
+    lockExpiresAt ? lockExpiresAt - Date.now() : 0,
   );
 
   // ...inside CashierOrder component (top of render state)
@@ -621,91 +691,55 @@ export default function CashierOrder() {
     return () => clearInterval(id);
   }, [lockExpiresAt]);
 
-  const peso = (n: number) =>
-    new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(n);
-
-  // ---------- Live customer-based rules ----------
-  const fetcher = useFetcher<{ rules: Rule[] }>();
-  const [clientRules, setClientRules] = React.useState<Rule[]>(
-    Array.isArray(activePricingRules) ? (activePricingRules as Rule[]) : []
-  );
-  const lastCidRef = React.useRef<number | null>(null);
-
-  // When cashier picks a different customer, fetch that customer’s rules
-  React.useEffect(() => {
-    const cid = customer?.id ?? null;
-    if (!cid) {
-      setClientRules([]);
-      lastCidRef.current = null;
-      return;
-    }
-    if (lastCidRef.current === cid) return; // avoid duplicate loads
-    lastCidRef.current = cid;
-    fetcher.load(`/api/customer-pricing?customerId=${cid}`);
-  }, [customer?.id, fetcher]);
-  // Apply fetched rules to preview once available
-  React.useEffect(() => {
-    if (fetcher.data?.rules) {
-      setClientRules(fetcher.data.rules);
-    }
-    // include `fetcher` to avoid missing-deps warning
-  }, [fetcher.data]);
-
-  // Keep initial server-provided rules if there’s an order.customer but no clientRules yet
-  React.useEffect(() => {
-    if (!customer?.id && activePricingRules?.length) {
-      setClientRules(activePricingRules);
-    }
-  }, [customer?.id, activePricingRules]);
-
-  // ---------- Discount engine (read-only preview) ----------
-  // 1) Active rules — declare BEFORE cart so cart can consult rules
-  const rules = useMemo<Rule[]>(
-    () => (Array.isArray(clientRules) ? clientRules.filter(Boolean) : []),
-    [clientRules]
-  );
-
-  // 2) Build a Cart from current order items
-  const cart = useMemo<Cart>(
-    () =>
-      buildCartFromOrderItems({
-        items: order.items as any,
-        rules,
-      }),
-    [order.items, rules]
-  );
-  // 3) Customer context (minimal for now)
-  // Use the live-selected customer first; fall back to the order’s saved customer.
-  const ctx = useMemo<{ id: number | null }>(
-    () => ({
-      id: customer?.id ?? order.customer?.id ?? null,
-    }),
-    [customer?.id, order.customer?.id]
-  );
-
-  // 4) Compute
-  const pricing = useMemo(
-    () => applyDiscounts(cart, rules, ctx),
-    [cart, rules, ctx]
-  );
-
   // ---------------------------------------------------------
 
+  // Build DiscountView (like delivery-remit) from frozen OrderItem fields
+  const discountView = useMemo(() => {
+    const lines: FrozenLine[] = ((order.items ?? []) as any[]).map((it) => ({
+      id: Number(it.id),
+      productId: it.productId != null ? Number(it.productId) : null,
+      name: String(it.name ?? ""),
+      qty: Number(it.qty ?? 0),
+      unitPrice: Number(it.unitPrice ?? 0),
+      lineTotal: it.lineTotal != null ? Number(it.lineTotal) : null,
+      // Keep base only if explicitly stored (avoid fake huge discounts).
+      baseUnitPrice:
+        it.baseUnitPrice != null && Number(it.baseUnitPrice) > 0
+          ? Number(it.baseUnitPrice)
+          : null,
+      discountAmount:
+        it.discountAmount != null ? Number(it.discountAmount) : null,
+    }));
+    return buildDiscountViewFromLines(lines);
+  }, [order.items]);
+
+  // ✅ YOU MISSED THIS LINE (fixes "Cannot find name 'rows'")
+  const rows = (discountView.rows ?? []) as DiscountRow[];
+
+  const missingLineTotals = Boolean(
+    (discountView as any)?.hasMissingLineTotals,
+  );
+
   // 🔢 Use discounted total for payment figures (UI)
-  const alreadyPaid =
-    order.payments?.reduce((s: number, p: any) => s + Number(p.amount), 0) || 0;
+  // ✅ WALK-IN settlement truth: ALL payments count against remaining balance
+  const alreadyPaid = sumAllPayments(order.payments);
   const entered = Number(cashGiven) || 0;
-  const effectiveTotal = pricing.total ?? Number(order.totalBeforeDiscount);
+  // ✅ “taga-sa-bato” alignment:
+  // UI payment math should also be based on frozen line totals (same as action)
+  const effectiveTotal = r2(
+    (order.items ?? []).reduce(
+      (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+      0,
+    ),
+  );
   const dueBefore = Math.max(0, effectiveTotal - alreadyPaid);
   const changePreview = entered > 0 ? Math.max(0, entered - dueBefore) : 0;
   const balanceAfterThisPayment = Math.max(
     0,
-    effectiveTotal - alreadyPaid - entered
+    effectiveTotal - alreadyPaid - entered,
   );
   const willBePartial = balanceAfterThisPayment > 0;
+  const hasCustomer = Boolean(order.customerId);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -729,7 +763,9 @@ export default function CashierOrder() {
                   }`}
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                  {order.lockedBy ? `Locked by ${order.lockedBy}` : "Unlocked"}
+                  {order.lockedBy
+                    ? `Locked by ${lockedByLabel ?? order.lockedBy}`
+                    : "Unlocked"}
                   {!!order.lockedAt && isStale && (
                     <span className="ml-1 opacity-70">• stale</span>
                   )}
@@ -740,11 +776,11 @@ export default function CashierOrder() {
                     Lock expires in{" "}
                     <span className="font-mono tabular-nums">
                       {String(
-                        Math.max(0, Math.floor(remaining / 60000))
+                        Math.max(0, Math.floor(remaining / 60000)),
                       ).padStart(2, "0")}
                       :
                       {String(
-                        Math.max(0, Math.floor((remaining % 60000) / 1000))
+                        Math.max(0, Math.floor((remaining % 60000) / 1000)),
                       ).padStart(2, "0")}
                     </span>
                   </span>
@@ -753,6 +789,20 @@ export default function CashierOrder() {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              <Form method="post">
+                <input type="hidden" name="_action" value="claimLock" />
+                <button
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-50"
+                  disabled={!canClaim || nav.state !== "idle"}
+                  title={
+                    !canClaim
+                      ? "Locked by another cashier"
+                      : "Claim lock to start settlement"
+                  }
+                >
+                  Start settlement
+                </button>
+              </Form>
               <Form method="post">
                 <input type="hidden" name="_action" value="reprint" />
                 <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
@@ -771,162 +821,143 @@ export default function CashierOrder() {
       </div>
 
       <div className="mx-auto max-w-4xl px-5 py-6">
+        {missingLineTotals ? (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Missing frozen line totals on one or more items. Cashier settlement
+            is read-only and cannot recompute totals — please finalize/freeze
+            the order first.
+          </div>
+        ) : null}
         {/* Content grid */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Left: items */}
           <section className="lg:col-span-2">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <h2 className="text-sm font-medium tracking-wide text-slate-700">
-                  Items
-                </h2>
-                <span className="text-xs text-slate-500">
-                  {order.items.length} item(s)
-                </span>
+                <div>
+                  <h2 className="text-sm font-medium tracking-wide text-slate-700">
+                    Items
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Freeze-first view: base → frozen unit → line totals.
+                  </p>
+                </div>
+                <div className="text-right text-xs text-slate-600">
+                  <div>
+                    Subtotal:{" "}
+                    <span className="font-semibold">
+                      {peso(discountView.subtotal)}
+                    </span>
+                  </div>
+                  <div>
+                    Discounts:{" "}
+                    <span className="font-semibold text-rose-600">
+                      −{peso(discountView.discountTotal)}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="divide-y divide-slate-100">
-                {(order.items ?? []).map((it: any) => {
-                  const adj = pricing.adjustedItems.find(
-                    (ai) => ai.id === it.id
-                  );
-                  const unitOrig = Number(it.unitPrice);
-                  const effUnit = adj?.effectiveUnitPrice ?? unitOrig;
-                  const discounted = Number(effUnit) !== unitOrig;
-                  const qty = Number(it.qty);
-                  const originalLine = Number(it.lineTotal);
-                  const effLine = Math.max(0, qty * effUnit);
-                  const saveLine = Math.max(0, originalLine - effLine);
-                  // Decide badge kind: show % if a percent rule matches; show ₱ if override rule matches.
-                  // We infer match using the centralized rules + selector.
-                  let showPercent = false;
-                  let showOverridePeso = false;
-                  if (discounted) {
-                    const matching = rules.filter((r) => {
-                      const pidOk =
-                        r.selector?.productIds?.includes(it.productId) ?? false;
-                      // If unitKind was inferred in cart, prefer that; else allow wildcard.
-                      const kindOk =
-                        !r.selector?.unitKind ||
-                        r.selector.unitKind === (it.unitKind as any);
-                      return pidOk && kindOk && r.enabled !== false;
-                    });
-                    showPercent = matching.some(
-                      (r) => r.kind === "PERCENT_OFF"
-                    );
-                    showOverridePeso = matching.some(
-                      (r) => r.kind === "PRICE_OVERRIDE"
-                    );
-                  }
-                  const unitSavePct =
-                    discounted && unitOrig > 0
-                      ? Math.max(0, Math.round((1 - effUnit / unitOrig) * 100))
-                      : 0;
-                  return (
-                    <div key={it.id} className="px-4 py-3 hover:bg-slate-50/60">
-                      <div className="flex items-start justify-between gap-3">
-                        {/* Left: name + qty x price */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="truncate text-sm font-medium text-slate-900">
-                              {it.name}
-                            </span>
-                            {discounted &&
-                              (showPercent || showOverridePeso) && (
-                                <span
-                                  className="flex-none text-[10px] rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-emerald-200"
-                                  title={
-                                    showOverridePeso
-                                      ? `₱${(unitOrig - effUnit).toFixed(
-                                          2
-                                        )} off per unit`
-                                      : `~${unitSavePct}% off per unit`
-                                  }
-                                >
-                                  {showOverridePeso
-                                    ? `−${peso(unitOrig - effUnit)}`
-                                    : `−${unitSavePct}%`}
-                                </span>
-                              )}
+                {rows.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-slate-500">
+                    No items found.
+                  </div>
+                ) : (
+                  rows.map((r) => {
+                    const hasDisc = Number(r.perUnitDisc || 0) > 0.009;
+                    return (
+                      <div
+                        key={r.id}
+                        className="px-4 py-3 hover:bg-slate-50/60"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="truncate text-sm font-medium text-slate-900">
+                                {r.name}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-slate-600">
+                              Qty{" "}
+                              <span className="font-mono font-semibold text-slate-800">
+                                {r.qty}
+                              </span>
+                            </div>
                           </div>
-                          {/* Per-unit: show ORIGINAL first, then discounted */}
-                          <div className="mt-0.5 text-xs text-slate-600">
-                            {qty} ×{" "}
-                            {discounted ? (
-                              <>
-                                <s className="text-slate-400">
-                                  {peso(unitOrig)}
-                                </s>{" "}
-                                <span aria-hidden>→</span>{" "}
-                                <strong className="text-slate-900">
-                                  {peso(effUnit)}
-                                </strong>
-                              </>
-                            ) : (
-                              <>{peso(unitOrig)}</>
-                            )}
+
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-slate-900 font-mono">
+                              {peso(r.lineFinal)}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {r.qty} × {peso(r.effUnit)}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Right: line total + savings */}
-                        <div className="text-right">
-                          {discounted ? (
-                            <>
-                              {/* Line totals: ORIGINAL first (struck), then discounted */}
-                              <div className="text-sm text-slate-400 line-through">
-                                {peso(originalLine)}
-                              </div>
-                              <div className="text-sm font-semibold text-slate-900">
-                                {peso(effLine)}
-                              </div>
-                              {saveLine > 0 && (
-                                <div className="text-[11px] text-rose-600">
-                                  Saved −{peso(saveLine)}
-                                </div>
-                              )}
-                            </>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                          <span>
+                            Base{" "}
+                            <span className="font-mono font-semibold">
+                              {peso(r.origUnit)}
+                            </span>
+                          </span>
+
+                          {hasDisc ? (
+                            <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                              Disc −
+                              <span className="ml-1 font-mono font-semibold">
+                                {peso(r.perUnitDisc)}
+                              </span>
+                            </span>
                           ) : (
-                            <div className="text-sm font-semibold text-slate-900">
-                              {peso(originalLine)}
-                            </div>
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
+                              No discount
+                            </span>
                           )}
+
+                          <span>
+                            Final unit{" "}
+                            <span className="font-mono font-semibold text-slate-800">
+                              {peso(r.effUnit)}
+                            </span>
+                          </span>
+
+                          {hasDisc ? (
+                            <span className="text-slate-500">
+                              Line disc{" "}
+                              <span className="font-mono font-semibold text-rose-700">
+                                −{peso(r.lineDisc)}
+                              </span>
+                            </span>
+                          ) : null}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
 
               {/* Totals panel */}
               <div className="mt-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3 space-y-1">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Subtotal (items)</span>
+                  <span className="text-slate-600">Subtotal</span>
                   <span className="font-medium text-slate-900">
-                    {peso(pricing.subtotal)}
+                    {peso(discountView.subtotal)}
                   </span>
                 </div>
-                {pricing.discounts.map((d) => (
-                  <div
-                    key={d.ruleId}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span className="text-rose-700">Less: {d.name}</span>
-                    <span className="font-medium text-rose-700">
-                      −{peso(d.amount)}
-                    </span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">
-                    Total (before discounts)
-                  </span>
-                  <span className="font-medium text-slate-700">
-                    {peso(Number(order.totalBeforeDiscount))}
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-rose-700">Discounts</span>
+                  <span className="font-medium text-rose-700">
+                    −{peso(discountView.discountTotal)}
                   </span>
                 </div>
+
                 <div className="flex items-center justify-between text-sm font-semibold text-indigo-700">
-                  <span>Total after discounts (preview)</span>
-                  <span>{peso(pricing.total)}</span>
+                  <span>Total payable (frozen)</span>
+                  <span>{peso(effectiveTotal)}</span>
                 </div>
               </div>
             </div>
@@ -940,13 +971,22 @@ export default function CashierOrder() {
                 <h3 className="text-sm font-medium tracking-wide text-slate-800">
                   Payment
                 </h3>
-                <a
-                  href={`/orders/${order.id}/credit`}
-                  className="text-xs text-indigo-600 hover:underline"
-                  title="Record this as full utang / credit without taking payment"
-                >
-                  Record as Credit
-                </a>
+                {hasCustomer ? (
+                  <a
+                    href={`/orders/${order.id}/credit?returnTo=/cashier/${order.id}`}
+                    className="text-xs text-indigo-600 hover:underline"
+                    title="Record this as full utang / credit without taking payment"
+                  >
+                    Record as Credit
+                  </a>
+                ) : (
+                  <span
+                    className="text-xs text-slate-400"
+                    title="Attach a customer first to allow utang/credit."
+                  >
+                    Record as Credit
+                  </span>
+                )}
               </div>
 
               {/* Notices */}
@@ -978,12 +1018,6 @@ export default function CashierOrder() {
                 className="px-4 pb-4 mt-3 space-y-4"
               >
                 <input type="hidden" name="_action" value="settlePayment" />
-                <input
-                  type="hidden"
-                  name="customerId"
-                  value={customer?.id ?? ""}
-                />
-
                 {/* Totals strip */}
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1008,22 +1042,21 @@ export default function CashierOrder() {
                   </div>
                 </div>
 
-                {/* Customer (required if partial) */}
+                {/* Customer (READ-ONLY at cashier) */}
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">
                     Customer
                   </label>
-                  <CustomerPicker
-                    key={`cust-${order.id}`}
-                    value={customer}
-                    onChange={setCustomer}
-                    placeholder="Search name / alias / phone…"
-                  />
-                  {willBePartial && !customer && (
-                    <div className="mt-1 text-xs text-red-700">
-                      Required for utang / partial payments.
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                    {formatCustomerLabel((order as any).customer)}
+                  </div>
+                  {willBePartial && !hasCustomer ? (
+                    <div className="mt-1 text-xs text-amber-800">
+                      Balance will remain after this payment, but this order has
+                      no customer attached. Customer is read-only at cashier —
+                      attach a customer in the order/PAD flow first.
                     </div>
-                  )}
+                  ) : null}{" "}
                 </div>
 
                 {/* Cash input + print toggle */}
@@ -1108,15 +1141,6 @@ export default function CashierOrder() {
                         placeholder="e.g. 1234 or MGR-ANA"
                       />
                     </label>
-                    <label className="block text-xs text-slate-600">
-                      Manager PIN/Name (required if price less than allowed)
-                      <input
-                        name="discountApprovedBy"
-                        type="text"
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-                        placeholder="e.g. MGR-ANA"
-                      />
-                    </label>
                   </div>
                 </details>
 
@@ -1127,11 +1151,16 @@ export default function CashierOrder() {
                   disabled={
                     isStale ||
                     nav.state !== "idle" ||
-                    (willBePartial && !customer)
+                    (willBePartial && !hasCustomer) ||
+                    missingLineTotals ||
+                    !order.lockedBy || // must have lock
+                    !isMineLock(order.lockedBy, meId) // must be MY lock
                   }
                   title={
                     isStale
                       ? "Lock is stale; re-open from queue"
+                      : missingLineTotals
+                      ? "Totals not frozen yet"
                       : willBePartial
                       ? "Record partial payment"
                       : "Submit payment"
@@ -1159,11 +1188,18 @@ export default function CashierOrder() {
             form="settle-form"
             className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             disabled={
-              isStale || nav.state !== "idle" || (willBePartial && !customer)
+              isStale ||
+              nav.state !== "idle" ||
+              (willBePartial && !hasCustomer) ||
+              missingLineTotals ||
+              !order.lockedBy ||
+              !isMineLock(order.lockedBy, meId)
             }
             title={
               isStale
                 ? "Lock is stale; re-open from queue"
+                : missingLineTotals
+                ? "Totals not frozen yet"
                 : willBePartial
                 ? "Record partial payment"
                 : "Mark as PAID"

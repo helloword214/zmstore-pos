@@ -1,9 +1,14 @@
+/* app/routes/store._index.tsx */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData, Form } from "@remix-run/react";
+import { Form, Link, useLoaderData } from "@remix-run/react";
+
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
+import { r2, toNum, peso } from "~/utils/money";
+
+const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 
 type LoaderData = {
   me: {
@@ -13,51 +18,245 @@ type LoaderData = {
     alias: string | null;
     email: string;
   };
-  stats: {
-    activeProducts: number;
-    lowStockProducts: number;
-    openRuns: number;
+
+  // What happens often (big cards)
+  dispatch: {
+    forDispatchOrders: number; // DELIVERY orders not yet dispatched
+    stagedOrders: number; // staged but not dispatched (optional signal)
+  };
+  runs: {
+    planned: number;
+    dispatched: number;
+    checkedIn: number;
+    needsManagerReview: number; // CHECKED_IN (manager lane)
+  };
+
+  // Cash position (manager)
+  cash: {
+    openShifts: number;
+    expectedDrawerTotal: number; // sum expected cash across open shifts
+    cashSalesToday: number; // sum cash payments today (all shifts)
+    drawerTxnsToday: number; // sum abs(txn amounts) today (all types)
+    openShiftVariances: number; // shift variances OPEN
+  };
+
+  // Exceptions (small cards)
+  exceptions: {
+    riderVariancesOpen: number; // OPEN or MANAGER_APPROVED
+    cashierShiftVariancesOpen: number; // OPEN
+    payrollRiderAR: number; // tagged charges
+    payrollCashierAR: number; // tagged charges
+    clearancePending: number; // Phase 1: CHECKED_IN receipts w/ credit signal
   };
 };
 
+function MiniBadge({ n }: { n: number }) {
+  if (!n || n <= 0) return null;
+  return (
+    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+      {n}
+    </span>
+  );
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
-  // Load auth user + linked employee to show real name on header
+
   const userRow = await db.user.findUnique({
     where: { id: me.userId },
     include: { employee: true },
   });
-
-  if (!userRow) {
-    throw new Response("User not found", { status: 404 });
-  }
+  if (!userRow) throw new Response("User not found", { status: 404 });
 
   const emp = userRow.employee;
   const fullName =
     emp && (emp.firstName || emp.lastName)
       ? `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim()
-      : // fallback kung walang employee name → gumamit ng email or generic label
-        userRow.email ?? "Unknown user";
+      : userRow.email ?? "Unknown user";
   const alias = emp?.alias ?? null;
 
-  // Simple manager snapshot stats
-  const [activeProducts, lowStockProducts, openRuns] = await Promise.all([
-    db.product.count({ where: { isActive: true } }),
-    // Approx lang muna: low stock = stock < 5
-    db.product.count({
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [
+    // Dispatch lane
+    forDispatchOrders,
+    stagedOrders,
+
+    // Runs lane
+    plannedRuns,
+    dispatchedRuns,
+    checkedInRuns,
+
+    // Cash position
+    openShifts,
+    openShiftRows, // [{id, openingFloat}]
+    cashSalesTodayAgg,
+    drawerTxnsTodayRows,
+    openShiftVariances,
+
+    // Exceptions
+    riderVariancesOpen,
+    cashierShiftVariancesOpen,
+    payrollRiderAR,
+    payrollCashierAR,
+    clearancePending,
+  ] = await Promise.all([
+    // For dispatch = delivery orders not yet dispatched
+    db.order.count({
       where: {
-        isActive: true,
-        stock: { lt: 5 },
+        channel: "DELIVERY",
+        status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+        dispatchedAt: null,
       },
     }),
-    db.deliveryRun.count({
+
+    // Staged but not dispatched
+    db.order.count({
       where: {
-        status: { in: ["PLANNED", "DISPATCHED"] },
+        channel: "DELIVERY",
+        status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+        stagedAt: { not: null },
+        dispatchedAt: null,
+      },
+    }),
+
+    db.deliveryRun.count({ where: { status: "PLANNED" } }),
+    db.deliveryRun.count({ where: { status: "DISPATCHED" } }),
+    db.deliveryRun.count({ where: { status: "CHECKED_IN" } }),
+
+    // Open shifts
+    db.cashierShift.count({ where: { closedAt: null } }),
+    db.cashierShift.findMany({
+      where: { closedAt: null },
+      select: { id: true, openingFloat: true },
+      take: 50,
+    }),
+
+    // Cash sales today (all shifts)
+    db.payment.aggregate({
+      where: { method: "CASH", createdAt: { gte: todayStart } },
+      _sum: { amount: true },
+    }),
+
+    // Drawer txns today (abs sum signal)
+    db.cashDrawerTxn.findMany({
+      where: { createdAt: { gte: todayStart } },
+      select: { amount: true },
+      take: 5000,
+    }),
+
+    // Open shift variances (manager audit)
+    db.cashierShiftVariance.count({ where: { status: "OPEN" as any } }),
+
+    // Exceptions
+    db.riderRunVariance.count({
+      where: { status: { in: ["OPEN", "MANAGER_APPROVED"] } },
+    }),
+    db.cashierShiftVariance.count({ where: { status: "OPEN" as any } }),
+    db.riderCharge.count({
+      where: {
+        status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
+        note: { contains: PLAN_TAG },
+      },
+    }),
+    db.cashierCharge.count({
+      where: {
+        status: { in: ["OPEN", "PARTIALLY_SETTLED"] as any },
+        note: { contains: PLAN_TAG },
+      },
+    }),
+
+    // CCS Phase 1 (badge): best-effort "needs clearance" signal.
+    // We don’t have CCS decision records yet, so we surface obvious credit cases:
+    // - cashCollected <= 0, OR
+    // - receipt.note contains '"isCredit":true'
+    // NOTE: Partial payments with positive cash but still with balance may not be counted yet
+    // (we'll fix once CCS schema exists).
+    db.runReceipt.count({
+      where: {
+        run: { status: "CHECKED_IN" as any },
+        kind: { in: ["ROAD", "PARENT"] as any },
+        OR: [
+          { cashCollected: { lte: 0 as any } },
+          { note: { contains: '"isCredit":true' } },
+          { note: { contains: '"isCredit": true' } },
+        ],
       },
     }),
   ]);
 
-  return json<LoaderData>({
+  const cashSalesToday = r2(toNum((cashSalesTodayAgg as any)?._sum?.amount));
+  const drawerTxnsToday = r2(
+    (drawerTxnsTodayRows || []).reduce(
+      (acc: number, t: any) => acc + Math.abs(toNum(t.amount)),
+      0,
+    ),
+  );
+
+  // Expected drawer total (open shifts):
+  // openingFloat + CASH payments(in shift) + CASH_IN - CASH_OUT - DROP
+  const openShiftIdList = (openShiftRows || []).map((s: any) => Number(s.id));
+  let expectedDrawerTotal = 0;
+
+  if (openShiftIdList.length > 0) {
+    const [payByShift, txByShift] = await Promise.all([
+      db.payment.groupBy({
+        by: ["shiftId"],
+        where: {
+          shiftId: { in: openShiftIdList as any },
+          method: "CASH",
+        },
+        _sum: { amount: true },
+      }),
+      db.cashDrawerTxn.groupBy({
+        by: ["shiftId", "type"],
+        where: { shiftId: { in: openShiftIdList as any } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const openMap = new Map<number, number>(
+      (openShiftRows || []).map((s: any) => [
+        Number(s.id),
+        toNum(s.openingFloat),
+      ]),
+    );
+
+    const payMap = new Map<number, number>(
+      (payByShift || []).map((r: any) => [
+        Number(r.shiftId),
+        toNum(r._sum?.amount),
+      ]),
+    );
+
+    const txMap = new Map<number, { in: number; out: number; drop: number }>();
+    for (const r of txByShift || []) {
+      const sid = Number((r as any).shiftId || 0);
+      if (!sid) continue;
+
+      const cur = txMap.get(sid) || { in: 0, out: 0, drop: 0 };
+      const amt = toNum((r as any)._sum?.amount);
+      const type = String((r as any).type || "");
+
+      if (type === "CASH_IN") cur.in += amt;
+      else if (type === "CASH_OUT") cur.out += amt;
+      else if (type === "DROP") cur.drop += amt;
+
+      txMap.set(sid, cur);
+    }
+
+    expectedDrawerTotal = r2(
+      openShiftIdList.reduce((acc: number, sid: number) => {
+        const opening = openMap.get(sid) || 0;
+        const cashPay = payMap.get(sid) || 0;
+        const t = txMap.get(sid) || { in: 0, out: 0, drop: 0 };
+        return acc + (opening + cashPay + t.in - t.out - t.drop);
+      }, 0),
+    );
+  }
+
+  const data: LoaderData = {
     me: {
       id: me.userId,
       role: me.role,
@@ -65,16 +264,44 @@ export async function loader({ request }: LoaderFunctionArgs) {
       alias,
       email: userRow.email ?? "",
     },
-    stats: {
-      activeProducts,
-      lowStockProducts,
-      openRuns,
+    dispatch: {
+      forDispatchOrders,
+      stagedOrders,
     },
-  });
+    runs: {
+      planned: plannedRuns,
+      dispatched: dispatchedRuns,
+      checkedIn: checkedInRuns,
+      needsManagerReview: checkedInRuns,
+    },
+    cash: {
+      openShifts,
+      expectedDrawerTotal,
+      cashSalesToday,
+      drawerTxnsToday,
+      openShiftVariances,
+    },
+    exceptions: {
+      riderVariancesOpen,
+      cashierShiftVariancesOpen,
+      payrollRiderAR,
+      payrollCashierAR,
+      clearancePending,
+    },
+  };
+
+  return json<LoaderData>(data);
 }
 
 export default function StoreManagerDashboard() {
-  const { me, stats } = useLoaderData<LoaderData>();
+  const { me, dispatch, runs, cash, exceptions } = useLoaderData<LoaderData>();
+
+  const exceptionCount =
+    exceptions.riderVariancesOpen +
+    exceptions.cashierShiftVariancesOpen +
+    exceptions.payrollRiderAR +
+    exceptions.payrollCashierAR +
+    exceptions.clearancePending;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -86,7 +313,6 @@ export default function StoreManagerDashboard() {
               Store Manager Dashboard
             </h1>
             <p className="text-xs text-slate-500">
-              Logged in as{" "}
               <span className="font-medium text-slate-700">
                 {me.alias ? `${me.alias} (${me.name})` : me.name}
               </span>
@@ -97,11 +323,38 @@ export default function StoreManagerDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
-              Inventory & Dispatch Control
-            </span>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/store/dispatch"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+              title="Open Dispatch Queue"
+            >
+              Dispatch <MiniBadge n={dispatch.forDispatchOrders} />
+            </Link>
+
+            <Link
+              to="/store/clearance"
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm hover:bg-amber-100/60"
+              title="Commercial Clearance Inbox"
+            >
+              Clearance <MiniBadge n={exceptions.clearancePending} />
+            </Link>
+
+            <Link
+              to="/runs"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Open Runs"
+            >
+              Runs
+            </Link>
+
+            <Link
+              to="/products"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Open Products"
+            >
+              Products
+            </Link>
 
             <Form method="post" action="/logout">
               <button
@@ -115,179 +368,319 @@ export default function StoreManagerDashboard() {
         </div>
       </div>
 
-      {/* Body */}
       <div className="mx-auto max-w-6xl space-y-6 px-5 py-6">
-        {/* Quick overview cards */}
+        {/* BIG: what manager checks often */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Store Snapshot
+            Operations
           </h2>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">
-                Active SKUs
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-slate-900">
-                {stats.activeProducts}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Products currently enabled for selling.
-              </p>
-            </div>
 
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-                Low Stock (approx)
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-amber-900">
-                {stats.lowStockProducts}
-              </div>
-              <p className="mt-1 text-xs text-amber-800">
-                Items with stock &lt; 5. Review for re-ordering.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-sky-600">
-                Open Runs
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-sky-900">
-                {stats.openRuns}
-              </div>
-              <p className="mt-1 text-xs text-sky-800">
-                Delivery runs in PLANNED or DISPATCHED status.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Main actions */}
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Store Manager Actions
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Inventory overview */}
+          <div className="grid gap-3 lg:grid-cols-3">
+            {/* Dispatch (big) */}
             <Link
-              to="/products"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              to="/store/dispatch"
+              className="group rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
             >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
-                  Catalog
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                    Dispatch Queue
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    For Dispatch Orders
+                  </div>
                 </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Product & Inventory List
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Review products, prices, units, locations, and stock levels.
-                </p>
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-lg font-semibold text-slate-900">
+                    {dispatch.forDispatchOrders}
+                  </span>
+                </span>
               </div>
-              <div className="mt-3 text-[11px] font-medium text-indigo-600 group-hover:text-indigo-700">
-                Open products →
+
+              <div className="mt-3 grid gap-2">
+                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                  <span className="text-slate-700">
+                    Staged (not dispatched)
+                  </span>
+                  <span className="font-semibold text-slate-900">
+                    {dispatch.stagedOrders}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                  <span className="text-slate-700">Action</span>
+                  <span className="font-medium text-indigo-700">
+                    assign rider / vehicle →
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 text-[11px] font-medium text-indigo-800 group-hover:text-indigo-900">
+                Open dispatch queue →
               </div>
             </Link>
 
-            {/* Stock movements (planned route) */}
-            <Link
-              to="/store/stock"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
-            >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">
-                  Inventory Flow
-                </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Stock Movements
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Track items going out on runs and stock returning to store.
-                </p>
-              </div>
-              <div className="mt-3 text-[11px] font-medium text-emerald-600 group-hover:text-emerald-700">
-                View stock movements →
-              </div>
-            </Link>
-
-            {/* Delivery runs control */}
+            {/* Runs (big) */}
             <Link
               to="/runs"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
+              className="group rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
             >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-sky-500">
-                  Delivery Runs
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                    Runs Monitor
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    Track & Close Runs
+                  </div>
                 </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Runs & Rider Loadout
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Monitor active runs, rider assignments, and loadout snapshots.
-                </p>
+                <span className="text-lg font-semibold text-slate-900">
+                  {runs.planned + runs.dispatched + runs.checkedIn}
+                </span>
               </div>
-              <div className="mt-3 text-[11px] font-medium text-sky-600 group-hover:text-sky-700">
+
+              <div className="mt-3 grid gap-2">
+                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                  <span className="text-slate-700">PLANNED</span>
+                  <span className="font-semibold text-slate-900">
+                    {runs.planned}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                  <span className="text-slate-700">DISPATCHED</span>
+                  <span className="font-semibold text-slate-900">
+                    {runs.dispatched}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                  <span className="text-slate-700">CHECKED_IN (manager)</span>
+                  <span className="font-semibold text-slate-900">
+                    {runs.needsManagerReview}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 text-[11px] font-medium text-sky-800 group-hover:text-sky-900">
                 Open runs →
               </div>
             </Link>
 
-            {/* Delivery dispatch queue (from pad-order) */}
-            <Link
-              to="/store/dispatch"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
-            >
+            {/* Schedule (big placeholder) */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Schedule
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    Employee Schedule (soon)
+                  </div>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                  PLAN
+                </span>
+              </div>
+
+              <p className="mt-3 text-xs text-slate-600">
+                Card for: today’s assigned staff/riders, duty hours, and
+                coverage gaps. (We’ll add models for attendance + payroll
+                later.)
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link
+                  to="/employees"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  View employees →
+                </Link>
+                <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                  Schedule board soon
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Manager focus (cash) */}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Manager Focus
+            </h2>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
-                  Dispatch
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Cash Position
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-900">
-                  Delivery Dispatch Queue
+                  Drawer money + today cash signals
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  See DELIVERY orders from pad-order and open dispatch staging.
-                </p>
               </div>
-              <div className="mt-3 text-[11px] font-medium text-indigo-600 group-hover:text-indigo-700">
-                Open dispatch queue →
+              <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                TODAY
+              </span>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl bg-white/70 px-3 py-2">
+                <div className="text-[11px] text-slate-600">Open shifts</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {cash.openShifts}
+                </div>
               </div>
+
+              <div className="rounded-xl bg-white/70 px-3 py-2">
+                <div className="text-[11px] text-slate-600">
+                  Expected drawers
+                </div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {peso(cash.expectedDrawerTotal)}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white/70 px-3 py-2">
+                <div className="text-[11px] text-slate-600">
+                  Cash sales today
+                </div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {peso(cash.cashSalesToday)}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white/70 px-3 py-2">
+                <div className="text-[11px] text-slate-600">
+                  Drawer movements
+                </div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {peso(cash.drawerTxnsToday)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <Link
+                to="/store/cashier-shifts"
+                className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 font-medium text-emerald-800 hover:bg-emerald-100/40"
+              >
+                Open/Close cashier shifts →
+              </Link>
+
+              <Link
+                to="/store/cashier-variances"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Shift variances <MiniBadge n={cash.openShiftVariances} />
+              </Link>
+
+              <span className="text-slate-600">
+                DROP = vault movement (cash out of drawer).
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* Exceptions */}
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Exceptions
+            </h2>
+            <span className="text-xs text-slate-500">
+              Not frequent. Show small. Total:{" "}
+              <span className="font-semibold text-slate-900">
+                {exceptionCount}
+              </span>
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Link
+              to="/store/rider-variances"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Rider Variances
+                </div>
+                <MiniBadge n={exceptions.riderVariancesOpen} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {exceptions.riderVariancesOpen}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Open / manager-approved items.
+              </p>
+            </Link>
+
+            <Link
+              to="/store/cashier-variances"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Cashier Variances
+                </div>
+                <MiniBadge n={exceptions.cashierShiftVariancesOpen} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {exceptions.cashierShiftVariancesOpen}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Shift close audit queue.
+              </p>
+            </Link>
+
+            <Link
+              to="/store/payroll"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Rider AR (tagged)
+                </div>
+                <MiniBadge n={exceptions.payrollRiderAR} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {exceptions.payrollRiderAR}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Payroll deduction queue.
+              </p>
+            </Link>
+
+            <Link
+              to="/store/payroll"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Cashier AR (tagged)
+                </div>
+                <MiniBadge n={exceptions.payrollCashierAR} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {exceptions.payrollCashierAR}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Payroll deduction queue.
+              </p>
             </Link>
           </div>
         </section>
 
-        {/* Utility section */}
-        <section className="grid gap-3 md:grid-cols-2">
+        {/* Payroll / attendance future note */}
+        <section>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-slate-900">
-                Low Stock Watchlist
-              </h2>
-              <Link
-                to="/products?filter=low-stock"
-                className="text-xs font-medium text-rose-600 hover:text-rose-700"
-              >
-                Review items →
-              </Link>
+            <div className="text-sm font-medium text-slate-900">
+              Payroll (future)
             </div>
-            <p className="text-xs text-slate-500">
-              Later puwede natin gawin na real low-stock report (stock vs
-              minStock). For now, shortcut filter lang muna.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-slate-900">
-                Inbound Deliveries
-              </h2>
-              <Link
-                to="/store/inbound"
-                className="text-xs font-medium text-slate-600 hover:text-slate-800"
-              >
-                Plan feature →
-              </Link>
-            </div>
-            <p className="text-xs text-slate-500">
-              Placeholder for future: encode supplier deliveries, add stock, and
-              attach documents (DR/Invoice).
+            <p className="mt-1 text-xs text-slate-600">
+              Next milestone: Attendance + Salary payouts (not just deductions).
+              The dashboard will show: schedule coverage → attendance logs →
+              payroll computation → payouts.
             </p>
           </div>
         </section>

@@ -90,7 +90,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 
   return json(
     { categories, products },
-    { headers: { "Cache-Control": "no-store" } }
+    { headers: { "Cache-Control": "no-store" } },
   );
 };
 
@@ -98,7 +98,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 const SMALL_KG = [0.25, 0.5, 0.75] as const; // 1/4, 1/2, 3/4
 function isKgRetail(
   prod: { unit?: { name?: string | null } | null },
-  mode: "retail" | "pack"
+  mode: "retail" | "pack",
 ) {
   return mode === "retail" && /kg/i.test(prod.unit?.name ?? "");
 }
@@ -264,7 +264,7 @@ export default function KioskPage() {
       if (srp > 0 && packStock > 0) return "pack";
       return null;
     },
-    []
+    [],
   );
 
   // Pagination
@@ -320,7 +320,7 @@ export default function KioskPage() {
   const total = filtered.length;
   const pageItems = React.useMemo(
     () => filtered.slice(0, Math.min(total, shown)),
-    [filtered, total, shown]
+    [filtered, total, shown],
   );
 
   const searchRef = React.useRef<HTMLInputElement | null>(null);
@@ -346,13 +346,13 @@ export default function KioskPage() {
 
   const [cart, setCart] = useLocalStorageState<Record<string, CartItem>>(
     "op-cart",
-    {}
+    {},
   );
 
   // helper: get current cart line by product + mode
   const getCartLine = React.useCallback(
     (id: number, mode: Mode) => cart[`${id}:${mode}`] ?? null,
-    [cart]
+    [cart],
   );
 
   // stable helper to clear cart (and storage)
@@ -365,6 +365,59 @@ export default function KioskPage() {
       // or user denied access. Clearing cart state above is sufficient.
     }
   }, [setCart]);
+
+  // ✅ Single reset function: prevents "old customer/name" carry-over after success
+  const resetOrderPadState = React.useCallback(() => {
+    // cart + storage
+    clearCart();
+    setMobileCartOpen(false);
+
+    // search + filters
+    setQ("");
+    setActiveCat("");
+    setActiveBrand("");
+
+    // fulfillment state
+    setChannel("PICKUP");
+    setDeliverTo("");
+    setDeliverPhone("");
+    setDeliverLandmark("");
+    setDeliverGeoLat("");
+    setDeliverGeoLng("");
+    setDeliverPhotoUrl("");
+    setPrintSlip(false);
+
+    // customer picker state
+    setSelectedCustomer(null);
+    setCustomerId(null);
+    setDeliveryAddressId(null);
+    setCustQ("");
+    setCustOpen(false);
+
+    // focus search after reset (safe: kiosk UX)
+    const el =
+      document.querySelector<HTMLInputElement>('input[name="search"]') ||
+      searchRef.current;
+    el?.focus();
+  }, [
+    clearCart,
+    setQ,
+    setActiveCat,
+    setActiveBrand,
+    setChannel,
+    setDeliverTo,
+    setDeliverPhone,
+    setDeliverLandmark,
+    setDeliverGeoLat,
+    setDeliverGeoLng,
+    setDeliverPhotoUrl,
+    setPrintSlip,
+    setSelectedCustomer,
+    setCustomerId,
+    setDeliveryAddressId,
+    setCustQ,
+    setCustOpen,
+  ]);
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -432,7 +485,7 @@ export default function KioskPage() {
         };
       });
     },
-    [setCart]
+    [setCart],
   );
 
   const inc = (key: string) =>
@@ -499,7 +552,7 @@ export default function KioskPage() {
       qty,
       unitPrice,
       mode, // may be undefined for old carts; server will infer if missing
-    }))
+    })),
   );
 
   // Handle fetcher response: navigate on success; show modal on 400
@@ -514,8 +567,10 @@ export default function KioskPage() {
       handledSuccessIdRef.current = createdId;
 
       const ch = createSlip.data.channel ?? channel;
+      // ✅ Reset ALL relevant state after success (prevents old customer/name carry-over)
+      // Note: compute `ch` first, then reset (so navigation uses correct channel)
+      resetOrderPadState();
       if (printSlip) {
-        clearCart();
         const dest = ch === "DELIVERY" ? "ticket" : "slip";
         navigate(`/orders/${createdId}/${dest}?autoprint=1&autoback=1`, {
           replace: true,
@@ -527,7 +582,6 @@ export default function KioskPage() {
           id: createdId,
           code: createSlip.data.orderCode,
         });
-        clearCart();
       }
 
       // 🧹 Reset fetcher so future renders don't see old success
@@ -542,8 +596,8 @@ export default function KioskPage() {
     createSlip,
     navigate,
     printSlip,
-    clearCart,
     channel,
+    resetOrderPadState,
   ]);
   // header clock
   const [clock, setClock] = React.useState(() =>
@@ -551,7 +605,7 @@ export default function KioskPage() {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    })
+    }),
   );
   React.useEffect(() => {
     const id = setInterval(
@@ -561,9 +615,9 @@ export default function KioskPage() {
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit",
-          })
+          }),
         ),
-      1000
+      1000,
     );
     return () => clearInterval(id);
   }, []);
@@ -874,31 +928,7 @@ export default function KioskPage() {
             {/* New Order resets cart + search + filters */}
             <button
               onClick={() => {
-                setCart({});
-                setQ("");
-                setActiveCat("");
-                setActiveBrand("");
-                // reset fulfillment state
-                setChannel("PICKUP");
-                setDeliverTo("");
-                setDeliverPhone("");
-                setDeliverLandmark("");
-                setDeliverGeoLat("");
-                setDeliverGeoLng("");
-                setDeliverPhotoUrl("");
-                setPrintSlip(false);
-                // reset customer picker state
-                setSelectedCustomer(null);
-                setCustomerId(null);
-                setDeliveryAddressId(null);
-                setCustQ("");
-                setCustOpen(false);
-                // focus search after reset
-                const el =
-                  document.querySelector<HTMLInputElement>(
-                    'input[name="search"]'
-                  ) || searchRef.current;
-                el?.focus();
+                resetOrderPadState();
               }}
               className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
               title="Start a fresh cart"
@@ -907,7 +937,7 @@ export default function KioskPage() {
             </button>
             {/* Clear now only clears cart (keeps filters/search) */}
             <button
-              onClick={() => setCart({})}
+              onClick={clearCart}
               className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700"
             >
               Clear
@@ -1224,7 +1254,7 @@ export default function KioskPage() {
                               {/* Retail Add */}
                               {(() => {
                                 const inCartRetail = Boolean(
-                                  cart[makeKey(p.id, "retail")]
+                                  cart[makeKey(p.id, "retail")],
                                 );
                                 const retailOk =
                                   retailStock > 0 && Number(p.price) > 0;
@@ -1234,7 +1264,7 @@ export default function KioskPage() {
                                   : !retailOk
                                   ? "Retail unavailable (no stock/price)"
                                   : `Add by ${unit} at ${peso(
-                                      Number(p.price)
+                                      Number(p.price),
                                     )}`;
                                 return (
                                   <button
@@ -1260,7 +1290,7 @@ export default function KioskPage() {
                                 const kgRetail = /kg/i.test(p.unit?.name ?? "");
                                 if (!kgRetail || !retailAvailable) return null;
                                 const inCartRetail = Boolean(
-                                  cart[makeKey(p.id, "retail")]
+                                  cart[makeKey(p.id, "retail")],
                                 );
                                 const addWithQty = (qty: 0.25 | 0.5 | 0.75) => {
                                   const key = makeKey(p.id, "retail");
@@ -1305,7 +1335,7 @@ export default function KioskPage() {
                               {/* Pack Add */}
                               {(() => {
                                 const inCartPack = Boolean(
-                                  cart[makeKey(p.id, "pack")]
+                                  cart[makeKey(p.id, "pack")],
                                 );
                                 const packOk =
                                   packStock > 0 && Number(p.srp) > 0;
@@ -1338,7 +1368,7 @@ export default function KioskPage() {
                             // Pack-only
                             (() => {
                               const inCartPack = Boolean(
-                                cart[makeKey(p.id, "pack")]
+                                cart[makeKey(p.id, "pack")],
                               );
                               const packOk = packStock > 0 && Number(p.srp) > 0;
                               const disabled = inCartPack || !packOk;
@@ -1455,13 +1485,7 @@ export default function KioskPage() {
           </h2>
           <button
             onClick={() => {
-              setCart({});
-              try {
-                localStorage.removeItem("op-cart");
-              } catch (_err) {
-                // Intentionally ignore: storage might be unavailable (private mode)
-                // or user denied access. Clearing cart state above is sufficient.
-              }
+              clearCart();
             }}
             className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             disabled={items.length === 0}
@@ -1554,7 +1578,7 @@ export default function KioskPage() {
                                         ...it,
                                         qty: setFractionPart(
                                           it.qty,
-                                          f as 0 | 0.25 | 0.5 | 0.75
+                                          f as 0 | 0.25 | 0.5 | 0.75,
                                         ),
                                       },
                                     }))
@@ -1632,6 +1656,141 @@ export default function KioskPage() {
             {/* Fulfillment */}
             <div className="px-4 pt-3">
               <div className="text-sm font-medium text-slate-800 mb-2">
+                Customer
+              </div>
+              {/* Customer picker (works for PICKUP + DELIVERY) */}
+              <div className="rounded-xl border border-slate-200 p-2">
+                <div className="text-xs text-slate-600 mb-1">
+                  Optional for walk-in. Piliin lang kung kilala / may discount.
+                </div>
+
+                {/* Input (shared hook) */}
+                <div className="flex gap-2">
+                  <input
+                    value={
+                      selectedCustomer
+                        ? `${selectedCustomer.firstName}${
+                            selectedCustomer.middleName
+                              ? " " + selectedCustomer.middleName
+                              : ""
+                          } ${selectedCustomer.lastName}${
+                            selectedCustomer.phone
+                              ? " • " + selectedCustomer.phone
+                              : ""
+                          }`
+                        : custQ
+                    }
+                    onChange={(e) => {
+                      setSelectedCustomer(null);
+                      setCustomerId(null);
+                      setDeliveryAddressId(null);
+                      setCustQ(e.target.value);
+                      setCustOpen(Boolean(e.target.value.trim()));
+                    }}
+                    onFocus={() => custQ.trim() && setCustOpen(true)}
+                    placeholder="09xx… / name / alias"
+                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2"
+                  />
+                  {selectedCustomer ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustomer(null);
+                        setCustomerId(null);
+                        setDeliveryAddressId(null);
+                        setCustQ("");
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* Results dropdown */}
+                {custOpen && !selectedCustomer && custQ.trim() ? (
+                  <div className="mt-2 max-h-56 overflow-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    {custItems.length > 0 ? (
+                      custItems.map((h) => (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustomer(h as any);
+                            setCustomerId(h.id);
+
+                            // Only prefill delivery fields when DELIVERY (avoid mixing walk-in)
+                            if (channel === "DELIVERY") {
+                              const name = `${h.firstName}${
+                                h.middleName ? " " + h.middleName : ""
+                              } ${h.lastName}`.trim();
+                              const addr = (h as any).addresses?.[0] || null;
+                              const addrText = addr
+                                ? `${addr.line1 ?? ""}${
+                                    addr.barangay ? ", " + addr.barangay : ""
+                                  }${addr.city ? ", " + addr.city : ""}${
+                                    addr.province ? ", " + addr.province : ""
+                                  }`.replace(/^, /, "")
+                                : "";
+                              setDeliverTo(
+                                addr ? `${name} — ${addrText}` : name,
+                              );
+                              if (h.phone) setDeliverPhone(h.phone);
+                            }
+
+                            setCustQ("");
+                            setCustOpen(false);
+                          }}
+                          className="w-full text-left px-2 py-2 hover:bg-slate-50"
+                        >
+                          <div className="text-sm text-slate-900">
+                            {h.firstName} {h.middleName || ""} {h.lastName}{" "}
+                            {h.alias ? `(${h.alias})` : ""}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            {h.phone || "—"}
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-2 py-2 text-sm text-slate-600">
+                        No results.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* Address select ONLY for DELIVERY */}
+                {channel === "DELIVERY" &&
+                selectedCustomer?.addresses?.length ? (
+                  <div className="mt-2">
+                    <label className="block text-xs text-slate-600">
+                      Address
+                    </label>
+                    <select
+                      value={deliveryAddressId ?? ""}
+                      onChange={(e) =>
+                        setDeliveryAddressId(
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                    >
+                      <option value="">— None / custom —</option>
+                      {selectedCustomer.addresses.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {(a.label ? `${a.label}: ` : "") +
+                            [a.line1, a.barangay, a.city]
+                              .filter(Boolean)
+                              .join(", ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-3 text-sm font-medium text-slate-800 mb-2">
                 Fulfillment
               </div>
               <div className="flex items-center gap-3 text-sm">
@@ -1652,137 +1811,9 @@ export default function KioskPage() {
                   <span>Delivery</span>
                 </label>
               </div>
+
               {channel === "DELIVERY" && (
                 <div className="mt-3 grid grid-cols-1 gap-2">
-                  {/* Customer picker (phone-first) */}
-                  <div className="rounded-xl border border-slate-200 p-2">
-                    <div className="text-xs text-slate-600 mb-1">
-                      Link Customer (phone preferred)
-                    </div>
-
-                    {/* Input (shared hook) */}
-                    <div className="flex gap-2">
-                      <input
-                        value={
-                          selectedCustomer
-                            ? `${selectedCustomer.firstName}${
-                                selectedCustomer.middleName
-                                  ? " " + selectedCustomer.middleName
-                                  : ""
-                              } ${selectedCustomer.lastName}${
-                                selectedCustomer.phone
-                                  ? " • " + selectedCustomer.phone
-                                  : ""
-                              }`
-                            : custQ
-                        }
-                        onChange={(e) => {
-                          setSelectedCustomer(null);
-                          setCustomerId(null);
-                          setDeliveryAddressId(null);
-                          setCustQ(e.target.value);
-                          setCustOpen(Boolean(e.target.value.trim()));
-                        }}
-                        onFocus={() => custQ.trim() && setCustOpen(true)}
-                        placeholder="09xx… / name / alias"
-                        className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2"
-                      />
-                      {selectedCustomer ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCustomer(null);
-                            setCustomerId(null);
-                            setDeliveryAddressId(null);
-                            setCustQ("");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {/* Results dropdown */}
-                    {custOpen && !selectedCustomer && custQ.trim() ? (
-                      <div className="mt-2 max-h-56 overflow-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
-                        {custItems.length > 0 ? (
-                          custItems.map((h) => (
-                            <button
-                              key={h.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedCustomer(h as any);
-                                setCustomerId(h.id);
-
-                                // Prefill deliverTo + phone
-                                const name = `${h.firstName}${
-                                  h.middleName ? " " + h.middleName : ""
-                                } ${h.lastName}`.trim();
-                                const addr = (h as any).addresses?.[0] || null;
-                                const addrText = addr
-                                  ? `${addr.line1 ?? ""}${
-                                      addr.barangay ? ", " + addr.barangay : ""
-                                    }${addr.city ? ", " + addr.city : ""}${
-                                      addr.province ? ", " + addr.province : ""
-                                    }`.replace(/^, /, "")
-                                  : "";
-                                setDeliverTo(
-                                  addr ? `${name} — ${addrText}` : name
-                                );
-                                if (h.phone) setDeliverPhone(h.phone);
-
-                                setCustQ("");
-                                setCustOpen(false);
-                              }}
-                              className="w-full text-left px-2 py-2 hover:bg-slate-50"
-                            >
-                              <div className="text-sm text-slate-900">
-                                {h.firstName} {h.middleName || ""} {h.lastName}{" "}
-                                {h.alias ? `(${h.alias})` : ""}
-                              </div>
-                              <div className="text-xs text-slate-600">
-                                {h.phone || "—"}
-                              </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-2 py-2 text-sm text-slate-600">
-                            No results.
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {/* Address select (from picked customer) */}
-                    {selectedCustomer?.addresses?.length ? (
-                      <div className="mt-2">
-                        <label className="block text-xs text-slate-600">
-                          Address
-                        </label>
-                        <select
-                          value={deliveryAddressId ?? ""}
-                          onChange={(e) =>
-                            setDeliveryAddressId(
-                              e.target.value ? Number(e.target.value) : null
-                            )
-                          }
-                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
-                        >
-                          <option value="">— None / custom —</option>
-                          {selectedCustomer.addresses.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {(a.label ? `${a.label}: ` : "") +
-                                [a.line1, a.barangay, a.city]
-                                  .filter(Boolean)
-                                  .join(", ")}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                  </div>
-
                   <label className="block text-xs text-slate-600">
                     Deliver To (name — full address) *
                     <input
@@ -1861,17 +1892,7 @@ export default function KioskPage() {
               >
                 <input type="hidden" name="items" value={payload} />
                 <input type="hidden" name="terminalId" value="KIOSK-01" />
-                <input
-                  type="hidden"
-                  name="customerId"
-                  value={customerId ?? ""}
-                />
-                <input
-                  type="hidden"
-                  name="deliveryAddressId"
-                  value={deliveryAddressId ?? ""}
-                />
-                {/* carry customer linkage */}
+                {/* carry customer linkage (single source) */}
                 <input
                   type="hidden"
                   name="customerId"
@@ -2028,7 +2049,7 @@ export default function KioskPage() {
                   className="w-28 h-28"
                   alt="QR"
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
-                    justCreated.code
+                    justCreated.code,
                   )}`}
                 />
               ) : null}
@@ -2118,13 +2139,7 @@ export default function KioskPage() {
               </h3>
               <button
                 onClick={() => {
-                  setCart({});
-                  try {
-                    localStorage.removeItem("op-cart");
-                  } catch (_err) {
-                    // Intentionally ignore: storage might be unavailable (private mode)
-                    // or user denied access. Clearing cart state above is sufficient.
-                  }
+                  clearCart();
                 }}
                 className="text-xs px-2 py-1 rounded-lg border border-red-100 text-red-600 bg-white hover:bg-red-50"
               >
@@ -2201,7 +2216,7 @@ export default function KioskPage() {
                                       ...it,
                                       qty: setFractionPart(
                                         it.qty,
-                                        f as 0 | 0.25 | 0.5 | 0.75
+                                        f as 0 | 0.25 | 0.5 | 0.75,
                                       ),
                                     },
                                   }))

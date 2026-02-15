@@ -267,8 +267,15 @@ export default function RemitSummaryPage() {
     }).format(n || 0);
 
   // derived only from persisted numbers (no pricing recompute)
+  // ✅ If totalBeforeDiscount is null but lineTotals exist, use sum(lineTotal) as final
   const original = Number(parent.subtotal || 0);
-  const final = Number(parent.totalBeforeDiscount || 0);
+  const final =
+    parent.totalBeforeDiscount != null
+      ? Number(parent.totalBeforeDiscount || 0)
+      : (parent.items || []).reduce(
+          (s, it) => s + Number(it.lineTotal || 0),
+          0
+        );
   const discount = Math.max(0, Number((original - final).toFixed(2)));
 
   const cashChildren = children.filter((c) => c.status === "PAID");
@@ -281,7 +288,7 @@ export default function RemitSummaryPage() {
     0
   );
   const grandChildren = cashTotal + creditTotal;
-  const parentAfterDiscounts = final; // already computed above
+  const parentAfterDiscounts = final; // main delivery total (NOT load-out sales)
 
   // NEW: cash collected totals (actual CASH payments)
   const parentCash = Number(parent.cashPaid || 0);
@@ -290,13 +297,35 @@ export default function RemitSummaryPage() {
     0
   );
 
-  // ✅ NEW: what cashier wants to see (Children Cash + Parent amount after discounts)
-  const grandTotalCollected = childrenCash + parentAfterDiscounts;
+  // ✅ Cash collected must mean ACTUAL CASH received, not payable total.
+
+  // (Parent after-discounts is "amount due", not "cash collected".)
+
+  const grandTotalCollected = childrenCash + parentCash;
   const showParentCash = parentCash > 0.009; // hide zero to avoid confusion
-  // Cashier-facing: we always present the Remit Total as the sum of children when present.
-  const remitTotal = children.length ? grandChildren : parentAfterDiscounts;
+  // ✅ Load-out Sales Total is ALWAYS children-only.
+  // Parent is main delivery; show separately to avoid being "considered sold/load-out".
+  const remitTotal = grandChildren;
   const cashCount = cashChildren.length;
   const creditCount = creditChildren.length;
+
+  // ✅ Remaining / Utang (AR) — this removes “double compute” feeling
+  const loadoutUtangRemaining = creditChildren.reduce((s, c) => {
+    const total = Number(c.total || 0);
+    const cash = Number(c.cashPaid || 0);
+    return s + Math.max(0, Number((total - cash).toFixed(2)));
+  }, 0);
+
+  const parentUtangRemaining = Math.max(
+    0,
+    Number(
+      (Number(parentAfterDiscounts || 0) - Number(parentCash || 0)).toFixed(2)
+    )
+  );
+
+  const overallUtangRemaining = Number(
+    (loadoutUtangRemaining + parentUtangRemaining).toFixed(2)
+  );
 
   return (
     <main className="mx-auto p-4 md:p-6 text-slate-900 bg-[#f7f7fb] min-h-screen">
@@ -346,7 +375,7 @@ export default function RemitSummaryPage() {
             <div className="mt-2">
               <span
                 className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs"
-                title="Kabuuang perang nakolekta: Children Cash + Parent (after discounts)"
+                title="Kabuuang perang nakolekta: Children Cash + Parent Cash"
               >
                 Grand Total Collected:
                 <span className="font-semibold text-slate-900">
@@ -355,7 +384,13 @@ export default function RemitSummaryPage() {
               </span>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Link
+              to="/cashier"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              ← Back to Cashier
+            </Link>
             <Link
               to={`/orders/${parent.id}/receipt?autoprint=1&autoback=1`}
               target="_blank"
@@ -518,7 +553,7 @@ export default function RemitSummaryPage() {
               {creditChildren.length > 0 && (
                 <div className="text-xs text-slate-500">
                   {creditCount} order{creditCount === 1 ? "" : "s"} •{" "}
-                  {peso(creditTotal)}
+                  {peso(loadoutUtangRemaining)} remaining
                 </div>
               )}
             </div>
@@ -562,7 +597,12 @@ export default function RemitSummaryPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                          {peso(c.total)}
+                          {peso(
+                            Math.max(
+                              0,
+                              Number(c.total || 0) - Number(c.cashPaid || 0)
+                            )
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <a
@@ -609,10 +649,10 @@ export default function RemitSummaryPage() {
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2">
                   <div className="text-[10px] text-slate-500">
-                    Load-out Credit / Utang
+                    Load-out Utang Remaining
                   </div>
                   <div className="text-[13px] font-semibold tabular-nums">
-                    {peso(creditTotal)}
+                    {peso(loadoutUtangRemaining)}
                   </div>
                   <div className="text-[10px] text-slate-500">
                     {creditCount} order{creditCount === 1 ? "" : "s"}
@@ -625,6 +665,23 @@ export default function RemitSummaryPage() {
                   </div>
                   <div className="text-[14px] font-semibold tabular-nums">
                     {peso(remitTotal)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 col-span-2">
+                  <div className="text-[10px] text-slate-500">
+                    Main Delivery Total (After Discounts)
+                  </div>
+                  <div className="text-[14px] font-semibold tabular-nums">
+                    {peso(parentAfterDiscounts)}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 col-span-2">
+                  <div className="text-[10px] text-slate-500">
+                    Overall Utang Remaining
+                  </div>
+                  <div className="text-[14px] font-semibold tabular-nums">
+                    {peso(overallUtangRemaining)}
                   </div>
                 </div>
                 {/* keep parent amount separately above; no 'snapshot' wording */}

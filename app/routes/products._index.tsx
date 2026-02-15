@@ -229,7 +229,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Common fields
   const id = formData.get("id")?.toString();
   const name = formData.get("name")?.toString().trim() || "";
-  const price = parseFloat(formData.get("price")?.toString() || "0");
+  const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const priceRaw = parseFloat(formData.get("price")?.toString() || "0");
+  const price = r2(priceRaw);
   const unitId = formData.get("unitId")
     ? parseInt(formData.get("unitId")!.toString())
     : undefined;
@@ -250,16 +253,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const brandIdRaw = formData.get("brandId")?.toString();
   const brandName = formData.get("brandName")?.toString().trim() || "";
-  const stock = parseFloat(formData.get("stock")?.toString() || "0");
+  const stock = r2(parseFloat(formData.get("stock")?.toString() || "0"));
   const packingStockRaw = formData.get("packingStock")?.toString() || "0";
-  const packingStock = parseFloat(packingStockRaw);
-  const dealerPrice = parseFloat(
+  const packingStock = r2(parseFloat(packingStockRaw));
+  const dealerPriceRaw = parseFloat(
     formData.get("dealerPrice")?.toString() || "0"
   );
-  const srp = parseFloat(formData.get("srp")?.toString() || "0");
-  const packingSize = parseFloat(
+  const dealerPrice = r2(dealerPriceRaw);
+
+  const srpRaw = parseFloat(formData.get("srp")?.toString() || "0");
+  const srp = r2(srpRaw);
+  const packingSizeRaw = parseFloat(
     formData.get("packingSize")?.toString() || "0"
   );
+  const packingSize = r2(packingSizeRaw);
   const expiration = formData.get("expirationDate")?.toString();
   const replenishAt = formData.get("replenishAt")?.toString();
   const imageTag = formData.get("imageTag")?.toString().trim();

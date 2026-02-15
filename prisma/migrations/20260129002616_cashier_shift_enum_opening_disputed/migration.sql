@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "CashierShiftStatus" ADD VALUE IF NOT EXISTS 'OPENING_DISPUTED';

@@ -93,13 +93,13 @@ export function CustomerPicker({
             if (e.key === "Escape") setOpen(false);
           }}
           placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm leading-5 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
         />
         {value && (
           <button
             type="button"
             onClick={() => onChange(null)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 text-sm"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm leading-5"
             title="Clear customer"
           >
             ✕

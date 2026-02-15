@@ -11,30 +11,30 @@ datasource db {
 model Product {
   id                 Int                 @id @default(autoincrement())
   name               String
-  price              Float
+  price              Decimal             @db.Decimal(10, 2)
   categoryId         Int?
   createdAt          DateTime            @default(now())
   description        String?
   imageUrl           String?
   imageKey           String?
-  stock              Float?
+  stock              Decimal?            @db.Decimal(12, 3)
   updatedAt          DateTime            @default(now()) @updatedAt
   brandId            Int?
   expirationDate     DateTime?
   imageTag           String?
   replenishAt        DateTime?
-  dealerPrice        Float?
-  srp                Float?
+  dealerPrice        Decimal?            @db.Decimal(10, 2)
+  srp                Decimal?            @db.Decimal(10, 2)
   allowPackSale      Boolean             @default(true)
   barcode            String?             @unique
   isActive           Boolean             @default(true)
-  minStock           Float?
+  minStock           Decimal?            @db.Decimal(12, 3)
   packingStock       Int?
   sku                String?             @unique
   unitId             Int?
   packingUnitId      Int?
   locationId         Int?
-  packingSize        Float?
+  packingSize        Decimal?            @db.Decimal(12, 3)
   brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
   category           Category?           @relation(fields: [categoryId], references: [id])
   location           Location?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
@@ -52,6 +52,9 @@ model Product {
   // back-relations for new models
   stockMovements StockMovement[]
   runAdhocSales  RunAdhocSale[]
+
+  // NEW: lines in run receipts
+  runReceiptLines RunReceiptLine[]
 }
 
 model Sale {
@@ -191,6 +194,13 @@ model Customer {
   cylinderLoans      CylinderLoan[]
   customerItemPrices CustomerItemPrice[]
 
+  // NEW: run receipts (roadside or parent receipts)
+  runReceipts RunReceipt[] @relation("CustomerRunReceipts")
+
+  // CCS back-relations
+  clearanceCases ClearanceCase[] @relation("CustomerClearanceCases")
+  customerAr     CustomerAr[]    @relation("CustomerArLedger")
+
   @@index([phone])
   @@index([alias])
   @@index([lastName, firstName])
@@ -274,8 +284,8 @@ model Order {
   channel OrderChannel @default(PICKUP)
 
   // Snapshot totals (no discounts yet)
-  subtotal            Float
-  totalBeforeDiscount Float
+  subtotal            Float?
+  totalBeforeDiscount Float?
 
   // Slip meta
   printCount Int      @default(1)
@@ -353,7 +363,21 @@ model Order {
   /// Children created from the parent remit
   remitChildren Order[] @relation("RemitParentChildren")
 
+  // NEW: run receipts linked to this order as a parent receipt
+  runReceipts RunReceipt[] @relation("OrderRunReceipts")
+
+  /// OPTION B: If this order was generated from a roadside RunReceipt (kind=ROAD),
+  /// link back to the exact origin receipt. This makes cashier "expected rider cash"
+  /// deterministic and removes query-param / recompute dependency.
+  originRunReceiptId Int?
+  originRunReceipt   RunReceipt? @relation("OriginRunReceiptToOrders", fields: [originRunReceiptId], references: [id], onDelete: SetNull)
+
+  // CCS back-relations
+  clearanceCases ClearanceCase[] @relation("OrderClearanceCases")
+  customerAr     CustomerAr[]    @relation("OrderCustomerAr")
+
   @@index([remitGroup])
+  @@index([originRunReceiptId])
   @@index([status, expiryAt])
   @@index([lockedAt])
   @@index([status])
@@ -381,6 +405,11 @@ model OrderItem {
   unitPrice Decimal @db.Decimal(10, 2)
   lineTotal Decimal @db.Decimal(10, 2)
 
+  /// Audit: base price at time of freeze (SRP/price)
+  baseUnitPrice  Decimal? @db.Decimal(10, 2)
+  /// Audit: baseUnitPrice - unitPrice (>=0)
+  discountAmount Decimal? @db.Decimal(10, 2)
+
   // DB already has this; make it visible to Prisma
   unitKind UnitKind?
 
@@ -404,7 +433,7 @@ model Payment {
   orderId   Int
   order     Order         @relation(fields: [orderId], references: [id])
   method    PaymentMethod
-  amount    Float
+  amount    Decimal       @db.Decimal(12, 2)
   refNo     String? // GCash ref, last 4 of card, etc.
   createdAt DateTime      @default(now())
 
@@ -444,9 +473,10 @@ model CylinderLoan {
 
 enum PaymentMethod {
   CASH
-  GCASH
+  FUND_TRANSFER
   CARD
   SPLIT // optional: if you want a “meta” method; otherwise just record multiple rows
+  INTERNAL_CREDIT
 }
 
 enum OrderStatus {
@@ -507,12 +537,14 @@ model Employee {
   defaultVehicle   Vehicle? @relation("DefaultVehicle", fields: [defaultVehicleId], references: [id], onDelete: SetNull)
 
   // Back-relations
-  ordersAsRider Order[]       @relation("OrderRider")
-  runsAsRider   DeliveryRun[] @relation("RunRider")
-  users         User[]
+  ordersAsRider  Order[]            @relation("OrderRider")
+  runsAsRider    DeliveryRun[]      @relation("RunRider")
+  users          User[]
+  riderVariances RiderRunVariance[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  RiderCharge RiderCharge[]
 
   @@index([role, active])
 }
@@ -621,20 +653,124 @@ model DeliveryRun {
   rider   Employee? @relation("RunRider", fields: [riderId], references: [id], onDelete: SetNull)
   vehicle Vehicle?  @relation("RunVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
 
-  orders       DeliveryRunOrder[]
-  adhocSales   RunAdhocSale[]
-  overrideLogs OverrideLog[]      @relation("RunOverrideLogs")
+  orders         DeliveryRunOrder[]
+  adhocSales     RunAdhocSale[]
+  overrideLogs   OverrideLog[]      @relation("RunOverrideLogs")
+  riderVariances RiderRunVariance[]
+
+  // NEW: receipt-level grouping for rider check-in / manager review
+  receipts    RunReceipt[]
+  RiderCharge RiderCharge[]
+
+  // CCS back-relations
+  clearanceCases ClearanceCase[] @relation("RunClearanceCases")
+  customerAr     CustomerAr[]    @relation("RunCustomerAr")
 
   @@index([status])
   @@index([riderId])
   @@index([vehicleId])
 }
 
+enum RunReceiptKind {
+  ROAD
+  PARENT
+}
+
+enum RunReceiptStatus {
+  DRAFT // encoded by rider
+  REVIEWED // manager approved/check
+  SETTLED // cashier finished
+}
+
+model RunReceipt {
+  id    Int            @id @default(autoincrement())
+  runId Int
+  kind  RunReceiptKind @default(ROAD)
+
+  /// A stable grouping key (human-friendly or generated)
+  /// Example: "RR-0001" (per run), or UUID short.
+  receiptKey String @db.VarChar(64)
+
+  /// Optional link to an existing Order (for parent orders)
+  parentOrderId Int?
+  parentOrder   Order? @relation("OrderRunReceipts", fields: [parentOrderId], references: [id], onDelete: SetNull)
+
+  /// OPTION B reverse link: Orders created from this receipt (usually 0 or 1)
+  generatedOrders Order[] @relation("OriginRunReceiptToOrders")
+
+  /// Customer reference (preferred) + snapshots (fallback)
+  customerId    Int?
+  customer      Customer? @relation("CustomerRunReceipts", fields: [customerId], references: [id], onDelete: SetNull)
+  customerName  String?
+  customerPhone String?
+
+  /// The actual cash rider collected for this receipt
+  cashCollected Decimal @default(0) @db.Decimal(12, 2)
+
+  /// Optional note (e.g., "used own change", "sukli fund", etc.)
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  run   DeliveryRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  lines RunReceiptLine[]
+
+  status           RunReceiptStatus  @default(DRAFT)
+  reviewedAt       DateTime?
+  settledAt        DateTime?
+
+  // v2.6: operational VOIDED (after manager REJECT + goods not released)
+  // VOIDED is treated as "settled" for submit/remit gates (logic-level).
+  voidedAt     DateTime?
+  voidReason   String?   @db.VarChar(200)
+  voidedById   Int?
+  voidedBy     User?     @relation("RunReceiptVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+
+  RiderRunVariance RiderRunVariance?
+
+  // CCS back-relation
+  clearanceCases ClearanceCase[] @relation("ReceiptClearanceCases")
+
+  @@unique([runId, receiptKey])
+  @@index([runId])
+  @@index([kind])
+  @@index([customerId])
+  @@index([parentOrderId])
+}
+
+model RunReceiptLine {
+  id        Int @id @default(autoincrement())
+  receiptId Int
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  /// Snapshot fields (keep for immutability)
+  name      String
+  qty       Decimal   @db.Decimal(12, 3)
+  unitPrice Decimal   @db.Decimal(10, 2)
+  lineTotal Decimal   @db.Decimal(12, 2)
+  unitKind  UnitKind? // <-- add this (enum should exist)
+
+  // ✅ Frozen SRP/base at time of check-in (audit trail)
+  baseUnitPrice  Decimal? // SRP or product.price fallback
+  discountAmount Decimal? // baseUnitPrice - unitPrice (>=0)
+
+  createdAt DateTime @default(now())
+
+  receipt RunReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+  @@index([productId])
+}
+
 enum RunStatus {
   PLANNED
   DISPATCHED
   CHECKED_IN
-  CLOSED
+  CLOSED // tapos na kay Store Manager
+  SETTLED // tapos na kay Cashier (remit done)
   CANCELLED
 }
 
@@ -687,10 +823,462 @@ model OverrideLog {
   @@index([kind, createdAt])
 }
 
+// ────────────── Rider Cash Variance (Shortages / Over) ──────────────
+
+enum RiderVarianceStatus {
+  OPEN
+  MANAGER_APPROVED
+  RIDER_ACCEPTED
+  WAIVED
+  PARTIALLY_SETTLED
+  CLOSED
+}
+
+enum RiderVarianceResolution {
+  CHARGE_RIDER
+  WAIVE
+  INFO_ONLY
+}
+
+// ────────────── Rider Charges Ledger (OPTION B) ──────────────
+// Separate from variances: this is the actual "utang/charge" with payments + balance.
+enum RiderChargeStatus {
+  OPEN
+  PARTIALLY_SETTLED
+  SETTLED
+  WAIVED
+}
+
+enum RiderChargePaymentMethod {
+  CASH
+  FUND_TRANSFER
+  PAYROLL_DEDUCTION
+  ADJUSTMENT
+}
+
+model RiderCharge {
+  id Int @id @default(autoincrement())
+
+  /// Optional: one charge per variance (common case)
+  varianceId Int?              @unique
+  variance   RiderRunVariance? @relation(fields: [varianceId], references: [id], onDelete: SetNull)
+
+  /// Optional: link to run if charge is run-related
+  runId   Int?
+  riderId Int
+
+  /// Positive amount owed by rider
+  amount Decimal @db.Decimal(12, 2)
+
+  status RiderChargeStatus @default(OPEN)
+  note   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  settledAt DateTime?
+
+  createdById Int?
+  createdBy   User? @relation("RiderChargesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  rider Employee     @relation(fields: [riderId], references: [id], onDelete: Restrict)
+  run   DeliveryRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  payments RiderChargePayment[]
+
+  @@index([riderId, status])
+  @@index([runId])
+  @@index([createdAt])
+}
+
+model RiderChargePayment {
+  id       Int @id @default(autoincrement())
+  chargeId Int
+
+  amount Decimal                  @db.Decimal(12, 2)
+  method RiderChargePaymentMethod @default(CASH)
+  note   String?
+  refNo  String?
+
+  createdAt DateTime @default(now())
+
+  /// Optional audit hooks (who/shift)
+  shiftId   Int?
+  cashierId Int?
+
+  charge  RiderCharge   @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  shift   CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  cashier User?         @relation("RiderChargePaymentsProcessed", fields: [cashierId], references: [id], onDelete: SetNull)
+
+  @@index([chargeId])
+  @@index([cashierId, createdAt])
+}
+
+// ────────────── Cashier Shift Variance (Manager-side audit) ──────────────
+
+enum CashierVarianceStatus {
+  OPEN
+  MANAGER_APPROVED
+  WAIVED
+  CLOSED
+}
+
+enum CashierVarianceResolution {
+  CHARGE_CASHIER
+  WAIVE
+  INFO_ONLY
+}
+
+model CashierShiftVariance {
+  id      Int          @id @default(autoincrement())
+  shiftId Int          @unique
+  shift   CashierShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  expected Decimal @db.Decimal(12, 2)
+  counted  Decimal @db.Decimal(12, 2)
+  variance Decimal @db.Decimal(12, 2) // counted - expected
+
+  status     CashierVarianceStatus      @default(OPEN)
+  resolution CashierVarianceResolution?
+  note       String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  managerApprovedAt   DateTime?
+  managerApprovedById Int?
+  managerApprovedBy   User?     @relation("ManagerApprovedCashierVariances", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+
+  // OPTIONAL: ledger link (created when resolution=CHARGE_CASHIER)
+  CashierCharge CashierCharge?
+
+  @@index([status])
+  @@index([managerApprovedAt])
+}
+
+// ────────────── Cashier Charges Ledger (like RiderCharge) ──────────────
+enum CashierChargeStatus {
+  OPEN
+  PARTIALLY_SETTLED
+  SETTLED
+  WAIVED
+}
+
+enum CashierChargePaymentMethod {
+  CASH
+  FUND_TRANSFER
+  PAYROLL_DEDUCTION
+  ADJUSTMENT
+}
+
+model CashierCharge {
+  id Int @id @default(autoincrement())
+
+  /// One charge per cashier variance (common case)
+  varianceId Int?                  @unique
+  variance   CashierShiftVariance? @relation(fields: [varianceId], references: [id], onDelete: SetNull)
+
+  /// Optional: link to shift (nice for audit trail)
+  shiftId   Int?
+  cashierId Int
+
+  /// Positive amount owed by cashier (store absolute value here)
+  amount Decimal @db.Decimal(12, 2)
+
+  status CashierChargeStatus @default(OPEN)
+  note   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  settledAt DateTime?
+
+  createdById Int?
+  createdBy   User? @relation("CashierChargesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  cashier User          @relation("CashierChargesOnUser", fields: [cashierId], references: [id], onDelete: Restrict)
+  shift   CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  payments CashierChargePayment[]
+
+  @@index([cashierId, status])
+  @@index([shiftId])
+  @@index([createdAt])
+}
+
+model CashierChargePayment {
+  id       Int @id @default(autoincrement())
+  chargeId Int
+
+  amount Decimal                    @db.Decimal(12, 2)
+  method CashierChargePaymentMethod @default(CASH)
+  note   String?
+  refNo  String?
+
+  createdAt DateTime @default(now())
+
+  /// Optional audit hooks (who/shift)
+  shiftId   Int?
+  cashierId Int?
+
+  charge  CashierCharge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  shift   CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  cashier User?         @relation("CashierChargePaymentsProcessed", fields: [cashierId], references: [id], onDelete: SetNull)
+
+  @@index([chargeId])
+  @@index([cashierId, createdAt])
+}
+
+model RiderRunVariance {
+  id      Int  @id @default(autoincrement())
+  runId   Int
+  riderId Int
+  shiftId Int?
+
+  /// ✅ Receipt-based one-time lock (idempotency key)
+  /// When cashier posts a shortage settlement for a receipt, we upsert using this.
+  receiptId Int?        @unique
+  receipt   RunReceipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+
+  /// Expected cash based on rider check-in + remit logic
+  expected Decimal @db.Decimal(12, 2)
+  /// Actual cash na na-turnover kay cashier
+  actual   Decimal @db.Decimal(12, 2)
+  /// actual - expected (negative = shortage, positive = over)
+  variance Decimal @db.Decimal(12, 2)
+
+  note       String?
+  status     RiderVarianceStatus @default(OPEN)
+  createdAt  DateTime            @default(now())
+  resolvedAt DateTime?
+
+  /// Manager clearance (who/when/decision)
+  managerApprovedAt   DateTime?
+  managerApprovedById Int?
+  resolution          RiderVarianceResolution?
+
+  /// Rider acceptance (who/when) - required if resolution=CHARGE_RIDER
+  riderAcceptedAt   DateTime?
+  riderAcceptedById Int?
+
+  run   DeliveryRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  rider Employee      @relation(fields: [riderId], references: [id], onDelete: Restrict)
+  shift CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  managerApprovedBy User?        @relation("ManagerApprovedVariances", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+  riderAcceptedBy   User?        @relation("RiderAcceptedVariances", fields: [riderAcceptedById], references: [id], onDelete: SetNull)
+  RiderCharge       RiderCharge?
+
+  @@index([runId, riderId, shiftId])
+  @@index([runId])
+  @@index([riderId])
+  @@index([status])
+  @@index([managerApprovedAt])
+  @@index([riderAcceptedAt])
+  @@index([receiptId])
+}
+
 enum OverrideKind {
   CAPACITY_EXCEED
   PRICE_BELOW_ALLOWED
   MANUAL_RETURN_ADJUST
+  AR_APPROVE
+}
+
+// ────────────── Commercial Clearance System (CCS) ──────────────
+
+enum ClearanceOrigin {
+  CASHIER
+  RIDER
+}
+
+// Claim = factual situation; non-decisional (cashier/rider declares)
+enum ClearanceClaimType {
+  /// Customer will pay later / remaining balance (requires customer)
+  OPEN_BALANCE
+
+  /// Bargain/discount request for remaining balance (customer optional)
+  PRICE_BARGAIN
+
+  /// Fallback bucket (optional but recommended)
+  OTHER
+}
+
+enum ClearanceCaseStatus {
+  NEEDS_CLEARANCE
+  DECIDED
+  RETURNED
+  CLOSED
+  CANCELLED
+}
+
+// Manager decision (commercial consequence)
+enum ClearanceDecisionKind {
+  /// Waive remaining balance (discount override)
+  APPROVE_DISCOUNT_OVERRIDE
+
+  /// Approve pay-later / open balance (creates CustomerAr ledger)
+  /// Requires customerId (enforced by app logic; schema keeps customer optional for other flows)
+  APPROVE_OPEN_BALANCE
+
+  APPROVE_HYBRID
+  REJECT
+  CANCEL_SALE
+}
+
+// Customer AR lifecycle (separate from OrderStatus/PARTIALLY_PAID)
+enum CustomerArStatus {
+  OPEN
+  PARTIALLY_SETTLED
+  SETTLED
+  WAIVED
+  CANCELLED
+}
+
+model ClearanceCase {
+  id     Int                 @id @default(autoincrement())
+  status ClearanceCaseStatus @default(NEEDS_CLEARANCE)
+  origin ClearanceOrigin
+ 
+  /// CCS v2.5: stable per-receipt idempotency key (SoT).
+  /// Examples:
+  /// - "PARENT:12345" (Order.id)
+  /// - "ROAD:67890" (RunReceipt.id)
+  receiptKey String @db.VarChar(64)
+
+  // unified per customer obligation (nullable for walk-in no-customer)
+  customerId Int?
+  customer   Customer? @relation("CustomerClearanceCases", fields: [customerId], references: [id], onDelete: SetNull)
+
+  // optional anchors (depends on world)
+  orderId      Int?
+  order        Order?       @relation("OrderClearanceCases", fields: [orderId], references: [id], onDelete: SetNull)
+  runId        Int?
+  run          DeliveryRun? @relation("RunClearanceCases", fields: [runId], references: [id], onDelete: SetNull)
+  runReceiptId Int?
+  runReceipt   RunReceipt?  @relation("ReceiptClearanceCases", fields: [runReceiptId], references: [id], onDelete: SetNull)
+
+  // audit snapshot at flag time
+  frozenTotal   Decimal @db.Decimal(12, 2)
+  cashCollected Decimal @db.Decimal(12, 2)
+
+  // who flagged (optional)
+  flaggedById Int?
+  flaggedBy   User?    @relation("ClearanceFlaggedBy", fields: [flaggedById], references: [id], onDelete: SetNull)
+  flaggedAt   DateTime @default(now())
+
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  claims    ClearanceClaim[]
+  decisions ClearanceDecision[]
+
+  @@unique([receiptKey])
+  @@index([status])
+  @@index([origin, flaggedAt])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([runId])
+  @@index([runReceiptId])
+}
+
+model ClearanceClaim {
+  id     Int                @id @default(autoincrement())
+  caseId Int
+  type   ClearanceClaimType
+
+  // factual details (optional)
+  requestedPayable Decimal? @db.Decimal(12, 2) // e.g. "57 lang"
+  cashAvailable    Decimal? @db.Decimal(12, 2) // partial cash offered now
+  detail           String?
+
+  createdAt DateTime @default(now())
+
+  clearanceCase ClearanceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, type])
+}
+
+model ClearanceDecision {
+  id     Int                   @id @default(autoincrement())
+  caseId Int
+  kind   ClearanceDecisionKind
+
+  // manager intent payload
+  overrideDiscountApproved Decimal? @db.Decimal(12, 2) // force discount amount
+  approvedPayable          Decimal? @db.Decimal(12, 2) // optional explicit payable
+  arBalance                Decimal? @db.Decimal(12, 2) // recorded at decision time
+
+  decidedById Int?
+  decidedBy   User?    @relation("ClearanceDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime @default(now())
+
+  returnToOrigin Boolean @default(false)
+  note           String?
+
+  createdAt DateTime @default(now())
+
+  clearanceCase ClearanceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // back-relation (for CustomerAr.link)
+  customerAr CustomerAr?
+
+  @@index([caseId, decidedAt])
+  @@index([kind])
+}
+
+// Customer A/R ledger (created ONLY when manager approves AR/hybrid)
+model CustomerAr {
+  id Int @id @default(autoincrement())
+
+  customerId Int
+  customer   Customer @relation("CustomerArLedger", fields: [customerId], references: [id], onDelete: Cascade)
+
+  // audit link (optional but recommended)
+  clearanceDecisionId Int?               @unique
+  clearanceDecision   ClearanceDecision? @relation(fields: [clearanceDecisionId], references: [id], onDelete: SetNull)
+  // optional anchors
+  orderId             Int?
+  order               Order?             @relation("OrderCustomerAr", fields: [orderId], references: [id], onDelete: SetNull)
+  runId               Int?
+  run                 DeliveryRun?       @relation("RunCustomerAr", fields: [runId], references: [id], onDelete: SetNull)
+
+  principal Decimal          @db.Decimal(12, 2)
+  balance   Decimal          @db.Decimal(12, 2)
+  status    CustomerArStatus @default(OPEN)
+  dueDate   DateTime?
+
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  settledAt DateTime?
+
+  payments CustomerArPayment[]
+
+  @@index([customerId, status])
+  @@index([orderId])
+  @@index([runId])
+  @@index([createdAt])
+}
+
+model CustomerArPayment {
+  id   Int        @id @default(autoincrement())
+  arId Int
+  ar   CustomerAr @relation(fields: [arId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(12, 2)
+  note   String?
+  refNo  String?
+
+  // optional audit hooks (cashier shift)
+  shiftId   Int?
+  cashierId Int?
+  shift     CashierShift? @relation("ShiftCustomerArPayments", fields: [shiftId], references: [id], onDelete: SetNull)
+  cashier   User?         @relation("CustomerArPaymentsProcessed", fields: [cashierId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([arId])
+  @@index([cashierId, createdAt])
 }
 
 model Province {
@@ -791,7 +1379,7 @@ enum UserRole {
   ADMIN
   CASHIER
   STORE_MANAGER
-  EMPLOYEE  
+  EMPLOYEE
 }
 
 enum CashDrawerTxnType {
@@ -799,6 +1387,19 @@ enum CashDrawerTxnType {
   CASH_OUT
   DROP
   ADJUST
+}
+
+// ────────────── CASHIER SHIFT 2-STEP CLOSE (Patch 1) ──────────────
+// Cashier submits close count → Manager final-closes (sets closedAt).
+// Manager may require recount (disapprove) without final close.
+
+enum CashierShiftStatus {
+  PENDING_ACCEPT
+  OPEN
+  OPENING_DISPUTED
+  SUBMITTED
+  RECOUNT_REQUIRED
+  FINAL_CLOSED
 }
 
 model User {
@@ -813,10 +1414,37 @@ model User {
   employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   // Scoping & usage
-  branches              UserBranch[] // NEW
-  shifts                CashierShift[]
-  paymentsProcessed     Payment[]       @relation("UserPaymentsProcessed")
-  cashDrawerTxnsCreated CashDrawerTxn[] @relation("UserCreatedDrawerTxns")
+  branches                        UserBranch[] // NEW
+  shifts                          CashierShift[]         @relation("CashierShiftCashier")
+  paymentsProcessed               Payment[]              @relation("UserPaymentsProcessed")
+  cashDrawerTxnsCreated           CashDrawerTxn[]        @relation("UserCreatedDrawerTxns")
+  managerApprovedVariances        RiderRunVariance[]     @relation("ManagerApprovedVariances")
+  managerApprovedCashierVariances CashierShiftVariance[] @relation("ManagerApprovedCashierVariances")
+  riderAcceptedVariances          RiderRunVariance[]     @relation("RiderAcceptedVariances")
+
+  // Rider Charges ledger (OPTION B)
+  riderChargesCreated          RiderCharge[]        @relation("RiderChargesCreatedBy")
+  riderChargePaymentsProcessed RiderChargePayment[] @relation("RiderChargePaymentsProcessed")
+
+  // Cashier Charges ledger (OPTION B)
+  cashierCharges                 CashierCharge[]        @relation("CashierChargesOnUser")
+  cashierChargesCreated          CashierCharge[]        @relation("CashierChargesCreatedBy")
+  cashierChargePaymentsProcessed CashierChargePayment[] @relation("CashierChargePaymentsProcessed")
+
+  // CCS back-relations
+  clearanceCasesFlagged       ClearanceCase[]     @relation("ClearanceFlaggedBy")
+  clearanceDecisionsMade      ClearanceDecision[] @relation("ClearanceDecidedBy")
+  customerArPaymentsProcessed CustomerArPayment[] @relation("CustomerArPaymentsProcessed")
+
+  
+  // v2.6: who voided a receipt
+  voidedRunReceipts RunReceipt[] @relation("RunReceiptVoidedBy")
+
+  // ✅ NEW: manager/admin who final-closed a shift (audit trail)
+  cashierShiftsFinalClosed CashierShift[] @relation("CashierShiftFinalClosedBy")
+
+  // ✅ NEW: cashier who verified opening float
+  cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
@@ -829,23 +1457,57 @@ model User {
 
 // Cashier shift locking (required to finalize/pay/remit)
 model CashierShift {
-  id        Int @id @default(autoincrement())
+  id        Int  @id @default(autoincrement())
   cashierId Int
-  branchId  Int // NEW (use Branch for scoping)
+  branchId  Int? // TEMP: optional while no-branch mode
 
-  openedAt     DateTime  @default(now())
-  closedAt     DateTime?
-  openingFloat Decimal?  @db.Decimal(12, 2)
-  closingTotal Decimal?  @db.Decimal(12, 2)
-  deviceId     String?   @db.VarChar(64)
-  notes        String?
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  openingFloat  Decimal?  @db.Decimal(12, 2)
+  closingTotal  Decimal?  @db.Decimal(12, 2)
+  /// Denomination snapshot at shift close (audit). Example:
+  /// { bills: { "1000": 3, "500": 2 }, coins: { "25": 4, "10": 0, "5": 2, "1": 10 } }
+  closingDenoms Json?
+  deviceId      String?   @db.VarChar(64)
+  notes         String?
 
-  cashier        User            @relation(fields: [cashierId], references: [id], onDelete: Cascade)
-  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  payments       Payment[]
-  cashDrawerTxns CashDrawerTxn[]
+  // ✅ Shift state machine (OPEN requires cashier verification of opening float)
+  status CashierShiftStatus @default(PENDING_ACCEPT)
+
+  // ✅ Opening float acceptance (cashier recount)
+  openingCounted      Decimal?  @db.Decimal(12, 2)
+  openingVerifiedAt   DateTime?
+  openingVerifiedById Int?
+  openingDisputeNote  String?
+
+  openingVerifiedBy  User?     @relation("CashierShiftOpeningVerifiedBy", fields: [openingVerifiedById], references: [id], onDelete: SetNull)
+  cashierSubmittedAt DateTime?
+  finalClosedById    Int?
+  finalClosedBy      User?     @relation("CashierShiftFinalClosedBy", fields: [finalClosedById], references: [id], onDelete: SetNull)
+
+  cashier         User                  @relation("CashierShiftCashier", fields: [cashierId], references: [id], onDelete: Cascade)
+  branch          Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  payments        Payment[]
+  cashDrawerTxns  CashDrawerTxn[]
+  riderVariances  RiderRunVariance[]
+  cashierVariance CashierShiftVariance?
+
+  // OPTION B: rider charge ledger payments recorded under this shift
+  riderChargePayments RiderChargePayment[]
+
+  // Cashier charge ledger (optional link to shift for audit)
+  cashierCharges CashierCharge[]
+
+  // Cashier charge ledger payments recorded under this shift (optional)
+  cashierChargePayments CashierChargePayment[]
+
+  // CCS back-relation
+  customerArPayments CustomerArPayment[] @relation("ShiftCustomerArPayments")
 
   @@index([cashierId, closedAt])
+  @@index([status])
+  @@index([finalClosedById])
+  @@index([openingVerifiedById])
 }
 
 model CashDrawerTxn {

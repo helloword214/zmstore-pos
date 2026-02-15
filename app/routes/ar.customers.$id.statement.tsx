@@ -1,32 +1,31 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
 import { db } from "~/utils/db.server";
-import {
-  applyDiscounts,
-  buildCartFromOrderItems,
-  fetchCustomerRulesAt,
-} from "~/services/pricing";
-import { requireRole } from "~/utils/auth.server";
+import { requireOpenShift } from "~/utils/auth.server";
+import { r2, peso } from "~/utils/money";
+
+// --------------------
+// AR SoT helpers
+// --------------------
+
+const isRiderShortageRef = (refNo: unknown) => {
+  const ref = String(refNo ?? "").toUpperCase();
+  return ref === "RIDER_SHORTAGE" || ref.startsWith("RIDER-SHORTAGE");
+};
+
+const sumFrozenLineTotals = (
+  lines: Array<{ lineTotal: any }> | null | undefined,
+) => r2((lines ?? []).reduce((s, it) => s + Number(it?.lineTotal ?? 0), 0));
 
 type Txn = {
-  kind: "charge" | "payment";
+  kind: "charge" | "settlement";
   date: string; // ISO
   label: string;
-  debit: number; // charges
-  credit: number; // payments
-  orderId?: number;
-  paymentId?: number;
-  creditApplied?: number; // capped credit actually applied to balance
-  running?: number; // balance after this txn (opening → running)
-  items?: Array<{
-    id: number;
-    name: string;
-    qty: number;
-    unit: number; // original unit on the order line
-    effUnit: number; // effective unit after rules-at-time
-    effLine: number; // qty * effUnit
-  }>;
+  debit: number;
+  credit: number;
+  running: number;
 };
 
 type LoaderData = {
@@ -43,47 +42,49 @@ type LoaderData = {
   closingBalance: number;
 };
 
-// Parse "YYYY-MM-DD" as LOCAL midnight (avoid UTC shift).
+// Parse "YYYY-MM-DD" as local midnight
 function parseYmdLocal(v: string | null): Date | null {
   if (!v) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
   if (!m) return null;
-  const [, yy, mm, dd] = m.map(Number);
-  return new Date(yy, mm - 1, dd); // local 00:00
+  const yy = Number(m[1]);
+  const mm = Number(m[2]);
+  const dd = Number(m[3]);
+  return new Date(yy, mm - 1, dd);
 }
-
 function ymd(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  await requireRole(request, ["ADMIN", "CASHIER"]);
+  // ✅ Enforce shift for CASHIER; ADMIN bypass remains handled by requireOpenShift
+  const url = new URL(request.url);
+  await requireOpenShift(request, {
+    next: `${url.pathname}${url.search || ""}`,
+  });
+
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
-  const url = new URL(request.url);
   const startParam = parseYmdLocal(url.searchParams.get("start"));
   const endParam = parseYmdLocal(url.searchParams.get("end"));
-  const showItems = url.searchParams.get("items") === "1";
 
-  // Default period: current month to today
+  // default: current month → today
   const now = new Date();
-  const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1); // local 00:00
-  const defaultEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // today 00:00 local
-  const start = startParam ?? defaultStart; // inclusive
-  const end = endParam ?? defaultEnd; // inclusive (date-only)
-  // exclusive end = start of the next day (so the chosen 'end' day is fully included)
+  const start = startParam ?? new Date(now.getFullYear(), now.getMonth(), 1);
+  const end =
+    endParam ?? new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endExclusive = new Date(
     end.getFullYear(),
     end.getMonth(),
-    end.getDate() + 1
+    end.getDate() + 1,
   );
 
   if (+start >= +endExclusive) {
     return json(
       { error: "Start date must be on or before End date." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -101,27 +102,19 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
         select: {
           id: true,
           orderCode: true,
+          channel: true,
           createdAt: true,
-          paidAt: true,
-          items: {
-            select: {
-              id: true,
-              productId: true,
-              name: true,
-              qty: true,
-              unitPrice: true,
-              product: {
-                select: { price: true, srp: true, allowPackSale: true },
-              },
-            },
+          originRunReceiptId: true,
+          originRunReceipt: {
+            select: { id: true, lines: { select: { lineTotal: true } } },
           },
+          items: { select: { lineTotal: true } },
           payments: {
             select: {
-              id: true,
               amount: true,
-              createdAt: true,
               method: true,
               refNo: true,
+              createdAt: true,
             },
           },
         },
@@ -135,125 +128,138 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     customer.middleName ? ` ${customer.middleName}` : ""
   } ${customer.lastName}`.trim();
 
-  const r2 = (n: number) => +Number(n).toFixed(2);
-
-  // Helper: compute discounted total AND itemized breakdown using rules valid at its reference instant
-  const totalForOrderAt = async (o: (typeof customer.orders)[number]) => {
-    const refAt = o.paidAt ?? o.createdAt;
-    const rulesAt = await fetchCustomerRulesAt(db, id, refAt);
-    const cart = buildCartFromOrderItems({
-      items: o.items.map((it) => ({
-        id: it.id,
-        productId: it.productId,
-        name: it.name ?? "",
-        qty: Number(it.qty),
-        unitPrice: Number(it.unitPrice),
-        product: {
-          price: it.product?.price == null ? null : Number(it.product.price),
-          srp: it.product?.srp == null ? null : Number(it.product.srp),
-          allowPackSale: it.product?.allowPackSale ?? null,
-        },
-      })),
-      rules: rulesAt,
-    });
-    const pricing = applyDiscounts(cart, rulesAt, { id });
-    // Build per-line itemization (effective prices mapped by item id)
-    const items =
-      cart.items.map((ci) => {
-        const adj = pricing.adjustedItems.find((a) => a.id === ci.id);
-        const effUnit = adj?.effectiveUnitPrice ?? Number(ci.unitPrice);
-        return {
-          id: ci.id,
-          name: ci.name,
-          qty: Number(ci.qty),
-          unit: Number(ci.unitPrice),
-          effUnit: r2(effUnit),
-          effLine: r2(Number(ci.qty) * effUnit),
-        };
-      }) ?? [];
-    return { total: pricing.total, items };
-  };
-
-  // Opening balance before the period
-  let openingCharges = 0;
-  let openingPayments = 0;
-  for (const o of customer.orders) {
-    if (o.createdAt < start) {
-      const { total } = await totalForOrderAt(o);
-      openingCharges += total;
+  // Batch PARENT receipts for delivery orders
+  const orderIds = customer.orders.map((o) => o.id);
+  const parentReceipts = orderIds.length
+    ? await db.runReceipt.findMany({
+        where: { kind: "PARENT", parentOrderId: { in: orderIds } },
+        select: { parentOrderId: true, lines: { select: { lineTotal: true } } },
+      })
+    : [];
+  const parentByOrderId = new Map<number, Array<{ lineTotal: any }>>();
+  for (const rr of parentReceipts) {
+    if (rr.parentOrderId != null && !parentByOrderId.has(rr.parentOrderId)) {
+      parentByOrderId.set(rr.parentOrderId, rr.lines ?? []);
     }
-    for (const p of o.payments) {
+  }
+
+  // Opening balance = charges before start - settlements before start
+  let openingCharges = 0;
+  let openingSettlements = 0;
+
+  for (const o of customer.orders) {
+    // Charges are dated at order.createdAt
+    if (o.createdAt < start) {
+      const originLines = o.originRunReceipt?.lines ?? [];
+      const parentLines = parentByOrderId.get(o.id) ?? [];
+      const itemLines = (o.items ?? []).map((x: any) => ({
+        lineTotal: x?.lineTotal,
+      }));
+
+      const charge =
+        originLines.length > 0
+          ? sumFrozenLineTotals(originLines as any)
+          : parentLines.length > 0
+          ? sumFrozenLineTotals(parentLines as any)
+          : sumFrozenLineTotals(itemLines as any);
+
+      openingCharges = r2(openingCharges + charge);
+    }
+
+    // Settlements are dated at payment.createdAt
+    for (const p of o.payments ?? []) {
+      const method = String(p.method ?? "").toUpperCase();
+      const isSettlement =
+        method === "CASH" ||
+        (method === "INTERNAL_CREDIT" && isRiderShortageRef(p.refNo));
+      if (!isSettlement) continue;
+
       if (p.createdAt < start) {
-        openingPayments += Number(p.amount);
+        openingSettlements = r2(openingSettlements + Number(p.amount ?? 0));
       }
     }
   }
-  const openingBalance = +(openingCharges - openingPayments).toFixed(2);
 
-  // In-range transactions
-  const txns: Txn[] = [];
+  const openingBalance = r2(openingCharges - openingSettlements);
+
+  // In-range txns
+  const txnsRaw: Array<Omit<Txn, "running">> = [];
+
   for (const o of customer.orders) {
+    // charge in-range
     if (o.createdAt >= start && o.createdAt < endExclusive) {
-      const { total, items } = await totalForOrderAt(o);
-      const charge = +total.toFixed(2);
-      txns.push({
+      const originLines = o.originRunReceipt?.lines ?? [];
+      const parentLines = parentByOrderId.get(o.id) ?? [];
+      const itemLines = (o.items ?? []).map((x: any) => ({
+        lineTotal: x?.lineTotal,
+      }));
+
+      const charge =
+        originLines.length > 0
+          ? sumFrozenLineTotals(originLines as any)
+          : parentLines.length > 0
+          ? sumFrozenLineTotals(parentLines as any)
+          : sumFrozenLineTotals(itemLines as any);
+
+      txnsRaw.push({
         kind: "charge",
         date: o.createdAt.toISOString(),
-        label: `Order ${o.orderCode}`,
+        label: `Order ${o.orderCode} (${o.channel})`,
         debit: charge,
         credit: 0,
-        orderId: o.id,
-        items: showItems ? items : undefined,
       });
     }
-    for (const p of o.payments) {
+
+    // settlements in-range
+    for (const p of o.payments ?? []) {
+      const method = String(p.method ?? "").toUpperCase();
+      const isSettlement =
+        method === "CASH" ||
+        (method === "INTERNAL_CREDIT" && isRiderShortageRef(p.refNo));
+      if (!isSettlement) continue;
+
       if (p.createdAt >= start && p.createdAt < endExclusive) {
-        txns.push({
-          kind: "payment",
+        txnsRaw.push({
+          kind: "settlement",
           date: p.createdAt.toISOString(),
-          label: `Payment ${p.method}${p.refNo ? ` • ${p.refNo}` : ""}`,
+          label:
+            method === "INTERNAL_CREDIT"
+              ? `Settlement (Rider shortage bridge)${
+                  p.refNo ? ` • ${p.refNo}` : ""
+                }`
+              : `Payment ${method}${p.refNo ? ` • ${p.refNo}` : ""}`,
           debit: 0,
-          credit: Number(p.amount),
-          orderId: o.id,
-          paymentId: p.id,
+          credit: r2(Number(p.amount ?? 0)),
         });
       }
     }
   }
-  txns.sort((a, b) => +new Date(a.date) - +new Date(b.date));
+
+  txnsRaw.sort((a, b) => +new Date(a.date) - +new Date(b.date));
+
+  // Running balance, never negative (cap credits)
+  let run = openingBalance;
+  const txns: Txn[] = txnsRaw.map((t) => {
+    if (t.debit > 0) {
+      run = r2(run + t.debit);
+      return { ...t, running: run };
+    }
+    const dueNow = Math.max(0, run);
+    const applied = Math.min(Math.max(0, t.credit), dueNow);
+    run = r2(run - applied);
+    return { ...t, credit: applied, running: run };
+  });
 
   const totals = txns.reduce(
     (acc, t) => {
-      acc.debits += t.debit;
-      acc.credits += t.credit;
+      acc.debits = r2(acc.debits + t.debit);
+      acc.credits = r2(acc.credits + t.credit);
       return acc;
     },
-    { debits: 0, credits: 0 }
+    { debits: 0, credits: 0 },
   );
-  // Compute running balance and CAP each payment to what's due at that moment
-  let run = openingBalance;
-  const txnsWithApplied = txns.map((t) => {
-    if (t.debit > 0) {
-      // charge: add fully
-      run = +(run + t.debit).toFixed(2);
-      return { ...t, creditApplied: 0, running: run };
-    }
-    // payment: cap to current due (never let running go negative)
-    const dueNow = Math.max(0, run);
-    const applied = Math.min(Number(t.credit || 0), dueNow);
-    run = +(run - applied).toFixed(2);
-    return { ...t, creditApplied: applied, running: run };
-  });
-  // Totals using APPLIED credits so the math matches closing balance
-  const totalsApplied = {
-    debits: totals.debits,
-    credits: txnsWithApplied.reduce((s, t) => s + (t.creditApplied || 0), 0),
-  };
-  const closingBalance = +(
-    openingBalance +
-    totalsApplied.debits -
-    totalsApplied.credits
-  ).toFixed(2);
+
+  const closingBalance = r2(openingBalance + totals.debits - totals.credits);
 
   return json<LoaderData>({
     customer: {
@@ -264,8 +270,8 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     },
     period: { start: ymd(start), end: ymd(end) },
     openingBalance,
-    txns: txnsWithApplied,
-    totals: totalsApplied,
+    txns,
+    totals,
     closingBalance,
   });
 }
@@ -274,18 +280,11 @@ export default function CustomerStatementPage() {
   const { customer, period, openingBalance, txns, totals, closingBalance } =
     useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
-  const showItems = sp.get("items") === "1";
-
-  const peso = (n: number) =>
-    new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(n);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4 flex items-center justify-between no-print">
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur no-print">
+        <div className="mx-auto max-w-5xl px-5 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               Statement of Account
@@ -301,7 +300,7 @@ export default function CustomerStatementPage() {
               to={`/ar/customers/${customer.id}`}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
             >
-              Back to Ledger
+              Back
             </Link>
             <button
               onClick={() => window.print()}
@@ -313,8 +312,7 @@ export default function CustomerStatementPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-5 py-6 space-y-4">
-        {/* Period selector */}
+      <div className="mx-auto max-w-5xl px-5 py-6 space-y-4">
         <Form
           method="get"
           className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 flex flex-wrap items-end gap-3 no-print"
@@ -337,45 +335,23 @@ export default function CustomerStatementPage() {
               className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
             />
           </label>
-          <label className="text-sm inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              name="items"
-              value="1"
-              defaultChecked={showItems}
-              onChange={(e) => {
-                // keep start/end when toggling
-                const form = e.currentTarget.form!;
-                if (e.currentTarget.checked) {
-                  // ensure a value is submitted
-                } else {
-                  // unchecked → remove param by adding empty hidden input override
-                  const i = document.createElement("input");
-                  i.type = "hidden";
-                  i.name = "items";
-                  i.value = "";
-                  form.appendChild(i);
-                }
-              }}
-            />
-            <span className="text-slate-700">Show items</span>
-          </label>
           <button className="h-[38px] rounded-xl bg-indigo-600 text-white px-3 text-sm hover:bg-indigo-700">
             Apply
           </button>
         </Form>
 
-        {/* Statement Card */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
             Statement • {period.start} → {period.end}
           </div>
+
           <div className="px-4 py-3 text-sm">
             <div className="flex justify-between">
               <span className="text-slate-600">Opening Balance</span>
               <span className="font-medium">{peso(openingBalance)}</span>
             </div>
           </div>
+
           <div className="divide-y divide-slate-100">
             {txns.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-600">
@@ -383,15 +359,15 @@ export default function CustomerStatementPage() {
               </div>
             ) : (
               <>
-                {/* header row */}
                 <div className="px-4 py-2 text-xs text-slate-500 flex items-center justify-between">
                   <div className="w-[60%]">Date • Details</div>
                   <div className="flex gap-6 w-[40%] justify-end">
                     <div className="w-28 text-right">Charges</div>
-                    <div className="w-28 text-right">Payments</div>
+                    <div className="w-28 text-right">Settlements</div>
                     <div className="w-28 text-right">Balance</div>
                   </div>
                 </div>
+
                 {txns.map((t, i) => (
                   <div
                     key={i}
@@ -399,58 +375,16 @@ export default function CustomerStatementPage() {
                   >
                     <div className="w-[60%] text-slate-700">
                       {new Date(t.date).toLocaleString()} • {t.label}
-                      {t.kind === "charge" && t.items?.length ? (
-                        <details
-                          className="mt-1 text-[12px]"
-                          {...(showItems ? { open: true } : {})}
-                        >
-                          <summary className="cursor-pointer text-slate-500">
-                            Items ({t.items.length})
-                          </summary>
-                          <ul className="mt-1 space-y-1 text-slate-600">
-                            {t.items.map((li) => (
-                              <li
-                                key={li.id}
-                                className="flex items-center justify-between"
-                              >
-                                <span className="truncate">
-                                  {li.name} • {li.qty} ×{" "}
-                                  {li.effUnit !== li.unit ? (
-                                    <>
-                                      <s className="text-slate-400">
-                                        {peso(li.unit)}
-                                      </s>{" "}
-                                      →{" "}
-                                      <b className="text-slate-800">
-                                        {peso(li.effUnit)}
-                                      </b>
-                                    </>
-                                  ) : (
-                                    <>{peso(li.effUnit)}</>
-                                  )}
-                                </span>
-                                <span className="tabular-nums">
-                                  {peso(li.effLine)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      ) : null}
                     </div>
                     <div className="flex gap-6 w-[40%] justify-end">
                       <div className="w-28 text-right">
                         {t.debit ? `+ ${peso(t.debit)}` : "—"}
                       </div>
-                      <div className="w-28 text-right">
-                        {t.creditApplied
-                          ? `− ${peso(t.creditApplied)}`
-                          : t.credit
-                          ? `− ${peso(t.credit)}`
-                          : "—"}
+                      <div className="w-28 text-right text-emerald-700">
+                        {t.credit ? `− ${peso(t.credit)}` : "—"}
                       </div>
-                      <div className="w-28 text-right font-medium">
-                        {peso(t.running ?? 0)}
+                      <div className="w-28 text-right font-medium tabular-nums">
+                        {peso(t.running)}
                       </div>
                     </div>
                   </div>
@@ -458,13 +392,14 @@ export default function CustomerStatementPage() {
               </>
             )}
           </div>
+
           <div className="px-4 py-3 text-sm space-y-1 border-t border-slate-100 bg-slate-50/50">
             <div className="flex justify-between">
               <span className="text-slate-600">Total Charges</span>
               <span className="font-medium">{peso(totals.debits)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Total Payments</span>
+              <span className="text-slate-600">Total Settlements</span>
               <span className="font-medium">- {peso(totals.credits)}</span>
             </div>
             <div className="flex justify-between font-semibold text-slate-900">
@@ -476,11 +411,11 @@ export default function CustomerStatementPage() {
       </div>
 
       <style>{`
-               @media print {
+        @media print {
           .no-print { display: none !important; }
           @page { size: A4; margin: 14mm; }
         }
-     `}</style>
+      `}</style>
     </main>
   );
 }

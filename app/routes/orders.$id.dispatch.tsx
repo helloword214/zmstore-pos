@@ -6,8 +6,8 @@ import { requireRole } from "~/utils/auth.server";
 
 // Run-centric bridge:
 //  - URL pa rin: /orders/:id/dispatch
-//  - Pero hindi na siya may sariling UI.
-//  - Hanapin (or gumawa) ng DeliveryRun, tapos i-redirect sa /runs/:runId/dispatch.
+//  - WALA na itong sariling UI.
+//  - Hanapin lang ang existing DeliveryRun link; kung wala, balik sa queue para i-assign.
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // Same idea as store dispatch queue: manager/admin lang
@@ -46,29 +46,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return redirect(`/runs/${existing.runId}/dispatch`);
   }
 
-  // 2️⃣ Wala pang run → gumawa ng PLANNED DeliveryRun + link sa order
-  const run = await db.$transaction(async (tx) => {
-    const newRun = await tx.deliveryRun.create({
-      data: {
-        // Simple: tie to orderCode; unique rin to sa DeliveryRun.runCode
-        runCode: `RUN-${order.orderCode}`,
-        status: "PLANNED",
-      },
-      select: { id: true },
-    });
-
-    await tx.deliveryRunOrder.create({
-      data: {
-        runId: newRun.id,
-        orderId: order.id,
-      },
-    });
-
-    return newRun;
-  });
-
-  // 3️⃣ Iisang dispatch UI na gagamitin: /runs/:id/dispatch
-  return redirect(`/runs/${run.id}/dispatch`);
+  // 2️⃣ Wala pang run → balik sa dispatch queue para i-assign sa run
+  // NOTE: Palitan ang path kung iba ang route mo.
+  return redirect(`/store/dispatch?needAssignOrderId=${order.id}`);
 }
 
 // Normally hindi na ito nagre-render dahil loader laging nagre-redirect.

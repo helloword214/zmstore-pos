@@ -7,15 +7,15 @@ import type {
   UnitKind as PrismaUnitKind,
 } from "@prisma/client";
 
-// Use a type alias so this file never imports Prisma *values* at runtime.
-export type UnitKind = PrismaUnitKind;
-// (Alternative kung ayaw mo mag-depende sa Prisma dito:)
-// export type UnitKind = "RETAIL" | "PACK";
+// IMPORTANT:
+// Keep this module runtime-safe and consistent with your PAD "base" definition.
+// We use string union for unit kind semantics inside pricing (works in client too).
+export type UnitKind = "RETAIL" | "PACK";
 
 /** Selectors let a rule target specific products/units (extend as needed). */
 export type Selector = {
   productIds?: number[];
-  unitKind?: "RETAIL" | "PACK";
+  unitKind?: UnitKind;
   // Optional extras if you want to match by metadata the UI passes through:
   categoryIds?: number[];
   brandIds?: number[];
@@ -29,7 +29,7 @@ export type CartItem = {
   name: string;
   qty: number;
   unitPrice: number;
-  unitKind?: "RETAIL" | "PACK";
+  unitKind?: UnitKind;
   categoryId?: number | null;
   brandId?: number | null;
   sku?: string | null;
@@ -92,7 +92,7 @@ export type PricingResult = {
 // Helper: return only rules that match product AND unitKind (or no unitKind specified)
 export function resolveApplicableRules(params: {
   productId: number;
-  unitKind: UnitKind; // "RETAIL" | "PACK"
+  unitKind: UnitKind;
   rules: Rule[];
 }) {
   const { productId, unitKind, rules } = params;
@@ -104,6 +104,30 @@ export function resolveApplicableRules(params: {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const clamp0 = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
+
+/**
+ * Canonical BASE computation (MUST match your order-creation action):
+ * ✅ UPDATED RULE:
+ * - baseRetail = product.price (explicit; may be higher than derived)
+ * - basePack   = product.srp if set else product.price
+ */
+export function computeBaseUnitPrice(args: {
+  unitKind: UnitKind;
+  productPrice?: number | null;
+  productSrp?: number | null;
+  packingSize?: number | null;
+}): number {
+  const price = clamp0(Number(args.productPrice ?? 0));
+  const srp = clamp0(Number(args.productSrp ?? 0));
+  // packingSize is intentionally NOT used for base price anymore.
+
+  const basePack = srp > 0 ? srp : price;
+  const baseRetail = price;
+
+  if (args.unitKind === "PACK") return r2(basePack);
+  return r2(baseRetail);
+}
 
 function matchesSelector(it: CartItem, sel?: Selector): boolean {
   if (!sel) return true;
@@ -121,6 +145,16 @@ function matchesSelector(it: CartItem, sel?: Selector): boolean {
     return false;
   if (sel.sku && it.sku && sel.sku !== it.sku) return false;
   return true;
+}
+
+function computeBaseForFixedDiscount(args: {
+  unitKind: UnitKind;
+  productPrice?: number | null;
+  productSrp?: number | null;
+  packingSize?: number | null;
+}): number {
+  // FIXED_DISCOUNT must subtract from the SAME canonical base used everywhere else.
+  return computeBaseUnitPrice(args);
 }
 
 /**
@@ -285,7 +319,7 @@ export async function computeUnitPriceForCustomer(
         scope: "ITEM",
         kind: "PRICE_OVERRIDE",
         priceOverride: v,
-        selector: { productIds: [productId], unitKind: unitKind as any },
+        selector: { productIds: [productId], unitKind },
         priority: 10,
         enabled: true,
         stackable: false,
@@ -298,7 +332,7 @@ export async function computeUnitPriceForCustomer(
         scope: "ITEM",
         kind: "PERCENT_OFF",
         percentOff: v,
-        selector: { productIds: [productId], unitKind: unitKind as any },
+        selector: { productIds: [productId], unitKind },
         priority: 10,
         enabled: true,
         stackable: true,
@@ -312,7 +346,7 @@ export async function computeUnitPriceForCustomer(
       scope: "ITEM",
       kind: "PRICE_OVERRIDE",
       priceOverride: override,
-      selector: { productIds: [productId], unitKind: unitKind as any },
+      selector: { productIds: [productId], unitKind },
       priority: 10,
       enabled: true,
       stackable: false,
@@ -328,7 +362,7 @@ export async function computeUnitPriceForCustomer(
         name: "",
         qty: 1,
         unitPrice: baseUnitPrice,
-        unitKind: unitKind as any,
+        unitKind,
       },
     ],
   };
@@ -364,7 +398,7 @@ export async function fetchActiveCustomerRules(
       unitKind: true,
       mode: true,
       value: true,
-      product: { select: { price: true, srp: true } }, // for FIXED_DISCOUNT base
+      product: { select: { price: true, srp: true, packingSize: true } }, // ✅ include packingSize
     },
     orderBy: [{ createdAt: "desc" }],
   });
@@ -372,7 +406,7 @@ export async function fetchActiveCustomerRules(
   const rules: Rule[] = rows.map((r) => {
     const selector: RuleSelector = {
       productIds: [r.productId],
-      unitKind: r.unitKind as "RETAIL" | "PACK",
+      unitKind: r.unitKind as PrismaUnitKind, // enum type in prisma layer
     };
     const v = Number(r.value ?? 0);
 
@@ -383,7 +417,7 @@ export async function fetchActiveCustomerRules(
         scope: "ITEM",
         kind: "PRICE_OVERRIDE",
         priceOverride: r2(v),
-        selector,
+        selector: selector as any,
         priority: 10,
         enabled: true,
         stackable: false,
@@ -398,7 +432,7 @@ export async function fetchActiveCustomerRules(
         scope: "ITEM",
         kind: "PERCENT_OFF",
         percentOff: r2(v),
-        selector,
+        selector: selector as any,
         priority: 10,
         enabled: true,
         stackable: true,
@@ -407,10 +441,12 @@ export async function fetchActiveCustomerRules(
     }
 
     // FIXED_DISCOUNT → convert using base for that unit kind
-    const base =
-      r.unitKind === "RETAIL"
-        ? Number(r.product?.price ?? 0)
-        : Number(r.product?.srp ?? 0);
+    const base = computeBaseForFixedDiscount({
+      unitKind: r.unitKind as any,
+      productPrice: r.product?.price ?? 0,
+      productSrp: r.product?.srp ?? 0,
+      packingSize: (r.product as any)?.packingSize ?? 0,
+    });
     const override = Math.max(0, r2(base - v));
     return {
       id: `CIP:${r.id}`,
@@ -418,7 +454,7 @@ export async function fetchActiveCustomerRules(
       scope: "ITEM",
       kind: "PRICE_OVERRIDE",
       priceOverride: override,
-      selector,
+      selector: selector as any,
       priority: 10,
       enabled: true,
       stackable: false,
@@ -452,7 +488,7 @@ export async function fetchCustomerRulesAt(
       unitKind: true,
       mode: true,
       value: true,
-      product: { select: { price: true, srp: true } },
+      product: { select: { price: true, srp: true, packingSize: true } }, // ✅ include packingSize
     },
     orderBy: [{ createdAt: "desc" }],
   });
@@ -460,7 +496,7 @@ export async function fetchCustomerRulesAt(
   return rows.map((r) => {
     const selector: RuleSelector = {
       productIds: [r.productId],
-      unitKind: r.unitKind as "RETAIL" | "PACK",
+      unitKind: r.unitKind as PrismaUnitKind,
     };
     const v = Number(r.value ?? 0);
     if (r.mode === "PERCENT_DISCOUNT") {
@@ -470,7 +506,7 @@ export async function fetchCustomerRulesAt(
         scope: "ITEM",
         kind: "PERCENT_OFF",
         percentOff: r2(v),
-        selector,
+        selector: selector as any,
         priority: 10,
         enabled: true,
         stackable: true,
@@ -484,7 +520,7 @@ export async function fetchCustomerRulesAt(
         scope: "ITEM",
         kind: "PRICE_OVERRIDE",
         priceOverride: r2(v),
-        selector,
+        selector: selector as any,
         priority: 10,
         enabled: true,
         stackable: false,
@@ -492,10 +528,12 @@ export async function fetchCustomerRulesAt(
       } as Rule;
     }
     // FIXED_DISCOUNT -> use correct base
-    const base =
-      r.unitKind === "RETAIL"
-        ? Number(r.product?.price ?? 0)
-        : Number(r.product?.srp ?? 0);
+    const base = computeBaseForFixedDiscount({
+      unitKind: r.unitKind as any,
+      productPrice: r.product?.price ?? 0,
+      productSrp: r.product?.srp ?? 0,
+      packingSize: (r.product as any)?.packingSize ?? 0,
+    });
     const override = Math.max(0, r2(base - v));
     return {
       id: `CIP:${r.id}`,
@@ -503,7 +541,7 @@ export async function fetchCustomerRulesAt(
       scope: "ITEM",
       kind: "PRICE_OVERRIDE",
       priceOverride: override,
-      selector,
+      selector: selector as any,
       priority: 10,
       enabled: true,
       stackable: false,
@@ -518,8 +556,8 @@ export async function fetchCustomerRulesAt(
  */
 export function inferUnitKindFromPriceAndRules(args: {
   unitPrice: number;
-  productBaseRetail: number; // product.price
-  productBasePack: number; // product.srp
+  productBaseRetail: number; // retail base (canonical, from product.price)
+  productBasePack: number; // pack base (canonical, from product.srp|price)
   allowPackSale?: boolean | null;
   rules: Rule[];
   productId: number;
@@ -579,6 +617,7 @@ export function buildCartFromOrderItems(args: {
     product?: {
       price: number | null;
       srp: number | null;
+      packingSize?: number | null;
       allowPackSale: boolean | null;
       categoryId?: number | null;
       brandId?: number | null;
@@ -590,8 +629,22 @@ export function buildCartFromOrderItems(args: {
   const { items, rules } = args;
   return {
     items: (items ?? []).map((it) => {
-      const baseRetail = Number(it.product?.price ?? 0);
-      const basePack = Number(it.product?.srp ?? 0);
+      // IMPORTANT: use canonical base (same as PAD order-creation).
+      const price = Number(it.product?.price ?? 0);
+      const srp = Number(it.product?.srp ?? 0);
+      const packingSize = Number((it.product as any)?.packingSize ?? 0);
+      const basePack = computeBaseUnitPrice({
+        unitKind: "PACK",
+        productPrice: price,
+        productSrp: srp,
+        packingSize,
+      });
+      const baseRetail = computeBaseUnitPrice({
+        unitKind: "RETAIL",
+        productPrice: price,
+        productSrp: srp,
+        packingSize,
+      });
       const allowPackSale = Boolean(it.product?.allowPackSale ?? true);
       const u = Number(it.unitPrice);
 
@@ -610,7 +663,7 @@ export function buildCartFromOrderItems(args: {
         name: it.name,
         qty: Number(it.qty),
         unitPrice: u,
-        unitKind,
+        unitKind: unitKind as any,
         categoryId: it.product?.categoryId ?? null,
         brandId: it.product?.brandId ?? null,
         sku: it.product?.sku ?? null,

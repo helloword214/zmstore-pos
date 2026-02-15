@@ -10,7 +10,7 @@ import {
   useSearchParams,
 } from "@remix-run/react";
 import * as React from "react";
-import { FulfillmentStatus } from "@prisma/client";
+import { FulfillmentStatus, Prisma } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { SelectInput } from "~/components/ui/SelectInput";
@@ -71,7 +71,44 @@ type LoaderData = {
   vehicles: VehicleDTO[];
   categories?: string[];
   readOnly: boolean;
+
+  // Parent orders (PAD) linked to this run (read-only clarity)
+  parentOrdersSummary: {
+    orderCount: number;
+    uniqueItemCount: number; // unique productIds across linked orders
+    totalQty: number; // sum of qty across linked order items
+  } | null;
+
+  // Optional small preview list (top few items)
+  parentOrderTopItems: Array<{
+    productId: number;
+    name: string;
+    qty: number;
+  }>;
 };
+
+// Aggregate loadout rows by productId (sum qty). Keeps a stable canonical shape.
+function aggregateLoadoutSnapshot(
+  rows: Array<{ productId: number | null; name: string; qty: number }>
+) {
+  const map = new Map<
+    number,
+    { productId: number; name: string; qty: number }
+  >();
+  for (const r of rows) {
+    const pid = r.productId;
+    const qty = Math.max(0, Number(r.qty) || 0);
+    if (!pid || !Number.isFinite(pid) || qty <= 0) continue;
+    const cur = map.get(pid);
+    if (cur) {
+      cur.qty += qty;
+      // keep existing name (we'll canonicalize on server later)
+    } else {
+      map.set(pid, { productId: pid, name: String(r.name ?? ""), qty });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.productId - b.productId);
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // Store manager / admin lang pwedeng mag-dispatch ng runs
@@ -100,7 +137,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (!run) throw new Response("Not found", { status: 404 });
 
-  const readOnly = run.status === "DISPATCHED";
+  // Editable ONLY while PLANNED.
+  // Once DISPATCHED/CHECKED_IN/CLOSED/SETTLED/CANCELLED → lock staging.
+  const readOnly = run.status !== "PLANNED";
 
   // ── Riders (Employee role=RIDER, active) ──────────────────────────────
   const employees = await db.employee.findMany({
@@ -140,7 +179,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: true,
       stock: true,
       packingSize: true,
-      unit: { select: { name: true } },
+      packingUnit: { select: { name: true } },
     },
     orderBy: { name: "asc" },
     take: 500,
@@ -155,7 +194,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const stockById: Record<number, number> = {};
   for (const p of packProducts) {
     const size = Number(p.packingSize ?? 0);
-    const factor = massUnitToKgFactor(p.unit?.name);
+    const factor = massUnitToKgFactor(p.packingUnit?.name);
     kgById[p.id] = factor > 0 && size > 0 ? size * factor : 0;
     // importante: kahit 0 or null, gawin nating 0 para tama ang overStock check
     stockById[p.id] = Number(p.stock ?? 0);
@@ -197,6 +236,71 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }))
     : null;
 
+  // Even if old data had duplicates, we display aggregated for sanity.
+  const loadoutSnapshotAgg = loadoutSnapshot
+    ? aggregateLoadoutSnapshot(loadoutSnapshot)
+    : null;
+
+  // ── Parent Orders (linked via deliveryRunOrder) ──────────────────────
+  const links = await db.deliveryRunOrder.findMany({
+    where: { runId: id },
+    select: {
+      order: {
+        select: {
+          id: true,
+          items: {
+            select: {
+              productId: true,
+              qty: true,
+              product: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const orderCount = links.filter((l) => !!l.order).length;
+  const orderItems = links.flatMap((l) => l.order?.items ?? []);
+
+  const uniqueIds = new Set<number>();
+  let totalQty = 0;
+
+  // aggregate by productId for preview
+  const agg = new Map<
+    number,
+    { productId: number; name: string; qty: number }
+  >();
+  for (const it of orderItems) {
+    const pid = Number(it.productId);
+    if (!Number.isFinite(pid)) continue;
+    const q = Math.max(0, Number(it.qty) || 0);
+    if (q <= 0) continue;
+    uniqueIds.add(pid);
+    totalQty += q;
+    const cur = agg.get(pid);
+    if (cur) cur.qty += q;
+    else
+      agg.set(pid, {
+        productId: pid,
+        name: it.product?.name ?? `#${pid}`,
+        qty: q,
+      });
+  }
+
+  const parentOrdersSummary =
+    orderCount > 0
+      ? {
+          orderCount,
+          uniqueItemCount: uniqueIds.size,
+          totalQty,
+        }
+      : null;
+
+  const parentOrderTopItems = Array.from(agg.values())
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 8);
+
   // Categories with at least 1 active, pack-eligible product (for picker filter)
   const categoryRows = await db.category.findMany({
     where: {
@@ -219,7 +323,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
     riderName,
     vehicleId: run.vehicleId ?? run.vehicle?.id ?? null,
-    loadoutSnapshot,
+    loadoutSnapshot: loadoutSnapshotAgg,
     riderOptions,
     productOptions,
     kgById,
@@ -227,12 +331,30 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     vehicles,
     categories: categoryRows.map((c) => c.name).filter(Boolean),
     readOnly,
+    parentOrdersSummary,
+    parentOrderTopItems,
   };
 
   return json(data);
 }
 
 type ActionData = { ok: true } | { ok: false; error: string };
+
+function getPreDispatchFulfillmentStatus(): any {
+  // Best-effort fallback across enum variations without breaking compile
+  const FS: any = FulfillmentStatus as any;
+  return (
+    FS.PLANNED ??
+    FS.PENDING ??
+    FS.OPEN ??
+    FS.READY ??
+    FS.PREPARED ??
+    FS.CREATED ??
+    FS.DRAFT ??
+    // if none exist, we at least clear dispatchedAt; status stays as-is
+    null
+  );
+}
 
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN", "STORE_MANAGER"]);
@@ -276,8 +398,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
     loadoutSnapshot = [];
   }
 
-  // drop <= 0 qty rows
-  loadoutSnapshot = loadoutSnapshot.filter((l) => l.qty > 0);
+  // drop <= 0 qty rows + aggregate duplicates by productId
+  loadoutSnapshot = aggregateLoadoutSnapshot(loadoutSnapshot);
+
+  // Canonicalize names from DB to prevent name/productId drift
+  // (Never trust posted `name` for any downstream logic.)
+  const postedIds = Array.from(
+    new Set(
+      loadoutSnapshot
+        .map((l) => (l.productId == null ? null : Number(l.productId)))
+        .filter((v): v is number => Number.isFinite(v))
+    )
+  );
+  if (postedIds.length > 0) {
+    const rows = await db.product.findMany({
+      where: { id: { in: postedIds } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(rows.map((r) => [r.id, r.name]));
+    loadoutSnapshot = loadoutSnapshot.map((l) => ({
+      ...l,
+      name: nameById.get(l.productId!) ?? l.name ?? "",
+    }));
+  }
 
   // Guard: any positive qty must have productId
   const badRows = loadoutSnapshot.filter(
@@ -308,7 +451,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  const isReadOnly = run.status === "DISPATCHED";
+  // Editable ONLY while PLANNED.
+  const isReadOnly = run.status !== "PLANNED";
 
   if (intent === "cancel") {
     return redirect("/runs");
@@ -354,15 +498,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     effectiveCapacityKg = v.capacityUnits ?? null;
   }
 
-  // compute kg map for posted products (loadout only, for capacity)
-  const postedIds = Array.from(
-    new Set(
-      loadoutSnapshot
-        .map((l) => (l.productId == null ? null : Number(l.productId)))
-        .filter((v): v is number => Number.isFinite(v))
-    )
-  );
-
   const productsForKg =
     postedIds.length > 0
       ? await db.product.findMany({
@@ -370,7 +505,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           select: {
             id: true,
             packingSize: true,
-            unit: { select: { name: true } },
+            packingUnit: { select: { name: true } },
             srp: true,
           },
         })
@@ -379,7 +514,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const kgByIdServer = new Map<number, number>();
   for (const p of productsForKg) {
     const size = Number(p.packingSize ?? 0);
-    const factor = massUnitToKgFactor(p.unit?.name);
+    const factor = massUnitToKgFactor(p.packingUnit?.name);
     kgByIdServer.set(p.id, factor > 0 && size > 0 ? size * factor : 0);
   }
 
@@ -409,6 +544,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         );
       }
 
+      // If pure run (no parent orders) we still allow saving empty,
+      // but dispatch will enforce non-zero total load.
+
       await db.deliveryRun.update({
         where: { id },
         data: {
@@ -432,13 +570,194 @@ export async function action({ request, params }: ActionFunctionArgs) {
           { status: 400 }
         );
       }
-
-      await db.deliveryRun.update({
+      // For Option A correctness:
+      // Revert must restore ALL inventory deducted during dispatch:
+      // - PAD (linked orders items)
+      // - Extra loadoutSnapshot saved on the run
+      const runWithSnapshot = await db.deliveryRun.findUnique({
         where: { id },
-        data: {
-          status: "PLANNED",
-          dispatchedAt: null,
+        select: {
+          id: true,
+          loadoutSnapshot: true,
         },
+      });
+      if (!runWithSnapshot) {
+        return json<ActionData>(
+          { ok: false, error: "Run not found" },
+          { status: 404 }
+        );
+      }
+
+      const extraSnapshot: Array<{ productId: number | null; qty: number }> =
+        Array.isArray(runWithSnapshot.loadoutSnapshot)
+          ? (runWithSnapshot.loadoutSnapshot as any[]).map((row) => ({
+              productId:
+                row?.productId == null ? null : Number(row.productId) || null,
+              qty: Math.max(0, Number(row?.qty ?? 0) || 0),
+            }))
+          : [];
+
+      // Fetch linked orders again (same source of truth as dispatch)
+      const links = await db.deliveryRunOrder.findMany({
+        where: { runId: id },
+        include: {
+          order: {
+            select: {
+              id: true,
+              items: {
+                select: {
+                  productId: true,
+                  qty: true,
+                  unitPrice: true,
+                  unitKind: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const orders = links
+        .map((l) => l.order)
+        .filter((o): o is NonNullable<(typeof links)[number]["order"]> => !!o);
+
+      // Collect all involved product IDs
+      const itemIds = new Set<number>();
+      for (const o of orders) {
+        for (const it of o.items) itemIds.add(it.productId);
+      }
+      const extraIds = new Set<number>();
+      for (const l of extraSnapshot) {
+        if (!l.productId) continue;
+        extraIds.add(Number(l.productId));
+      }
+      const allIds = Array.from(new Set([...itemIds, ...extraIds]));
+
+      const products =
+        allIds.length > 0
+          ? await db.product.findMany({
+              where: { id: { in: allIds } },
+              select: {
+                id: true,
+                allowPackSale: true,
+                price: true, // retail
+                srp: true, // pack
+              },
+            })
+          : [];
+
+      const byId = new Map(products.map((p) => [p.id, p]));
+
+      const approxEqual = (a: number, b: number, eps = 0.25) =>
+        Math.abs(a - b) <= eps;
+
+      // Compute deltas exactly like dispatch did
+      const deltas = new Map<number, { pack: number; retail: number }>();
+      const errors: Array<{ productId: number; reason: string }> = [];
+
+      // From PAD order items: infer retail vs pack
+      for (const o of orders) {
+        for (const it of o.items) {
+          const p = byId.get(it.productId);
+          if (!p) {
+            errors.push({ productId: it.productId, reason: "Product missing" });
+            continue;
+          }
+
+          const unitPrice = Number(it.unitPrice);
+          const qty = Number(it.qty);
+          const baseRetail = Number(p.price ?? 0);
+          const basePack = Number(p.srp ?? 0);
+
+          let inferred: "RETAIL" | "PACK" | null = null;
+
+          if (
+            p.allowPackSale &&
+            baseRetail > 0 &&
+            approxEqual(unitPrice, baseRetail)
+          ) {
+            inferred = "RETAIL";
+          } else if (basePack > 0 && approxEqual(unitPrice, basePack)) {
+            inferred = "PACK";
+          }
+
+          if (!inferred && basePack > 0) inferred = "PACK";
+
+          if (!inferred) {
+            errors.push({
+              productId: it.productId,
+              reason: "Cannot infer unit kind",
+            });
+            continue;
+          }
+
+          const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
+          if (inferred === "RETAIL") c.retail += qty;
+          else c.pack += qty;
+          deltas.set(p.id, c);
+        }
+      }
+
+      // Extra snapshot: pack-only
+      for (const l of extraSnapshot) {
+        if (!l.productId) continue;
+        const pid = Number(l.productId);
+        const q = Number(l.qty || 0);
+        if (!Number.isFinite(pid) || pid <= 0 || q <= 0) continue;
+        const c = deltas.get(pid) ?? { pack: 0, retail: 0 };
+        c.pack += q;
+        deltas.set(pid, c);
+      }
+
+      if (errors.length) {
+        return json<ActionData>(
+          { ok: false, error: "Cannot revert (unit inference failed)." },
+          { status: 400 }
+        );
+      }
+
+      await db.$transaction(async (tx) => {
+        // 1) Restore inventory (reverse of dispatch decrements)
+        for (const [pid, c] of deltas.entries()) {
+          await tx.product.update({
+            where: { id: pid },
+            data: {
+              stock: { increment: c.pack }, // PACK restore
+              packingStock: { increment: c.retail }, // RETAIL restore
+            },
+          });
+        }
+
+        // ✅ Remove any stale receipt-level cash data if it exists
+        // (RunReceiptLine will be removed via onDelete: Cascade from RunReceipt)
+        await tx.runReceipt.deleteMany({ where: { runId: id } });
+
+        // ✅ Remove any stale variance records (optional but recommended)
+        await tx.riderRunVariance.deleteMany({ where: { runId: id } });
+
+        // 2) Reset linked orders back to pre-dispatch (best-effort)
+        const pre = getPreDispatchFulfillmentStatus();
+        for (const o of orders) {
+          await tx.order.update({
+            where: { id: o.id },
+            data: {
+              dispatchedAt: null,
+              ...(pre ? { fulfillmentStatus: pre } : {}),
+            } as any,
+          });
+        }
+
+        // ✅ Reset run to PLANNED and clear check-in snapshot fields
+        await tx.deliveryRun.update({
+          where: { id },
+          data: {
+            status: "PLANNED",
+            dispatchedAt: null,
+            riderCheckinSnapshot: Prisma.DbNull,
+            riderCheckinAt: null,
+            riderCheckinNotes: null,
+          },
+        });
       });
 
       // balik sa staging page, now editable (readOnly = false)
@@ -458,12 +777,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
             select: {
               id: true,
               customerId: true,
+              isOnCredit: true,
+              releaseWithBalance: true,
+              customer: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  alias: true,
+                  phone: true,
+                },
+              },
               items: {
                 select: {
                   id: true,
                   productId: true,
+                  name: true,
                   qty: true,
                   unitPrice: true,
+                  lineTotal: true,
+                  unitKind: true,
                 },
               },
             },
@@ -474,6 +806,33 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const orders = links
         .map((l) => l.order)
         .filter((o): o is NonNullable<(typeof links)[number]["order"]> => !!o);
+
+      // Dispatch rule:
+      // - If there are PAD items, dispatch allowed even with zero EXTRA loadout.
+      // - If no PAD, must have at least 1 EXTRA loadout line.
+      const padQtyTotal = orders.reduce((sum, o) => {
+        return (
+          sum +
+          (o.items || []).reduce(
+            (s, it) => s + Math.max(0, Number(it.qty) || 0),
+            0
+          )
+        );
+      }, 0);
+      const extraQtyTotal = loadoutSnapshot.reduce(
+        (s, l) => s + Math.max(0, Number(l.qty) || 0),
+        0
+      );
+      if (padQtyTotal <= 0 && extraQtyTotal <= 0) {
+        return json<ActionData>(
+          {
+            ok: false,
+            error:
+              "Cannot dispatch with zero load. Add extra loadout or link parent orders (PAD).",
+          },
+          { status: 400 }
+        );
+      }
 
       // 2️⃣ Collect lahat ng productId galing:
       //   - order items (retail/pack mix)
@@ -515,9 +874,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const deltas = new Map<number, { pack: number; retail: number }>();
       const errors: Array<{ productId: number; reason: string }> = [];
 
-      const approxEqual = (a: number, b: number, eps = 0.25) =>
-        Math.abs(a - b) <= eps;
-
       // 3️⃣ From ORDER ITEMS: infer RETAIL vs PACK per line, then accumulate
       for (const o of orders) {
         for (const it of o.items) {
@@ -526,34 +882,35 @@ export async function action({ request, params }: ActionFunctionArgs) {
             errors.push({ productId: it.productId, reason: "Product missing" });
             continue;
           }
+          const qty = Math.max(0, Number(it.qty) || 0);
+          if (qty <= 0) continue;
 
-          const unitPrice = Number(it.unitPrice);
-          const qty = Number(it.qty);
-          const baseRetail = Number(p.price ?? 0);
-          const basePack = Number(p.srp ?? 0);
+          // ✅ Prefer stored unitKind ALWAYS.
+          // If missing (legacy), do NOT infer by comparing to *live* product prices
+          // because product price can change after order creation.
+          const storedKind = it.unitKind as
+            | "RETAIL"
+            | "PACK"
+            | null
+            | undefined;
 
-          let inferred: "RETAIL" | "PACK" | null = null;
+          let inferred: "RETAIL" | "PACK" | null =
+            storedKind === "RETAIL" || storedKind === "PACK"
+              ? storedKind
+              : null;
 
-          // basic inference based on snapshot prices
-          if (
-            p.allowPackSale &&
-            baseRetail > 0 &&
-            approxEqual(unitPrice, baseRetail)
-          ) {
-            inferred = "RETAIL";
-          } else if (basePack > 0 && approxEqual(unitPrice, basePack)) {
-            inferred = "PACK";
-          }
-
-          // fallback: kung hindi ma-infer, treat as PACK kapag may srp
-          if (!inferred && basePack > 0) {
-            inferred = "PACK";
+          if (!inferred) {
+            // Legacy heuristic:
+            // - If retail sale allowed AND qty is fractional (ex: 0.25/0.5/0.75), it's RETAIL
+            // - Otherwise default PACK (sa LPG/common packs, safe default)
+            if (p.allowPackSale && !Number.isInteger(qty)) inferred = "RETAIL";
+            else inferred = "PACK";
           }
 
           if (!inferred) {
             errors.push({
               productId: it.productId,
-              reason: "Cannot infer unit kind",
+              reason: "Missing unitKind and cannot infer",
             });
             continue;
           }
@@ -627,6 +984,70 @@ export async function action({ request, params }: ActionFunctionArgs) {
           });
         }
 
+        // ✅ Create/refresh PARENT run receipts (one per linked PAD order)
+        // These are the cashier-facing "parent receipts" for the run.
+        for (const o of orders) {
+          const receiptKey = `PARENT:${o.id}`; // stable per run + order
+          const customerName =
+            o.customer?.alias?.trim() ||
+            [o.customer?.firstName, o.customer?.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim() ||
+            null;
+          const customerPhone = o.customer?.phone ?? null;
+
+          // IMPORTANT:
+          // During DISPATCHED stage, cashCollected is usually 0.
+          // Do NOT infer credit from cashCollected.
+          // Instead, stamp explicit isCredit in note based on the parent order truth.
+          // (Adjust these fields if your Order schema uses different names.)
+          const isCreditTruth =
+            Boolean((o as any).isOnCredit) ||
+            Boolean((o as any).releaseWithBalance) ||
+            Boolean((o as any).releasedWithBalance);
+
+          const noteMeta = {
+            isCredit: isCreditTruth,
+            source: "DISPATCH:ORDER_SNAPSHOT",
+            orderId: o.id,
+          };
+
+          await tx.runReceipt.upsert({
+            where: {
+              runId_receiptKey: { runId: id, receiptKey },
+            },
+            update: {
+              kind: "PARENT",
+              parentOrderId: o.id,
+              customerId: o.customerId ?? null,
+              customerName,
+              customerPhone,
+              note: JSON.stringify(noteMeta),
+              // never change cashCollected here (cash is later, rider check-in / cashier settle)
+            },
+            create: {
+              runId: id,
+              kind: "PARENT",
+              receiptKey,
+              parentOrderId: o.id,
+              customerId: o.customerId ?? null,
+              customerName,
+              customerPhone,
+              cashCollected: new Prisma.Decimal(0),
+              note: JSON.stringify(noteMeta),
+              status: "DRAFT",
+            },
+            select: { id: true },
+          });
+
+          // NOTE:
+          // Do NOT snapshot receipt lines during dispatch.
+          // Frozen pricing happens at Manager CHECK-IN.
+          // Snapshot/refresh receipt lines must run AFTER freeze to avoid "50 vs 48" drift.
+          // NOTE: No receipt lines snapshot here (freeze happens at Manager CHECK-IN).
+        }
+
         // run
         await tx.deliveryRun.update({
           where: { id },
@@ -635,7 +1056,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
             dispatchedAt: now,
             riderId: riderEmployeeId,
             vehicleId: vehicleId && vehicleId > 0 ? vehicleId : null,
-            loadoutSnapshot: loadoutSnapshot as any,
+            loadoutSnapshot: loadoutSnapshot as any, // EXTRA-only snapshot (PAD inferred from linked orders)
+            // ✅ ensure fresh check-in state for this dispatch
+            riderCheckinSnapshot: Prisma.DbNull,
+            riderCheckinAt: null,
+            riderCheckinNotes: null,
           },
         });
 
@@ -650,16 +1075,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           });
         }
       });
-
-      // 7️⃣ Redirect:
-      //    - 1 linked order → straight to ticket (auto-print)
-      //    - 0 or many orders → run summary
-      if (orders.length === 1) {
-        return redirect(
-          `/orders/${orders[0].id}/ticket?autoprint=1&autoback=1`
-        );
-      }
-
+      // 7️⃣ Redirect: dispatch is logistics; cashier handles receipts
       return redirect(`/runs/${id}/summary`);
     }
 
@@ -683,6 +1099,8 @@ export default function RunDispatchPage() {
     stockById,
     vehicles,
     readOnly,
+    parentOrdersSummary,
+    parentOrderTopItems,
   } = useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
@@ -731,6 +1149,24 @@ export default function RunDispatchPage() {
     return Number.isFinite(n) ? n : 0;
   };
 
+  // Aggregate current UI state by productId (prevents duplicate display + bad submits)
+  const aggregatedLoadout = React.useMemo(() => {
+    const map = new Map<number, LoadLine>();
+    for (const L of loadout) {
+      const pid = L.productId;
+      const q = qtyNum(L.qty);
+      if (!pid || !Number.isFinite(pid) || q <= 0) continue;
+      const cur = map.get(pid);
+      if (cur) {
+        const newQty = qtyNum(cur.qty) + q;
+        map.set(pid, { ...cur, qty: String(Math.round(newQty)) });
+      } else {
+        map.set(pid, { ...L, qty: String(Math.round(q)) });
+      }
+    }
+    return Array.from(map.values());
+  }, [loadout]);
+
   const kgMap = React.useMemo(
     () =>
       new Map<number, number>(
@@ -748,12 +1184,12 @@ export default function RunDispatchPage() {
   );
 
   const usedCapacityKg = React.useMemo(() => {
-    return loadout.reduce((sum, L) => {
+    return aggregatedLoadout.reduce((sum, L) => {
       if (!L.productId) return sum;
       const kg = kgMap.get(L.productId) ?? 0;
       return sum + kg * qtyNum(L.qty);
     }, 0);
-  }, [loadout, kgMap]);
+  }, [aggregatedLoadout, kgMap]);
 
   const capacityKg = React.useMemo(() => {
     if (vehicleId == null) return null;
@@ -764,42 +1200,42 @@ export default function RunDispatchPage() {
     capacityKg != null && usedCapacityKg > capacityKg && capacityKg > 0;
 
   const serializedLoadout = React.useMemo(() => {
-    const clean = loadout
-      .filter(
-        (L) =>
-          qtyNum(L.qty) > 0 &&
-          L.productId != null &&
-          Number.isFinite(L.productId)
-      )
-      .map((L) => ({
-        productId: Number(L.productId),
-        name: L.name,
-        qty: qtyNum(L.qty),
-      }));
+    // Always submit aggregated payload (no dupes)
+    const clean = aggregatedLoadout.map((L) => ({
+      productId: Number(L.productId),
+      name: L.name,
+      qty: qtyNum(L.qty),
+    }));
     return JSON.stringify(clean);
-  }, [loadout]);
+  }, [aggregatedLoadout]);
 
   const disableAll = busy || readOnly;
   const hasRider = riderName.trim().length > 0;
 
+  const totalLoadUnits = React.useMemo(
+    () =>
+      aggregatedLoadout.reduce((s, L) => {
+        if (!L.productId) return s;
+        return s + qtyNum(L.qty);
+      }, 0),
+    [aggregatedLoadout]
+  );
+  const padQtyTotal = React.useMemo(() => {
+    const q = parentOrdersSummary?.totalQty ?? 0;
+    return Number.isFinite(q) ? q : 0;
+  }, [parentOrdersSummary]);
+
+  const canDispatchByQty = padQtyTotal > 0 || totalLoadUnits > 0;
+
   const overStock = React.useMemo(() => {
-    return loadout.some((L) => {
+    return aggregatedLoadout.some((L) => {
       if (!L.productId) return false;
       const pid = Number(L.productId);
       const q = qtyNum(L.qty);
       const stock = stockMap.get(pid) || 0;
       return q > stock;
     });
-  }, [loadout, stockMap]);
-
-  const totalLoadUnits = React.useMemo(
-    () =>
-      loadout.reduce((s, L) => {
-        if (!L.productId) return s;
-        return s + qtyNum(L.qty);
-      }, 0),
-    [loadout]
-  );
+  }, [aggregatedLoadout, stockMap]);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -834,6 +1270,41 @@ export default function RunDispatchPage() {
             </span>
           </div>
         </header>
+
+        {/* Parent orders clarity box */}
+        {parentOrdersSummary && (
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium text-slate-800">
+                Linked Parent Orders (PAD)
+              </div>
+              <div className="text-xs text-slate-600">
+                {parentOrdersSummary.orderCount} order(s) ·{" "}
+                {parentOrdersSummary.uniqueItemCount} item(s) ·{" "}
+                {parentOrdersSummary.totalQty} total qty
+              </div>
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              Note: These order items are part of dispatch stock deductions. The
+              <span className="font-semibold"> Loadout</span> below is only for
+              the
+              <span className="font-semibold"> physical/manual load</span> you
+              add.
+            </div>
+            {parentOrderTopItems.length > 0 && (
+              <div className="mt-2 grid gap-1">
+                {parentOrderTopItems.map((it) => (
+                  <div key={it.productId} className="text-xs text-slate-700">
+                    <span className="font-mono text-slate-500">
+                      #{it.productId}
+                    </span>{" "}
+                    {it.name} — <span className="font-semibold">{it.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {savedFlag && (
           <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -1005,18 +1476,58 @@ export default function RunDispatchPage() {
                               placeholder="Type ID or name…"
                               disabled={disableAll}
                               categoryOptions={categories ?? []}
+                              // 💡 Huwag ipakita ang products na wala sa `stockMap`
+                              // (ibig sabihin: 0 or invalid stock for this run)
+                              filterRow={(p) => {
+                                const stock = stockMap.get(p.id) ?? 0;
+                                return stock > 0;
+                              }}
                               onSelect={(p) => {
-                                setLoadout((prev) =>
-                                  prev.map((x) =>
+                                // Merge duplicates: if product already exists in another row,
+                                // add qty there then remove this row.
+                                setLoadout((prev) => {
+                                  const current = prev.find(
+                                    (x) => x.key === L.key
+                                  );
+                                  const currentQty = current
+                                    ? qtyNum(current.qty)
+                                    : 0;
+                                  const existing = prev.find(
+                                    (x) =>
+                                      x.key !== L.key && x.productId === p.id
+                                  );
+                                  if (existing) {
+                                    const mergedQty = Math.round(
+                                      qtyNum(existing.qty) +
+                                        (currentQty > 0 ? currentQty : 1)
+                                    );
+                                    return prev
+                                      .filter((x) => x.key !== L.key)
+                                      .map((x) =>
+                                        x.key === existing.key
+                                          ? {
+                                              ...x,
+                                              productId: p.id,
+                                              name: p.name,
+                                              qty: String(mergedQty),
+                                            }
+                                          : x
+                                      );
+                                  }
+                                  return prev.map((x) =>
                                     x.key === L.key
                                       ? {
                                           ...x,
                                           productId: p.id,
                                           name: p.name,
+                                          qty:
+                                            x.qty && qtyNum(x.qty) > 0
+                                              ? x.qty
+                                              : "1",
                                         }
                                       : x
-                                  )
-                                );
+                                  );
+                                });
                               }}
                             />
                           )}
@@ -1141,10 +1652,7 @@ export default function RunDispatchPage() {
                   value="dispatch"
                   type="submit"
                   disabled={
-                    !hasRider ||
-                    overCapacity ||
-                    overStock ||
-                    loadout.length === 0
+                    !hasRider || overCapacity || overStock || !canDispatchByQty
                   }
                   title={
                     !hasRider
@@ -1153,8 +1661,8 @@ export default function RunDispatchPage() {
                       ? "Capacity exceeded (kg)"
                       : overStock
                       ? "One or more lines exceed available stock"
-                      : loadout.length === 0
-                      ? "Add at least one loadout line"
+                      : !canDispatchByQty
+                      ? "Add extra loadout or link parent orders (PAD)"
                       : "Ready to dispatch"
                   }
                   className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"

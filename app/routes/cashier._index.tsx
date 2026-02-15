@@ -1,7 +1,7 @@
 // app/routes/cashier._index.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
 import {
   getActiveShift,
@@ -15,14 +15,19 @@ type LoaderData = {
   me: SessionUser;
   activeShift: {
     id: number;
-    branchId: number;
+    branchId: number | null;
     openedAt: string;
     closingTotal: number | null;
+    // IMPORTANT: runtime string (avoid Prisma enum in browser bundle)
+    status: string;
   } | null;
   userInfo: {
     name: string;
     alias: string | null;
     email: string;
+  };
+  alerts: {
+    openChargeItems: number; // manager-charged cashier variance items awaiting cashier ack
   };
 };
 
@@ -31,13 +36,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Kung hindi cashier, wag dito — ibalik sa sariling home
   if (me.role !== "CASHIER") {
-    throw json(
-      { ok: false, error: "Cashier dashboard is for cashiers only." },
-      {
-        status: 302,
-        headers: { Location: homePathFor(me.role) },
-      }
-    );
+    return redirect(homePathFor(me.role));
   }
 
   // Load auth user + linked employee para makita natin si Joy/Leo
@@ -57,14 +56,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : userRow.email ?? "";
   const alias: string | null = emp?.alias ?? null;
 
-  const shift = await getActiveShift(request);
+  const [shift, openChargeItems] = await Promise.all([
+    getActiveShift(request),
+    // Cashier Charges = manager approved + charged to cashier, waiting cashier acknowledgement
+    db.cashierShiftVariance.count({
+      where: {
+        resolution: "CHARGE_CASHIER" as any,
+        status: "MANAGER_APPROVED" as any,
+        shift: { cashierId: me.userId },
+      },
+    }),
+  ]);
   const activeShift = shift
     ? {
         id: shift.id,
-        branchId: shift.branchId,
+        branchId: shift.branchId ?? null,
         openedAt: shift.openedAt.toISOString(),
         closingTotal:
           shift.closingTotal == null ? null : Number(shift.closingTotal),
+        status: String(shift.status ?? ""),
       }
     : null;
   return json<LoaderData>({
@@ -75,16 +85,35 @@ export async function loader({ request }: LoaderFunctionArgs) {
       alias,
       email: userRow.email ?? "",
     },
+    alerts: { openChargeItems },
   });
 }
 
 export default function CashierDashboardPage() {
-  const { me, activeShift, userInfo } = useLoaderData<LoaderData>();
+  const { me, activeShift, userInfo, alerts } = useLoaderData<LoaderData>();
 
   const hasShift = !!activeShift;
+  const shiftWritable = Boolean(
+    activeShift && String(activeShift.status) === "OPEN",
+  );
+  const shiftLocked = Boolean(activeShift && !shiftWritable);
   const openedAt = activeShift
     ? new Date(activeShift.openedAt).toLocaleString()
     : null;
+
+  // If no shift OR shift locked, route to shift console with proper flags.
+  const guardLink = (to: string) => {
+    if (!hasShift) {
+      return `/cashier/shift?open=1&next=${encodeURIComponent(to)}`;
+    }
+    if (!shiftWritable) {
+      return `/cashier/shift?locked=1&next=${encodeURIComponent(to)}`;
+    }
+    return to;
+  };
+
+  const disabledCard = "opacity-70 select-none grayscale";
+  const disabledHint = "mt-2 text-[11px] text-rose-600 font-medium";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -110,21 +139,53 @@ export default function CashierDashboardPage() {
           </div>
           <div className="flex flex-col items-end gap-2 text-xs">
             <div className="flex items-center gap-2">
+              {/* 🔔 Cashier Charges badge (does NOT require active shift) */}
+              <Link
+                to="/cashier/charges"
+                className={
+                  "relative inline-flex items-center rounded-xl border px-3 py-1.5 text-[11px] font-medium shadow-sm hover:bg-slate-50 " +
+                  (alerts.openChargeItems > 0
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-slate-200 bg-white text-slate-700")
+                }
+                title={
+                  alerts.openChargeItems > 0
+                    ? `${alerts.openChargeItems} charge item(s) awaiting acknowledgement`
+                    : "No pending charges"
+                }
+              >
+                Charges
+                {alerts.openChargeItems > 0 ? (
+                  <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                    {alerts.openChargeItems}
+                  </span>
+                ) : null}
+              </Link>
               <span
                 className={
                   "inline-flex items-center gap-1 rounded-full px-2 py-1 " +
-                  (hasShift
-                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border border-rose-200 bg-rose-50 text-rose-700")
+                  (!hasShift
+                    ? "border border-rose-200 bg-rose-50 text-rose-700"
+                    : shiftLocked
+                    ? "border border-amber-200 bg-amber-50 text-amber-800"
+                    : "border border-emerald-200 bg-emerald-50 text-emerald-700")
                 }
               >
                 <span
                   className={
                     "h-1.5 w-1.5 rounded-full " +
-                    (hasShift ? "bg-emerald-500" : "bg-rose-500")
+                    (!hasShift
+                      ? "bg-rose-500"
+                      : shiftLocked
+                      ? "bg-amber-500"
+                      : "bg-emerald-500")
                   }
                 />
-                {hasShift ? "Shift OPEN" : "No active shift"}
+                {!hasShift
+                  ? "No active shift"
+                  : shiftLocked
+                  ? `LOCKED (${String(activeShift?.status ?? "UNKNOWN")})`
+                  : "Shift OPEN"}
               </span>
               <Form method="post" action="/logout">
                 <button
@@ -157,10 +218,33 @@ export default function CashierDashboardPage() {
                 </div>
               </div>
               <Link
-                to="/cashier/shift?open=1"
+                to="/cashier/shift?open=1&next=/cashier"
                 className="rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800"
               >
                 Open Shift
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Callout kung locked ang shift */}
+        {hasShift && shiftLocked && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-medium">Shift is locked</div>
+                <div className="text-xs">
+                  This shift is not writable yet. Resolve it in Shift Console
+                  (accept opening / submit count / manager close).
+                </div>
+              </div>
+              <Link
+                to={`/cashier/shift?locked=1&next=${encodeURIComponent(
+                  "/cashier",
+                )}`}
+                className="rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800"
+              >
+                Go to Shift Console
               </Link>
             </div>
           </div>
@@ -172,10 +256,43 @@ export default function CashierDashboardPage() {
             Cashier Actions
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Cashier Charges (manager-charged items) — no shift required */}
+            <Link
+              to="/cashier/charges"
+              className="group flex h-full flex-col justify-between rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                  Charges
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  Manager-Charged Variances
+                </div>
+                <p className="mt-1 text-xs text-rose-900/80">
+                  Review items charged to you after shift close audit, add note,
+                  then acknowledge & close.
+                </p>
+                {alerts.openChargeItems > 0 ? (
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/70 px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200">
+                    Pending: {alerts.openChargeItems}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-rose-700/70">
+                    No pending charge items
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 text-[11px] font-medium text-rose-700 group-hover:text-rose-800">
+                Open charges →
+              </div>
+            </Link>
             {/* Walk-in POS */}
             <Link
-              to="/cashier/pos"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              to={guardLink("/cashier/pos")}
+              className={
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                (!hasShift ? disabledCard : "")
+              }
             >
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
@@ -188,6 +305,11 @@ export default function CashierDashboardPage() {
                   Scan items, collect payment, and print receipt for in-store
                   customers.
                 </p>
+                {!hasShift ? (
+                  <div className={disabledHint}>
+                    Requires open shift → click to open
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 text-[11px] font-medium text-indigo-600 group-hover:text-indigo-700">
                 Go to POS →
@@ -196,8 +318,11 @@ export default function CashierDashboardPage() {
 
             {/* AR / Customer balance collection */}
             <Link
-              to="/ar"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              to={guardLink("/ar")}
+              className={
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                (!hasShift ? disabledCard : "")
+              }
             >
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">
@@ -209,15 +334,23 @@ export default function CashierDashboardPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Find a customer, view their ledger, and record AR payments.
                 </p>
+                {!hasShift ? (
+                  <div className={disabledHint}>
+                    Requires open shift → click to open
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 text-[11px] font-medium text-emerald-600 group-hover:text-emerald-700">
                 Open AR list →
               </div>
             </Link>
-            {/* Delivery remit console */}
+            {/* Delivery remit console (per delivery run) */}
             <Link
-              to="/remit"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              to={guardLink("/cashier/delivery")}
+              className={
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                (!hasShift ? disabledCard : "")
+              }
             >
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-sky-500">
@@ -227,12 +360,16 @@ export default function CashierDashboardPage() {
                   Rider Remittance
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Record rider remit for dispatched delivery runs and review
-                  roadside sales.
+                  Record rider remit per delivery run and review roadside sales.
                 </p>
+                {!hasShift ? (
+                  <div className={disabledHint}>
+                    Requires open shift → click to open
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 text-[11px] font-medium text-sky-600 group-hover:text-sky-700">
-                Open remit console →
+                Open delivery remit console →
               </div>
             </Link>
           </div>
@@ -246,7 +383,7 @@ export default function CashierDashboardPage() {
                 Shift Console
               </h2>
               <Link
-                to="/cashier/shift"
+                to="/cashier/shift?next=/cashier"
                 className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
               >
                 Open →
@@ -259,7 +396,9 @@ export default function CashierDashboardPage() {
             {hasShift && (
               <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
                 Active shift: #{activeShift?.id} • Branch{" "}
-                <span className="font-mono">{activeShift?.branchId}</span>
+                <span className="font-mono">
+                  {activeShift?.branchId ?? "—"}
+                </span>
               </div>
             )}
           </div>
@@ -270,7 +409,7 @@ export default function CashierDashboardPage() {
                 Shift History
               </h2>
               <Link
-                to="/cashier/shifts"
+                to="/cashier/shift-history"
                 className="text-xs font-medium text-slate-600 hover:text-slate-800"
               >
                 View all →

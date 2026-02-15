@@ -1,4 +1,6 @@
 // app/routes/api.customer-pricing.tsx
+// NOTE: Kept for cashier/manager/internal debug. Rider-checkin now uses /api/quote-pricing
+// to avoid leaking rule details to the client.
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { db } from "~/utils/db.server";

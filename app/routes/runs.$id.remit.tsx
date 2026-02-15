@@ -10,18 +10,14 @@ import {
   useNavigation,
 } from "@remix-run/react";
 import { db } from "~/utils/db.server";
-import { UnitKind } from "@prisma/client";
-import { computeUnitPriceForCustomer } from "~/services/pricing";
+import { UnitKind, Prisma } from "@prisma/client";
 import { allocateReceiptNo } from "~/utils/receipt";
-
+import { loadRunRecap } from "~/services/runRecap.server";
+import { r2 as r2Money } from "~/utils/money";
 import { requireRole } from "~/utils/auth.server";
-import {
-  applyDiscounts,
-  fetchActiveCustomerRules,
-  buildCartFromOrderItems,
-  type Cart,
-  type Rule,
-} from "~/services/pricing";
+
+// Local helper: money rounding (single source in this file, but we prefer r2Money)
+const r2 = (n: number) => r2Money(Number(n) || 0);
 
 type RecapRow = {
   productId: number;
@@ -48,6 +44,17 @@ type QuickSaleRow = {
   discountAmount?: number;
 };
 
+type QuickSaleReceipt = {
+  key: string;
+  customerId: number | null;
+  customerLabel: string;
+  isCredit: boolean;
+  total: number;
+  cash: number;
+  ar: number;
+  rows: QuickSaleRow[];
+};
+
 type ParentOrderLine = {
   productId: number | null;
   name: string;
@@ -64,6 +71,8 @@ type ParentOrderRow = {
   customerLabel: string;
   lines: ParentOrderLine[];
   orderTotal: number;
+  collectedCash?: number;
+  pricingMismatch?: boolean;
 };
 
 type LoaderData = {
@@ -74,9 +83,15 @@ type LoaderData = {
     riderLabel: string | null;
   };
   recapRows: RecapRow[];
-  quickSales: QuickSaleRow[];
+  quickReceipts: QuickSaleReceipt[];
   hasDiffIssues: boolean;
   parentOrders: ParentOrderRow[];
+  totals: {
+    roadsideCash: number;
+    roadsideAR: number;
+    parentCash: number;
+    parentAR: number;
+  };
 };
 
 type ActionData =
@@ -104,6 +119,33 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       riderId: true,
       loadoutSnapshot: true,
       riderCheckinSnapshot: true,
+      receipts: {
+        select: {
+          id: true,
+          kind: true,
+          receiptKey: true,
+          cashCollected: true,
+          note: true,
+          customerId: true,
+          customerName: true,
+          customerPhone: true,
+          parentOrderId: true,
+          lines: {
+            select: {
+              id: true,
+              productId: true,
+              name: true,
+              qty: true,
+              unitPrice: true,
+              lineTotal: true,
+              baseUnitPrice: true,
+              discountAmount: true,
+            },
+            orderBy: { id: "asc" },
+          },
+        },
+        orderBy: { id: "asc" },
+      },
     },
   });
   if (!run) throw new Response("Not found", { status: 404 });
@@ -114,6 +156,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     run.status !== "CLOSED"
   ) {
     throw new Response("Run is not dispatched yet.", { status: 400 });
+  }
+
+  // 🔒 Remit is for manager review AFTER rider check-in.
+  // If still DISPATCHED, send them to check-in page (or summary).
+  if (run.status === "DISPATCHED") {
+    return redirect(`/runs/${id}/rider-checkin?needCheckin=1`);
   }
 
   // Rider label
@@ -129,414 +177,286 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       null;
   }
 
-  // 1) Loaded from snapshot
-  const loadout: Array<{ productId: number; name: string; qty: number }> =
-    Array.isArray(run.loadoutSnapshot)
-      ? (run.loadoutSnapshot as any[])
-          .map((l) => ({
-            productId: Number(l?.productId),
-            name: String(l?.name ?? ""),
-            qty: Math.max(0, Math.floor(Number(l?.qty ?? 0))),
-          }))
-          .filter(
-            (l) => Number.isFinite(l.productId) && l.productId > 0 && l.qty > 0
-          )
-      : [];
+  // ✅ Stock recap (source of truth)
+  const recap = await loadRunRecap(db, id);
 
-  const loadedByPid = new Map<number, { name: string; qty: number }>();
-  for (const l of loadout) {
-    loadedByPid.set(l.productId, {
-      name: l.name,
-      qty: (loadedByPid.get(l.productId)?.qty || 0) + l.qty,
-    });
-  }
+  // NOTE:
+  // stockRows parsing was moved into loadRunRecap()
+  // to keep a single source of truth for:
+  //   Loaded / Sold / Returned / Diff
 
-  // 2) Rider check-in snapshot: stockRows + soldRows + parentOverrides
-  const rawSnap = run.riderCheckinSnapshot as any;
+  // returnedByPid already handled inside loadRunRecap (RETURN_IN > snapshot)
 
-  // Parent AR/Cash overrides saved during Rider Check-in
-  const parentOverrideMap = new Map<number, boolean>();
-  if (
-    rawSnap &&
-    typeof rawSnap === "object" &&
-    Array.isArray((rawSnap as any).parentOverrides)
-  ) {
-    for (const row of (rawSnap as any).parentOverrides as any[]) {
-      const oid = Number(row?.orderId ?? 0);
-      if (!oid) continue;
-      parentOverrideMap.set(oid, !!row?.isCredit);
-    }
-  }
+  // 3) Roadside sales list (SOURCE: RunReceipt kind=ROAD)
 
-  let stockRows: Array<{ productId: number; returned: number }> = [];
-  let soldRowsRaw: any[] = [];
+  // ✅ Receipt-level view: 1 QuickSaleReceipt per RunReceipt(kind=ROAD)
+  // ROAD receipts -> QuickSaleReceipt (source: RunReceipt kind=ROAD)
+  const quickReceipts: QuickSaleReceipt[] = (run.receipts || [])
+    .filter((r) => r.kind === "ROAD")
+    .map((rec) => {
+      const cashCollected = Number(rec.cashCollected ?? 0);
+      let receiptIsCredit = cashCollected <= 0;
+      try {
+        const meta = rec.note ? JSON.parse(rec.note) : null;
+        if (meta && typeof meta.isCredit === "boolean")
+          receiptIsCredit = meta.isCredit;
+      } catch {}
 
-  if (rawSnap && typeof rawSnap === "object") {
-    if (Array.isArray(rawSnap.stockRows)) {
-      stockRows = (rawSnap.stockRows as any[]).map((r) => ({
-        productId: Number(r?.productId ?? 0),
-        returned: Math.max(0, Number(r?.returned ?? 0)),
-      }));
-    } else if (Array.isArray(rawSnap)) {
-      // legacy: array of { productId, sold, returned }
-      stockRows = (rawSnap as any[]).map((r) => ({
-        productId: Number(r?.productId ?? 0),
-        returned: Math.max(0, Number(r?.returned ?? 0)),
-      }));
-    }
+      const custLabelBase =
+        (rec.customerName && rec.customerName.trim()) ||
+        (rec.customerId ? `Customer #${rec.customerId}` : "Walk-in / Unknown");
+      const customerLabel = rec.customerPhone
+        ? `${custLabelBase} • ${rec.customerPhone}`
+        : custLabelBase;
 
-    if (Array.isArray(rawSnap.soldRows)) {
-      soldRowsRaw = rawSnap.soldRows as any[];
-    }
-  }
+      const rows: QuickSaleRow[] = (rec.lines || []).map((ln, i) => {
+        const qty = Math.max(0, Number(ln.qty ?? 0));
+        const unitPrice = Math.max(0, Number(ln.unitPrice ?? 0));
+        const lineTotal = r2(Number(ln.lineTotal ?? qty * unitPrice));
+        const pid = ln.productId != null ? Number(ln.productId) : null;
 
-  // Normalize snapshot returns only (ignore invalid pid)
-  const returnedByPid = new Map<number, number>();
-  for (const r of stockRows) {
-    const pid = Number(r.productId);
-    if (!Number.isFinite(pid) || pid <= 0) continue;
-    const returned = Math.max(0, Number(r.returned ?? 0));
-    returnedByPid.set(pid, (returnedByPid.get(pid) || 0) + returned);
-  }
+        return {
+          idx: i,
+          productId: pid,
+          productName:
+            ln.name && ln.name.trim()
+              ? ln.name
+              : ln.productId != null
+              ? `#${ln.productId}`
+              : "Unknown",
+          qty,
+          unitPrice,
+          lineTotal,
+          customerId: rec.customerId ?? null,
+          customerLabel,
+          isCredit: receiptIsCredit,
+          cashAmount: 0, // we'll compute below
+          creditAmount: 0, // we'll compute below
+          baseUnitPrice:
+            ln.baseUnitPrice != null ? Number(ln.baseUnitPrice) : undefined,
+          discountAmount:
+            ln.discountAmount != null ? Number(ln.discountAmount) : undefined,
+        };
+      });
 
-  // 3) Quick roadside sales list for manager overview
-  //    Also build roadsideSoldByPid for recap.
-  const roadsideSoldByPid = new Map<number, number>();
-  const quickSales: QuickSaleRow[] = soldRowsRaw
-    .map((r, idx) => {
-      const pid =
-        r?.productId == null || Number.isNaN(Number(r.productId))
-          ? null
-          : Number(r.productId);
-      const qty = Math.max(0, Number(r?.qty ?? 0));
-      const unitPrice = Math.max(0, Number(r?.unitPrice ?? 0));
-      const customerId =
-        r?.customerId == null || Number.isNaN(Number(r.customerId))
-          ? null
-          : Number(r.customerId);
-      const flagIsCredit = !!(r?.onCredit ?? r?.isCredit);
+      const total = r2(rows.reduce((s, r) => s + r.lineTotal, 0));
+      const cash = r2(Math.max(0, Math.min(total, cashCollected || 0)));
+      const ar = r2(Math.max(0, total - cash));
+      // ✅ Effective credit must reflect remaining balance regardless of meta
+      const isCreditEffective = receiptIsCredit || ar > 0.009;
 
-      const lineTotal = Number((qty * unitPrice).toFixed(2));
-
-      // cashAmount from snapshot (optional)
-      const rawCash =
-        r?.cashAmount != null && !Number.isNaN(Number(r.cashAmount))
-          ? Number(r.cashAmount)
-          : NaN;
-
-      const defaultCash = flagIsCredit ? 0 : lineTotal;
-      let cashAmount = Number.isFinite(rawCash) ? rawCash : defaultCash;
-      cashAmount = Math.max(0, Math.min(lineTotal, cashAmount));
-
-      const creditAmount = Number(
-        Math.max(0, lineTotal - cashAmount).toFixed(2)
-      );
-      const isCredit = creditAmount > 0.009;
-
-      if (pid != null) {
-        roadsideSoldByPid.set(pid, (roadsideSoldByPid.get(pid) || 0) + qty);
-      }
-      const productName =
-        typeof r?.name === "string" && r.name.trim()
-          ? r.name
-          : pid != null
-          ? `#${pid}`
-          : "Unknown";
-
-      const snapName =
-        typeof r?.customerName === "string" && r.customerName.trim()
-          ? r.customerName.trim()
-          : null;
-      const snapPhone =
-        typeof r?.customerPhone === "string" && r.customerPhone.trim()
-          ? r.customerPhone.trim()
-          : null;
-
-      let customerLabel = snapName || "";
-      if (!customerLabel && customerId) {
-        customerLabel = `Customer #${customerId}`;
-      }
-      if (!customerLabel) customerLabel = "Walk-in / Unknown";
-
-      if (snapPhone) {
-        customerLabel += ` • ${snapPhone}`;
+      // distribute cash for display (optional)
+      const sum = rows.reduce((s, r) => s + r.lineTotal, 0) || 0;
+      for (const r of rows) {
+        const share = sum > 0 ? r.lineTotal / sum : 0;
+        const ca = r2(cash * share);
+        r.cashAmount = ca;
+        r.creditAmount = r2(Math.max(0, r.lineTotal - ca));
+        r.isCredit = isCreditEffective || r.creditAmount > 0.009;
       }
 
       return {
-        idx,
-        productId: pid,
-        productName,
-        qty,
-        unitPrice,
-        lineTotal,
-        customerId,
+        // ✅ stable deterministic key for debug + consistency (matches posted RS orderCode)
+        // Keep receiptKey if you rely on it elsewhere, but prefer stable fallback
+        key: String(rec.receiptKey || `RS-RUN${id}-RR${rec.id}`).slice(0, 64),
+        customerId: rec.customerId ?? null,
         customerLabel,
-        isCredit,
-        cashAmount,
-        creditAmount,
-      } as QuickSaleRow;
-    })
-    .filter((r) => r.qty > 0 && (r.productId != null || r.productName !== ""));
+        isCredit: isCreditEffective,
+        total,
+        cash,
+        ar,
+        rows,
+      };
+    });
 
-  // Kailangan din natin ang productIds ng roadside para sa base price lookup
-  const roadsideProductIds = Array.from(
+  // 4) Parent Orders (DISPLAY): SOURCE OF TRUTH = Order + OrderItem (frozen)
+  // NOTE: collection truth for parent is still RunReceipt(kind=PARENT).cashCollected (handled later)
+  const parentOrderIds = Array.from(
     new Set(
-      quickSales
-        .map((q) => q.productId)
-        .filter((pid): pid is number => pid != null)
+      (run.receipts || [])
+        .filter((r) => r.kind === "PARENT" && r.parentOrderId != null)
+        .map((r) => Number(r.parentOrderId))
+        .filter((id) => Number.isFinite(id) && id > 0)
     )
   );
 
-  // 4) Main SOLD from already-linked delivery orders (non-roadside)
-  const links = await db.deliveryRunOrder.findMany({
-    where: { runId: id },
-    include: {
-      order: {
+  const parentOrderRecords = parentOrderIds.length
+    ? await db.order.findMany({
+        where: { id: { in: parentOrderIds } },
         select: {
           id: true,
-          isOnCredit: true,
+          subtotal: true,
+          totalBeforeDiscount: true,
           customerId: true,
+          isOnCredit: true,
+          deliverTo: true,
+          deliverPhone: true,
           customer: {
             select: {
-              alias: true,
               firstName: true,
               lastName: true,
+              alias: true,
               phone: true,
             },
           },
           items: {
             select: {
-              id: true, // 🔴 kailangan natin ito para ma-map sa pricing engine
+              id: true,
               productId: true,
-              qty: true,
               name: true,
+              unitKind: true,
+              qty: true,
               unitPrice: true,
+              lineTotal: true,
+              baseUnitPrice: true,
+              discountAmount: true,
             },
+            orderBy: { id: "asc" },
           },
         },
-      },
-    },
-  });
-
-  // ────────────────────────────────────────────────
-  // Base prices (SRP/price) per product para sa discount badge
-  // ────────────────────────────────────────────────
-  const parentProductIds = Array.from(
-    new Set(
-      links.flatMap((L) =>
-        (L.order?.items || [])
-          .map((it) => Number(it.productId ?? 0))
-          .filter((pid) => Number.isFinite(pid) && pid > 0)
-      )
-    )
-  );
-
-  const allBasePids = Array.from(
-    new Set([...parentProductIds, ...roadsideProductIds])
-  );
-  const baseProducts = allBasePids.length
-    ? await db.product.findMany({
-        where: { id: { in: allBasePids } },
-        select: { id: true, price: true, srp: true },
       })
     : [];
-  const basePriceIndex = new Map<number, number>();
-  for (const p of baseProducts) {
-    const rawBase = Number(p.srp ?? p.price ?? 0);
-    const base =
-      Number.isFinite(rawBase) && rawBase > 0
-        ? rawBase
-        : Number(p.price ?? 0) || 0;
-    basePriceIndex.set(p.id, base);
-  }
 
-  // Apply baseUnitPrice/discountAmount sa quickSales
-  const quickSalesWithDiscount: QuickSaleRow[] = quickSales.map((q) => {
-    const base =
-      q.productId != null
-        ? basePriceIndex.get(q.productId) ?? q.unitPrice
-        : q.unitPrice;
-    const discount = Math.max(0, Number((base - q.unitPrice).toFixed(2)));
-    return {
-      ...q,
-      baseUnitPrice: base,
-      discountAmount: discount > 0.01 ? discount : undefined,
-    };
-  });
+  // IMPORTANT (Remix): keep *.server imports out of route module scope
+  // so client bundle won't pull them in.
+  const { getFrozenPricingFromOrder } = await import(
+    "~/services/frozenPricing.server"
+  );
 
-  // ────────────────────────────────────────────────
-  // Pricing engine for parent POS orders (display)
-  // ────────────────────────────────────────────────
-  const parentPricingByOrderId = new Map<
-    number,
-    { unitPriceByItemId: Map<number, number>; orderTotal: number }
-  >();
+  const parentOrders: ParentOrderRow[] = parentOrderRecords.map((o) => {
+    // IMPORTANT (Remix): keep *.server imports out of route module scope
+    // so client bundle won't pull them in.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    const custName =
+      o.customer?.alias?.trim() ||
+      [o.customer?.firstName, o.customer?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      "";
 
-  for (const L of links) {
-    const o = L.order;
-    if (!o || !o.items || o.items.length === 0) continue;
+    const custLabelBase =
+      (custName && custName.trim()) ||
+      (o.deliverTo && String(o.deliverTo).trim()) ||
+      (o.customerId ? `Customer #${o.customerId}` : "Walk-in / Unknown");
 
-    const customerId = o.customerId ?? null;
-    const rules: Rule[] = await fetchActiveCustomerRules(db, customerId);
+    const phone =
+      (o.customer?.phone && String(o.customer.phone).trim()) ||
+      (o.deliverPhone && String(o.deliverPhone).trim()) ||
+      "";
 
-    const unitPriceByItemId = new Map<number, number>();
+    const customerLabel = phone ? `${custLabelBase} • ${phone}` : custLabelBase;
 
-    // fallback total: raw POS price (qty * unitPrice)
-    const fallbackTotal = o.items.reduce((sum, it: any) => {
-      const qty = Number(it.qty ?? 0);
-      const up = Number(it.unitPrice ?? 0);
-      if (!Number.isFinite(qty) || !Number.isFinite(up)) return sum;
-      return sum + qty * up;
-    }, 0);
-
-    if (!rules.length) {
-      parentPricingByOrderId.set(o.id, {
-        unitPriceByItemId,
-        orderTotal: fallbackTotal,
-      });
-      continue;
-    }
-
-    const cart: Cart = buildCartFromOrderItems({
-      items: o.items as any,
-      rules,
-    });
-
-    const pricing = applyDiscounts(cart, rules, { id: customerId });
-
-    for (const adj of pricing.adjustedItems || []) {
-      if (adj.id == null || !Number.isFinite(adj.effectiveUnitPrice)) continue;
-      unitPriceByItemId.set(adj.id as number, adj.effectiveUnitPrice);
-    }
-
-    const orderTotal =
-      (Number.isFinite(pricing.total ?? NaN)
-        ? (pricing.total as number)
-        : fallbackTotal) || 0;
-
-    parentPricingByOrderId.set(o.id, {
-      unitPriceByItemId,
-      orderTotal,
-    });
-  }
-
-  const mainSoldByPid = new Map<number, number>();
-  const mainSoldNameByPid = new Map<number, string>();
-  const parentOrders: ParentOrderRow[] = [];
-
-  for (const L of links) {
-    const o = L.order;
-    if (!o) continue;
-
-    // Tally main SOLD by product (for recap)
-    for (const it of o.items || []) {
-      const pid = Number(it.productId ?? 0);
-      if (!pid) continue;
+    const lines: ParentOrderLine[] = (o.items || []).map((it) => {
       const qty = Math.max(0, Number(it.qty ?? 0));
-      mainSoldByPid.set(pid, (mainSoldByPid.get(pid) || 0) + qty);
+      const unitPrice = Math.max(0, Number(it.unitPrice ?? 0));
+      // ✅ STRICT: lineTotal must come from DB (frozen), no computed fallback
+      const lineTotal = r2(Number(it.lineTotal ?? 0));
 
-      // Pangalan galing sa POS item name
-      if (!mainSoldNameByPid.has(pid) && it.name) {
-        mainSoldNameByPid.set(pid, it.name);
-      }
-    }
-
-    if (!o.items || o.items.length === 0) continue;
-
-    // Build customer label
-    const c = o.customer;
-    let customerLabel = "";
-    if (c) {
-      customerLabel =
-        (c.alias && c.alias.trim()) ||
-        [c.firstName, c.lastName].filter(Boolean).join(" ");
-    }
-    if (!customerLabel && o.customerId) {
-      customerLabel = `Customer #${o.customerId}`;
-    }
-    if (!customerLabel) customerLabel = "Walk-in / Unknown";
-
-    // Effective AR/Cash status:
-    // kung may snapshot override, yun ang sundin; else original POS isOnCredit
-    const override = parentOverrideMap.get(o.id);
-    const isCredit = override !== undefined ? override : !!o.isOnCredit;
-
-    const priceInfo = parentPricingByOrderId.get(o.id);
-    const lines: ParentOrderLine[] = (o.items || []).map((it: any) => {
-      const pid =
-        it.productId == null || Number.isNaN(Number(it.productId))
-          ? null
-          : Number(it.productId);
-      const qty = Math.max(0, Number(it.qty ?? 0));
-      // Base unit price = SRP kung meron, else product.price, fallback sa raw POS unitPrice
-      const baseUnit =
-        pid != null ? basePriceIndex.get(pid) ?? 0 : Number(it.unitPrice ?? 0);
-
-      // customer-specific unit price kung meron sa pricing engine;
-      // else fallback sa raw unitPrice from POS
-      const effectiveUnit =
-        priceInfo?.unitPriceByItemId.get(it.id) ??
-        Math.max(0, Number(it.unitPrice ?? 0));
-
-      const discountAmount = Math.max(
-        0,
-        Number((baseUnit - effectiveUnit).toFixed(2))
-      );
-
-      const lineTotal = Number((qty * effectiveUnit).toFixed(2));
       return {
-        productId: pid,
-        name: it.name ?? "",
+        productId: it.productId != null ? Number(it.productId) : null,
+        name: String(it.name ?? ""),
         qty,
-        unitPrice: effectiveUnit,
-        baseUnitPrice: baseUnit || undefined,
-        discountAmount: discountAmount > 0.01 ? discountAmount : undefined,
+        unitPrice,
         lineTotal,
+        baseUnitPrice:
+          it.baseUnitPrice != null ? Number(it.baseUnitPrice) : undefined,
+        discountAmount:
+          it.discountAmount != null ? Number(it.discountAmount) : undefined,
       };
     });
 
-    const orderTotal =
-      priceInfo?.orderTotal ?? lines.reduce((s, ln) => s + ln.lineTotal, 0);
-    parentOrders.push({
-      orderId: o.id,
-      isCredit,
+    // ✅ SINGLE SOURCE OF TRUTH:
+    // Use the same frozen pricing helper used by Rider Check-in mismatch guard.
+    // This avoids remit/check-in divergence (especially per-unit discount semantics).
+
+    const frozen = getFrozenPricingFromOrder({
+      id: Number(o.id),
+      subtotal: o.subtotal ?? null,
+      totalBeforeDiscount: o.totalBeforeDiscount ?? null,
+      items: (o.items || []).map((it) => ({
+        qty: Number(it.qty ?? 0),
+        unitKind: ((it.unitKind ?? UnitKind.PACK) === UnitKind.RETAIL
+          ? "RETAIL"
+          : "PACK") as "PACK" | "RETAIL",
+        baseUnitPrice: Number(it.baseUnitPrice ?? 0),
+        unitPrice: Number(it.unitPrice ?? 0),
+        discountAmount: Number(it.discountAmount ?? 0),
+        lineTotal: Number(it.lineTotal ?? 0),
+      })),
+    });
+
+    const pricingMismatch = frozen.mismatch;
+
+    // ✅ Totals shown in UI should also align with frozen helper outputs.
+
+    // Source: frozen helper = SUM(lineTotal) with same rounding rules.
+    const orderTotal = r2(frozen.computedSubtotal);
+
+    return {
+      orderId: Number(o.id),
+      isCredit: Boolean(o.isOnCredit),
       customerLabel,
       lines,
       orderTotal,
-    });
-  }
-  // 5) Build recap rows using:
-  //    loaded (snapshot) vs sold(main + roadside) vs returned(snapshot)
-  const allPids = new Set<number>([
-    ...loadedByPid.keys(),
-    ...returnedByPid.keys(),
-    ...mainSoldByPid.keys(),
-    ...roadsideSoldByPid.keys(),
-  ]);
-
-  const recapRows: RecapRow[] = Array.from(allPids).map((pid) => {
-    const loadedEntry = loadedByPid.get(pid);
-
-    // Source of truth: loadout snapshot kung meron.
-    // Kung wala, assume at least yung parent POS qty was actually loaded.
-    const loaded =
-      loadedEntry !== undefined ? loadedEntry.qty : mainSoldByPid.get(pid) ?? 0;
-
-    const sold =
-      (mainSoldByPid.get(pid) || 0) + (roadsideSoldByPid.get(pid) || 0);
-    const returned = returnedByPid.get(pid) || 0;
-    const diff = loaded - sold - returned;
-
-    const name =
-      loadedEntry?.name ??
-      mainSoldNameByPid.get(pid) ??
-      // fallback: no name in loadout or POS items
-      `#${pid}`;
-
-    return { productId: pid, name, loaded, sold, returned, diff };
+      pricingMismatch,
+      collectedCash: undefined,
+    };
   });
 
-  const hasDiffIssues = recapRows.some((r) => r.diff !== 0);
+  // ✅ STRICT: no base/discount fallback. Badge shows ONLY when snapshot fields exist.
+  // NOTE: Parent orders here are frozen from OrderItem (POS/PAD source of truth). No pricing recompute.
+
+  // ✅ Use recap from service (stable, same as action guard)
+  const recapRows: RecapRow[] = recap.recapRows;
+  const hasDiffIssues = recap.hasDiffIssues;
+
+  // ✅ SOURCE OF TRUTH for parent CASH: sum of RunReceipt(kind=PARENT).cashCollected per parentOrderId
+  // This avoids mismatch when loadRunReceiptCashMaps() is incomplete/out-of-sync.
+  const parentCashByOrderIdLocal = new Map<number, number>();
+  for (const r of run.receipts || []) {
+    if (r.kind !== "PARENT") continue;
+    if (r.parentOrderId == null) continue;
+    const oid = Number(r.parentOrderId);
+    const cash = Math.max(0, Number(r.cashCollected ?? 0));
+    parentCashByOrderIdLocal.set(
+      oid,
+      (parentCashByOrderIdLocal.get(oid) || 0) + cash
+    );
+  }
+
+  for (const o of parentOrders) {
+    const raw = Number(parentCashByOrderIdLocal.get(o.orderId) || 0);
+    const capped = Math.max(0, Math.min(o.orderTotal, raw));
+    o.collectedCash = capped > 0 ? capped : undefined;
+  }
+
+  // Totals for display (single source of truth = computed from frozen ROAD receipts)
+  const roadsideCash = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.cash || 0), 0)
+  );
+  const roadsideAR = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.ar || 0), 0)
+  );
+
+  // Parent cash total (cap per order total)
+  const parentCash = parentOrders.reduce((s, o) => {
+    const raw = Number(parentCashByOrderIdLocal.get(o.orderId) || 0);
+    const capped = Math.max(0, Math.min(o.orderTotal, raw));
+    return s + capped;
+  }, 0);
+
+  // Parent AR total (depends on isCredit + collectedCash)
+  const parentAR = parentOrders.reduce((s, o) => {
+    if (!o.isCredit) return s;
+    // ✅ IMPORTANT: keep a single source of truth (same cash cap logic as parentCash + o.collectedCash)
+    const cash = Math.max(
+      0,
+      Math.min(o.orderTotal, Number(o.collectedCash ?? 0))
+    );
+    const ar = Math.max(0, Number((o.orderTotal - cash).toFixed(2)));
+    return s + ar;
+  }, 0);
 
   return json<LoaderData>({
     run: {
@@ -546,9 +466,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       riderLabel,
     },
     recapRows,
-    quickSales: quickSalesWithDiscount,
+    quickReceipts,
     hasDiffIssues,
     parentOrders,
+    totals: {
+      roadsideCash,
+      roadsideAR,
+      parentCash,
+      parentAR,
+    },
   });
 }
 
@@ -557,11 +483,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 // ─────────────────────────────────────────
 export async function action({ request, params }: ActionFunctionArgs) {
   // 🔒 Extra guard: only MANAGER / ADMIN can post remit / revert
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
   const id = Number(params.id);
 
   const formData = await request.formData();
   const intent = String(formData.get("_intent") || "post-remit");
+
+  // Pang-audit sa A/R approver (manager/admin)
+  const approverLabel =
+    (me as any).alias?.trim?.() ||
+    (me as any).name?.trim?.() ||
+    (typeof (me as any).userId !== "undefined"
+      ? `USER#${(me as any).userId}`
+      : "MANAGER");
   if (!Number.isFinite(id)) {
     return json<ActionData>(
       { ok: false, error: "Invalid ID" },
@@ -583,6 +517,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!run)
     return json<ActionData>({ ok: false, error: "Not found" }, { status: 404 });
 
+  // ✅ If already CLOSED, treat as idempotent "posted" (avoid double-post from stale tabs/manual POST)
+  if (intent === "post-remit" && run.status === "CLOSED") {
+    return redirect(`/runs/${id}/summary?posted=1`);
+  }
+
   // ─────────────────────────────────────
   // INTENT: Revert back to DISPATCHED
   // ─────────────────────────────────────
@@ -594,11 +533,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
       );
     }
 
+    // ✅ Best practice (Option A):
+    // Revert should ONLY change the run status so the rider can edit again.
+    // Do NOT delete snapshots or receipts here.
+    // - Keep RunReceipt (ROAD/PARENT) as draft data (source of truth for UI hydration)
+    // - Keep riderCheckinSnapshot (returns draft)
+    // Manager can re-check later and post remit only when consistent.
     await db.deliveryRun.update({
       where: { id },
-      data: {
-        status: "DISPATCHED",
-      },
+      data: { status: "DISPATCHED" },
     });
 
     // balik kay rider para ma-edit niya ulit ang check-in
@@ -617,105 +560,122 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  // Derive loadout (what was loaded)
-  const loadout: Array<{ productId: number; name: string; qty: number }> =
-    Array.isArray(run.loadoutSnapshot)
-      ? (run.loadoutSnapshot as any[])
-          .map((l) => ({
-            productId: Number(l?.productId),
-            name: String(l?.name ?? ""),
-            qty: Math.max(0, Math.floor(Number(l?.qty ?? 0))),
-          }))
-          .filter(
-            (l) => Number.isFinite(l.productId) && l.productId > 0 && l.qty > 0
-          )
-      : [];
+  // ─────────────────────────────────────
+  // SERVER-SIDE DIFF GUARD (Option A) — Source of truth
+  // Prevent posting remit if Loaded != Sold + Returned
+  // ─────────────────────────────────────
 
-  const loadedByPid = new Map<number, number>();
-  for (const l of loadout) {
-    loadedByPid.set(l.productId, (loadedByPid.get(l.productId) || 0) + l.qty);
+  const recap = await loadRunRecap(db, id);
+  if (recap.hasDiffIssues) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "Cannot post remit: Stock recap mismatch. Revert to Dispatched and re-check rider check-in.\n" +
+          recap.diffIssues.join("\n"),
+      },
+      { status: 400 }
+    );
   }
 
   // Pull soldRows from rider check-in snapshot
-  const rawSnap = run.riderCheckinSnapshot as any;
-  let soldRowsRaw: any[] = [];
-  if (
-    rawSnap &&
-    typeof rawSnap === "object" &&
-    Array.isArray(rawSnap.soldRows)
-  ) {
-    soldRowsRaw = rawSnap.soldRows as any[];
-  }
+  // SOURCE OF TRUTH: RunReceipt kind=ROAD (receipt-level quick sales)
+  const roadReceipts = await db.runReceipt.findMany({
+    where: { runId: id, kind: "ROAD" },
+    select: {
+      id: true,
+      receiptKey: true,
+      customerId: true,
+      customerName: true,
+      customerPhone: true,
+      cashCollected: true,
+      note: true,
+      lines: {
+        select: {
+          productId: true,
+          name: true,
+          qty: true,
+          unitPrice: true,
+          lineTotal: true,
+          baseUnitPrice: true,
+          discountAmount: true,
+        },
+        orderBy: { id: "asc" },
+      },
+    },
+    orderBy: { id: "asc" },
+  });
 
-  type SoldRow = {
+  type ReceiptLine = {
     productId: number;
     name: string;
     qty: number;
     unitPrice: number;
-    customerId: number | null;
-    onCredit: boolean;
-    cashAmount: number | null;
-    customerName?: string | null;
-    customerPhone?: string | null;
+    lineTotal: number;
+    baseUnitPrice: number | null;
+    discountAmount: number | null;
   };
 
-  const soldRows: SoldRow[] = soldRowsRaw
-    .map((r) => {
-      const pid =
-        r?.productId == null || Number.isNaN(Number(r.productId))
-          ? null
-          : Number(r.productId);
-      const qty = Math.max(0, Math.floor(Number(r?.qty ?? 0)));
-      const unitPrice = Math.max(0, Number(r?.unitPrice ?? 0));
-      const customerId =
-        r?.customerId == null || Number.isNaN(Number(r.customerId))
-          ? null
-          : Number(r.customerId);
-      const flagIsCredit = !!(r?.onCredit ?? r?.isCredit);
+  type ReceiptRow = {
+    roadReceiptId: number;
+    customerId: number | null;
+    customerName: string | null;
+    customerPhone: string | null;
+    isCredit: boolean;
+    cashCollected: number;
+    lines: ReceiptLine[];
+  };
 
-      const snapshotTotal = Number((qty * unitPrice).toFixed(2));
-      const rawCash =
-        r?.cashAmount != null && !Number.isNaN(Number(r.cashAmount))
-          ? Number(r.cashAmount)
-          : NaN;
-      const defaultCash = flagIsCredit ? 0 : snapshotTotal;
-      let cashAmount = Number.isFinite(rawCash) ? rawCash : defaultCash;
-      cashAmount = Math.max(0, Math.min(snapshotTotal, cashAmount));
+  const soldReceipts: ReceiptRow[] = roadReceipts
+    .map((rr) => {
+      const cashCollected = Number(rr.cashCollected ?? 0);
+      let isCredit = cashCollected <= 0;
+      try {
+        const meta = rr.note ? JSON.parse(rr.note) : null;
+        if (meta && typeof meta.isCredit === "boolean")
+          isCredit = meta.isCredit;
+      } catch {}
+      const lines = (rr.lines || [])
+        .map((ln) => {
+          const qty = Math.max(0, Number(ln.qty ?? 0));
+          const unitPrice = Math.max(0, Number(ln.unitPrice ?? 0));
+          const rawLineTotal =
+            ln.lineTotal != null ? Number(ln.lineTotal) : qty * unitPrice;
+          const lineTotal = Math.max(0, r2(rawLineTotal)); // ✅ number, not string
 
-      const hasCredit = cashAmount + 0.009 < snapshotTotal;
-
+          return {
+            productId: Number(ln.productId),
+            name: String(ln.name ?? ""),
+            qty,
+            unitPrice,
+            lineTotal,
+            baseUnitPrice:
+              ln.baseUnitPrice != null ? Number(ln.baseUnitPrice) : null,
+            discountAmount:
+              ln.discountAmount != null ? Number(ln.discountAmount) : null,
+          };
+        })
+        .filter((ln) => ln.productId > 0 && ln.qty > 0);
       return {
-        productId: pid as number | null,
-        name: typeof r?.name === "string" ? r.name : "",
-        qty,
-        unitPrice,
-        customerId,
-        onCredit: hasCredit,
-        cashAmount,
-        customerName:
-          (typeof r?.customerName === "string" ? r.customerName.trim() : "") ||
-          null,
-        customerPhone:
-          (typeof r?.customerPhone === "string"
-            ? r.customerPhone.trim()
-            : "") || null,
+        roadReceiptId: rr.id,
+        customerId: rr.customerId ?? null,
+        customerName: rr.customerName ?? null,
+        customerPhone: rr.customerPhone ?? null,
+        isCredit,
+        cashCollected: Math.max(0, cashCollected),
+        lines,
       };
     })
-    .filter((r) => r.qty > 0 && r.productId != null) as SoldRow[];
-
-  // If walang soldRows, okay lang — magre-return lang tayo ng full leftover
-  // sum sold per product
-  const soldByPid = new Map<number, number>();
-  for (const r of soldRows) {
-    soldByPid.set(r.productId, (soldByPid.get(r.productId) || 0) + r.qty);
-  }
+    .filter((r) => r.lines.length > 0);
 
   // Guard: sold ≤ loaded
   const over: string[] = [];
-  for (const [pid, soldQ] of soldByPid.entries()) {
-    const loadedQ = loadedByPid.get(pid) || 0;
-    if (soldQ > loadedQ) {
-      over.push(`• Product #${pid}: sold ${soldQ} > loaded ${loadedQ}`);
+  // Guard: TOTAL sold ≤ loaded (parent + road), based on recap source of truth
+  for (const row of recap.recapRows) {
+    if (row.sold > row.loaded) {
+      over.push(
+        `• ${row.name} (#${row.productId}): sold ${row.sold} > loaded ${row.loaded}`
+      );
     }
   }
   if (over.length) {
@@ -731,21 +691,39 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   // Price guard for remit:
-  // - Hindi na mag-e-enforce ng "below allowed price" dito.
-  // - Simple rule lang: kung naka-credit, kailangan may customer.
-  const pids = Array.from(new Set(soldRows.map((r) => r.productId)));
+  // ✅ NO PRICING ENGINE HERE.
+  // Manager remit must NEVER recompute unit prices.
+  // Simple rule: if credit, must have customer.
+  const pids = Array.from(
+    new Set(soldReceipts.flatMap((r) => r.lines.map((ln) => ln.productId)))
+  );
   const products = pids.length
     ? await db.product.findMany({
         where: { id: { in: pids } },
-        select: { id: true, price: true, srp: true },
+        select: { id: true },
       })
     : [];
   const byId = new Map(products.map((p) => [p.id, p]));
 
-  for (const r of soldRows) {
-    if (r.onCredit && !r.customerId) {
+  for (const rec of soldReceipts) {
+    // IMPORTANT: Credit OR partial payment (balance remains) requires customer
+    const recSubtotal = rec.lines.reduce(
+      (s, ln) => s + Number(ln.lineTotal || 0),
+      0
+    );
+    const paid = Math.max(
+      0,
+      Math.min(recSubtotal, Number(rec.cashCollected || 0))
+    );
+    const hasBalance = paid + 0.009 < recSubtotal;
+    const isCreditEffective = rec.isCredit || hasBalance;
+
+    if (isCreditEffective && !rec.customerId) {
       return json<ActionData>(
-        { ok: false, error: "On-credit sale requires a customer." },
+        {
+          ok: false,
+          error: "On-credit / partial payment requires a customer.",
+        },
         { status: 400 }
       );
     }
@@ -765,79 +743,112 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   await db.$transaction(async (tx) => {
-    // Create roadside orders from soldRows
-    for (const r of soldRows) {
-      const p = byId.get(r.productId)!;
-      const basePack = Number(p.srp ?? p.price ?? 0);
-      const allowed = await computeUnitPriceForCustomer(tx as any, {
-        customerId: r.customerId ?? null,
-        productId: r.productId,
-        unitKind: UnitKind.PACK,
-        baseUnitPrice: basePack,
-      });
+    // ✅ Re-check status inside transaction (race safety)
+    const fresh = await tx.deliveryRun.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!fresh || fresh.status !== "CHECKED_IN") {
+      throw new Error("Run status changed. Refresh the page.");
+    }
 
-      const approx = (a: number, b: number, eps = 0.009) =>
-        Math.abs(a - b) <= eps;
-      const autoUseAllowed =
-        !!r.customerId && (r.unitPrice <= 0 || approx(r.unitPrice, basePack));
-      const unitPrice = autoUseAllowed ? allowed : r.unitPrice;
-      const lineTotal = Number((unitPrice * r.qty).toFixed(2));
+    const existingRoadOrders = await tx.deliveryRunOrder.findMany({
+      where: { runId: id },
+      select: { orderId: true },
+    });
+    const existingOrderIds = existingRoadOrders.map((x) => x.orderId);
+    const existingCodes = existingOrderIds.length
+      ? await tx.order.findMany({
+          where: {
+            id: { in: existingOrderIds },
+            orderCode: { startsWith: "RS-" },
+          },
+          select: { orderCode: true },
+        })
+      : [];
 
-      // Actual cash on hand for this line
-      const snapshotPaid =
-        r.cashAmount != null
-          ? Number(r.cashAmount)
-          : r.onCredit
-          ? 0
-          : lineTotal;
-      const paid = Math.max(
-        0,
-        Math.min(lineTotal, Number.isFinite(snapshotPaid) ? snapshotPaid : 0)
-      );
-      const hasCredit = paid + 0.009 < lineTotal;
+    // ✅ Extra safety: catch partial-failure duplicates (order created but not linked)
+    const existingCodesByPrefix = await tx.order.findMany({
+      where: { orderCode: { startsWith: `RS-RUN${id}-RR` } },
+      select: { orderCode: true },
+    });
 
-      const code =
-        `RS-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-` +
-        crypto.randomUUID().slice(0, 6).toUpperCase();
+    const existingSet = new Set([
+      ...existingCodes.map((x) => x.orderCode),
+      ...existingCodesByPrefix.map((x) => x.orderCode),
+    ]);
+    // Create ONE roadside order per receipt (multi-line)
+    for (const rec of soldReceipts) {
+      // ✅ Deterministic + idempotent: 1 posted RS order per ROAD receipt
+      const orderCode = `RS-RUN${id}-RR${rec.roadReceiptId}`;
+      if (existingSet.has(orderCode)) continue;
 
-      const isCredit = hasCredit;
+      const itemsCreate = [];
+      let subtotal = 0;
+      for (const ln of rec.lines) {
+        const exists = byId.get(ln.productId);
+        if (!exists)
+          throw new Error(`Missing product ${ln.productId} for remit`);
+
+        // ✅ FROZEN pricing from RunReceiptLine (source of truth)
+        const qtyN = Math.max(0, Number(ln.qty ?? 0));
+        const unitPriceN = Math.max(0, Number(ln.unitPrice ?? 0));
+        const rawLineTotalN = Number(ln.lineTotal ?? unitPriceN * qtyN) || 0;
+        const lineTotalN = r2(rawLineTotalN);
+
+        subtotal += lineTotalN;
+        itemsCreate.push({
+          productId: ln.productId,
+          name: ln.name,
+          // IMPORTANT: OrderItem fields are Decimal in schema
+          qty: new Prisma.Decimal(qtyN),
+          unitPrice: new Prisma.Decimal(r2(unitPriceN).toFixed(2)),
+          lineTotal: new Prisma.Decimal(r2(lineTotalN).toFixed(2)),
+          baseUnitPrice:
+            ln.baseUnitPrice != null
+              ? new Prisma.Decimal(r2(Number(ln.baseUnitPrice)).toFixed(2))
+              : null,
+          discountAmount:
+            ln.discountAmount != null
+              ? new Prisma.Decimal(r2(Number(ln.discountAmount)).toFixed(2))
+              : null,
+          unitKind: UnitKind.PACK,
+          // Keep audit fields but do not recompute:
+          allowedUnitPrice: new Prisma.Decimal(r2(unitPriceN).toFixed(2)),
+          pricePolicy: "FROZEN:RUN_RECEIPT_LINE",
+        });
+      }
+      subtotal = r2(subtotal);
+
+      const isCredit = rec.isCredit || rec.cashCollected + 0.009 < subtotal;
 
       const newOrder = await tx.order.create({
         data: {
           channel: "DELIVERY",
-          // Remit stage: lahat ng roadside orders papasok bilang UNPAID.
-          // Si cashier lang ang puwedeng mag-mark ng PAID / PARTIALLY_PAID
-          // sa cashier screen via payments.
           status: "UNPAID",
           paidAt: null,
-          orderCode: code,
+          orderCode,
+          // ✅ Link back to source receipt (trace/debug + deterministic mapping)
+          originRunReceiptId: rec.roadReceiptId,
           printedAt: new Date(),
           expiryAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
           riderName,
-          ...(r.customerId ? { customerId: r.customerId } : {}),
+          ...(rec.customerId ? { customerId: rec.customerId } : {}),
           isOnCredit: isCredit,
-          // If may customer, hindi na need deliverTo; else may imprint from rider
-          deliverTo: r.customerId ? null : r.customerName || null,
-          deliverPhone: r.customerId ? null : r.customerPhone || null,
-          subtotal: lineTotal,
-          totalBeforeDiscount: lineTotal,
+          ...(isCredit
+            ? {
+                releaseWithBalance: true,
+                releasedApprovedBy: approverLabel,
+                releasedAt: new Date(),
+              }
+            : {}),
+          deliverTo: rec.customerId ? null : rec.customerName || null,
+          deliverPhone: rec.customerId ? null : rec.customerPhone || null,
+          subtotal,
+          totalBeforeDiscount: subtotal,
           dispatchedAt: new Date(),
           deliveredAt: new Date(),
-          items: {
-            create: [
-              {
-                productId: r.productId,
-                name: r.name,
-                qty: r.qty,
-                unitPrice,
-                lineTotal,
-                unitKind: UnitKind.PACK,
-                allowedUnitPrice: allowed,
-                pricePolicy:
-                  Math.abs(allowed - basePack) <= 0.009 ? "BASE" : "PER_ITEM",
-              },
-            ],
-          },
+          items: { create: itemsCreate },
         },
         select: { id: true },
       });
@@ -853,28 +864,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    // Return leftovers to stock
-    const soldMap = new Map<number, number>();
-    for (const r of soldRows) {
-      soldMap.set(r.productId, (soldMap.get(r.productId) || 0) + r.qty);
-    }
+    // Return products to stock based on rider CHECK-IN returns (not computed leftovers)
+    const existingMoves = await tx.stockMovement.findMany({
+      where: { refKind: "RUN", refId: id, type: "RETURN_IN" },
+      select: { id: true },
+      take: 1,
+    });
 
-    for (const l of loadout) {
-      const sold = soldMap.get(l.productId) || 0;
-      const leftover = Math.max(0, l.qty - sold);
-      if (leftover > 0) {
+    if (existingMoves.length === 0) {
+      // ✅ single source of truth: recap service (same numbers used by diff guard)
+      for (const row of recap.recapRows) {
+        const pid = row.productId;
+        const qty = Math.max(0, Number(row.returned || 0));
+        if (qty <= 0) continue;
         await tx.product.update({
-          where: { id: l.productId },
-          data: { stock: { increment: leftover } },
+          where: { id: pid },
+          data: { stock: { increment: qty } },
         });
         await tx.stockMovement.create({
           data: {
             type: "RETURN_IN",
-            productId: l.productId,
-            qty: leftover,
+            productId: pid,
+            qty: new Prisma.Decimal(qty),
             refKind: "RUN",
             refId: id,
-            notes: "Run remit return",
+            notes: "Run remit return (from recap)",
           },
         });
       }
@@ -897,7 +911,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 // React Page: overview + approve
 // ─────────────────────────────────────────
 export default function RunRemitPage() {
-  const { run, recapRows, quickSales, hasDiffIssues, parentOrders } =
+  const { run, recapRows, quickReceipts, hasDiffIssues, parentOrders, totals } =
     useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
@@ -912,11 +926,11 @@ export default function RunRemitPage() {
       currency: "PHP",
     }).format(n);
 
-  const totalCash = quickSales.reduce((s, q) => s + (q.cashAmount ?? 0), 0);
-  const totalCredit = quickSales.reduce(
-    (s, q) => s + (q.creditAmount ?? (q.isCredit ? q.lineTotal : 0)),
-    0
-  );
+  const roadsideCashTotal = totals.roadsideCash;
+  const roadsideCreditTotal = totals.roadsideAR;
+  const parentCashTotal = totals.parentCash;
+
+  const parentCreditTotal = totals.parentAR;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -1083,6 +1097,20 @@ export default function RunRemitPage() {
                     run na ito. Read-only view ng qty at presyo per line.
                   </p>
                 </div>
+                <div className="text-right text-xs text-slate-600">
+                  <div>
+                    Parent cash:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {peso(parentCashTotal)}
+                    </span>
+                  </div>
+                  <div>
+                    Parent Credit (A/R):{" "}
+                    <span className="font-semibold text-slate-900">
+                      {peso(parentCreditTotal)}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="px-4 py-4 space-y-3">
@@ -1095,6 +1123,11 @@ export default function RunRemitPage() {
                       <div className="text-xs font-medium text-slate-700">
                         Order #{o.orderId}
                       </div>
+                      {o.pricingMismatch ? (
+                        <div className="ml-2 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700">
+                          Totals mismatch
+                        </div>
+                      ) : null}
                       <div
                         className={`rounded-full px-2 py-0.5 text-[11px] ${
                           o.isCredit
@@ -1110,14 +1143,15 @@ export default function RunRemitPage() {
                       <span className="font-semibold">Customer:</span>{" "}
                       {o.customerLabel}
                     </div>
-
-                    <div className="space-y-1 text-[11px] text-slate-600">
+                    {/* Lines – mirror roadside format per product */}
+                    <div className="space-y-2 text-[11px] text-slate-600">
                       {o.lines.map((ln, li) => (
                         <div
                           key={`${o.orderId}-${li}`}
-                          className="flex justify-between gap-2"
+                          className="rounded-xl border border-slate-100 bg-slate-50/40 p-2"
                         >
-                          <div className="flex-1">
+                          <div className="mb-0.5">
+                            <span className="font-semibold">Product:</span>{" "}
                             <span className="font-medium">{ln.name}</span>
                             {ln.productId != null && (
                               <span className="ml-1 text-[10px] text-slate-400">
@@ -1125,29 +1159,71 @@ export default function RunRemitPage() {
                               </span>
                             )}
                           </div>
-                          <div className="text-right font-mono">
-                            <div>Qty: {ln.qty}</div>
-                            <div>
-                              Price: {peso(ln.unitPrice)}
-                              {ln.discountAmount != null && (
-                                <span className="ml-1 inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                  −{peso(ln.discountAmount)}
-                                </span>
-                              )}
-                            </div>
-                            <div className="font-semibold">
-                              Total: {peso(ln.lineTotal)}
-                            </div>
+                          <div className="flex justify-between text-[11px] text-slate-600">
+                            <span>
+                              Qty:{" "}
+                              <span className="font-mono font-semibold">
+                                {ln.qty}
+                              </span>
+                            </span>
+                            <span>
+                              Unit:{" "}
+                              <span className="font-mono font-semibold text-slate-800">
+                                {peso(ln.unitPrice)}
+                              </span>
+                              {ln.discountAmount != null &&
+                                ln.baseUnitPrice != null && (
+                                  <span className="ml-1 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                    −{peso(ln.discountAmount)}
+                                    <span className="ml-1 text-emerald-600/80">
+                                      (Base {peso(ln.baseUnitPrice)})
+                                    </span>
+                                  </span>
+                                )}
+                            </span>
+                            <span>
+                              Line total:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(ln.lineTotal)}
+                              </span>
+                            </span>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div className="mt-1 text-right text-[11px] text-slate-500">
-                      Order total:{" "}
-                      <span className="font-mono font-semibold">
-                        {peso(o.orderTotal)}
+                    {/* Order-level cash vs A/R, same feel as roadside footer */}
+                    <div className="mt-2 flex justify-between text-[11px] text-slate-600">
+                      <span>
+                        Order total:{" "}
+                        <span className="font-mono font-semibold">
+                          {peso(o.orderTotal)}
+                        </span>
                       </span>
+                      {(() => {
+                        const rawCash = o.collectedCash ?? 0;
+                        const cash = Math.max(
+                          0,
+                          Math.min(o.orderTotal, rawCash)
+                        );
+                        const credit = Math.max(0, o.orderTotal - cash);
+                        return (
+                          <div className="text-right">
+                            <div>
+                              Cash:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(cash)}
+                              </span>
+                            </div>
+                            <div>
+                              Credit (A/R):{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(credit)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -1171,95 +1247,114 @@ export default function RunRemitPage() {
               </div>
               <div className="text-right text-xs text-slate-600">
                 <div>
-                  Cash total:{" "}
+                  Roadside cash:{" "}
                   <span className="font-semibold text-slate-900">
-                    {peso(totalCash)}
+                    {peso(roadsideCashTotal)}
                   </span>
                 </div>
                 <div>
-                  Credit (A/R):{" "}
+                  Roadside Credit (A/R):{" "}
                   <span className="font-semibold text-slate-900">
-                    {peso(totalCredit)}
+                    {" "}
+                    {peso(roadsideCreditTotal)}
                   </span>
                 </div>
               </div>
             </div>
 
             <div className="px-4 py-4 space-y-3">
-              {quickSales.length === 0 ? (
+              {(quickReceipts?.length ?? 0) === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-center text-sm text-slate-500">
                   No roadside sales encoded in Rider Check-in.
                 </div>
               ) : (
-                quickSales.map((q) => (
+                quickReceipts.map((rec) => (
                   <div
-                    key={q.idx}
+                    key={rec.key}
                     className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-xs font-medium text-slate-700">
-                        Sale #{q.idx + 1}
+                        Receipt • {rec.customerLabel}
                       </div>
                       <div
                         className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          q.isCredit
+                          rec.isCredit
                             ? "border border-amber-200 bg-amber-50 text-amber-700"
                             : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                         }`}
                       >
-                        {q.isCredit ? "Credit (A/R)" : "Cash"}
+                        {rec.isCredit ? "Credit (A/R)" : "Cash"}
                       </div>
                     </div>
                     <div className="text-xs text-slate-600">
-                      <div className="mb-0.5">
-                        <span className="font-semibold">Customer:</span>{" "}
-                        {q.customerLabel}
-                      </div>
-                      <div className="mb-0.5">
-                        <span className="font-semibold">Product:</span>{" "}
-                        {q.productName}{" "}
-                        {q.productId != null && (
-                          <span className="text-[10px] text-slate-400">
-                            #{q.productId}
-                          </span>
-                        )}
-                      </div>
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>
-                          Qty:{" "}
+                          Receipt total:{" "}
                           <span className="font-mono font-semibold">
-                            {q.qty}
+                            {peso(rec.total)}
                           </span>
                         </span>
-                        <span>
-                          Unit price:{" "}
-                          <span className="font-mono">{peso(q.unitPrice)}</span>
-                          {q.discountAmount != null && (
-                            <span className="ml-1 inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                              −{peso(q.discountAmount)}
-                            </span>
-                          )}
-                        </span>
-                        <span>
-                          Line total:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(q.lineTotal)}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex justify-between text-[11px] text-slate-600">
                         <span>
                           Cash:{" "}
                           <span className="font-mono font-semibold">
-                            {peso(q.cashAmount)}
+                            {peso(rec.cash)}
                           </span>
                         </span>
                         <span>
-                          Credit (A/R):{" "}
+                          A/R:{" "}
                           <span className="font-mono font-semibold">
-                            {peso(q.creditAmount)}
+                            {peso(rec.ar)}
                           </span>
                         </span>
+                      </div>
+
+                      <div className="mt-2 space-y-2">
+                        {rec.rows.map((q) => (
+                          <div
+                            key={`${rec.key}-${q.idx}`}
+                            className="rounded-xl border border-slate-100 bg-slate-50/40 p-2"
+                          >
+                            <div className="mb-0.5">
+                              <span className="font-semibold">Product:</span>{" "}
+                              {q.productName}{" "}
+                              {q.productId != null && (
+                                <span className="text-[10px] text-slate-400">
+                                  #{q.productId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex justify-between text-[11px] text-slate-600">
+                              <span>
+                                Qty:{" "}
+                                <span className="font-mono font-semibold">
+                                  {q.qty}
+                                </span>
+                              </span>
+                              <span>
+                                Unit:{" "}
+                                <span className="font-mono font-semibold text-slate-800">
+                                  {peso(q.unitPrice)}
+                                </span>
+                                {q.discountAmount != null &&
+                                  q.baseUnitPrice != null && (
+                                    <span className="ml-1 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                      −{peso(q.discountAmount)}
+                                      <span className="ml-1 text-emerald-600/80">
+                                        (Base {peso(q.baseUnitPrice)})
+                                      </span>
+                                    </span>
+                                  )}
+                              </span>
+                              <span>
+                                Line:{" "}
+                                <span className="font-mono font-semibold">
+                                  {peso(q.lineTotal)}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
