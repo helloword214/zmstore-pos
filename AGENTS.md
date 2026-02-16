@@ -62,6 +62,37 @@ Then wait for explicit `GO`.
 4. If commits were accidentally made on `main`, create a feature branch from current HEAD before opening PR.
 5. After merge, always provide post-merge cleanup commands (sync `main`, delete local branch, delete remote branch).
 
+## Path and Privacy Standard
+
+1. In shared docs, PR descriptions, and chat summaries, use repo-relative paths (example: `app/routes/store.clearance_.$caseId.tsx`) or URL routes (example: `/store/clearance/:caseId`).
+2. Do not use absolute local machine paths (example: `/Users/...`) in shared documentation or PR text.
+3. Absolute paths are allowed only for local terminal execution context, not for project artifacts.
+
+## PR Body Trace Requirement
+
+1. Every PR marked "ready to merge" must contain a well-structured body for traceability.
+2. PR body must include:
+   a. Summary
+   b. Objective/scope
+   c. Files touched (repo-relative paths only)
+   d. Behavior before vs after
+   e. Validation done (commands/tests/manual checks)
+   f. Risks/follow-ups
+   g. Commit hash(es) included in the PR
+
+## Merge Readiness Checklist
+
+1. Do not recommend merge if PR body trace section is missing or incomplete.
+2. Confirm PR body reflects actual final diff before merge.
+3. Prefer concise, audit-friendly wording over long narrative.
+
+## Post-Merge Trace Rule
+
+1. After merge, record and report:
+   a. PR number
+   b. Final merge reference (squash commit hash or merge commit hash)
+2. Use these references as canonical trace anchors for future threads.
+
 ## Change Safety
 
 1. No silent assumptions. Ask one focused question if unclear.
