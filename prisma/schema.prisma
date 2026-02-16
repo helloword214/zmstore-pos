@@ -1103,11 +1103,11 @@ enum ClearanceClaimType {
 }
 
 enum ClearanceCaseStatus {
+  // CCS v2.7 canonical statuses only:
+  // - NEEDS_CLEARANCE: pending manager decision
+  // - DECIDED: manager has issued a decision
   NEEDS_CLEARANCE
   DECIDED
-  RETURNED
-  CLOSED
-  CANCELLED
 }
 
 // Manager decision (commercial consequence)

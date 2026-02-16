@@ -334,8 +334,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : rawDecision === "APPROVE_HYBRID"
         ? "APPROVE_HYBRID"
         : null;
-    const status =
-      (c as any).status === "DECIDED" ? "DECIDED" : "NEEDS_CLEARANCE";
+    const rawStatus = String((c as any).status || "");
+    if (rawStatus !== "NEEDS_CLEARANCE" && rawStatus !== "DECIDED") {
+      // CCS SoT: pending/settlement logic only recognizes NEEDS_CLEARANCE | DECIDED
+      continue;
+    }
+    const status: CaseHydrate["status"] = rawStatus;
     caseByReceiptKey.set(rk, { caseId: cid, status, note, intent, decision });
   }
 
@@ -1160,10 +1164,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // Safety: never wipe receipts if client accidentally sends empty payload.
     // Only delete stale receipts when we have at least one incoming key.
     if (incomingKeys.length > 0) {
+      // Keep receipts that are linked to active CCS cases to avoid orphaning case refs
+      // (receipt removed from payload but case still unresolved/decided for audit).
+      const protectedReceiptKeys = (
+        await tx.clearanceCase.findMany({
+          where: {
+            runId: id,
+            status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
+          } as any,
+          select: { receiptKey: true },
+        })
+      )
+        .map((c) => String((c as any).receiptKey || "").slice(0, 64).trim())
+        .filter(Boolean);
+
+      const keepKeys = Array.from(
+        new Set<string>([...incomingKeys, ...protectedReceiptKeys]),
+      );
+
       await tx.runReceipt.deleteMany({
         where: {
           runId: id,
-          receiptKey: { notIn: incomingKeys },
+          receiptKey: { notIn: keepKeys },
         },
       });
     }
@@ -1457,10 +1479,33 @@ export async function action({ request, params }: ActionFunctionArgs) {
             .trim(),
         );
 
+      // CCS v2.7 hard gate (run-level):
+      // if ANY pending case exists for the run, submit must be blocked.
+      // This prevents payload-scoped misses and ensures check-in gate is primary.
+      const pendingCasesForRun = await tx.clearanceCase.findMany({
+        where: {
+          runId: id,
+          status: "NEEDS_CLEARANCE",
+        } as any,
+        select: { receiptKey: true },
+      });
+      if (pendingCasesForRun.length > 0) {
+        const pendingKeys = pendingCasesForRun
+          .map((c) => String((c as any).receiptKey || "").slice(0, 64))
+          .filter(Boolean);
+        throw new Response(
+          `Submit blocked: may PENDING clearance pa (${pendingKeys
+            .slice(0, 3)
+            .join(", ")}${pendingKeys.length > 3 ? "…" : ""}).`,
+          { status: 400 },
+        );
+      }
+
       const cases = await tx.clearanceCase.findMany({
         where: {
           runId: id,
           receiptKey: { in: receiptKeysToCheck },
+          status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
         } as any,
         select: {
           receiptKey: true,
@@ -1484,8 +1529,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       for (const c of cases || []) {
         const rk = String((c as any).receiptKey || "").slice(0, 64);
         if (!rk) continue;
-        const status =
-          (c as any).status === "DECIDED" ? "DECIDED" : "NEEDS_CLEARANCE";
+        const rawStatus = String((c as any).status || "");
+        if (rawStatus !== "NEEDS_CLEARANCE" && rawStatus !== "DECIDED") {
+          continue;
+        }
+        const status: "NEEDS_CLEARANCE" | "DECIDED" = rawStatus;
         const last = (c as any)?.decisions?.[0]?.kind;
         const decision: ClearanceDecisionKindUI | null =
           last === "REJECT"
