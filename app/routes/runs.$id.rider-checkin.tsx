@@ -107,7 +107,7 @@ type SoldReceiptUI = {
   key: string;
   // UI-only (derived): pending iff open ClearanceCase exists
   needsClearance: boolean;
-  // NEW: SoT-derived lock once pending
+  // NEW: SoT-derived lock once a clearance case exists (pending or decided)
   clearancePending?: boolean;
   // NEW: manager decision hydration
   clearanceCaseStatus?: ClearanceCaseStatusUI;
@@ -151,7 +151,7 @@ type ParentReceiptUI = {
   clearanceIntent?: ClearanceIntentUI;
   customerLabel: string;
   lines: ParentLineUI[];
-  // orderTotal is computed from live quote on client
+  // orderTotal comes from frozen DB snapshot line totals
   orderTotal: number;
   // optional: actual cash collected for this POS order (snapshot only)
   cashCollected?: number;
@@ -178,7 +178,6 @@ type LoaderData = {
   initialRoadReceipts: SoldReceiptUI[];
   hasSnapshot: boolean;
   parentReceipts: ParentReceiptUI[];
-  role: string;
 };
 
 // CCS SoT key helpers
@@ -197,9 +196,6 @@ type ActionData =
       };
     };
 
-const isRoleManager = (role: string) =>
-  role === "STORE_MANAGER" || role === "ADMIN";
-
 const fmtIso = (d: Date | string | null | undefined) => {
   if (!d) return null;
   const x = typeof d === "string" ? new Date(d) : d;
@@ -210,7 +206,7 @@ const fmtIso = (d: Date | string | null | undefined) => {
 // Loader
 // -------------------------------------------------------
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
+  await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid id", { status: 400 });
@@ -642,7 +638,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           productId: Number(r?.productId ?? 0),
           returned: Math.max(0, Number(r?.returned ?? 0)),
         }))
-        .filter((r) => r.productId > 0 && allowedPids.has(r.productId));
+        .filter(
+          (r: { productId: number; returned: number }) =>
+            r.productId > 0 && allowedPids.has(r.productId),
+        );
     }
   }
 
@@ -721,7 +720,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     initialRoadReceipts: roadReceiptsFromDb,
     hasSnapshot: !!run.riderCheckinSnapshot,
     parentReceipts,
-    role: me.role,
   });
 }
 
@@ -767,6 +765,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const isSendClearance = intent === "send-clearance";
   const isMarkVoided = intent === "mark-voided";
 
+  const resolveActionErrorMessage = async (
+    e: unknown,
+    fallback: string,
+  ): Promise<string> => {
+    if (e instanceof Response) {
+      const msg = (await e.text().catch(() => "")).trim();
+      return msg || e.statusText || fallback;
+    }
+    if (e instanceof Error) {
+      return String(e.message || fallback).trim() || fallback;
+    }
+    const msg = String(e || "").trim();
+    return msg || fallback;
+  };
+
   // 🔒 CCS: once CHECKED_IN submitted (riderCheckinAt set), NO edits allowed
   // This must also block send-clearance / mark-voided to avoid post-submit mutation.
   if (run.status === "CHECKED_IN" && run.riderCheckinAt) {
@@ -792,12 +805,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
       throw new Response("Invalid sendKind.", { status: 400 });
     }
 
-    await handleSendClearance({
-      db,
-      runId: id,
-      actorId,
-      formData: fd,
-    });
+    try {
+      await handleSendClearance({
+        db,
+        runId: id,
+        actorId,
+        formData: fd,
+      });
+    } catch (e: unknown) {
+      const msg = await resolveActionErrorMessage(
+        e,
+        "Failed to send clearance.",
+      );
+      return redirect(
+        `/runs/${id}/rider-checkin?clearance_error=${encodeURIComponent(
+          msg,
+        )}&rk=${encodeURIComponent(sendReceiptKey)}`,
+      );
+    }
 
     return redirect(
       `/runs/${id}/rider-checkin?clearance_sent=1&rk=${encodeURIComponent(
@@ -822,11 +847,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
       throw new Response("Missing voidReceiptKey.", { status: 400 });
     if (!reason) throw new Response("Void reason required.", { status: 400 });
 
-    await handleMarkVoided({
-      db,
-      runId: id,
-      formData: fd,
-    });
+    try {
+      await handleMarkVoided({
+        db,
+        runId: id,
+        formData: fd,
+      });
+    } catch (e: unknown) {
+      const msg = await resolveActionErrorMessage(e, "Failed to mark VOIDED.");
+      return redirect(
+        `/runs/${id}/rider-checkin?clearance_error=${encodeURIComponent(
+          msg,
+        )}&rk=${encodeURIComponent(receiptKey)}`,
+      );
+    }
 
     return redirect(
       `/runs/${id}/rider-checkin?voided=1&rk=${encodeURIComponent(receiptKey)}`,
@@ -1689,7 +1723,6 @@ export default function RiderCheckinPage() {
     initialRoadReceipts,
     hasSnapshot,
     parentReceipts,
-    role,
   } = useLoaderData<LoaderData>();
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
@@ -1697,9 +1730,7 @@ export default function RiderCheckinPage() {
   const submit = useSubmit();
   const [searchParams] = useSearchParams();
 
-  const manager = isRoleManager(role);
-  const locked =
-    run.status === "CHECKED_IN" && !!run.riderCheckinAt && !manager;
+  const locked = run.status === "CHECKED_IN" && !!run.riderCheckinAt;
 
   const [openReceipt, setOpenReceipt] = React.useState<Record<string, boolean>>(
     {},
@@ -1718,13 +1749,14 @@ export default function RiderCheckinPage() {
     setOpenReceipt((prev) => ({ ...prev, [k]: !prev[k] }));
   }, []);
 
-  // NEW: if receipt is pending clearance, lock edits for that receipt (even in draft mode)
+  // NEW: once a receipt has a clearance case status (pending/decided), keep it read-only.
   const isReceiptLocked = React.useCallback(
-    (pending?: boolean) => locked || !!pending,
+    (hasCaseStatus?: boolean) => locked || !!hasCaseStatus,
     [locked],
   );
 
   const saved = searchParams.get("saved") === "1";
+  const clearanceError = searchParams.get("clearance_error");
 
   const [parentReceiptsState, setParentReceiptsState] =
     React.useState(parentReceipts);
@@ -2024,7 +2056,7 @@ export default function RiderCheckinPage() {
   );
 
   // ✅ Minimal rule: you can add more customers as long as there is stock.
-  // Pending clearance receipts are locked individually via isReceiptLocked(pending).
+  // Receipts with any clearance case status are locked via isReceiptLocked(hasCaseStatus).
   const addQuickBlockedReason = React.useMemo(() => {
     if (locked) return "Locked after submit.";
     if (!hasAnyAvailableStock) return "No more items available for this run.";
@@ -2260,16 +2292,16 @@ export default function RiderCheckinPage() {
   // -------------------------------------------------------
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb] p-5">
-      <div className="mx-auto max-w-5xl">
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <div className="mx-auto max-w-5xl px-5 py-6">
         <Link
           to={`/runs/${run.id}/summary`}
-          className="text-sm text-indigo-600"
+          className="text-sm text-indigo-600 hover:underline"
         >
           ← Back
         </Link>
 
-        <h1 className="mt-4 text-lg font-semibold">
+        <h1 className="mt-4 text-base font-semibold tracking-wide text-slate-800">
           Rider Check-in — {run.runCode}
         </h1>
         <p className="text-sm text-slate-600">
@@ -2289,6 +2321,11 @@ export default function RiderCheckinPage() {
         {saved ? (
           <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
             Draft saved.
+          </div>
+        ) : null}
+        {clearanceError ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {clearanceError}
           </div>
         ) : null}
 
@@ -2412,20 +2449,21 @@ export default function RiderCheckinPage() {
                 {parentReceiptsState.map((rec) => {
                   const rem = remainingForParent(rec);
                   const pending = !!rec.clearancePending;
+                  const hasCaseStatus = !!rec.clearanceCaseStatus;
                   const receiptKey = `PARENT:${rec.orderId}`;
                   const open = isReceiptOpen(
                     receiptKey,
-                    saved ? false : !pending,
+                    saved ? false : !hasCaseStatus,
                   );
                   const showStatus = !open; // ✅ show badges only when collapsed
-                  const recLocked = isReceiptLocked(pending);
+                  const recLocked = isReceiptLocked(hasCaseStatus);
                   const autoNeeds = rem > MONEY_EPS;
                   const rejected = rec.clearanceDecision === "REJECT";
                   const voided = !!rec.voided;
                   return (
                     <div
                       key={rec.key}
-                      className="p-3 border rounded-xl bg-white"
+                      className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                     >
                       {/*
                        ✅ UI totals (Parent Orders):
@@ -2453,6 +2491,13 @@ export default function RiderCheckinPage() {
                             <StatusPill status="REJECTED" />
                           ) : showStatus && voided ? (
                             <StatusPill status="VOIDED" />
+                          ) : showStatus && hasCaseStatus ? (
+                            <>
+                              <StatusPill status="INFO" label="DECIDED" />
+                              <span className="text-[11px] text-slate-500">
+                                Manager decided
+                              </span>
+                            </>
                           ) : showStatus && autoNeeds ? (
                             <>
                               <StatusPill status="NEEDS_CLEARANCE" />
@@ -2473,7 +2518,7 @@ export default function RiderCheckinPage() {
                           }
                           title={
                             recLocked
-                              ? "Waiting for manager decision"
+                              ? "Locked by clearance case status"
                               : undefined
                           }
                         >
@@ -2688,12 +2733,14 @@ export default function RiderCheckinPage() {
                                   <StatusPill status="REJECTED" />
                                 ) : voided ? (
                                   <StatusPill status="VOIDED" />
+                                ) : hasCaseStatus ? (
+                                  <StatusPill status="INFO" label="DECIDED" />
                                 ) : (
                                   <StatusPill status="NEEDS_CLEARANCE" />
                                 )
                               }
                               noteNode={
-                                !pending && !rejected && !voided ? (
+                                !hasCaseStatus && !rejected && !voided ? (
                                   <span className="text-[11px] text-slate-500">
                                     Not yet sent
                                   </span>
@@ -2701,28 +2748,36 @@ export default function RiderCheckinPage() {
                                   <span className="text-[11px] text-slate-500">
                                     Sent to manager
                                   </span>
+                                ) : hasCaseStatus ? (
+                                  <span className="text-[11px] text-slate-500">
+                                    Manager decided (read-only)
+                                  </span>
                                 ) : null
                               }
-                              onSend={() => {
-                                const total = Number(rec.orderTotal || 0);
-                                const { clamped } = clampCashToTotal(
-                                  total,
-                                  rec.cashInput ?? rec.cashCollected ?? "",
-                                );
-                                sendClearance({
-                                  receiptKey: `PARENT:${rec.orderId}`,
-                                  kind: "PARENT",
-                                  cashCollected: clamped.toFixed(2),
-                                  intent: getDefaultIntent(
-                                    rec.customerId,
-                                    rec.clearanceIntent,
-                                  ),
-                                  message: normalizeClearanceMessage(
-                                    String(rec.clearanceReason ?? ""),
-                                  ),
-                                  roadReceiptJson: "",
-                                });
-                              }}
+                              onSend={
+                                hasCaseStatus
+                                  ? undefined
+                                  : () => {
+                                      const total = Number(rec.orderTotal || 0);
+                                      const { clamped } = clampCashToTotal(
+                                        total,
+                                        rec.cashInput ?? rec.cashCollected ?? "",
+                                      );
+                                      sendClearance({
+                                        receiptKey: `PARENT:${rec.orderId}`,
+                                        kind: "PARENT",
+                                        cashCollected: clamped.toFixed(2),
+                                        intent: getDefaultIntent(
+                                          rec.customerId,
+                                          rec.clearanceIntent,
+                                        ),
+                                        message: normalizeClearanceMessage(
+                                          String(rec.clearanceReason ?? ""),
+                                        ),
+                                        roadReceiptJson: "",
+                                      });
+                                    }
+                              }
                               extraNode={
                                 rejected && !voided ? (
                                   <div className="mt-2">
@@ -2831,15 +2886,19 @@ export default function RiderCheckinPage() {
               const receiptAR = receiptTotals.ar;
               const autoNeeds = receiptAR > MONEY_EPS;
               const pending = !!rec.clearancePending;
-              const recLocked = isReceiptLocked(pending);
+              const hasCaseStatus = !!rec.clearanceCaseStatus;
+              const recLocked = isReceiptLocked(hasCaseStatus);
               const receiptKey = rec.key; // ROAD key already stable
-              const open = isReceiptOpen(receiptKey, saved ? false : !pending);
+              const open = isReceiptOpen(
+                receiptKey,
+                saved ? false : !hasCaseStatus,
+              );
               const showStatus = !open; // ✅ show badges only when collapsed
 
               return (
                 <div
                   key={rec.key}
-                  className="mt-4 p-3 border rounded-xl bg-white"
+                  className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                 >
                   <CollapsibleReceipt
                     title={rec.customerName ?? "Customer Receipt"}
@@ -2865,6 +2924,13 @@ export default function RiderCheckinPage() {
                         <StatusPill status="REJECTED" />
                       ) : showStatus && rec.voided ? (
                         <StatusPill status="VOIDED" />
+                      ) : showStatus && hasCaseStatus ? (
+                        <>
+                          <StatusPill status="INFO" label="DECIDED" />
+                          <span className="text-[11px] text-slate-500">
+                            Manager decided
+                          </span>
+                        </>
                       ) : showStatus && autoNeeds ? (
                         <>
                           <StatusPill status="NEEDS_CLEARANCE" />
@@ -2884,7 +2950,7 @@ export default function RiderCheckinPage() {
                           : ""
                       }
                       title={
-                        recLocked ? "Waiting for manager decision" : undefined
+                        recLocked ? "Locked by clearance case status" : undefined
                       }
                     >
                       {/* Customer Picker */}
@@ -3409,56 +3475,71 @@ export default function RiderCheckinPage() {
                             statusNode={
                               pending ? (
                                 <StatusPill status="PENDING" />
+                              ) : rec.clearanceDecision === "REJECT" &&
+                                !rec.voided ? (
+                                <StatusPill status="REJECTED" />
+                              ) : rec.voided ? (
+                                <StatusPill status="VOIDED" />
+                              ) : hasCaseStatus ? (
+                                <StatusPill status="INFO" label="DECIDED" />
                               ) : (
                                 <StatusPill status="NEEDS_CLEARANCE" />
                               )
                             }
                             noteNode={
-                              !rec.customerId ? (
+                              hasCaseStatus ? (
+                                <span className="text-[11px] text-slate-500">
+                                  Manager decided (read-only)
+                                </span>
+                              ) : !rec.customerId ? (
                                 <span className="text-[11px] text-amber-700">
                                   No customer → OPEN_BALANCE not allowed
                                 </span>
                               ) : null
                             }
-                            onSend={() => {
-                              const totals = computeReceiptTotals(rec);
-                              const intent = getDefaultIntent(
-                                rec.customerId,
-                                rec.clearanceIntent,
-                              );
-                              const msg = normalizeClearanceMessage(
-                                String(rec.clearanceReason ?? ""),
-                              );
-                              const roadPayload = {
-                                key: rec.key,
-                                clearanceIntent: intent as any,
-                                clearanceReason: msg,
-                                customerId: rec.customerId ?? null,
-                                customerName: rec.customerName ?? null,
-                                customerPhone: rec.customerPhone ?? null,
-                                cashReceived: totals.cash,
-                                lines: (rec.lines || [])
-                                  .filter(
-                                    (ln) =>
-                                      (Number(ln.qty) || 0) > 0 &&
-                                      ln.productId != null,
-                                  )
-                                  .map((ln) => ({
-                                    productId: ln.productId,
-                                    name: ln.name,
-                                    qty: Number(ln.qty || 0),
-                                    unitPrice: Number(ln.unitPrice || 0),
-                                  })),
-                              };
-                              sendClearance({
-                                receiptKey: rec.key,
-                                kind: "ROAD",
-                                cashCollected: String(totals.cash ?? 0),
-                                intent,
-                                message: msg,
-                                roadReceiptJson: JSON.stringify(roadPayload),
-                              });
-                            }}
+                            onSend={
+                              hasCaseStatus
+                                ? undefined
+                                : () => {
+                                    const totals = computeReceiptTotals(rec);
+                                    const intent = getDefaultIntent(
+                                      rec.customerId,
+                                      rec.clearanceIntent,
+                                    );
+                                    const msg = normalizeClearanceMessage(
+                                      String(rec.clearanceReason ?? ""),
+                                    );
+                                    const roadPayload = {
+                                      key: rec.key,
+                                      clearanceIntent: intent as any,
+                                      clearanceReason: msg,
+                                      customerId: rec.customerId ?? null,
+                                      customerName: rec.customerName ?? null,
+                                      customerPhone: rec.customerPhone ?? null,
+                                      cashReceived: totals.cash,
+                                      lines: (rec.lines || [])
+                                        .filter(
+                                          (ln) =>
+                                            (Number(ln.qty) || 0) > 0 &&
+                                            ln.productId != null,
+                                        )
+                                        .map((ln) => ({
+                                          productId: ln.productId,
+                                          name: ln.name,
+                                          qty: Number(ln.qty || 0),
+                                          unitPrice: Number(ln.unitPrice || 0),
+                                        })),
+                                    };
+                                    sendClearance({
+                                      receiptKey: rec.key,
+                                      kind: "ROAD",
+                                      cashCollected: String(totals.cash ?? 0),
+                                      intent,
+                                      message: msg,
+                                      roadReceiptJson: JSON.stringify(roadPayload),
+                                    });
+                                  }
+                            }
                           />
                         ) : null}
                       </div>

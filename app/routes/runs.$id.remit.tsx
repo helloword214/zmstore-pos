@@ -18,6 +18,15 @@ import { requireRole } from "~/utils/auth.server";
 
 // Local helper: money rounding (single source in this file, but we prefer r2Money)
 const r2 = (n: number) => r2Money(Number(n) || 0);
+const parseIsCreditFromNote = (note: unknown): boolean | null => {
+  if (typeof note !== "string" || !note.trim()) return null;
+  try {
+    const meta = JSON.parse(note);
+    return typeof meta?.isCredit === "boolean" ? meta.isCredit : null;
+  } catch {
+    return null;
+  }
+};
 
 type RecapRow = {
   productId: number;
@@ -196,11 +205,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     .map((rec) => {
       const cashCollected = Number(rec.cashCollected ?? 0);
       let receiptIsCredit = cashCollected <= 0;
-      try {
-        const meta = rec.note ? JSON.parse(rec.note) : null;
-        if (meta && typeof meta.isCredit === "boolean")
-          receiptIsCredit = meta.isCredit;
-      } catch {}
+      const parsedIsCredit = parseIsCreditFromNote(rec.note);
+      if (parsedIsCredit != null) receiptIsCredit = parsedIsCredit;
 
       const custLabelBase =
         (rec.customerName && rec.customerName.trim()) ||
@@ -646,11 +652,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     .map((rr) => {
       const cashCollected = Number(rr.cashCollected ?? 0);
       let isCredit = cashCollected <= 0;
-      try {
-        const meta = rr.note ? JSON.parse(rr.note) : null;
-        if (meta && typeof meta.isCredit === "boolean")
-          isCredit = meta.isCredit;
-      } catch {}
+      const parsedIsCredit = parseIsCreditFromNote(rr.note);
+      if (parsedIsCredit != null) isCredit = parsedIsCredit;
       const lines = (rr.lines || [])
         .map((ln) => {
           const qty = Math.max(0, Number(ln.qty ?? 0));
@@ -1133,7 +1136,7 @@ export default function RunRemitPage() {
                 {parentOrders.map((o, idx) => (
                   <div
                     key={`${o.orderId}-${idx}`}
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-xs font-medium text-slate-700">
@@ -1287,7 +1290,7 @@ export default function RunRemitPage() {
                 quickReceipts.map((rec) => (
                   <div
                     key={rec.key}
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-xs font-medium text-slate-700">

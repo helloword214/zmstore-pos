@@ -20,7 +20,7 @@ function MiniPill({
 }) {
   const cls =
     tone === "indigo"
-      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+      ? "border-indigo-200 bg-indigo-50 text-indigo-800"
       : tone === "amber"
       ? "border-amber-200 bg-amber-50 text-amber-800"
       : tone === "rose"
@@ -31,7 +31,7 @@ function MiniPill({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${cls}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${cls}`}
     >
       {children}
     </span>

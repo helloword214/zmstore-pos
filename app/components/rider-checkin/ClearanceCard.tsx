@@ -12,7 +12,7 @@ function MiniPill({
 }) {
   const cls =
     tone === "indigo"
-      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+      ? "border-indigo-200 bg-indigo-50 text-indigo-800"
       : tone === "amber"
       ? "border-amber-200 bg-amber-50 text-amber-800"
       : tone === "rose"
@@ -22,7 +22,7 @@ function MiniPill({
       : "border-slate-200 bg-slate-50 text-slate-600";
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${cls}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${cls}`}
     >
       {children}
     </span>
@@ -140,7 +140,7 @@ export function ClearanceCard(props: {
                 type="button"
                 disabled={!!props.busy || props.locked}
                 onClick={props.onSend}
-                className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
               >
                 Send for clearance
               </button>
