@@ -1756,10 +1756,16 @@ export default function RiderCheckinPage() {
   );
 
   const saved = searchParams.get("saved") === "1";
+  const clearanceSent = searchParams.get("clearance_sent") === "1";
+  const voided = searchParams.get("voided") === "1";
   const clearanceError = searchParams.get("clearance_error");
 
   const [parentReceiptsState, setParentReceiptsState] =
     React.useState(parentReceipts);
+  React.useEffect(() => {
+    if (!clearanceSent && !voided) return;
+    setParentReceiptsState(parentReceipts);
+  }, [clearanceSent, voided, parentReceipts]);
 
   const remainingForParent = React.useCallback((rec: ParentReceiptUI) => {
     const total = Number(rec.orderTotal || 0);
@@ -1967,6 +1973,14 @@ export default function RiderCheckinPage() {
       ? (initialRoadReceipts as SoldReceiptUI[])
       : [],
   );
+  React.useEffect(() => {
+    if (!clearanceSent && !voided) return;
+    setReceipts(
+      Array.isArray(initialRoadReceipts)
+        ? (initialRoadReceipts as SoldReceiptUI[])
+        : [],
+    );
+  }, [clearanceSent, voided, initialRoadReceipts]);
 
   // Keep a ref to latest receipts to avoid stale closures during async quote
   const receiptsRef = React.useRef<SoldReceiptUI[]>(receipts);
