@@ -1,20 +1,24 @@
 /* app/routes/store.clearance.$caseId.tsx */
-/* STORE MANAGER — Commercial Clearance Case (Read-only MVP) */
+/* STORE MANAGER — Commercial Clearance Case (Decision-enabled) */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import {
+  Form,
   Link,
+  useActionData,
   useLoaderData,
+  useNavigation,
   isRouteErrorResponse,
   useRouteError,
 } from "@remix-run/react";
 import * as React from "react";
+import { Prisma } from "@prisma/client";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import { r2, peso } from "~/utils/money";
+import { MONEY_EPS, r2, peso } from "~/utils/money";
 
 type LoaderData = {
   case: {
@@ -31,6 +35,7 @@ type LoaderData = {
     orderId: number | null;
     runId: number | null;
     runReceiptId: number | null;
+    customerId: number | null;
 
     order?: {
       id: number;
@@ -51,8 +56,24 @@ type LoaderData = {
       runCode: string | null;
       customerLabel: string;
     } | null;
+
+    latestDecision?: {
+      kind: string;
+      decidedAt: string | null;
+      note: string | null;
+      arBalance: number | null;
+      decidedById: number | null;
+    } | null;
   };
 };
+
+type DecisionKind =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+type ActionData = { ok: true } | { ok: false; error: string };
 
 function buildCustomerLabelFromOrder(o: any) {
   const c = o?.customer;
@@ -97,6 +118,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orderId: true,
       runId: true,
       runReceiptId: true,
+      customerId: true,
 
       order: {
         select: {
@@ -130,6 +152,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           runId: true,
           run: { select: { id: true, runCode: true } },
         },
+      },
+
+      decisions: {
+        select: {
+          kind: true,
+          decidedAt: true,
+          note: true,
+          arBalance: true,
+          decidedById: true,
+        },
+        orderBy: { id: "desc" },
+        take: 1,
       },
     },
   });
@@ -166,6 +200,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
     : null;
 
+  const latestDecision = c.decisions?.[0]
+    ? {
+        kind: String(c.decisions[0].kind),
+        decidedAt: c.decisions[0].decidedAt
+          ? new Date(c.decisions[0].decidedAt as any).toISOString()
+          : null,
+        note: c.decisions[0].note ?? null,
+        arBalance:
+          c.decisions[0].arBalance != null
+            ? Number(c.decisions[0].arBalance)
+            : null,
+        decidedById: c.decisions[0].decidedById ?? null,
+      }
+    : null;
+
   return json<LoaderData>({
     case: {
       id: Number(c.id),
@@ -183,11 +232,153 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orderId: c.orderId ?? null,
       runId: c.runId ?? null,
       runReceiptId: c.runReceiptId ?? null,
+      customerId: c.customerId ?? null,
 
       order,
       runReceipt,
+      latestDecision,
     },
   });
+}
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+
+  const caseId = Number(params.caseId);
+  if (!Number.isFinite(caseId)) {
+    return json<ActionData>(
+      { ok: false, error: "Invalid caseId." },
+      { status: 400 },
+    );
+  }
+
+  const fd = await request.formData();
+  const intent = String(fd.get("intent") || "");
+  if (intent !== "decide") {
+    return redirect(`/store/clearance/${caseId}`);
+  }
+
+  const rawKind = String(fd.get("decisionKind") || "").trim();
+  const decisionKind: DecisionKind | null =
+    rawKind === "APPROVE_OPEN_BALANCE" ||
+    rawKind === "APPROVE_DISCOUNT_OVERRIDE" ||
+    rawKind === "APPROVE_HYBRID" ||
+    rawKind === "REJECT"
+      ? (rawKind as DecisionKind)
+      : null;
+  if (!decisionKind) {
+    return json<ActionData>(
+      { ok: false, error: "Invalid decision kind." },
+      { status: 400 },
+    );
+  }
+
+  const note = String(fd.get("note") || "").trim().slice(0, 500) || null;
+  if (!note) {
+    return json<ActionData>(
+      { ok: false, error: "Decision note is required." },
+      { status: 400 },
+    );
+  }
+
+  const dueDateRaw = String(fd.get("dueDate") || "").trim();
+  const dueDate =
+    dueDateRaw.length > 0 ? new Date(`${dueDateRaw}T00:00:00`) : null;
+  if (dueDateRaw && (!dueDate || Number.isNaN(dueDate.getTime()))) {
+    return json<ActionData>(
+      { ok: false, error: "Invalid due date." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      const c = await tx.clearanceCase.findUnique({
+        where: { id: caseId } as any,
+        select: {
+          id: true,
+          status: true,
+          customerId: true,
+          orderId: true,
+          runId: true,
+          frozenTotal: true,
+          cashCollected: true,
+          decisions: {
+            select: { id: true },
+            orderBy: { id: "desc" },
+            take: 1,
+          },
+        },
+      });
+      if (!c) throw new Error("Clearance case not found.");
+      if (String(c.status) !== "NEEDS_CLEARANCE") {
+        throw new Error("Case is no longer pending clearance.");
+      }
+      if ((c.decisions || []).length > 0) {
+        throw new Error("Decision already exists for this case.");
+      }
+
+      const frozenTotal = r2(Math.max(0, Number(c.frozenTotal ?? 0)));
+      const cashCollected = r2(Math.max(0, Number(c.cashCollected ?? 0)));
+      const balance = r2(Math.max(0, frozenTotal - cashCollected));
+      if (balance <= MONEY_EPS) {
+        throw new Error("No remaining balance to decide.");
+      }
+
+      const needsCustomer =
+        decisionKind === "APPROVE_OPEN_BALANCE" ||
+        decisionKind === "APPROVE_HYBRID";
+      if (needsCustomer && !c.customerId) {
+        throw new Error("Selected decision requires a customer record.");
+      }
+
+      const dData: any = {
+        caseId: c.id,
+        kind: decisionKind,
+        decidedById: me.userId,
+        note,
+      };
+      if (decisionKind === "APPROVE_DISCOUNT_OVERRIDE") {
+        dData.overrideDiscountApproved = new Prisma.Decimal(balance.toFixed(2));
+      }
+      if (needsCustomer) {
+        dData.arBalance = new Prisma.Decimal(balance.toFixed(2));
+      }
+
+      const createdDecision = await tx.clearanceDecision.create({
+        data: dData,
+        select: { id: true },
+      });
+
+      if (needsCustomer) {
+        await tx.customerAr.create({
+          data: {
+            customerId: Number(c.customerId),
+            clearanceDecisionId: Number(createdDecision.id),
+            ...(c.orderId ? { orderId: Number(c.orderId) } : {}),
+            ...(c.runId ? { runId: Number(c.runId) } : {}),
+            principal: new Prisma.Decimal(balance.toFixed(2)),
+            balance: new Prisma.Decimal(balance.toFixed(2)),
+            status: "OPEN",
+            ...(dueDate ? { dueDate } : {}),
+            note,
+          } as any,
+        });
+      }
+
+      await tx.clearanceCase.update({
+        where: { id: c.id } as any,
+        data: { status: "DECIDED" } as any,
+      });
+    });
+  } catch (e: any) {
+    return json<ActionData>(
+      { ok: false, error: String(e?.message || "Failed to save decision.") },
+      { status: 400 },
+    );
+  }
+
+  return redirect(`/store/clearance/${caseId}?decided=1`);
 }
 
 function Pill({
@@ -215,6 +406,10 @@ function Pill({
 export default function StoreClearanceCasePage() {
   const data = useLoaderData<LoaderData>();
   const c = data.case;
+  const actionData = useActionData<ActionData>();
+  const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const canDecide = c.status === "NEEDS_CLEARANCE" && !c.latestDecision;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -346,6 +541,121 @@ export default function StoreClearanceCasePage() {
             </div>
           </section>
         ) : null}
+
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+          <h2 className="text-sm font-medium text-slate-800">
+            Manager Decision
+          </h2>
+
+          {c.latestDecision ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+              <div className="font-medium">
+                DECIDED: <span className="font-mono">{c.latestDecision.kind}</span>
+              </div>
+              {c.latestDecision.decidedAt ? (
+                <div className="mt-1 text-xs">
+                  decidedAt:{" "}
+                  <span className="font-mono">{c.latestDecision.decidedAt}</span>
+                </div>
+              ) : null}
+              {c.latestDecision.arBalance != null ? (
+                <div className="mt-1 text-xs">
+                  arBalance:{" "}
+                  <span className="font-mono">
+                    {peso(c.latestDecision.arBalance)}
+                  </span>
+                </div>
+              ) : null}
+              {c.latestDecision.note ? (
+                <div className="mt-1 text-xs whitespace-pre-wrap">
+                  note: {c.latestDecision.note}
+                </div>
+              ) : null}
+            </div>
+          ) : canDecide ? (
+            <Form method="post" className="space-y-3">
+              <input type="hidden" name="intent" value="decide" />
+
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  Decision note (required)
+                </label>
+                <textarea
+                  name="note"
+                  rows={3}
+                  required
+                  maxLength={500}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  placeholder="Explain decision context..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  A/R due date (optional, for OPEN_BALANCE/HYBRID)
+                </label>
+                <input
+                  type="date"
+                  name="dueDate"
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+              </div>
+
+              {actionData && !actionData.ok ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                  {actionData.error}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  name="decisionKind"
+                  value="APPROVE_OPEN_BALANCE"
+                  disabled={busy || !c.customerId}
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                >
+                  Approve Open Balance
+                </button>
+                <button
+                  type="submit"
+                  name="decisionKind"
+                  value="APPROVE_HYBRID"
+                  disabled={busy || !c.customerId}
+                  className="rounded-xl border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 disabled:opacity-50"
+                >
+                  Approve Hybrid
+                </button>
+                <button
+                  type="submit"
+                  name="decisionKind"
+                  value="APPROVE_DISCOUNT_OVERRIDE"
+                  disabled={busy}
+                  className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 disabled:opacity-50"
+                >
+                  Approve Discount Override
+                </button>
+                <button
+                  type="submit"
+                  name="decisionKind"
+                  value="REJECT"
+                  disabled={busy}
+                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+
+              {!c.customerId ? (
+                <p className="text-xs text-amber-700">
+                  OPEN_BALANCE/HYBRID require customer record.
+                </p>
+              ) : null}
+            </Form>
+          ) : (
+            <div className="text-xs text-slate-500">Case is not pending.</div>
+          )}
+        </section>
       </div>
     </main>
   );
