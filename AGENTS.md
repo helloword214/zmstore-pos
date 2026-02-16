@@ -47,8 +47,20 @@ Then wait for explicit `GO`.
 ## PR and Merge Policy
 
 1. Create PR from `codex/<task-name>` to `main`.
-2. Preferred merge mode: squash and merge.
+2. Preferred merge mode: squash and merge, unless local `main` already contains the exact same commits (use merge commit in that case).
 3. Delete feature branch after successful merge (local and remote).
+
+## Git and GitHub Coaching Defaults
+
+1. When giving git/github commands, always explain what the command does and why it is used.
+2. Prefer plain commands (no `git -C ...`) unless directory override is explicitly needed.
+3. Before recommending PR/merge, verify and report:
+   a. current branch
+   b. `git status -sb`
+   c. ahead/behind against `origin/main`
+   d. commits in `origin/main..HEAD`
+4. If commits were accidentally made on `main`, create a feature branch from current HEAD before opening PR.
+5. After merge, always provide post-merge cleanup commands (sync `main`, delete local branch, delete remote branch).
 
 ## Change Safety
 
