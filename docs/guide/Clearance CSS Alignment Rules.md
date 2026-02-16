@@ -28,6 +28,7 @@ Keep clearance-related pages visually consistent so state interpretation is fast
 - `NEEDS_CLEARANCE`: amber (`border-amber-200 bg-amber-50 text-amber-800`)
 - `REJECTED`: rose (`border-rose-200 bg-rose-50 text-rose-700`)
 - `VOIDED`: slate (`border-slate-200 bg-slate-50 text-slate-600`)
+- `DECIDED` (info tone): slate (`border-slate-200 bg-slate-50 text-slate-600`)
 - `FULLY_PAID`: emerald (`border-emerald-200 bg-emerald-50 text-emerald-700`)
 
 ## Buttons
@@ -44,9 +45,23 @@ Keep clearance-related pages visually consistent so state interpretation is fast
 - Keep spacing rhythm in 2/3/4 scale (`gap-2`, `gap-3`, `p-3`, `p-4`).
 - Avoid introducing a second visual language for clearance states.
 
+## Decision Freeze Rule (Rider Check-in)
+
+- Once `clearanceCaseStatus` exists on a receipt (`NEEDS_CLEARANCE` or `DECIDED`), receipt inputs are read-only.
+- Locked receipt container uses existing muted treatment (`opacity-70`) and lock-safe cursor/title hints.
+- Send action must be hidden/disabled for locked receipts to avoid repeat submit.
+- Collapsed receipt state should show a status pill plus note: `PENDING` + "Sent to manager" for open case, `DECIDED` + "Manager decided (read-only)" for resolved case.
+
+## Error Banner
+
+- Redirected action failures should render one inline banner style only:
+- `rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700`.
+- Keep placement near top action feedback area (same block as `saved`/validation messages).
+
 ## Review Checklist
 
 - Are state colors identical across check-in, clearance, and remit?
 - Are card radius/border/shadow tokens consistent?
 - Are decision and balance values visually emphasized the same way?
 - Are disabled and pending states clearly distinguishable?
+- Are decided receipts visibly locked and non-resubmittable after manager decision?
