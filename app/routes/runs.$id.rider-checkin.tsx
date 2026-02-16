@@ -151,7 +151,7 @@ type ParentReceiptUI = {
   clearanceIntent?: ClearanceIntentUI;
   customerLabel: string;
   lines: ParentLineUI[];
-  // orderTotal is computed from live quote on client
+  // orderTotal comes from frozen DB snapshot line totals
   orderTotal: number;
   // optional: actual cash collected for this POS order (snapshot only)
   cashCollected?: number;
@@ -178,7 +178,6 @@ type LoaderData = {
   initialRoadReceipts: SoldReceiptUI[];
   hasSnapshot: boolean;
   parentReceipts: ParentReceiptUI[];
-  role: string;
 };
 
 // CCS SoT key helpers
@@ -197,9 +196,6 @@ type ActionData =
       };
     };
 
-const isRoleManager = (role: string) =>
-  role === "STORE_MANAGER" || role === "ADMIN";
-
 const fmtIso = (d: Date | string | null | undefined) => {
   if (!d) return null;
   const x = typeof d === "string" ? new Date(d) : d;
@@ -210,7 +206,7 @@ const fmtIso = (d: Date | string | null | undefined) => {
 // Loader
 // -------------------------------------------------------
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
+  await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid id", { status: 400 });
@@ -642,7 +638,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           productId: Number(r?.productId ?? 0),
           returned: Math.max(0, Number(r?.returned ?? 0)),
         }))
-        .filter((r) => r.productId > 0 && allowedPids.has(r.productId));
+        .filter(
+          (r: { productId: number; returned: number }) =>
+            r.productId > 0 && allowedPids.has(r.productId),
+        );
     }
   }
 
@@ -721,7 +720,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     initialRoadReceipts: roadReceiptsFromDb,
     hasSnapshot: !!run.riderCheckinSnapshot,
     parentReceipts,
-    role: me.role,
   });
 }
 
@@ -1689,7 +1687,6 @@ export default function RiderCheckinPage() {
     initialRoadReceipts,
     hasSnapshot,
     parentReceipts,
-    role,
   } = useLoaderData<LoaderData>();
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
@@ -1697,9 +1694,7 @@ export default function RiderCheckinPage() {
   const submit = useSubmit();
   const [searchParams] = useSearchParams();
 
-  const manager = isRoleManager(role);
-  const locked =
-    run.status === "CHECKED_IN" && !!run.riderCheckinAt && !manager;
+  const locked = run.status === "CHECKED_IN" && !!run.riderCheckinAt;
 
   const [openReceipt, setOpenReceipt] = React.useState<Record<string, boolean>>(
     {},
@@ -2260,16 +2255,16 @@ export default function RiderCheckinPage() {
   // -------------------------------------------------------
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb] p-5">
-      <div className="mx-auto max-w-5xl">
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <div className="mx-auto max-w-5xl px-5 py-6">
         <Link
           to={`/runs/${run.id}/summary`}
-          className="text-sm text-indigo-600"
+          className="text-sm text-indigo-600 hover:underline"
         >
           ← Back
         </Link>
 
-        <h1 className="mt-4 text-lg font-semibold">
+        <h1 className="mt-4 text-base font-semibold tracking-wide text-slate-800">
           Rider Check-in — {run.runCode}
         </h1>
         <p className="text-sm text-slate-600">
@@ -2425,7 +2420,7 @@ export default function RiderCheckinPage() {
                   return (
                     <div
                       key={rec.key}
-                      className="p-3 border rounded-xl bg-white"
+                      className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                     >
                       {/*
                        ✅ UI totals (Parent Orders):
@@ -2839,7 +2834,7 @@ export default function RiderCheckinPage() {
               return (
                 <div
                   key={rec.key}
-                  className="mt-4 p-3 border rounded-xl bg-white"
+                  className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                 >
                   <CollapsibleReceipt
                     title={rec.customerName ?? "Customer Receipt"}

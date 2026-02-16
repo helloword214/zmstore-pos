@@ -72,6 +72,7 @@ type DecisionKind =
   | "APPROVE_DISCOUNT_OVERRIDE"
   | "APPROVE_HYBRID"
   | "REJECT";
+type DecisionAction = "APPROVE" | "REJECT";
 
 type ActionData = { ok: true } | { ok: false; error: string };
 
@@ -258,17 +259,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect(`/store/clearance/${caseId}`);
   }
 
-  const rawKind = String(fd.get("decisionKind") || "").trim();
-  const decisionKind: DecisionKind | null =
-    rawKind === "APPROVE_OPEN_BALANCE" ||
-    rawKind === "APPROVE_DISCOUNT_OVERRIDE" ||
-    rawKind === "APPROVE_HYBRID" ||
-    rawKind === "REJECT"
-      ? (rawKind as DecisionKind)
+  const rawAction = String(fd.get("decisionKind") || "").trim();
+  const decisionAction: DecisionAction | null =
+    rawAction === "APPROVE" || rawAction === "REJECT"
+      ? (rawAction as DecisionAction)
       : null;
-  if (!decisionKind) {
+  if (!decisionAction) {
     return json<ActionData>(
       { ok: false, error: "Invalid decision kind." },
+      { status: 400 },
+    );
+  }
+
+  const approvedDiscountRaw = String(fd.get("approvedDiscount") || "").trim();
+  const approvedDiscountParsed = Number(
+    approvedDiscountRaw.replace(/[^0-9.]/g, ""),
+  );
+  if (
+    decisionAction === "APPROVE" &&
+    (!approvedDiscountRaw || !Number.isFinite(approvedDiscountParsed))
+  ) {
+    return json<ActionData>(
+      { ok: false, error: "Approved discount is required for approval." },
       { status: 400 },
     );
   }
@@ -325,24 +337,44 @@ export async function action({ request, params }: ActionFunctionArgs) {
         throw new Error("No remaining balance to decide.");
       }
 
-      const needsCustomer =
-        decisionKind === "APPROVE_OPEN_BALANCE" ||
-        decisionKind === "APPROVE_HYBRID";
-      if (needsCustomer && !c.customerId) {
+      let finalDecisionKind: DecisionKind = "REJECT";
+      let approvedDiscount = 0;
+      let arBalance = 0;
+
+      if (decisionAction === "APPROVE") {
+        const requestedDiscount = r2(Math.max(0, approvedDiscountParsed || 0));
+        if (requestedDiscount > balance + MONEY_EPS) {
+          throw new Error("Approved discount cannot exceed remaining balance.");
+        }
+
+        approvedDiscount = r2(Math.min(balance, requestedDiscount));
+        arBalance = r2(Math.max(0, balance - approvedDiscount));
+
+        finalDecisionKind =
+          approvedDiscount <= MONEY_EPS
+            ? "APPROVE_OPEN_BALANCE"
+            : arBalance <= MONEY_EPS
+            ? "APPROVE_DISCOUNT_OVERRIDE"
+            : "APPROVE_HYBRID";
+      }
+
+      if (arBalance > MONEY_EPS && !c.customerId) {
         throw new Error("Selected decision requires a customer record.");
       }
 
       const dData: any = {
         caseId: c.id,
-        kind: decisionKind,
+        kind: finalDecisionKind,
         decidedById: me.userId,
         note,
       };
-      if (decisionKind === "APPROVE_DISCOUNT_OVERRIDE") {
-        dData.overrideDiscountApproved = new Prisma.Decimal(balance.toFixed(2));
+      if (approvedDiscount > MONEY_EPS) {
+        dData.overrideDiscountApproved = new Prisma.Decimal(
+          approvedDiscount.toFixed(2),
+        );
       }
-      if (needsCustomer) {
-        dData.arBalance = new Prisma.Decimal(balance.toFixed(2));
+      if (arBalance > MONEY_EPS) {
+        dData.arBalance = new Prisma.Decimal(arBalance.toFixed(2));
       }
 
       const createdDecision = await tx.clearanceDecision.create({
@@ -350,15 +382,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
         select: { id: true },
       });
 
-      if (needsCustomer) {
+      if (arBalance > MONEY_EPS) {
         await tx.customerAr.create({
           data: {
             customerId: Number(c.customerId),
             clearanceDecisionId: Number(createdDecision.id),
             ...(c.orderId ? { orderId: Number(c.orderId) } : {}),
             ...(c.runId ? { runId: Number(c.runId) } : {}),
-            principal: new Prisma.Decimal(balance.toFixed(2)),
-            balance: new Prisma.Decimal(balance.toFixed(2)),
+            principal: new Prisma.Decimal(arBalance.toFixed(2)),
+            balance: new Prisma.Decimal(arBalance.toFixed(2)),
             status: "OPEN",
             ...(dueDate ? { dueDate } : {}),
             note,
@@ -410,6 +442,32 @@ export default function StoreClearanceCasePage() {
   const nav = useNavigation();
   const busy = nav.state !== "idle";
   const canDecide = c.status === "NEEDS_CLEARANCE" && !c.latestDecision;
+  const [approvedDiscountInput, setApprovedDiscountInput] =
+    React.useState("0.00");
+
+  const approvedDiscountParsed = React.useMemo(() => {
+    const cleaned = approvedDiscountInput.replace(/[^0-9.]/g, "").trim();
+    if (cleaned === "") return 0;
+    const n = Number.parseFloat(cleaned);
+    return Number.isFinite(n) ? n : Number.NaN;
+  }, [approvedDiscountInput]);
+
+  const discountOutOfRange =
+    Number.isNaN(approvedDiscountParsed) ||
+    approvedDiscountParsed < -MONEY_EPS ||
+    approvedDiscountParsed > c.balance + MONEY_EPS;
+  const approvedDiscountPreview = Number.isNaN(approvedDiscountParsed)
+    ? 0
+    : r2(Math.max(0, Math.min(c.balance, approvedDiscountParsed)));
+  const arPreview = r2(Math.max(0, c.balance - approvedDiscountPreview));
+  const decisionPreview: Exclude<DecisionKind, "REJECT"> =
+    approvedDiscountPreview <= MONEY_EPS
+      ? "APPROVE_OPEN_BALANCE"
+      : arPreview <= MONEY_EPS
+      ? "APPROVE_DISCOUNT_OVERRIDE"
+      : "APPROVE_HYBRID";
+  const approveNeedsCustomer = arPreview > MONEY_EPS && !c.customerId;
+  const approveDisabled = busy || discountOutOfRange || approveNeedsCustomer;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -577,10 +635,14 @@ export default function StoreClearanceCasePage() {
               <input type="hidden" name="intent" value="decide" />
 
               <div>
-                <label className="block text-xs text-slate-600 mb-1">
+                <label
+                  htmlFor="decision-note"
+                  className="block text-xs text-slate-600 mb-1"
+                >
                   Decision note (required)
                 </label>
                 <textarea
+                  id="decision-note"
                   name="note"
                   rows={3}
                   required
@@ -591,10 +653,50 @@ export default function StoreClearanceCasePage() {
               </div>
 
               <div>
-                <label className="block text-xs text-slate-600 mb-1">
-                  A/R due date (optional, for OPEN_BALANCE/HYBRID)
+                <label
+                  htmlFor="approved-discount"
+                  className="block text-xs text-slate-600 mb-1"
+                >
+                  Approved discount (auto-classify)
                 </label>
                 <input
+                  id="approved-discount"
+                  type="text"
+                  name="approvedDiscount"
+                  inputMode="decimal"
+                  value={approvedDiscountInput}
+                  onChange={(e) => setApprovedDiscountInput(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>
+                    Decision: <span className="font-mono">{decisionPreview}</span>
+                  </span>
+                  <span>
+                    Discount:{" "}
+                    <span className="font-mono">
+                      {peso(approvedDiscountPreview)}
+                    </span>
+                  </span>
+                  <span>
+                    A/R: <span className="font-mono">{peso(arPreview)}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="due-date"
+                  className="block text-xs text-slate-600 mb-1"
+                >
+                  A/R due date (optional, used when A/R &gt; 0)
+                </label>
+                <input
+                  id="due-date"
                   type="date"
                   name="dueDate"
                   className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
@@ -606,34 +708,26 @@ export default function StoreClearanceCasePage() {
                   {actionData.error}
                 </div>
               ) : null}
+              {discountOutOfRange ? (
+                <p className="text-xs text-amber-700">
+                  Approved discount must be between 0 and {peso(c.balance)}.
+                </p>
+              ) : null}
+              {approveNeedsCustomer ? (
+                <p className="text-xs text-amber-700">
+                  This approval creates A/R, so customer record is required.
+                </p>
+              ) : null}
 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="submit"
                   name="decisionKind"
-                  value="APPROVE_OPEN_BALANCE"
-                  disabled={busy || !c.customerId}
+                  value="APPROVE"
+                  disabled={approveDisabled}
                   className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 disabled:opacity-50"
                 >
-                  Approve Open Balance
-                </button>
-                <button
-                  type="submit"
-                  name="decisionKind"
-                  value="APPROVE_HYBRID"
-                  disabled={busy || !c.customerId}
-                  className="rounded-xl border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 disabled:opacity-50"
-                >
-                  Approve Hybrid
-                </button>
-                <button
-                  type="submit"
-                  name="decisionKind"
-                  value="APPROVE_DISCOUNT_OVERRIDE"
-                  disabled={busy}
-                  className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 disabled:opacity-50"
-                >
-                  Approve Discount Override
+                  Approve (auto-classify)
                 </button>
                 <button
                   type="submit"
@@ -645,12 +739,6 @@ export default function StoreClearanceCasePage() {
                   Reject
                 </button>
               </div>
-
-              {!c.customerId ? (
-                <p className="text-xs text-amber-700">
-                  OPEN_BALANCE/HYBRID require customer record.
-                </p>
-              ) : null}
             </Form>
           ) : (
             <div className="text-xs text-slate-500">Case is not pending.</div>

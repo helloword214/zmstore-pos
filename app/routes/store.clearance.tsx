@@ -16,7 +16,6 @@ type WalkInRow = {
   caseId: number;
   orderId: number;
   orderCode: string;
-  status: string;
   customerLabel: string;
   frozenTotal: number;
   paidSoFar: number;
@@ -28,9 +27,7 @@ type WalkInRow = {
 type DeliveryRow = {
   // CCS SoT: inbox item identity is ClearanceCase
   caseId: number;
-  runId: number;
   runCode: string;
-  receiptId: number;
   receiptKey: string;
   customerLabel: string;
   frozenTotal: number;
@@ -88,20 +85,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     where: { status: "NEEDS_CLEARANCE" } as any,
     select: {
       id: true,
-      origin: true,
       flaggedAt: true,
-      note: true,
       frozenTotal: true,
       cashCollected: true,
       orderId: true,
-      runId: true,
       runReceiptId: true,
 
       order: {
         select: {
           id: true,
           orderCode: true,
-          status: true,
           channel: true,
           customerId: true,
           releasedAt: true,
@@ -165,7 +158,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
         caseId: Number(c.id),
         orderId: Number(o.id),
         orderCode: String(o.orderCode ?? `#${o.id}`),
-        status: String(o.status ?? ""),
         customerLabel: buildCustomerLabelFromOrder(o),
         frozenTotal,
         paidSoFar,
@@ -194,9 +186,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const balance = r2(Math.max(0, frozenTotal - cashCollected));
       return {
         caseId: Number(c.id),
-        runId: Number(r.run?.id ?? r.runId),
         runCode: String(r.run?.runCode ?? `RUN#${r.runId}`),
-        receiptId: Number(r.id),
         receiptKey: String(
           r.receiptKey || `${String(r.kind || "ROAD")}-RR${r.id}`,
         ),

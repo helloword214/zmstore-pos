@@ -1,6 +1,6 @@
 # Commercial Clearance System (CCS)
 
-**Version:** 2.7  
+**Version:** 2.8  
 **Status:** LOCKED – Field-Enforced Governance  
 **Scope:** All sales involving payment shortage, bargain requests, or delayed settlement  
 **Applies To:** PARENT (POS Orders), ROAD (Quick Sales), Delivery Runs
@@ -158,6 +158,35 @@ Clearance exists ONLY when:
 - remaining == 0 → NO clearance
 - remaining > 0 → Clearance REQUIRED
 - No exceptions
+
+---
+
+## Manager Approval Auto-Classification (New – v2.8, Binding)
+
+Manager approval uses a single input:
+
+- `approvedDiscount`
+
+Then the system computes:
+
+- `remaining = frozenTotal - cashCollected`
+- `arBalance = remaining - approvedDiscount`
+
+Validation:
+
+- `0 <= approvedDiscount <= remaining`
+
+Decision kind is auto-classified:
+
+1. `approvedDiscount = 0` → `APPROVE_OPEN_BALANCE`
+2. `0 < approvedDiscount < remaining` → `APPROVE_HYBRID`
+3. `approvedDiscount = remaining` → `APPROVE_DISCOUNT_OVERRIDE`
+
+Meaning:
+
+- Open Balance: all remaining goes to A/R
+- Hybrid: part waived (discount), part becomes A/R
+- Discount Override: all remaining waived, no A/R
 
 ---
 
