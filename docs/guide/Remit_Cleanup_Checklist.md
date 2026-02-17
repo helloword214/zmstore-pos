@@ -42,14 +42,18 @@ Use this as a guardrail when refactoring or reviewing remit-related code.
 
 ### MUST DO
 
-- Treat the page as **READ-ONLY REVIEW**
+- Treat the page as **Manager verification review**
 - Clearly show:
-  - Loaded vs Sold vs Returned
+  - Loaded vs Sold vs Unsold
   - Cash vs Credit per receipt / order
+- For each `unsold > 0` product, provide explicit manager choice:
+  - `Stocks Present`
+  - `Mark Missing`
+- Show reminder/preview for all rows marked `Mark Missing` with collectible amount
 - Show discount badges only if:
   - `baseUnitPrice` and `discountAmount` exist
 - Disable “Approve Remit” if:
-  - Stock recap mismatch exists
+  - Any unsold row is marked `Mark Missing`
   - Run status is not `CHECKED_IN`
 
 ### MUST NOT DO
@@ -57,7 +61,7 @@ Use this as a guardrail when refactoring or reviewing remit-related code.
 - ❌ Allow editing qty or prices
 - ❌ Allow discount editing
 - ❌ Allow changing customer or payment mode
-- ❌ Hide mismatches or auto-correct silently
+- ❌ Auto-charge rider without explicit `Mark Missing` manager choice
 
 ---
 
@@ -67,18 +71,49 @@ Use this as a guardrail when refactoring or reviewing remit-related code.
 
 - Verify run status is `CHECKED_IN`
 - Recompute stock recap using **loadRunRecap**
-- Reject post if:
-  - `Loaded ≠ Sold + Returned`
+- Compute `unsold = loaded - sold`
+- Parse manager stock decisions from submit payload:
+  - `Stocks Present` rows
+  - `Mark Missing` rows
 - Validate credit rules:
   - Credit or partial payment requires customer
 - Use **RunReceipt as the only input** for roadside sales
+- If normal approve intent:
+  - reject when any row is `Mark Missing`
+- If charge intent:
+  - require at least one `Mark Missing` row
+  - require valuation source for each missing row
 
 ### MUST NOT DO
 
 - ❌ Recompute prices
 - ❌ Pull live product pricing
 - ❌ Trust client-side totals
-- ❌ Post remit if recap mismatch exists
+- ❌ Allow charge intent with zero-value shortage
+
+---
+
+## 3.5️⃣ Missing Stock Charge Linkage Rules
+
+### MUST DO
+
+- Value missing stocks using frozen-first SoT priority:
+  - `RunReceiptLine.unitPrice` (ROAD)
+  - `OrderItem.unitPrice` (PARENT)
+  - `Product.srp` fallback
+  - `Product.price` fallback (last resort)
+- On **Charge Rider (Missing Stocks) & Close Run**:
+  - Create `RiderRunVariance` with:
+    - `status = MANAGER_APPROVED`
+    - `resolution = CHARGE_RIDER`
+    - negative `variance`
+  - Create or upsert linked `RiderCharge(status = OPEN)` using `varianceId`
+- Keep detailed audit note per missing product (qty, unit value source, amount)
+
+### MUST NOT DO
+
+- ❌ Mix missing-stock charge into customer A/R
+- ❌ Skip rider acceptance path for charged shortages
 
 ---
 
@@ -136,7 +171,7 @@ RS-RUN{runId}-RR{runReceiptId}
 
 - Post `RETURN_IN` stock movements only:
 - after remit approval
-- using recap service as source of truth
+- only for rows manager marked as `Stocks Present`
 - Ensure idempotency:
 - Do not post returns twice
 
@@ -145,6 +180,7 @@ RS-RUN{runId}-RR{runReceiptId}
 - ❌ Infer stock from leftovers
 - ❌ Recompute sold quantities manually
 - ❌ Post stock before remit approval
+- ❌ Return to stock rows marked as `Mark Missing`
 
 ---
 
