@@ -62,6 +62,14 @@ Then wait for explicit `GO`.
 4. If commits were accidentally made on `main`, create a feature branch from current HEAD before opening PR.
 5. After merge, always provide post-merge cleanup commands (sync `main`, delete local branch, delete remote branch).
 
+## Automation Preference (User-Approved)
+
+1. Once the user provides explicit `GO`, routine Git/GitHub workflow commands should run without repeated confirmation prompts in the same session.
+2. Routine workflow includes: status/check commands, fetch/pull, add/commit/push, and GitHub PR operations (`gh pr status/view/create/merge`).
+3. Establish and reuse approved command prefixes early so succeeding turns can proceed end-to-end with minimal friction.
+4. Continue reporting what was executed and the outcome, but do not repeatedly ask for permission for the same approved workflow category.
+5. Ask again only for high-risk/destructive operations (for example `reset --hard`, history rewrite, destructive deletes) or when authentication/credentials are missing and require user action.
+
 ## Path and Privacy Standard
 
 1. In shared docs, PR descriptions, and chat summaries, use repo-relative paths (example: `app/routes/store.clearance_.$caseId.tsx`) or URL routes (example: `/store/clearance/:caseId`).
