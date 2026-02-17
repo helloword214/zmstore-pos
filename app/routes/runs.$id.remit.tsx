@@ -1439,17 +1439,6 @@ export default function RunRemitPage() {
     };
   };
 
-  const decisionLabel = (d: DecisionKindUI | null) =>
-    d === "APPROVE_DISCOUNT_OVERRIDE"
-      ? "APPROVE_DISCOUNT_OVERRIDE"
-      : d === "APPROVE_HYBRID"
-        ? "APPROVE_HYBRID"
-        : d === "APPROVE_OPEN_BALANCE"
-          ? "APPROVE_OPEN_BALANCE"
-          : d === "REJECT"
-            ? "REJECT"
-            : null;
-
   const roadsideCashTotal = totals.roadsideCash;
   const parentCashTotal = totals.parentCash;
   const roadsideArTotal = totals.roadsideAR;
@@ -1771,31 +1760,8 @@ export default function RunRemitPage() {
                     run na ito. Read-only view ng qty at presyo per line.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-1 text-right text-[11px] text-slate-600">
-                  <div>
-                    Cash:{" "}
-                    <span className="font-mono font-semibold text-slate-900">
-                      {peso(parentCashTotal)}
-                    </span>
-                  </div>
-                  <div>
-                    A/R:{" "}
-                    <span className="font-mono font-semibold text-amber-800">
-                      {peso(parentArTotal)}
-                    </span>
-                  </div>
-                  <div>
-                    Approved:{" "}
-                    <span className="font-mono font-semibold text-emerald-700">
-                      {peso(parentApprovedDiscountTotal)}
-                    </span>
-                  </div>
-                  <div>
-                    System:{" "}
-                    <span className="font-mono font-semibold text-indigo-700">
-                      {peso(parentSystemDiscountTotal)}
-                    </span>
-                  </div>
+                <div className="text-[11px] text-slate-500">
+                  {parentOrders.length} order{parentOrders.length > 1 ? "s" : ""}
                 </div>
               </div>
 
@@ -1807,8 +1773,9 @@ export default function RunRemitPage() {
                     approvedDiscount: o.approvedDiscount,
                     ar: o.ar,
                   });
-                  const rawCash = Number(o.collectedCash ?? 0);
-                  const cash = r2(Math.max(0, Math.min(o.orderTotal, rawCash)));
+                  const cash = r2(
+                    Math.max(0, Math.min(o.orderTotal, Number(o.collectedCash ?? 0))),
+                  );
 
                   return (
                     <div
@@ -1817,7 +1784,7 @@ export default function RunRemitPage() {
                     >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium text-slate-700">
-                          Order #{o.orderId}
+                          Receipt • {o.customerLabel}
                         </div>
                         <div className="flex flex-wrap items-center gap-1">
                           {o.pricingMismatch ? (
@@ -1831,19 +1798,6 @@ export default function RunRemitPage() {
                             {badge.label}
                           </div>
                         </div>
-                      </div>
-
-                      <div className="mb-2 text-xs text-slate-600">
-                        <span className="font-semibold">Customer:</span>{" "}
-                        {o.customerLabel}
-                        {o.decisionKind ? (
-                          <span className="ml-2">
-                            • Decision:{" "}
-                            <span className="font-mono text-slate-700">
-                              {decisionLabel(o.decisionKind)}
-                            </span>
-                          </span>
-                        ) : null}
                       </div>
 
                       <div className="space-y-2 text-[11px] text-slate-600">
@@ -1885,7 +1839,7 @@ export default function RunRemitPage() {
                                   )}
                               </span>
                               <span>
-                                Line total:{" "}
+                                Line:{" "}
                                 <span className="font-mono font-semibold">
                                   {peso(ln.lineTotal)}
                                 </span>
@@ -1897,24 +1851,42 @@ export default function RunRemitPage() {
 
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                         <span className="text-slate-600">
-                          Order total:{" "}
+                          Total:{" "}
                           <span className="font-mono font-semibold text-slate-900">
                             {peso(o.orderTotal)}
                           </span>
                         </span>
-                        <span className="text-slate-600">
-                          Cash:{" "}
-                          <span className="font-mono font-semibold text-slate-900">
-                            {peso(cash)}
-                          </span>
-                        </span>
-                        <span className="text-indigo-700">
-                          System discount:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(o.systemDiscount)}
-                          </span>
-                        </span>
                         <div className="flex items-center gap-2">
+                          <span className="text-slate-600">
+                            Cash:{" "}
+                            <span className="font-mono font-semibold text-slate-900">
+                              {peso(cash)}
+                            </span>
+                          </span>
+                          {o.approvedDiscount > MONEY_EPS ? (
+                            <span className="text-emerald-700">
+                              Approved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.approvedDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {o.ar > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              A/R:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.ar)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {o.systemDiscount > MONEY_EPS ? (
+                            <span className="text-indigo-700">
+                              System discount:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.systemDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
                           {o.pendingClearance > MONEY_EPS ? (
                             <span className="text-amber-800">
                               Pending:{" "}
@@ -1954,31 +1926,8 @@ export default function RunRemitPage() {
                   barcode/receipt sa pag-post ng remit.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-1 text-right text-[11px] text-slate-600">
-                <div>
-                  Cash:{" "}
-                  <span className="font-mono font-semibold text-slate-900">
-                    {peso(roadsideCashTotal)}
-                  </span>
-                </div>
-                <div>
-                  A/R:{" "}
-                  <span className="font-mono font-semibold text-amber-800">
-                    {peso(roadsideArTotal)}
-                  </span>
-                </div>
-                <div>
-                  Approved:{" "}
-                  <span className="font-mono font-semibold text-emerald-700">
-                    {peso(roadsideApprovedDiscountTotal)}
-                  </span>
-                </div>
-                <div>
-                  System:{" "}
-                  <span className="font-mono font-semibold text-indigo-700">
-                    {peso(roadsideSystemDiscountTotal)}
-                  </span>
-                </div>
+              <div className="text-[11px] text-slate-500">
+                {quickReceipts.length} receipt{quickReceipts.length > 1 ? "s" : ""}
               </div>
             </div>
 
@@ -2008,75 +1957,6 @@ export default function RunRemitPage() {
                           className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
                         >
                           {badge.label}
-                        </div>
-                      </div>
-
-                      <div className="mb-2 text-xs text-slate-600">
-                        {rec.decisionKind ? (
-                          <>
-                            Decision:{" "}
-                            <span className="font-mono text-slate-700">
-                              {decisionLabel(rec.decisionKind)}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-slate-500">
-                            Decision pending / auto A/R projection
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="grid gap-2 text-[11px] text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
-                          <div>Receipt total</div>
-                          <div className="font-mono font-semibold text-slate-900">
-                            {peso(rec.total)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
-                          <div>Cash</div>
-                          <div className="font-mono font-semibold text-slate-900">
-                            {peso(rec.cash)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1.5">
-                          <div className="text-emerald-700">Approved discount</div>
-                          <div className="font-mono font-semibold text-emerald-700">
-                            {peso(rec.approvedDiscount)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-1.5">
-                          <div className="text-amber-800">A/R</div>
-                          <div className="font-mono font-semibold text-amber-800">
-                            {peso(rec.ar)}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                        <span className="text-indigo-700">
-                          System discount:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(rec.systemDiscount)}
-                          </span>
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {rec.pendingClearance > MONEY_EPS ? (
-                            <span className="text-amber-800">
-                              Pending:{" "}
-                              <span className="font-mono font-semibold">
-                                {peso(rec.pendingClearance)}
-                              </span>
-                            </span>
-                          ) : null}
-                          {rec.rejectedUnresolved > MONEY_EPS ? (
-                            <span className="text-rose-700">
-                              Rejected unresolved:{" "}
-                              <span className="font-mono font-semibold">
-                                {peso(rec.rejectedUnresolved)}
-                              </span>
-                            </span>
-                          ) : null}
                         </div>
                       </div>
 
@@ -2127,6 +2007,63 @@ export default function RunRemitPage() {
                             </div>
                           </div>
                         ))}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <span className="text-slate-600">
+                          Total:{" "}
+                          <span className="font-mono font-semibold text-slate-900">
+                            {peso(rec.total)}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600">
+                            Cash:{" "}
+                            <span className="font-mono font-semibold text-slate-900">
+                              {peso(rec.cash)}
+                            </span>
+                          </span>
+                          {rec.approvedDiscount > MONEY_EPS ? (
+                            <span className="text-emerald-700">
+                              Approved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.approvedDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.ar > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              A/R:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.ar)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.systemDiscount > MONEY_EPS ? (
+                            <span className="text-indigo-700">
+                              System discount:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.systemDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.pendingClearance > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              Pending:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.pendingClearance)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.rejectedUnresolved > MONEY_EPS ? (
+                            <span className="text-rose-700">
+                              Rejected unresolved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.rejectedUnresolved)}
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   );

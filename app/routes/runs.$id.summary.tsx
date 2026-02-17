@@ -9,10 +9,19 @@ import { requireRole } from "~/utils/auth.server";
 import { loadRunRecap } from "~/services/runRecap.server";
 import { r2 as r2Money } from "~/utils/money";
 
-// Local helper: money rounding (prefer single rounding source)
 const r2 = (n: number) => r2Money(Number(n) || 0);
+const MONEY_EPS = 0.009;
+
 const isVoidedNote = (note: unknown) =>
   typeof note === "string" && note.trim().toUpperCase().startsWith("VOIDED:");
+
+type RunStatus =
+  | "PLANNED"
+  | "DISPATCHED"
+  | "CHECKED_IN"
+  | "CLOSED"
+  | "SETTLED"
+  | "CANCELLED";
 
 type Row = {
   productId: number;
@@ -22,11 +31,17 @@ type Row = {
   returned: number;
 };
 
+type DecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
 type LoaderData = {
   run: {
     id: number;
     runCode: string;
-    status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
+    status: RunStatus;
     riderLabel: string | null;
   };
   rows: Row[];
@@ -37,22 +52,140 @@ type LoaderData = {
     delta: number;
     cash: number;
     ar: number;
+    systemDiscount: number;
+    overrideDiscount: number;
+  };
+  counts: {
+    parentOrders: number;
+    runReceipts: number;
+    clearancePending: number;
+    clearanceDecided: number;
+    clearanceApproved: number;
+    clearanceRejected: number;
+    clearanceVoided: number;
+  };
+  amounts: {
+    pendingClearance: number;
+    rejectedUnresolved: number;
   };
   ui: {
-    isFinalized: boolean; // CHECKED_IN or CLOSED
+    isFinalized: boolean;
+    stageLabel: string;
+    stageNote: string;
   };
   role: string;
 };
 
+type CaseInfo = {
+  status: "NEEDS_CLEARANCE" | "DECIDED";
+  decisionKind: DecisionKindUI | null;
+  arBalance: number;
+  overrideDiscount: number;
+};
+
+const sumLineDiscountTotal = (
+  lines: Array<{ qty: unknown; discountAmount?: unknown | null }>,
+) =>
+  r2(
+    (lines || []).reduce((sum, ln) => {
+      const qty = Math.max(0, Number(ln.qty ?? 0));
+      const disc = Math.max(0, Number(ln.discountAmount ?? 0));
+      return sum + qty * disc;
+    }, 0),
+  );
+
+const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+      ? "APPROVE_OPEN_BALANCE"
+      : raw === "APPROVE_DISCOUNT_OVERRIDE"
+        ? "APPROVE_DISCOUNT_OVERRIDE"
+        : raw === "APPROVE_HYBRID"
+          ? "APPROVE_HYBRID"
+          : null;
+
+const stageMeta = (status: RunStatus) => {
+  if (status === "PLANNED") {
+    return {
+      stageLabel: "Staging",
+      stageNote: "Prepare rider, vehicle, and loadout before dispatch.",
+    };
+  }
+  if (status === "DISPATCHED") {
+    return {
+      stageLabel: "In Transit",
+      stageNote:
+        "Quick read mode: loadout is visible. Cash, A/R, and overrides appear after rider check-in.",
+    };
+  }
+  if (status === "CHECKED_IN") {
+    return {
+      stageLabel: "Checked In",
+      stageNote:
+        "Rider submitted check-in. Review variances and clearance outcomes before closing.",
+    };
+  }
+  if (status === "CLOSED" || status === "SETTLED") {
+    return {
+      stageLabel: "Final Report",
+      stageNote:
+        "Run is finalized. Values below are read-only and decision-aligned.",
+    };
+  }
+  return {
+    stageLabel: "Cancelled",
+    stageNote: "Run cancelled. Data is shown for traceability.",
+  };
+};
+
+const applyDecisionFinancial = (remainingRaw: number, c?: CaseInfo) => {
+  const remaining = r2(Math.max(0, Number(remainingRaw || 0)));
+  if (remaining <= MONEY_EPS) {
+    return { ar: 0, overrideDiscount: 0, pending: 0, rejected: 0 };
+  }
+
+  if (!c) {
+    return { ar: remaining, overrideDiscount: 0, pending: 0, rejected: 0 };
+  }
+
+  if (c.status === "NEEDS_CLEARANCE") {
+    return { ar: 0, overrideDiscount: 0, pending: remaining, rejected: 0 };
+  }
+
+  if (c.decisionKind === "REJECT") {
+    return { ar: 0, overrideDiscount: 0, pending: 0, rejected: remaining };
+  }
+
+  if (c.decisionKind === "APPROVE_DISCOUNT_OVERRIDE") {
+    const override =
+      c.overrideDiscount > MONEY_EPS
+        ? r2(Math.min(remaining, c.overrideDiscount))
+        : remaining;
+    return { ar: 0, overrideDiscount: override, pending: 0, rejected: 0 };
+  }
+
+  if (c.decisionKind === "APPROVE_HYBRID") {
+    const ar =
+      c.arBalance > MONEY_EPS ? r2(Math.min(remaining, c.arBalance)) : 0;
+    const override =
+      c.overrideDiscount > MONEY_EPS
+        ? r2(Math.min(remaining, c.overrideDiscount))
+        : r2(Math.max(0, remaining - ar));
+    return { ar, overrideDiscount: override, pending: 0, rejected: 0 };
+  }
+
+  const ar =
+    c.arBalance > MONEY_EPS ? r2(Math.min(remaining, c.arBalance)) : remaining;
+  return { ar, overrideDiscount: 0, pending: 0, rejected: 0 };
+};
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["ADMIN", "STORE_MANAGER", "EMPLOYEE"]); // 🔒 guard
+  const me = await requireRole(request, ["ADMIN", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
-  // ✅ server-only import (avoid bundling `.server` into client build)
-  const { getFrozenPricingFromOrder } = await import(
-    "~/services/frozenPricing.server"
-  );
+  const { getFrozenPricingFromOrder } = await import("~/services/frozenPricing.server");
 
   const run = await db.deliveryRun.findUnique({
     where: { id },
@@ -67,12 +200,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         select: {
           id: true,
           kind: true,
+          receiptKey: true,
           cashCollected: true,
           note: true,
           parentOrderId: true,
-          customerId: true,
-          customerName: true,
-          customerPhone: true,
           lines: {
             select: {
               productId: true,
@@ -80,6 +211,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
               qty: true,
               unitPrice: true,
               lineTotal: true,
+              discountAmount: true,
             },
             orderBy: { id: "asc" },
           },
@@ -90,23 +222,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
   if (!run) throw new Response("Not found", { status: 404 });
 
-  const isFinalized = run.status === "CHECKED_IN" || run.status === "CLOSED";
+  const runStatus = run.status as RunStatus;
+  const isFinalized =
+    runStatus === "CHECKED_IN" || runStatus === "CLOSED" || runStatus === "SETTLED";
 
-  // Qty recap:
-  // - Before CHECKED_IN, show LOADED only (Sold/Returned not final yet)
-  // - After CHECKED_IN/CLOSED, use recap service (source of truth)
   const recap = isFinalized
     ? await loadRunRecap(db, id)
     : { recapRows: [] as any[], hasDiffIssues: false };
 
-  // ─────────────────────────────────────────────────────────────
-  // Parent payments (with legacy snapshot fallback) + void markers.
-  // ─────────────────────────────────────────────────────────────
   const rawSnap = run.riderCheckinSnapshot as any;
-  const parentPaymentMap = new Map<number, number>(); // orderId -> cashCollected
-  const parentVoidedMap = new Map<number, boolean>(); // orderId -> voided
-  // 1) DB receipts (PARENT) are manager-grade truth
+  const parentPaymentMap = new Map<number, number>();
+  const parentVoidedMap = new Map<number, boolean>();
+  const voidedReceiptKeys = new Set<string>();
+
   for (const r of run.receipts || []) {
+    const rk = String(r.receiptKey || `${r.kind}:${r.id}`).slice(0, 64);
+    if (isVoidedNote(r.note)) {
+      voidedReceiptKeys.add(rk);
+      if (r.kind === "PARENT" && r.parentOrderId) {
+        parentVoidedMap.set(Number(r.parentOrderId), true);
+      }
+    }
+
     if (r.kind !== "PARENT") continue;
     if (!r.parentOrderId) continue;
 
@@ -115,24 +252,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     const cash = Number(r.cashCollected ?? 0);
     const add = cash > 0 ? cash : 0;
-    parentPaymentMap.set(oid, (parentPaymentMap.get(oid) || 0) + add);
-    if (isVoidedNote(r.note)) parentVoidedMap.set(oid, true);
+    parentPaymentMap.set(oid, r2((parentPaymentMap.get(oid) || 0) + add));
   }
 
-  // 2) Snapshot fallback (legacy)
-  if (rawSnap && typeof rawSnap === "object") {
-    if (Array.isArray(rawSnap.parentPayments)) {
-      for (const row of rawSnap.parentPayments) {
-        const oid = Number(row?.orderId ?? 0);
-        if (!oid) continue;
-        if (parentPaymentMap.has(oid)) continue;
-        const amt = Number(row?.cashCollected ?? 0);
-        if (!Number.isFinite(amt) || amt < 0) continue;
-        parentPaymentMap.set(oid, amt);
-      }
+  if (rawSnap && typeof rawSnap === "object" && Array.isArray(rawSnap.parentPayments)) {
+    for (const row of rawSnap.parentPayments) {
+      const oid = Number(row?.orderId ?? 0);
+      if (!oid) continue;
+      if (parentPaymentMap.has(oid)) continue;
+      const amt = Number(row?.cashCollected ?? 0);
+      if (!Number.isFinite(amt) || amt < 0) continue;
+      parentPaymentMap.set(oid, r2(amt));
     }
   }
-  // Rider label
+
   let riderLabel: string | null = null;
   if (run.riderId) {
     const r = await db.employee.findUnique({
@@ -140,30 +273,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       select: { firstName: true, lastName: true, alias: true },
     });
     riderLabel =
-      (r?.alias?.trim() ||
-        [r?.firstName, r?.lastName].filter(Boolean).join(" ") ||
-        null) ??
+      (r?.alias?.trim() || [r?.firstName, r?.lastName].filter(Boolean).join(" ") || null) ??
       null;
   }
 
-  // Linked orders (sold + payments + AR)
   const links = await db.deliveryRunOrder.findMany({
     where: { runId: id },
     include: {
       order: {
         select: {
           id: true,
-          isOnCredit: true,
           orderCode: true,
           subtotal: true,
           totalBeforeDiscount: true,
-          customerId: true,
           items: {
             select: {
               productId: true,
-              name: true,
               qty: true,
-              unitPrice: true, // para consistent sa pricing na ginamit sa POS
+              unitPrice: true,
               lineTotal: true,
               baseUnitPrice: true,
               discountAmount: true,
@@ -175,13 +302,69 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   });
 
-  // If not finalized, still show LOADED rows from loadoutSnapshot (if available)
+  const cases = await db.clearanceCase.findMany({
+    where: {
+      runId: id,
+      status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
+    } as any,
+    select: {
+      receiptKey: true,
+      status: true,
+      decisions: {
+        select: {
+          kind: true,
+          arBalance: true,
+          overrideDiscountApproved: true,
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  let clearancePending = 0;
+  let clearanceDecided = 0;
+  let clearanceApproved = 0;
+  let clearanceRejected = 0;
+
+  const caseByReceiptKey = new Map<string, CaseInfo>();
+  for (const c of cases || []) {
+    const rk = String((c as any).receiptKey || "").slice(0, 64);
+    if (!rk) continue;
+
+    const status = String((c as any).status || "");
+    if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
+
+    const d = (c as any)?.decisions?.[0];
+    const decisionKind = parseDecisionKind(d?.kind);
+    if (status === "NEEDS_CLEARANCE") {
+      clearancePending += 1;
+    } else {
+      clearanceDecided += 1;
+      if (decisionKind === "REJECT") {
+        clearanceRejected += 1;
+      } else if (decisionKind) {
+        clearanceApproved += 1;
+      }
+    }
+
+    caseByReceiptKey.set(rk, {
+      status,
+      decisionKind,
+      arBalance: r2(Math.max(0, Number(d?.arBalance ?? 0))),
+      overrideDiscount: r2(Math.max(0, Number(d?.overrideDiscountApproved ?? 0))),
+    });
+  }
+
   let preRows: Row[] = [];
   if (!isFinalized) {
-    const snap = (run as any).loadoutSnapshot as any;
-    // NOTE: best-effort parse; keep stable and safe
+    const snapRaw = run.loadoutSnapshot as any;
+    const items = Array.isArray(snapRaw)
+      ? snapRaw
+      : Array.isArray(snapRaw?.items)
+        ? snapRaw.items
+        : [];
     const loadedByPid = new Map<number, { name: string; loaded: number }>();
-    const items = Array.isArray(snap?.items) ? snap.items : [];
     for (const it of items) {
       const pid = Number(it?.productId ?? 0);
       if (!pid) continue;
@@ -204,64 +387,91 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   }
 
-  // Money totals
   let cash = 0;
   let ar = 0;
+  let systemDiscount = 0;
+  let overrideDiscount = 0;
+  let pendingClearanceAmount = 0;
+  let rejectedUnresolvedAmount = 0;
 
-  // ✅ Roadside money SOT: RunReceipt(kind=ROAD)
-  // Same logic as remit loader: total = sum(lineTotal), cash = min(total, cashCollected), ar = total - cash
-  if (isFinalized) {
-    for (const rr of run.receipts || []) {
-      if (rr.kind !== "ROAD") continue;
-      if (isVoidedNote(rr.note)) continue;
-      const cashCollected = Math.max(0, Number(rr.cashCollected ?? 0));
-      const total = r2(
-        (rr.lines || []).reduce((sum, ln: any) => {
-          const qty = Math.max(0, Number(ln.qty ?? 0));
-          const up = Math.max(0, Number(ln.unitPrice ?? 0));
-          const lt = ln.lineTotal != null ? Number(ln.lineTotal) : qty * up;
-          return sum + (Number.isFinite(lt) ? lt : 0);
-        }, 0)
-      );
-      const paid = r2(Math.max(0, Math.min(total, cashCollected)));
-      const bal = r2(Math.max(0, total - paid));
-      cash += paid;
-      // A/R overview rule: remaining balance of non-voided receipts only.
-      ar += bal;
-    }
+  for (const rr of run.receipts || []) {
+    if (rr.kind !== "ROAD") continue;
+    const rk = String(rr.receiptKey || `ROAD:${rr.id}`).slice(0, 64);
+    if (voidedReceiptKeys.has(rk)) continue;
+
+    systemDiscount += sumLineDiscountTotal(rr.lines || []);
+
+    if (!isFinalized) continue;
+
+    const total = r2(
+      (rr.lines || []).reduce((sum, ln: any) => {
+        const qty = Math.max(0, Number(ln.qty ?? 0));
+        const up = Math.max(0, Number(ln.unitPrice ?? 0));
+        const lt = ln.lineTotal != null ? Number(ln.lineTotal) : qty * up;
+        return sum + (Number.isFinite(lt) ? lt : 0);
+      }, 0),
+    );
+
+    const cashCollected = Math.max(0, Number(rr.cashCollected ?? 0));
+    const paid = r2(Math.max(0, Math.min(total, cashCollected)));
+    const remaining = r2(Math.max(0, total - paid));
+
+    cash += paid;
+
+    const d = applyDecisionFinancial(remaining, caseByReceiptKey.get(rk));
+    ar += d.ar;
+    overrideDiscount += d.overrideDiscount;
+    pendingClearanceAmount += d.pending;
+    rejectedUnresolvedAmount += d.rejected;
   }
 
-  // Parent money: include non-voided orders only.
   for (const L of links) {
     const o = L.order;
     if (!o) continue;
-    const isRoadside = !!o.orderCode && o.orderCode.startsWith("RS-");
-    if (isRoadside) continue; // roadside money already counted above
 
-    // ✅ Parent/POS totals SOT: frozen OrderItem snapshot (same as remit)
+    const isRoadside = !!o.orderCode && o.orderCode.startsWith("RS-");
+    if (isRoadside) continue;
+
+    const orderKey = `PARENT:${o.id}`;
+    if (voidedReceiptKeys.has(orderKey) || parentVoidedMap.get(o.id)) continue;
+
+    const orderItems = (o.items || []).map((it: any) => ({
+      qty: Number(it.qty ?? 0),
+      unitKind: it.unitKind === "RETAIL" ? "RETAIL" : "PACK",
+      baseUnitPrice: Number(it.baseUnitPrice ?? it.unitPrice ?? 0),
+      unitPrice: Number(it.unitPrice ?? 0),
+      discountAmount: Number(it.discountAmount ?? 0),
+      lineTotal: Number(it.lineTotal ?? 0),
+    }));
+
+    systemDiscount += sumLineDiscountTotal(
+      (o.items || []).map((it: any) => ({
+        qty: it.qty,
+        discountAmount: it.discountAmount,
+      })),
+    );
+
+    if (!isFinalized) continue;
+
     const fp = getFrozenPricingFromOrder({
       id: Number(o.id),
       subtotal: (o as any).subtotal,
       totalBeforeDiscount: (o as any).totalBeforeDiscount,
-      items: (o.items || []).map((it: any) => ({
-        qty: Number(it.qty ?? 0),
-        unitKind: it.unitKind === "RETAIL" ? "RETAIL" : "PACK",
-        baseUnitPrice: Number(it.baseUnitPrice ?? it.unitPrice ?? 0),
-        unitPrice: Number(it.unitPrice ?? 0),
-        discountAmount: Number(it.discountAmount ?? 0),
-        lineTotal: Number(it.lineTotal ?? 0),
-      })),
+      items: orderItems,
     });
-    const orderTotal = fp.computedSubtotal;
+    const orderTotal = r2(Math.max(0, Number(fp.computedSubtotal || 0)));
 
-    if (parentVoidedMap.get(o.id)) continue;
-
-    // ✅ Parent cash SOT: RunReceipt(kind=PARENT).cashCollected sum (already built in parentPaymentMap).
     const rawCash = Number(parentPaymentMap.get(o.id) || 0);
-    const paid = Math.max(0, Math.min(orderTotal, rawCash));
-    const bal = Math.max(0, orderTotal - paid);
-    if (isFinalized) cash += paid;
-    if (isFinalized) ar += bal;
+    const paid = r2(Math.max(0, Math.min(orderTotal, rawCash)));
+    const remaining = r2(Math.max(0, orderTotal - paid));
+
+    cash += paid;
+
+    const d = applyDecisionFinancial(remaining, caseByReceiptKey.get(orderKey));
+    ar += d.ar;
+    overrideDiscount += d.overrideDiscount;
+    pendingClearanceAmount += d.pending;
+    rejectedUnresolvedAmount += d.rejected;
   }
 
   const rows: Row[] = isFinalized
@@ -277,23 +487,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         }))
     : preRows;
 
-  // Totals & delta
   const totalsLoaded = rows.reduce((s, r) => s + (Number(r.loaded) || 0), 0);
   const totalsSold = rows.reduce((s, r) => s + (Number(r.sold) || 0), 0);
-  const totalsReturned = rows.reduce(
-    (s, r) => s + (Number(r.returned) || 0),
-    0
-  );
+  const totalsReturned = rows.reduce((s, r) => s + (Number(r.returned) || 0), 0);
   const delta = rows.reduce(
     (s, r) => s + (Number(r.loaded) - (Number(r.sold) + Number(r.returned))),
-    0
+    0,
   );
+
+  const { stageLabel, stageNote } = stageMeta(runStatus);
 
   return json<LoaderData>({
     run: {
       id: run.id,
       runCode: run.runCode,
-      status: run.status as any,
+      status: runStatus,
       riderLabel,
     },
     rows,
@@ -304,14 +512,71 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       delta,
       cash: r2(cash),
       ar: r2(ar),
+      systemDiscount: r2(systemDiscount),
+      overrideDiscount: r2(overrideDiscount),
     },
-    ui: { isFinalized },
+    counts: {
+      parentOrders: links.length,
+      runReceipts: (run.receipts || []).length,
+      clearancePending,
+      clearanceDecided,
+      clearanceApproved,
+      clearanceRejected,
+      clearanceVoided: voidedReceiptKeys.size,
+    },
+    amounts: {
+      pendingClearance: r2(pendingClearanceAmount),
+      rejectedUnresolved: r2(rejectedUnresolvedAmount),
+    },
+    ui: { isFinalized, stageLabel, stageNote },
     role: me.role,
   });
 }
 
+function MetricCard({
+  label,
+  value,
+  tone = "slate",
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  tone?: "slate" | "emerald" | "amber" | "rose" | "indigo";
+  hint?: string;
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "text-emerald-700"
+      : tone === "amber"
+        ? "text-amber-700"
+        : tone === "rose"
+          ? "text-rose-700"
+          : tone === "indigo"
+            ? "text-indigo-700"
+            : "text-slate-900";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className={`mt-1 text-lg font-semibold tabular-nums ${toneClass}`}>
+        {value}
+      </div>
+      {hint ? <div className="mt-0.5 text-[11px] text-slate-500">{hint}</div> : null}
+    </div>
+  );
+}
+
+function SmallCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className="mt-1 font-semibold tabular-nums text-slate-900">{value}</div>
+    </div>
+  );
+}
+
 export default function RunSummaryPage() {
-  const { run, rows, totals, role, ui } = useLoaderData<LoaderData>();
+  const { run, rows, totals, counts, amounts, role, ui } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
   const justPosted = sp.get("posted") === "1";
   const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
@@ -321,198 +586,173 @@ export default function RunSummaryPage() {
       currency: "PHP",
     }).format(n);
 
+  const stageTone =
+    run.status === "CLOSED" || run.status === "SETTLED"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : run.status === "CHECKED_IN"
+        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+        : run.status === "DISPATCHED"
+          ? "border-amber-200 bg-amber-50 text-amber-800"
+          : run.status === "CANCELLED"
+            ? "border-rose-200 bg-rose-50 text-rose-700"
+            : "border-slate-200 bg-slate-50 text-slate-700";
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-5xl p-5">
+      <div className="mx-auto max-w-6xl px-5 py-6">
         <div className="mb-3">
-          <Link
-            to={"/runs"}
-            className="text-sm text-indigo-600 hover:underline"
-          >
+          <Link to="/runs" className="text-sm text-indigo-600 hover:underline">
             ← Back to Runs
           </Link>
-          <Link
-            to={backHref}
-            className="ml-3 text-sm text-slate-600 hover:underline"
-          >
+          <Link to={backHref} className="ml-3 text-sm text-slate-600 hover:underline">
             Back to Dashboard
           </Link>
         </div>
 
-        <header className="mb-4 flex items-end justify-between">
-          <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Run Summary
-            </h1>
-            <div className="mt-1 text-sm text-slate-500">
-              Run{" "}
-              <span className="font-mono font-medium text-indigo-700">
-                {run.runCode}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-base font-semibold tracking-wide text-slate-800">Run Summary Report</h1>
+              <div className="mt-1 text-sm text-slate-600">
+                Run <span className="font-mono font-medium text-indigo-700">{run.runCode}</span>
+                {run.riderLabel ? <span className="ml-2">• Rider: {run.riderLabel}</span> : null}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`rounded-full border px-2 py-1 ${stageTone}`}>{run.status}</span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                {ui.stageLabel}
               </span>
-              {run.riderLabel ? (
-                <span className="ml-2">• Rider: {run.riderLabel}</span>
-              ) : null}
             </div>
           </div>
-          <div className="text-xs">
-            <span
-              className={`rounded-full border px-2 py-1 ${
-                run.status === "CLOSED"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 bg-white text-slate-700"
-              }`}
-            >
-              {run.status}
-            </span>
-          </div>
-        </header>
+          <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {ui.stageNote}
+          </p>
+        </section>
 
-        {justPosted && (
+        {justPosted ? (
           <div
-            className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
+            className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
             role="status"
             aria-live="polite"
           >
             Run remit posted. This run is now closed and read-only.
           </div>
-        )}
-        {run.status === "CLOSED" && !justPosted && (
-          <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            View-only: this run is closed.
-          </div>
-        )}
-
-        {!ui.isFinalized && (
-          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Not finalized yet: this run is still{" "}
-            <span className="font-semibold">DISPATCHED</span>. Qty shows{" "}
-            <span className="font-semibold">Loaded only</span>. Cash/A-R will
-            appear after Rider Check-in.
-          </div>
-        )}
-
-        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Loaded</div>
-            <div className="text-lg font-semibold tabular-nums">
-              {totals.loaded}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Sold</div>
-            <div className="text-lg font-semibold tabular-nums">
-              {totals.sold}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Returned</div>
-            <div className="text-lg font-semibold tabular-nums">
-              {totals.returned}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Variance (Δ)</div>
-            <div
-              className={`text-lg font-semibold tabular-nums ${
-                totals.delta === 0 ? "text-slate-900" : "text-rose-600"
-              }`}
-            >
-              {totals.delta}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Cash Collected</div>
-            <div className="text-lg font-semibold">{peso(totals.cash)}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs text-slate-500">Outstanding A/R</div>
-            <div className="text-lg font-semibold">{peso(totals.ar)}</div>
-          </div>
-        </div>
-        {ui.isFinalized ? (
-          <div className="mb-4 text-xs text-slate-500">
-            A/R shows remaining balance from non-voided receipts/orders.
-          </div>
         ) : null}
 
-        <div className="grid gap-4">
-          {/* Stock / qty recap */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">Product</th>
-                  <th className="px-3 py-2 text-right font-medium">Loaded</th>
-                  <th className="px-3 py-2 text-right font-medium">Sold</th>
-                  <th className="px-3 py-2 text-right font-medium">Returned</th>
-                  <th className="px-3 py-2 text-right font-medium">Δ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-3 py-4 text-center text-slate-500"
-                    >
-                      No data.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((r) => {
-                    const delta = r.loaded - (r.sold + r.returned);
-                    return (
-                      <tr
-                        key={r.productId}
-                        className="border-t border-slate-100"
-                      >
-                        <td className="px-3 py-2">{r.name}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.loaded}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.sold}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.returned}
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right tabular-nums ${
-                            delta === 0 ? "text-slate-500" : "text-rose-600"
-                          }`}
-                        >
-                          {delta}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              <tfoot className="bg-slate-50">
-                <tr className="border-t border-slate-200">
-                  <td className="px-3 py-2 font-medium">Totals</td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                    {totals.loaded}
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                    {totals.sold}
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                    {totals.returned}
-                  </td>
-                  <td
-                    className={`px-3 py-2 text-right font-semibold tabular-nums ${
-                      totals.delta === 0 ? "text-slate-600" : "text-rose-600"
-                    }`}
-                  >
-                    {totals.delta}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+        <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <MetricCard label="Loaded" value={totals.loaded} />
+          <MetricCard label="Sold" value={totals.sold} />
+          <MetricCard label="Returned" value={totals.returned} />
+          <MetricCard
+            label="Variance (Δ)"
+            value={totals.delta}
+            tone={totals.delta === 0 ? "slate" : "rose"}
+          />
+          <MetricCard label="Cash Collected" value={peso(totals.cash)} tone="emerald" />
+          <MetricCard label="Outstanding A/R" value={peso(totals.ar)} tone="amber" />
+          <MetricCard
+            label="System Discount"
+            value={peso(totals.systemDiscount)}
+            hint="Frozen line discounts"
+          />
+          <MetricCard
+            label="Override Discount"
+            value={peso(totals.overrideDiscount)}
+            tone="indigo"
+            hint="Manager-approved"
+          />
+        </section>
 
-        </div>
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-medium text-slate-800">Quick Read Snapshot</h2>
+          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <SmallCard label="Parent Orders" value={counts.parentOrders} />
+            <SmallCard label="Run Receipts" value={counts.runReceipts} />
+            <SmallCard label="Pending Clearance" value={counts.clearancePending} />
+            <SmallCard label="Decided Clearance" value={counts.clearanceDecided} />
+            <SmallCard label="Approved Decisions" value={counts.clearanceApproved} />
+            <SmallCard label="Rejected Decisions" value={counts.clearanceRejected} />
+            <SmallCard label="Voided Receipts" value={counts.clearanceVoided} />
+            <SmallCard label="Pending Amount" value={peso(amounts.pendingClearance)} />
+          </div>
+          {amounts.rejectedUnresolved > MONEY_EPS ? (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              Rejected unresolved amount: <span className="font-mono">{peso(amounts.rejectedUnresolved)}</span>
+            </div>
+          ) : null}
+          {!ui.isFinalized ? (
+            <div className="mt-3 text-[11px] text-slate-500">
+              Final cash, A/R, and override discount settle after rider check-in and manager decision.
+            </div>
+          ) : (
+            <div className="mt-3 text-[11px] text-slate-500">
+              A/R and override discount are computed from clearance decisions per receipt/order.
+            </div>
+          )}
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <h2 className="text-sm font-medium text-slate-800">Stock Movement</h2>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-white text-slate-600">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Product</th>
+                <th className="px-3 py-2 text-right font-medium">Loaded</th>
+                <th className="px-3 py-2 text-right font-medium">Sold</th>
+                <th className="px-3 py-2 text-right font-medium">Returned</th>
+                <th className="px-3 py-2 text-right font-medium">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                    {run.status === "DISPATCHED"
+                      ? "No loadout rows found yet. Confirm dispatch loadout snapshot."
+                      : "No data."}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => {
+                  const delta = r.loaded - (r.sold + r.returned);
+                  return (
+                    <tr key={r.productId} className="border-t border-slate-100">
+                      <td className="px-3 py-2">{r.name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.loaded}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.sold}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.returned}</td>
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          delta === 0 ? "text-slate-500" : "text-rose-600"
+                        }`}
+                      >
+                        {delta}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            <tfoot className="bg-slate-50">
+              <tr className="border-t border-slate-200">
+                <td className="px-3 py-2 font-medium">Totals</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.loaded}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.sold}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.returned}</td>
+                <td
+                  className={`px-3 py-2 text-right font-semibold tabular-nums ${
+                    totals.delta === 0 ? "text-slate-600" : "text-rose-600"
+                  }`}
+                >
+                  {totals.delta}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
       </div>
     </main>
   );
