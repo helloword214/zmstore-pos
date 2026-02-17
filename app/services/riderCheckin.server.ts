@@ -13,6 +13,10 @@ const note500 = (s: unknown) =>
     .slice(0, 500);
 
 type ClaimType = "OPEN_BALANCE" | "PRICE_BARGAIN" | "OTHER";
+const normalizeClaimType = (v: unknown): ClaimType =>
+  String(v || "").trim() === "PRICE_BARGAIN"
+    ? "PRICE_BARGAIN"
+    : "OPEN_BALANCE";
 
 export async function handleSendClearance(args: {
   db: DbLike;
@@ -26,6 +30,7 @@ export async function handleSendClearance(args: {
     .slice(0, 64)
     .trim();
   const sendKind = String(formData.get("sendKind") || "").trim(); // "PARENT" | "ROAD"
+  const requestedIntent = normalizeClaimType(formData.get("sendIntent"));
 
   if (!sendReceiptKey) {
     throw new Response("Missing sendReceiptKey.", { status: 400 });
@@ -183,9 +188,7 @@ export async function handleSendClearance(args: {
       if (!msg)
         throw new Response("Clearance message required.", { status: 400 });
 
-      const rawIntent = String(formData.get("sendIntent") || "").trim();
-      const cIntent: ClaimType =
-        rawIntent === "PRICE_BARGAIN" ? "PRICE_BARGAIN" : "OPEN_BALANCE";
+      const cIntent: ClaimType = requestedIntent;
       if (cIntent === "OPEN_BALANCE" && !o.customerId) {
         throw new Response("OPEN_BALANCE requires customer record.", {
           status: 400,
@@ -210,14 +213,12 @@ export async function handleSendClearance(args: {
           customerName,
           customerPhone: o.customer?.phone ?? null,
           cashCollected: new Prisma.Decimal(paid),
-          note: null,
         },
         update: {
           customerId: o.customerId ?? null,
           customerName,
           customerPhone: o.customer?.phone ?? null,
           cashCollected: new Prisma.Decimal(paid),
-          note: null,
         },
         select: { id: true },
       });
@@ -380,9 +381,11 @@ export async function handleSendClearance(args: {
       if (!msg)
         throw new Response("Clearance message required.", { status: 400 });
 
-      const rawIntent = String(r.clearanceIntent || "").trim();
-      const cIntent: ClaimType =
-        rawIntent === "PRICE_BARGAIN" ? "PRICE_BARGAIN" : "OPEN_BALANCE";
+      const payloadIntent = normalizeClaimType(r.clearanceIntent);
+      if (payloadIntent !== requestedIntent) {
+        throw new Response("Clearance intent mismatch.", { status: 400 });
+      }
+      const cIntent: ClaimType = requestedIntent;
       if (cIntent === "OPEN_BALANCE" && !r.customerId) {
         throw new Response("OPEN_BALANCE requires customer record.", {
           status: 400,
@@ -399,14 +402,12 @@ export async function handleSendClearance(args: {
           customerName: r.customerName ?? null,
           customerPhone: r.customerPhone ?? null,
           cashCollected: new Prisma.Decimal(paid),
-          note: null,
         },
         update: {
           customerId: r.customerId ?? null,
           customerName: r.customerName ?? null,
           customerPhone: r.customerPhone ?? null,
           cashCollected: new Prisma.Decimal(paid),
-          note: null,
         },
         select: { id: true },
       });

@@ -112,6 +112,8 @@ type SoldReceiptUI = {
   // NEW: manager decision hydration
   clearanceCaseStatus?: ClearanceCaseStatusUI;
   clearanceDecision?: ClearanceDecisionKindUI | null;
+  approvedDiscount?: number | null;
+  decisionArBalance?: number | null;
   // NEW: operational marker (rider/cashier)
   voided?: boolean;
   clearanceReason?: string;
@@ -146,6 +148,8 @@ type ParentReceiptUI = {
   clearancePending?: boolean;
   clearanceCaseStatus?: ClearanceCaseStatusUI;
   clearanceDecision?: ClearanceDecisionKindUI | null;
+  approvedDiscount?: number | null;
+  decisionArBalance?: number | null;
   voided?: boolean;
   clearanceReason?: string;
   clearanceIntent?: ClearanceIntentUI;
@@ -285,7 +289,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         take: 1,
       },
       decisions: {
-        select: { kind: true },
+        select: { kind: true, overrideDiscountApproved: true, arBalance: true },
         orderBy: { id: "desc" },
         take: 1,
       },
@@ -298,6 +302,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     note?: string;
     intent?: ClearanceIntentUI | "UNKNOWN";
     decision?: ClearanceDecisionKindUI | null;
+    approvedDiscount?: number | null;
+    decisionArBalance?: number | null;
   };
 
   const caseByReceiptKey = new Map<string, CaseHydrate>();
@@ -311,7 +317,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const note =
       typeof (c as any).note === "string" ? String((c as any).note) : undefined;
     const rawType = (c as any)?.claims?.[0]?.type;
-    const rawDecision = (c as any)?.decisions?.[0]?.kind;
+    const rawDecision = (c as any)?.decisions?.[0];
     const intent: CaseHydrate["intent"] =
       rawType === "PRICE_BARGAIN"
         ? "PRICE_BARGAIN"
@@ -321,22 +327,36 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         ? "UNKNOWN"
         : undefined;
     const decision: CaseHydrate["decision"] =
-      rawDecision === "REJECT"
+      rawDecision?.kind === "REJECT"
         ? "REJECT"
-        : rawDecision === "APPROVE_OPEN_BALANCE"
+        : rawDecision?.kind === "APPROVE_OPEN_BALANCE"
         ? "APPROVE_OPEN_BALANCE"
-        : rawDecision === "APPROVE_DISCOUNT_OVERRIDE"
+        : rawDecision?.kind === "APPROVE_DISCOUNT_OVERRIDE"
         ? "APPROVE_DISCOUNT_OVERRIDE"
-        : rawDecision === "APPROVE_HYBRID"
+        : rawDecision?.kind === "APPROVE_HYBRID"
         ? "APPROVE_HYBRID"
         : null;
+    const approvedDiscount =
+      rawDecision?.overrideDiscountApproved != null
+        ? Number(rawDecision.overrideDiscountApproved)
+        : null;
+    const decisionArBalance =
+      rawDecision?.arBalance != null ? Number(rawDecision.arBalance) : null;
     const rawStatus = String((c as any).status || "");
     if (rawStatus !== "NEEDS_CLEARANCE" && rawStatus !== "DECIDED") {
       // CCS SoT: pending/settlement logic only recognizes NEEDS_CLEARANCE | DECIDED
       continue;
     }
     const status: CaseHydrate["status"] = rawStatus;
-    caseByReceiptKey.set(rk, { caseId: cid, status, note, intent, decision });
+    caseByReceiptKey.set(rk, {
+      caseId: cid,
+      status,
+      note,
+      intent,
+      decision,
+      approvedDiscount,
+      decisionArBalance,
+    });
   }
 
   // ✅ If RunReceipts exist, prefer them over snapshot for UI hydration (ROAD)
@@ -369,6 +389,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           ? "DECIDED"
           : undefined) as ClearanceCaseStatusUI | undefined,
         clearanceDecision: ccs?.decision ?? null,
+        approvedDiscount: ccs?.approvedDiscount ?? null,
+        decisionArBalance: ccs?.decisionArBalance ?? null,
         voided: isVoidedNote(r.note),
         clearanceReason,
         clearanceIntent,
@@ -607,6 +629,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           ? "DECIDED"
           : undefined,
         clearanceDecision: ccs?.decision ?? null,
+        approvedDiscount: ccs?.approvedDiscount ?? null,
+        decisionArBalance: ccs?.decisionArBalance ?? null,
         voided: isVoidedNote(
           (run.receipts || []).find((x) => x.receiptKey === prk)?.note,
         ),
@@ -1343,8 +1367,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerName,
           customerPhone: c?.phone ?? null,
           cashCollected: new Prisma.Decimal(Number(paid || 0)),
-          // CCS SoT: clearance state is in ClearanceCase/Claim, not receipt.note
-          note: null,
           lines: { create: lines },
         },
         update: {
@@ -1353,7 +1375,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerName,
           customerPhone: c?.phone ?? null,
           cashCollected: new Prisma.Decimal(Number(paid || 0)),
-          note: null,
           lines: {
             deleteMany: {}, // wipe lines of this receipt only
             create: lines,
@@ -1419,7 +1440,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerName: r.customerName ?? null,
           customerPhone: r.customerPhone ?? null,
           cashCollected: new Prisma.Decimal(paid > 0 ? paid : 0),
-          note: null,
           lines: {
             create: lines.map((ln) => ({
               // ✅ productId guaranteed by filter above
@@ -1457,7 +1477,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerName: r.customerName ?? null,
           customerPhone: r.customerPhone ?? null,
           cashCollected: new Prisma.Decimal(paid > 0 ? paid : 0),
-          note: null,
           lines: {
             deleteMany: {},
             create: lines.map((ln) => ({
@@ -1814,6 +1833,92 @@ export default function RiderCheckinPage() {
     [],
   );
 
+  const getDecisionFinancial = React.useCallback(
+    (args: {
+      remaining: number;
+      decision?: ClearanceDecisionKindUI | null;
+      approvedDiscount?: number | null;
+      decisionArBalance?: number | null;
+    }) => {
+      if (!isApproveDecision(args.decision)) return null;
+      const remaining = r2(Math.max(0, Number(args.remaining || 0)));
+      if (remaining <= MONEY_EPS) return null;
+
+      const approvedDiscount = r2(
+        Math.max(0, Number(args.approvedDiscount ?? 0)),
+      );
+      const decisionArBalance = r2(
+        Math.max(0, Number(args.decisionArBalance ?? 0)),
+      );
+
+      if (args.decision === "APPROVE_DISCOUNT_OVERRIDE") {
+        const discount =
+          approvedDiscount > MONEY_EPS ? approvedDiscount : remaining;
+        return { approvedDiscount: r2(Math.min(remaining, discount)), ar: 0 };
+      }
+
+      if (args.decision === "APPROVE_HYBRID") {
+        const ar =
+          decisionArBalance > MONEY_EPS
+            ? r2(Math.min(remaining, decisionArBalance))
+            : 0;
+        const discount =
+          approvedDiscount > MONEY_EPS
+            ? r2(Math.min(remaining, approvedDiscount))
+            : r2(Math.max(0, remaining - ar));
+        return { approvedDiscount: discount, ar };
+      }
+
+      const ar =
+        decisionArBalance > MONEY_EPS
+          ? r2(Math.min(remaining, decisionArBalance))
+          : remaining;
+      return { approvedDiscount: 0, ar: r2(Math.max(0, ar)) };
+    },
+    [],
+  );
+
+  const renderDecisionFinancial = React.useCallback(
+    (x: { approvedDiscount: number; ar: number }) => {
+      if (x.approvedDiscount > MONEY_EPS && x.ar <= MONEY_EPS) {
+        return (
+          <>
+            Approved discount{" "}
+            <span className="font-mono font-semibold text-emerald-700">
+              {peso(x.approvedDiscount)}
+            </span>
+            <span className="ml-1 text-emerald-700">• No A/R</span>
+          </>
+        );
+      }
+      if (x.approvedDiscount > MONEY_EPS && x.ar > MONEY_EPS) {
+        return (
+          <>
+            Approved discount{" "}
+            <span className="font-mono font-semibold text-emerald-700">
+              {peso(x.approvedDiscount)}
+            </span>
+            <span className="ml-1">
+              • A/R{" "}
+              <span className="font-mono font-semibold text-amber-700">
+                {peso(x.ar)}
+              </span>
+            </span>
+          </>
+        );
+      }
+      return (
+        <>
+          A/R approved{" "}
+          <span className="font-mono font-semibold text-amber-700">
+            {peso(x.ar)}
+          </span>
+        </>
+      );
+    },
+    [peso],
+  );
+
   const summaryParent = React.useCallback(
     (rec: ParentReceiptUI) => {
       const rem = remainingForParent(rec);
@@ -1824,6 +1929,20 @@ export default function RiderCheckinPage() {
       const cashNum =
         cleaned.trim() === "" ? 0 : Number.parseFloat(cleaned || "0");
       const cash = Number.isFinite(cashNum) ? cashNum : 0;
+
+      const resolved = getDecisionFinancial({
+        remaining: rem,
+        decision: rec.clearanceDecision ?? null,
+        approvedDiscount: rec.approvedDiscount ?? null,
+        decisionArBalance: rec.decisionArBalance ?? null,
+      });
+      if (resolved) {
+        return (
+          <span className="text-slate-700">
+            {renderDecisionFinancial(resolved)}
+          </span>
+        );
+      }
 
       if (rem > MONEY_EPS) {
         return (
@@ -1843,13 +1962,27 @@ export default function RiderCheckinPage() {
         </span>
       );
     },
-    [peso, remainingForParent],
+    [peso, remainingForParent, getDecisionFinancial, renderDecisionFinancial],
   );
 
   const summaryQuick = React.useCallback(
-    (total: number, remaining: number, cash: number) => {
+    (rec: SoldReceiptUI, total: number, remaining: number, cash: number) => {
       if (total <= 0) {
         return <span className="text-slate-500">No items yet</span>;
+      }
+
+      const resolved = getDecisionFinancial({
+        remaining,
+        decision: rec.clearanceDecision ?? null,
+        approvedDiscount: rec.approvedDiscount ?? null,
+        decisionArBalance: rec.decisionArBalance ?? null,
+      });
+      if (resolved) {
+        return (
+          <span className="text-slate-700">
+            {renderDecisionFinancial(resolved)}
+          </span>
+        );
       }
 
       if (remaining > MONEY_EPS) {
@@ -1870,7 +2003,7 @@ export default function RiderCheckinPage() {
         </span>
       );
     },
-    [peso],
+    [peso, getDecisionFinancial, renderDecisionFinancial],
   );
 
   // UI helper: show discount badge
@@ -2433,6 +2566,12 @@ export default function RiderCheckinPage() {
               <div className="space-y-3">
                 {parentReceiptsState.map((rec) => {
                   const rem = remainingForParent(rec);
+                  const decisionResolved = getDecisionFinancial({
+                    remaining: rem,
+                    decision: rec.clearanceDecision ?? null,
+                    approvedDiscount: rec.approvedDiscount ?? null,
+                    decisionArBalance: rec.decisionArBalance ?? null,
+                  });
                   const pending = !!rec.clearancePending;
                   const hasCaseStatus = !!rec.clearanceCaseStatus;
                   const receiptKey = `PARENT:${rec.orderId}`;
@@ -2568,6 +2707,11 @@ export default function RiderCheckinPage() {
                                     : "—"}
                                 </span>
                               </div>
+                              {decisionResolved ? (
+                                <div>
+                                  Decision: {renderDecisionFinancial(decisionResolved)}
+                                </div>
+                              ) : null}
                             </div>
 
                             <label className="flex items-center gap-1">
@@ -2890,6 +3034,12 @@ export default function RiderCheckinPage() {
               const receiptTotal = receiptTotals.total;
               const receiptCash = receiptTotals.cash;
               const receiptAR = receiptTotals.ar;
+              const decisionResolved = getDecisionFinancial({
+                remaining: receiptAR,
+                decision: rec.clearanceDecision ?? null,
+                approvedDiscount: rec.approvedDiscount ?? null,
+                decisionArBalance: rec.decisionArBalance ?? null,
+              });
               const autoNeeds = receiptAR > MONEY_EPS;
               const pending = !!rec.clearancePending;
               const hasCaseStatus = !!rec.clearanceCaseStatus;
@@ -2909,6 +3059,7 @@ export default function RiderCheckinPage() {
                   <CollapsibleReceipt
                     title={rec.customerName ?? "Customer Receipt"}
                     subtitle={summaryQuick(
+                      rec,
                       receiptTotal,
                       receiptAR,
                       receiptCash,
@@ -3387,6 +3538,11 @@ export default function RiderCheckinPage() {
                                   {peso(receiptTotal)}
                                 </span>
                               </div>
+                              {decisionResolved ? (
+                                <div>
+                                  Decision: {renderDecisionFinancial(decisionResolved)}
+                                </div>
+                              ) : null}
                             </div>
 
                             <label className="flex items-center gap-1">

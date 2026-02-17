@@ -19,6 +19,8 @@ import { requireRole } from "~/utils/auth.server";
 
 // Local helper: money rounding (single source in this file, but we prefer r2Money)
 const r2 = (n: number) => r2Money(Number(n) || 0);
+const MONEY_EPS = 0.009;
+
 const parseIsCreditFromNote = (note: unknown): boolean | null => {
   if (typeof note !== "string" || !note.trim()) return null;
   try {
@@ -28,6 +30,80 @@ const parseIsCreditFromNote = (note: unknown): boolean | null => {
     return null;
   }
 };
+
+type DecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+type CaseInfo = {
+  status: "NEEDS_CLEARANCE" | "DECIDED";
+  decisionKind: DecisionKindUI | null;
+  arBalance: number;
+  overrideDiscount: number;
+};
+
+const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+      ? "APPROVE_OPEN_BALANCE"
+      : raw === "APPROVE_DISCOUNT_OVERRIDE"
+        ? "APPROVE_DISCOUNT_OVERRIDE"
+        : raw === "APPROVE_HYBRID"
+          ? "APPROVE_HYBRID"
+          : null;
+
+const applyDecisionFinancial = (remainingRaw: number, c?: CaseInfo) => {
+  const remaining = r2(Math.max(0, Number(remainingRaw || 0)));
+  if (remaining <= MONEY_EPS) {
+    return { ar: 0, approvedDiscount: 0, pending: 0, rejected: 0 };
+  }
+
+  if (!c) {
+    return { ar: remaining, approvedDiscount: 0, pending: 0, rejected: 0 };
+  }
+
+  if (c.status === "NEEDS_CLEARANCE") {
+    return { ar: 0, approvedDiscount: 0, pending: remaining, rejected: 0 };
+  }
+
+  if (c.decisionKind === "REJECT") {
+    return { ar: 0, approvedDiscount: 0, pending: 0, rejected: remaining };
+  }
+
+  if (c.decisionKind === "APPROVE_DISCOUNT_OVERRIDE") {
+    const approvedDiscount =
+      c.overrideDiscount > MONEY_EPS
+        ? r2(Math.min(remaining, c.overrideDiscount))
+        : remaining;
+    return { ar: 0, approvedDiscount, pending: 0, rejected: 0 };
+  }
+
+  if (c.decisionKind === "APPROVE_HYBRID") {
+    const ar = c.arBalance > MONEY_EPS ? r2(Math.min(remaining, c.arBalance)) : 0;
+    const approvedDiscount =
+      c.overrideDiscount > MONEY_EPS
+        ? r2(Math.min(remaining, c.overrideDiscount))
+        : r2(Math.max(0, remaining - ar));
+    return { ar, approvedDiscount, pending: 0, rejected: 0 };
+  }
+
+  const ar = c.arBalance > MONEY_EPS ? r2(Math.min(remaining, c.arBalance)) : remaining;
+  return { ar, approvedDiscount: 0, pending: 0, rejected: 0 };
+};
+
+const sumLineDiscountTotal = (
+  lines: Array<{ qty: unknown; discountAmount?: unknown | null }>,
+) =>
+  r2(
+    (lines || []).reduce((sum, ln) => {
+      const qty = Math.max(0, Number(ln.qty ?? 0));
+      const disc = Math.max(0, Number(ln.discountAmount ?? 0));
+      return sum + qty * disc;
+    }, 0),
+  );
 
 type RecapRow = {
   productId: number;
@@ -62,6 +138,12 @@ type QuickSaleReceipt = {
   total: number;
   cash: number;
   ar: number;
+  approvedDiscount: number;
+  systemDiscount: number;
+  pendingClearance: number;
+  rejectedUnresolved: number;
+  caseStatus: "NEEDS_CLEARANCE" | "DECIDED" | null;
+  decisionKind: DecisionKindUI | null;
   rows: QuickSaleRow[];
 };
 
@@ -83,6 +165,13 @@ type ParentOrderRow = {
   orderTotal: number;
   collectedCash?: number;
   pricingMismatch?: boolean;
+  ar: number;
+  approvedDiscount: number;
+  systemDiscount: number;
+  pendingClearance: number;
+  rejectedUnresolved: number;
+  caseStatus: "NEEDS_CLEARANCE" | "DECIDED" | null;
+  decisionKind: DecisionKindUI | null;
 };
 
 type LoaderData = {
@@ -99,8 +188,14 @@ type LoaderData = {
   totals: {
     roadsideCash: number;
     roadsideAR: number;
+    roadsideApprovedDiscount: number;
+    roadsideSystemDiscount: number;
     parentCash: number;
     parentAR: number;
+    parentApprovedDiscount: number;
+    parentSystemDiscount: number;
+    pendingClearance: number;
+    rejectedUnresolved: number;
   };
 };
 
@@ -321,6 +416,42 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // returnedByPid already handled inside loadRunRecap (RETURN_IN > snapshot)
 
+  const cases = await db.clearanceCase.findMany({
+    where: {
+      runId: id,
+      status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
+    } as any,
+    select: {
+      receiptKey: true,
+      status: true,
+      decisions: {
+        select: {
+          kind: true,
+          arBalance: true,
+          overrideDiscountApproved: true,
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+    },
+  });
+  const caseByReceiptKey = new Map<string, CaseInfo>();
+  for (const c of cases || []) {
+    const rk = String((c as any).receiptKey || "").slice(0, 64);
+    if (!rk) continue;
+
+    const status = String((c as any).status || "");
+    if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
+
+    const d = (c as any)?.decisions?.[0];
+    caseByReceiptKey.set(rk, {
+      status,
+      decisionKind: parseDecisionKind(d?.kind),
+      arBalance: r2(Math.max(0, Number(d?.arBalance ?? 0))),
+      overrideDiscount: r2(Math.max(0, Number(d?.overrideDiscountApproved ?? 0))),
+    });
+  }
+
   // 3) Roadside sales list (SOURCE: RunReceipt kind=ROAD)
 
   // ✅ Receipt-level view: 1 QuickSaleReceipt per RunReceipt(kind=ROAD)
@@ -332,6 +463,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       let receiptIsCredit = cashCollected <= 0;
       const parsedIsCredit = parseIsCreditFromNote(rec.note);
       if (parsedIsCredit != null) receiptIsCredit = parsedIsCredit;
+      const rk = String(rec.receiptKey || `ROAD:${rec.id}`).slice(0, 64);
+      const caseInfo = caseByReceiptKey.get(rk);
 
       const custLabelBase =
         (rec.customerName && rec.customerName.trim()) ||
@@ -371,10 +504,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
 
       const total = r2(rows.reduce((s, r) => s + r.lineTotal, 0));
+      const systemDiscount = sumLineDiscountTotal(rows);
       const cash = r2(Math.max(0, Math.min(total, cashCollected || 0)));
-      const ar = r2(Math.max(0, total - cash));
+      const remaining = r2(Math.max(0, total - cash));
+      const d = applyDecisionFinancial(remaining, caseInfo);
+      const ar = r2(Math.max(0, d.ar));
+      const approvedDiscount = r2(Math.max(0, d.approvedDiscount));
+      const pendingClearance = r2(Math.max(0, d.pending));
+      const rejectedUnresolved = r2(Math.max(0, d.rejected));
       // ✅ Effective credit must reflect remaining balance regardless of meta
-      const isCreditEffective = receiptIsCredit || ar > 0.009;
+      const isCreditEffective = receiptIsCredit || ar > MONEY_EPS;
 
       // distribute cash for display (optional)
       const sum = rows.reduce((s, r) => s + r.lineTotal, 0) || 0;
@@ -383,19 +522,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         const ca = r2(cash * share);
         r.cashAmount = ca;
         r.creditAmount = r2(Math.max(0, r.lineTotal - ca));
-        r.isCredit = isCreditEffective || r.creditAmount > 0.009;
+        r.isCredit = isCreditEffective || r.creditAmount > MONEY_EPS;
       }
 
       return {
-        // ✅ stable deterministic key for debug + consistency (matches posted RS orderCode)
-        // Keep receiptKey if you rely on it elsewhere, but prefer stable fallback
-        key: String(rec.receiptKey || `RS-RUN${id}-RR${rec.id}`).slice(0, 64),
+        key: rk,
         customerId: rec.customerId ?? null,
         customerLabel,
         isCredit: isCreditEffective,
         total,
         cash,
         ar,
+        approvedDiscount,
+        systemDiscount,
+        pendingClearance,
+        rejectedUnresolved,
+        caseStatus: caseInfo?.status ?? null,
+        decisionKind: caseInfo?.decisionKind ?? null,
         rows,
       };
     });
@@ -477,6 +620,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       "";
 
     const customerLabel = phone ? `${custLabelBase} • ${phone}` : custLabelBase;
+    const caseInfo = caseByReceiptKey.get(`PARENT:${Number(o.id)}`);
 
     const lines: ParentOrderLine[] = (o.items || []).map((it) => {
       const qty = Math.max(0, Number(it.qty ?? 0));
@@ -523,6 +667,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     // Source: frozen helper = SUM(lineTotal) with same rounding rules.
     const orderTotal = r2(frozen.computedSubtotal);
+    const systemDiscount = sumLineDiscountTotal(lines);
 
     return {
       orderId: Number(o.id),
@@ -532,6 +677,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orderTotal,
       pricingMismatch,
       collectedCash: undefined,
+      ar: 0,
+      approvedDiscount: 0,
+      systemDiscount,
+      pendingClearance: 0,
+      rejectedUnresolved: 0,
+      caseStatus: caseInfo?.status ?? null,
+      decisionKind: caseInfo?.decisionKind ?? null,
     };
   });
 
@@ -580,6 +732,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const raw = Number(parentCashByOrderIdLocal.get(o.orderId) || 0);
     const capped = Math.max(0, Math.min(o.orderTotal, raw));
     o.collectedCash = capped > 0 ? capped : undefined;
+
+    const caseInfo = caseByReceiptKey.get(`PARENT:${o.orderId}`);
+    const remaining = r2(Math.max(0, Number(o.orderTotal || 0) - capped));
+    const d = applyDecisionFinancial(remaining, caseInfo);
+    o.ar = r2(Math.max(0, d.ar));
+    o.approvedDiscount = r2(Math.max(0, d.approvedDiscount));
+    o.pendingClearance = r2(Math.max(0, d.pending));
+    o.rejectedUnresolved = r2(Math.max(0, d.rejected));
+    o.caseStatus = caseInfo?.status ?? null;
+    o.decisionKind = caseInfo?.decisionKind ?? null;
+    o.isCredit = o.ar > MONEY_EPS;
   }
 
   // Totals for display (single source of truth = computed from frozen ROAD receipts)
@@ -589,25 +752,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const roadsideAR = r2(
     quickReceipts.reduce((s, r) => s + Number(r.ar || 0), 0),
   );
+  const roadsideApprovedDiscount = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.approvedDiscount || 0), 0),
+  );
+  const roadsideSystemDiscount = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.systemDiscount || 0), 0),
+  );
 
   // Parent cash total (cap per order total)
-  const parentCash = parentOrders.reduce((s, o) => {
-    const raw = Number(parentCashByOrderIdLocal.get(o.orderId) || 0);
-    const capped = Math.max(0, Math.min(o.orderTotal, raw));
-    return s + capped;
-  }, 0);
-
-  // Parent AR total (depends on isCredit + collectedCash)
-  const parentAR = parentOrders.reduce((s, o) => {
-    if (!o.isCredit) return s;
-    // ✅ IMPORTANT: keep a single source of truth (same cash cap logic as parentCash + o.collectedCash)
-    const cash = Math.max(
-      0,
-      Math.min(o.orderTotal, Number(o.collectedCash ?? 0)),
-    );
-    const ar = Math.max(0, Number((o.orderTotal - cash).toFixed(2)));
-    return s + ar;
-  }, 0);
+  const parentCash = r2(
+    parentOrders.reduce((s, o) => s + Number(o.collectedCash ?? 0), 0),
+  );
+  const parentAR = r2(parentOrders.reduce((s, o) => s + Number(o.ar || 0), 0));
+  const parentApprovedDiscount = r2(
+    parentOrders.reduce((s, o) => s + Number(o.approvedDiscount || 0), 0),
+  );
+  const parentSystemDiscount = r2(
+    parentOrders.reduce((s, o) => s + Number(o.systemDiscount || 0), 0),
+  );
+  const pendingClearance = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.pendingClearance || 0), 0) +
+      parentOrders.reduce((s, o) => s + Number(o.pendingClearance || 0), 0),
+  );
+  const rejectedUnresolved = r2(
+    quickReceipts.reduce((s, r) => s + Number(r.rejectedUnresolved || 0), 0) +
+      parentOrders.reduce((s, o) => s + Number(o.rejectedUnresolved || 0), 0),
+  );
 
   return json<LoaderData>({
     run: {
@@ -623,8 +793,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     totals: {
       roadsideCash,
       roadsideAR,
+      roadsideApprovedDiscount,
+      roadsideSystemDiscount,
       parentCash,
       parentAR,
+      parentApprovedDiscount,
+      parentSystemDiscount,
+      pendingClearance,
+      rejectedUnresolved,
     },
   });
 }
@@ -1215,8 +1391,74 @@ export default function RunRemitPage() {
       currency: "PHP",
     }).format(n);
 
+  const getFinancialBadge = (x: {
+    pendingClearance?: number;
+    rejectedUnresolved?: number;
+    approvedDiscount?: number;
+    ar?: number;
+  }) => {
+    const pendingClearance = r2(Math.max(0, Number(x.pendingClearance || 0)));
+    const rejectedUnresolved = r2(Math.max(0, Number(x.rejectedUnresolved || 0)));
+    const approvedDiscount = r2(Math.max(0, Number(x.approvedDiscount || 0)));
+    const ar = r2(Math.max(0, Number(x.ar || 0)));
+
+    if (pendingClearance > MONEY_EPS) {
+      return {
+        label: "Pending Clearance",
+        className:
+          "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    if (rejectedUnresolved > MONEY_EPS) {
+      return {
+        label: "Rejected (Unresolved)",
+        className: "border-rose-200 bg-rose-50 text-rose-700",
+      };
+    }
+    if (approvedDiscount > MONEY_EPS && ar > MONEY_EPS) {
+      return {
+        label: "Approved Hybrid",
+        className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+      };
+    }
+    if (approvedDiscount > MONEY_EPS) {
+      return {
+        label: "Approved Discount",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (ar > MONEY_EPS) {
+      return {
+        label: "Approved Open Balance",
+        className: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    return {
+      label: "Settled Cash",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  };
+
   const roadsideCashTotal = totals.roadsideCash;
   const parentCashTotal = totals.parentCash;
+  const roadsideArTotal = totals.roadsideAR;
+  const parentArTotal = totals.parentAR;
+  const roadsideApprovedDiscountTotal = totals.roadsideApprovedDiscount;
+  const parentApprovedDiscountTotal = totals.parentApprovedDiscount;
+  const roadsideSystemDiscountTotal = totals.roadsideSystemDiscount;
+  const parentSystemDiscountTotal = totals.parentSystemDiscount;
+  const pendingClearanceTotal = totals.pendingClearance;
+  const rejectedUnresolvedTotal = totals.rejectedUnresolved;
+
+  const overallCashTotal = r2(roadsideCashTotal + parentCashTotal);
+  const overallArTotal = r2(parentArTotal + roadsideArTotal);
+  const overallApprovedDiscountTotal = r2(
+    roadsideApprovedDiscountTotal + parentApprovedDiscountTotal,
+  );
+  const overallSystemDiscountTotal = r2(
+    roadsideSystemDiscountTotal + parentSystemDiscountTotal,
+  );
+
   const [stockDecision, setStockDecision] = React.useState<
     Record<number, "present" | "missing">
   >(() =>
@@ -1239,7 +1481,6 @@ export default function RunRemitPage() {
     missingRowsPreview.reduce((s, r) => s + Number(r.lineTotal || 0), 0),
   );
   const hasUnpricedMissing = missingRowsPreview.some((r) => r.unitValue == null);
-  const overallArTotal = r2(totals.parentAR + totals.roadsideAR);
   const canApproveNormal =
     run.status === "CHECKED_IN" &&
     nav.state === "idle" &&
@@ -1264,44 +1505,88 @@ export default function RunRemitPage() {
             </Link>
           </div>
         </div>
-        {/* Header */}
-        <div className="mb-2 flex items-end justify-between">
-          <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Run Remit — Manager Review
-            </h1>
-            <div className="mt-1 text-sm text-slate-500">
-              Run{" "}
-              <span className="font-mono font-medium text-indigo-700">
-                {run.runCode}
-              </span>
-              {run.riderLabel ? (
-                <span className="ml-2">• Rider: {run.riderLabel}</span>
-              ) : null}
+        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-base font-semibold tracking-wide text-slate-800">
+                Run Remit — Manager Review
+              </h1>
+              <div className="mt-1 text-sm text-slate-600">
+                Run{" "}
+                <span className="font-mono font-medium text-indigo-700">
+                  {run.runCode}
+                </span>
+                {run.riderLabel ? (
+                  <span className="ml-2">• Rider: {run.riderLabel}</span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Quick-read remit report: stock verification, settled cash, A/R,
+                approved discount, at system discount.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Overview lang ito: check kung tama ang{" "}
-              <span className="font-medium">Loaded / Sold / Unsold</span> at
-              listahan ng roadside sales bago i-approve.
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Total receivables (A/R):{" "}
-              <span className="font-semibold text-slate-700">
-                {peso(overallArTotal)}
-              </span>
-            </p>
+            {(() => {
+              const badgeText =
+                run.status === "CLOSED" ? "Closed" : posted ? "Posted" : null;
+              return badgeText ? (
+                <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                  {badgeText}
+                </div>
+              ) : null;
+            })()}
           </div>
 
-          {(() => {
-            const badgeText =
-              run.status === "CLOSED" ? "Closed" : posted ? "Posted" : null;
-            return badgeText ? (
-              <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
-                {badgeText}
+          {(pendingClearanceTotal > MONEY_EPS ||
+            rejectedUnresolvedTotal > MONEY_EPS) && (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {pendingClearanceTotal > MONEY_EPS ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Pending clearance unresolved:{" "}
+                  <span className="font-mono font-semibold">
+                    {peso(pendingClearanceTotal)}
+                  </span>
+                </div>
+              ) : null}
+              {rejectedUnresolvedTotal > MONEY_EPS ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  Rejected unresolved amount:{" "}
+                  <span className="font-mono font-semibold">
+                    {peso(rejectedUnresolvedTotal)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-[11px] text-slate-500">Total Cash</div>
+              <div className="mt-1 font-mono text-base font-semibold text-slate-900">
+                {peso(overallCashTotal)}
               </div>
-            ) : null;
-          })()}
-        </div>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="text-[11px] text-amber-800">Outstanding A/R</div>
+              <div className="mt-1 font-mono text-base font-semibold text-amber-800">
+                {peso(overallArTotal)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="text-[11px] text-emerald-700">
+                Approved Discount
+              </div>
+              <div className="mt-1 font-mono text-base font-semibold text-emerald-700">
+                {peso(overallApprovedDiscountTotal)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+              <div className="text-[11px] text-indigo-700">System Discount</div>
+              <div className="mt-1 font-mono text-base font-semibold text-indigo-700">
+                {peso(overallSystemDiscountTotal)}
+              </div>
+            </div>
+          </div>
+        </section>
 
         <Form method="post" className="grid gap-4">
           {/* Errors from action */}
@@ -1475,130 +1760,154 @@ export default function RunRemitPage() {
                     run na ito. Read-only view ng qty at presyo per line.
                   </p>
                 </div>
-                <div className="text-right text-xs text-slate-600">
-                  <div>
-                    Parent cash:{" "}
-                    <span className="font-semibold text-slate-900">
-                      {peso(parentCashTotal)}
-                    </span>
-                  </div>
+                <div className="text-[11px] text-slate-500">
+                  {parentOrders.length} order{parentOrders.length > 1 ? "s" : ""}
                 </div>
               </div>
 
               <div className="px-4 py-4 space-y-3">
-                {parentOrders.map((o, idx) => (
-                  <div
-                    key={`${o.orderId}-${idx}`}
-                    className="rounded-2xl border border-slate-200 bg-white p-3"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs font-medium text-slate-700">
-                        Order #{o.orderId}
-                      </div>
-                      {o.pricingMismatch ? (
-                        <div className="ml-2 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700">
-                          Totals mismatch
-                        </div>
-                      ) : null}
-                      <div
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          o.isCredit
-                            ? "border border-slate-300 bg-slate-50 text-slate-700"
-                            : "border border-slate-300 bg-white text-slate-700"
-                        }`}
-                      >
-                        {o.isCredit ? "Credit (A/R)" : "Cash"}
-                      </div>
-                    </div>
+                {parentOrders.map((o, idx) => {
+                  const badge = getFinancialBadge({
+                    pendingClearance: o.pendingClearance,
+                    rejectedUnresolved: o.rejectedUnresolved,
+                    approvedDiscount: o.approvedDiscount,
+                    ar: o.ar,
+                  });
+                  const cash = r2(
+                    Math.max(0, Math.min(o.orderTotal, Number(o.collectedCash ?? 0))),
+                  );
 
-                    <div className="text-xs text-slate-600 mb-1">
-                      <span className="font-semibold">Customer:</span>{" "}
-                      {o.customerLabel}
-                    </div>
-                    {/* Lines – mirror roadside format per product */}
-                    <div className="space-y-2 text-[11px] text-slate-600">
-                      {o.lines.map((ln, li) => (
-                        <div
-                          key={`${o.orderId}-${li}`}
-                          className="rounded-xl border border-slate-100 bg-slate-50/40 p-2"
-                        >
-                          <div className="mb-0.5">
-                            <span className="font-semibold">Product:</span>{" "}
-                            <span className="font-medium">{ln.name}</span>
-                            {ln.productId != null && (
-                              <span className="ml-1 text-[10px] text-slate-400">
-                                #{ln.productId}
-                              </span>
-                            )}
+                  return (
+                    <div
+                      key={`${o.orderId}-${idx}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-medium text-slate-700">
+                          Receipt • {o.customerLabel}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {o.pricingMismatch ? (
+                            <div className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700">
+                              Totals mismatch
+                            </div>
+                          ) : null}
+                          <div
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
+                          >
+                            {badge.label}
                           </div>
-                          <div className="flex justify-between text-[11px] text-slate-600">
-                            <span>
-                              Qty:{" "}
-                              <span className="font-mono font-semibold">
-                                {ln.qty}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-[11px] text-slate-600">
+                        {o.lines.map((ln, li) => (
+                          <div
+                            key={`${o.orderId}-${li}`}
+                            className="rounded-xl border border-slate-100 bg-slate-50/40 p-2"
+                          >
+                            <div className="mb-0.5">
+                              <span className="font-semibold">Product:</span>{" "}
+                              <span className="font-medium">{ln.name}</span>
+                              {ln.productId != null && (
+                                <span className="ml-1 text-[10px] text-slate-400">
+                                  #{ln.productId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex justify-between text-[11px] text-slate-600">
+                              <span>
+                                Qty:{" "}
+                                <span className="font-mono font-semibold">
+                                  {ln.qty}
+                                </span>
                               </span>
-                            </span>
-                            <span>
-                              Unit:{" "}
-                              <span className="font-mono font-semibold text-slate-800">
-                                {peso(ln.unitPrice)}
-                              </span>
-                              {ln.discountAmount != null &&
-                                ln.baseUnitPrice != null && (
-                                  <span className="ml-1 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                                    −{peso(ln.discountAmount)}
-                                    <span className="ml-1 text-emerald-600/80">
-                                      (Base {peso(ln.baseUnitPrice)})
+                              <span>
+                                Unit:{" "}
+                                <span className="font-mono font-semibold text-slate-800">
+                                  {peso(ln.unitPrice)}
+                                </span>
+                                {ln.discountAmount != null &&
+                                  ln.baseUnitPrice != null &&
+                                  ln.discountAmount > MONEY_EPS && (
+                                    <span className="ml-1 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                      −{peso(ln.discountAmount)}
+                                      <span className="ml-1 text-emerald-600/80">
+                                        (Base {peso(ln.baseUnitPrice)})
+                                      </span>
                                     </span>
-                                  </span>
-                                )}
-                            </span>
-                            <span>
-                              Line total:{" "}
-                              <span className="font-mono font-semibold">
-                                {peso(ln.lineTotal)}
+                                  )}
                               </span>
-                            </span>
+                              <span>
+                                Line:{" "}
+                                <span className="font-mono font-semibold">
+                                  {peso(ln.lineTotal)}
+                                </span>
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
 
-                    {/* Order-level cash vs A/R, same feel as roadside footer */}
-                    <div className="mt-2 flex justify-between text-[11px] text-slate-600">
-                      <span>
-                        Order total:{" "}
-                        <span className="font-mono font-semibold">
-                          {peso(o.orderTotal)}
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <span className="text-slate-600">
+                          Total:{" "}
+                          <span className="font-mono font-semibold text-slate-900">
+                            {peso(o.orderTotal)}
+                          </span>
                         </span>
-                      </span>
-                      {(() => {
-                        const rawCash = o.collectedCash ?? 0;
-                        const cash = Math.max(
-                          0,
-                          Math.min(o.orderTotal, rawCash),
-                        );
-                        const credit = Math.max(0, o.orderTotal - cash);
-                        return (
-                          <div className="text-right">
-                            <div>
-                              Cash:{" "}
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600">
+                            Cash:{" "}
+                            <span className="font-mono font-semibold text-slate-900">
+                              {peso(cash)}
+                            </span>
+                          </span>
+                          {o.approvedDiscount > MONEY_EPS ? (
+                            <span className="text-emerald-700">
+                              Approved:{" "}
                               <span className="font-mono font-semibold">
-                                {peso(cash)}
+                                {peso(o.approvedDiscount)}
                               </span>
-                            </div>
-                            <div>
-                              Credit (A/R):{" "}
+                            </span>
+                          ) : null}
+                          {o.ar > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              A/R:{" "}
                               <span className="font-mono font-semibold">
-                                {peso(credit)}
+                                {peso(o.ar)}
                               </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                            </span>
+                          ) : null}
+                          {o.systemDiscount > MONEY_EPS ? (
+                            <span className="text-indigo-700">
+                              System discount:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.systemDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {o.pendingClearance > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              Pending:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.pendingClearance)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {o.rejectedUnresolved > MONEY_EPS ? (
+                            <span className="text-rose-700">
+                              Rejected unresolved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(o.rejectedUnresolved)}
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -1617,13 +1926,8 @@ export default function RunRemitPage() {
                   barcode/receipt sa pag-post ng remit.
                 </p>
               </div>
-              <div className="text-right text-xs text-slate-600">
-                <div>
-                  Roadside cash:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {peso(roadsideCashTotal)}
-                  </span>
-                </div>
+              <div className="text-[11px] text-slate-500">
+                {quickReceipts.length} receipt{quickReceipts.length > 1 ? "s" : ""}
               </div>
             </div>
 
@@ -1633,48 +1937,30 @@ export default function RunRemitPage() {
                   No roadside sales encoded in Rider Check-in.
                 </div>
               ) : (
-                quickReceipts.map((rec) => (
-                  <div
-                    key={rec.key}
-                    className="rounded-2xl border border-slate-200 bg-white p-3"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs font-medium text-slate-700">
-                        Receipt • {rec.customerLabel}
-                      </div>
-                      <div
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          rec.isCredit
-                            ? "border border-slate-300 bg-slate-50 text-slate-700"
-                            : "border border-slate-300 bg-white text-slate-700"
-                        }`}
-                      >
-                        {rec.isCredit ? "Credit (A/R)" : "Cash"}
-                      </div>
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      <div className="flex justify-between text-[11px] text-slate-600">
-                        <span>
-                          Receipt total:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(rec.total)}
-                          </span>
-                        </span>
-                        <span>
-                          Cash:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(rec.cash)}
-                          </span>
-                        </span>
-                        <span>
-                          A/R:{" "}
-                          <span className="font-mono font-semibold">
-                            {peso(rec.ar)}
-                          </span>
-                        </span>
+                quickReceipts.map((rec) => {
+                  const badge = getFinancialBadge({
+                    pendingClearance: rec.pendingClearance,
+                    rejectedUnresolved: rec.rejectedUnresolved,
+                    approvedDiscount: rec.approvedDiscount,
+                    ar: rec.ar,
+                  });
+                  return (
+                    <div
+                      key={rec.key}
+                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-medium text-slate-700">
+                          Receipt • {rec.customerLabel}
+                        </div>
+                        <div
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
+                        >
+                          {badge.label}
+                        </div>
                       </div>
 
-                      <div className="mt-2 space-y-2">
+                      <div className="mt-2 space-y-2 text-xs text-slate-600">
                         {rec.rows.map((q) => (
                           <div
                             key={`${rec.key}-${q.idx}`}
@@ -1702,7 +1988,8 @@ export default function RunRemitPage() {
                                   {peso(q.unitPrice)}
                                 </span>
                                 {q.discountAmount != null &&
-                                  q.baseUnitPrice != null && (
+                                  q.baseUnitPrice != null &&
+                                  q.discountAmount > MONEY_EPS && (
                                     <span className="ml-1 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                                       −{peso(q.discountAmount)}
                                       <span className="ml-1 text-emerald-600/80">
@@ -1721,9 +2008,66 @@ export default function RunRemitPage() {
                           </div>
                         ))}
                       </div>
+
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <span className="text-slate-600">
+                          Total:{" "}
+                          <span className="font-mono font-semibold text-slate-900">
+                            {peso(rec.total)}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600">
+                            Cash:{" "}
+                            <span className="font-mono font-semibold text-slate-900">
+                              {peso(rec.cash)}
+                            </span>
+                          </span>
+                          {rec.approvedDiscount > MONEY_EPS ? (
+                            <span className="text-emerald-700">
+                              Approved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.approvedDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.ar > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              A/R:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.ar)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.systemDiscount > MONEY_EPS ? (
+                            <span className="text-indigo-700">
+                              System discount:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.systemDiscount)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.pendingClearance > MONEY_EPS ? (
+                            <span className="text-amber-800">
+                              Pending:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.pendingClearance)}
+                              </span>
+                            </span>
+                          ) : null}
+                          {rec.rejectedUnresolved > MONEY_EPS ? (
+                            <span className="text-rose-700">
+                              Rejected unresolved:{" "}
+                              <span className="font-mono font-semibold">
+                                {peso(rec.rejectedUnresolved)}
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>

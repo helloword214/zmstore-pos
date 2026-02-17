@@ -56,11 +56,13 @@ type LoaderData = {
       runCode: string | null;
       customerLabel: string;
     } | null;
+    latestClaimType: "OPEN_BALANCE" | "PRICE_BARGAIN" | "OTHER" | null;
 
     latestDecision?: {
       kind: string;
       decidedAt: string | null;
       note: string | null;
+      approvedDiscount: number | null;
       arBalance: number | null;
       decidedById: number | null;
     } | null;
@@ -154,12 +156,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           run: { select: { id: true, runCode: true } },
         },
       },
+      claims: {
+        select: { type: true },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
 
       decisions: {
         select: {
           kind: true,
           decidedAt: true,
           note: true,
+          overrideDiscountApproved: true,
           arBalance: true,
           decidedById: true,
         },
@@ -208,6 +216,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           ? new Date(c.decisions[0].decidedAt as any).toISOString()
           : null,
         note: c.decisions[0].note ?? null,
+        approvedDiscount:
+          c.decisions[0].overrideDiscountApproved != null
+            ? Number(c.decisions[0].overrideDiscountApproved)
+            : null,
         arBalance:
           c.decisions[0].arBalance != null
             ? Number(c.decisions[0].arBalance)
@@ -215,6 +227,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         decidedById: c.decisions[0].decidedById ?? null,
       }
     : null;
+  const latestClaimTypeRaw = String(c.claims?.[0]?.type || "");
+  const latestClaimType: LoaderData["case"]["latestClaimType"] =
+    latestClaimTypeRaw === "PRICE_BARGAIN"
+      ? "PRICE_BARGAIN"
+      : latestClaimTypeRaw === "OPEN_BALANCE"
+      ? "OPEN_BALANCE"
+      : latestClaimTypeRaw === "OTHER"
+      ? "OTHER"
+      : null;
 
   return json<LoaderData>({
     case: {
@@ -234,6 +255,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       runId: c.runId ?? null,
       runReceiptId: c.runReceiptId ?? null,
       customerId: c.customerId ?? null,
+      latestClaimType,
 
       order,
       runReceipt,
@@ -442,8 +464,15 @@ export default function StoreClearanceCasePage() {
   const nav = useNavigation();
   const busy = nav.state !== "idle";
   const canDecide = c.status === "NEEDS_CLEARANCE" && !c.latestDecision;
+  const defaultApprovedDiscountInput = React.useMemo(
+    () => (c.latestClaimType === "PRICE_BARGAIN" ? c.balance.toFixed(2) : "0.00"),
+    [c.latestClaimType, c.balance],
+  );
   const [approvedDiscountInput, setApprovedDiscountInput] =
-    React.useState("0.00");
+    React.useState(defaultApprovedDiscountInput);
+  React.useEffect(() => {
+    setApprovedDiscountInput(defaultApprovedDiscountInput);
+  }, [defaultApprovedDiscountInput]);
 
   const approvedDiscountParsed = React.useMemo(() => {
     const cleaned = approvedDiscountInput.replace(/[^0-9.]/g, "").trim();
@@ -480,6 +509,11 @@ export default function StoreClearanceCasePage() {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Pill tone="indigo">{c.status}</Pill>
               {c.origin ? <Pill tone="slate">{c.origin}</Pill> : null}
+              {c.latestClaimType ? (
+                <Pill tone={c.latestClaimType === "PRICE_BARGAIN" ? "amber" : "indigo"}>
+                  REQUEST: {c.latestClaimType}
+                </Pill>
+              ) : null}
               {c.balance > 0.009 ? (
                 <Pill tone="amber">balance {peso(c.balance)}</Pill>
               ) : (
@@ -539,7 +573,7 @@ export default function StoreClearanceCasePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
-                  Walk-in Order
+                  {c.runReceipt ? "Linked Parent Order" : "Walk-in Order"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-600">
                   {c.order.customerLabel}
@@ -614,6 +648,14 @@ export default function StoreClearanceCasePage() {
                 <div className="mt-1 text-xs">
                   decidedAt:{" "}
                   <span className="font-mono">{c.latestDecision.decidedAt}</span>
+                </div>
+              ) : null}
+              {c.latestDecision.approvedDiscount != null ? (
+                <div className="mt-1 text-xs">
+                  approvedDiscount:{" "}
+                  <span className="font-mono">
+                    {peso(c.latestDecision.approvedDiscount)}
+                  </span>
                 </div>
               ) : null}
               {c.latestDecision.arBalance != null ? (
