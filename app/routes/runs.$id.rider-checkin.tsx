@@ -49,7 +49,7 @@ type StockRow = {
   name: string;
   loaded: number;
   sold: number; // loader: main POS + snapshot quick sales
-  returned: number; // editable
+  returned: number; // loader snapshot/recap value
 };
 
 type UIUnitKind = "PACK" | "RETAIL";
@@ -1773,26 +1773,6 @@ export default function RiderCheckinPage() {
     return Math.max(0, Number((total - cash).toFixed(2)));
   }, []);
 
-  // ✅ Fix race/timing bug: make "rows" payload controlled (no DOM mutation).
-  const [stockRowsState, setStockRowsState] = React.useState<
-    Array<{ productId: number; returned: number }>
-  >(() =>
-    rows.map((r) => ({
-      productId: r.productId,
-      returned: Number(r.returned ?? 0),
-    })),
-  );
-
-  // If the loader rows change (different run / refresh), resync the payload.
-  React.useEffect(() => {
-    setStockRowsState(
-      rows.map((r) => ({
-        productId: r.productId,
-        returned: Number(r.returned ?? 0),
-      })),
-    );
-  }, [rows]);
-
   // ✅ Unit-aware base per product (Retail=price, Pack=srp fallback price)
   const baseByProductId = React.useMemo(() => {
     const m = new Map<number, { price: number; srp: number }>();
@@ -2077,16 +2057,6 @@ export default function RiderCheckinPage() {
     return null;
   }, [locked, hasAnyAvailableStock]);
 
-  // ✅ for returned: update controlled payload (no document.getElementById)
-  function updateReturned(i: number, value: number) {
-    setStockRowsState((prev) => {
-      if (!prev[i]) return prev;
-      const next = prev.slice();
-      next[i] = { ...next[i], returned: value };
-      return next;
-    });
-  }
-
   // helper: display sold for recap = base + current quick
   const displaySold = React.useCallback(
     (pid: number) => {
@@ -2095,6 +2065,19 @@ export default function RiderCheckinPage() {
       return base + quick;
     },
     [baseSoldByPid, currentQuickSoldByPid],
+  );
+
+  // Stock recap is audit-driven: returned is auto-derived from loaded - sold.
+  const stockRowsPayload = React.useMemo(
+    () =>
+      rows.map((r) => {
+        const soldNow = displaySold(r.productId);
+        return {
+          productId: r.productId,
+          returned: Math.max(0, r.loaded - soldNow),
+        };
+      }),
+    [rows, displaySold],
   );
 
   // Build payload for pricing quote from a receipt snapshot
@@ -2395,7 +2378,7 @@ export default function RiderCheckinPage() {
             id="rows-json"
             name="rows"
             type="hidden"
-            value={JSON.stringify(stockRowsState)}
+            value={JSON.stringify(stockRowsPayload)}
             readOnly
           />
 
@@ -2409,11 +2392,11 @@ export default function RiderCheckinPage() {
                   <th className="px-3 py-2 text-right">Loaded</th>
                   <th className="px-3 py-2 text-right">Sold (auto)</th>
                   <th className="px-3 py-2 text-right">Expected Ret</th>
-                  <th className="px-3 py-2 text-right">Returned</th>
+                  <th className="px-3 py-2 text-right">Returned (auto)</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
+                {rows.map((r) => {
                   const soldNow = displaySold(r.productId);
                   const expectedRet = Math.max(0, r.loaded - soldNow);
                   return (
@@ -2431,20 +2414,8 @@ export default function RiderCheckinPage() {
                       <td className="px-3 py-2 text-right text-slate-500">
                         {expectedRet}
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={locked}
-                          value={stockRowsState[i]?.returned ?? 0}
-                          onChange={(e) =>
-                            updateReturned(
-                              i,
-                              Math.max(0, Number(e.target.value)),
-                            )
-                          }
-                          className="w-20 border rounded px-1 py-0.5 text-right"
-                        />
+                      <td className="px-3 py-2 text-right font-medium text-slate-700">
+                        {expectedRet}
                       </td>
                     </tr>
                   );
@@ -2794,10 +2765,31 @@ export default function RiderCheckinPage() {
                               }
                               extraNode={
                                 rejected && !voided ? (
-                                  <div className="mt-2">
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
                                     <button
                                       type="button"
-                                      disabled={busy}
+                                      disabled={busy || locked}
+                                      onClick={() => {
+                                        const full = Number(rec.orderTotal || 0);
+                                        setParentReceiptsState((prev) =>
+                                          prev.map((r) =>
+                                            r.key === rec.key
+                                              ? {
+                                                  ...r,
+                                                  cashCollected: full,
+                                                  cashInput: full.toFixed(2),
+                                                }
+                                              : r,
+                                          ),
+                                        );
+                                      }}
+                                      className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                    >
+                                      Collect Full Payment
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy || locked}
                                       onClick={() => {
                                         const reason = prompt(
                                           "Reason for VOIDED (required).",
@@ -3553,6 +3545,51 @@ export default function RiderCheckinPage() {
                                       roadReceiptJson: JSON.stringify(roadPayload),
                                     });
                                   }
+                            }
+                            extraNode={
+                              rec.clearanceDecision === "REJECT" &&
+                              !rec.voided ? (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={busy || locked}
+                                    onClick={() => {
+                                      const full = Number(receiptTotal || 0);
+                                      setReceipts((prev) =>
+                                        prev.map((r) =>
+                                          r.key === rec.key
+                                            ? {
+                                                ...r,
+                                                cashReceived: full,
+                                                cashInput: full.toFixed(2),
+                                              }
+                                            : r,
+                                        ),
+                                      );
+                                    }}
+                                    className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                  >
+                                    Collect Full Payment
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy || locked}
+                                    onClick={() => {
+                                      const reason = prompt(
+                                        "Reason for VOIDED (required).",
+                                      );
+                                      if (!reason || !reason.trim()) return;
+                                      markVoided({
+                                        receiptKey: rec.key,
+                                        reason: reason.trim().slice(0, 200),
+                                      });
+                                    }}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    Mark as VOIDED
+                                  </button>
+                                </div>
+                              ) : null
                             }
                           />
                         ) : null}
