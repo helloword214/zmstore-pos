@@ -11,6 +11,8 @@ import { r2 as r2Money } from "~/utils/money";
 
 // Local helper: money rounding (prefer single rounding source)
 const r2 = (n: number) => r2Money(Number(n) || 0);
+const isVoidedNote = (note: unknown) =>
+  typeof note === "string" && note.trim().toUpperCase().startsWith("VOIDED:");
 
 type Row = {
   productId: number;
@@ -98,12 +100,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     : { recapRows: [] as any[], hasDiffIssues: false };
 
   // ─────────────────────────────────────────────────────────────
-  // Parent overrides + payments:
-  // Prefer DB RunReceipt(kind=PARENT), fallback snapshot legacy.
+  // Parent payments (with legacy snapshot fallback) + void markers.
   // ─────────────────────────────────────────────────────────────
   const rawSnap = run.riderCheckinSnapshot as any;
-  const parentOverrideMap = new Map<number, boolean>(); // orderId -> isCredit
   const parentPaymentMap = new Map<number, number>(); // orderId -> cashCollected
+  const parentVoidedMap = new Map<number, boolean>(); // orderId -> voided
   // 1) DB receipts (PARENT) are manager-grade truth
   for (const r of run.receipts || []) {
     if (r.kind !== "PARENT") continue;
@@ -115,28 +116,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const cash = Number(r.cashCollected ?? 0);
     const add = cash > 0 ? cash : 0;
     parentPaymentMap.set(oid, (parentPaymentMap.get(oid) || 0) + add);
-    // IMPORTANT:
-    // For PARENT receipts, cashCollected is often 0 during DISPATCHED stage.
-    // Do NOT infer credit from cashCollected.
-    // Default to CASH unless note explicitly says isCredit=true.
-    let isCredit = false;
-    try {
-      const meta = r.note ? JSON.parse(r.note) : null;
-      if (meta && typeof meta.isCredit === "boolean") isCredit = meta.isCredit;
-    } catch {}
-    parentOverrideMap.set(oid, isCredit);
+    if (isVoidedNote(r.note)) parentVoidedMap.set(oid, true);
   }
 
   // 2) Snapshot fallback (legacy)
   if (rawSnap && typeof rawSnap === "object") {
-    if (Array.isArray(rawSnap.parentOverrides)) {
-      for (const row of rawSnap.parentOverrides) {
-        const oid = Number(row?.orderId ?? 0);
-        if (!oid) continue;
-        if (!parentOverrideMap.has(oid))
-          parentOverrideMap.set(oid, !!row?.isCredit);
-      }
-    }
     if (Array.isArray(rawSnap.parentPayments)) {
       for (const row of rawSnap.parentPayments) {
         const oid = Number(row?.orderId ?? 0);
@@ -229,14 +213,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (isFinalized) {
     for (const rr of run.receipts || []) {
       if (rr.kind !== "ROAD") continue;
+      if (isVoidedNote(rr.note)) continue;
       const cashCollected = Math.max(0, Number(rr.cashCollected ?? 0));
-      let receiptIsCredit = cashCollected <= 0;
-      try {
-        const meta = rr.note ? JSON.parse(rr.note) : null;
-        if (meta && typeof meta.isCredit === "boolean")
-          receiptIsCredit = meta.isCredit;
-      } catch {}
-
       const total = r2(
         (rr.lines || []).reduce((sum, ln: any) => {
           const qty = Math.max(0, Number(ln.qty ?? 0));
@@ -248,13 +226,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const paid = r2(Math.max(0, Math.min(total, cashCollected)));
       const bal = r2(Math.max(0, total - paid));
       cash += paid;
-      // A/R counts if credit OR partial balance remains
-      const isCreditEffective = receiptIsCredit || bal > 0.009;
-      if (isCreditEffective) ar += bal;
+      // A/R overview rule: remaining balance of non-voided receipts only.
+      ar += bal;
     }
   }
 
-  // parent money from receipts (service) — needs caps based on order totals + credit flag
+  // Parent money: include non-voided orders only.
   for (const L of links) {
     const o = L.order;
     if (!o) continue;
@@ -277,14 +254,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
     const orderTotal = fp.computedSubtotal;
 
-    const override = parentOverrideMap.get(o.id);
-    const isCredit = override !== undefined ? override : !!o.isOnCredit;
+    if (parentVoidedMap.get(o.id)) continue;
 
-    // ✅ Parent cash SOT: RunReceipt(kind=PARENT).cashCollected sum (already built in parentPaymentMap)
+    // ✅ Parent cash SOT: RunReceipt(kind=PARENT).cashCollected sum (already built in parentPaymentMap).
     const rawCash = Number(parentPaymentMap.get(o.id) || 0);
     const paid = Math.max(0, Math.min(orderTotal, rawCash));
+    const bal = Math.max(0, orderTotal - paid);
     if (isFinalized) cash += paid;
-    if (isFinalized && isCredit) ar += Math.max(0, orderTotal - paid);
+    if (isFinalized) ar += bal;
   }
 
   const rows: Row[] = isFinalized
@@ -414,6 +391,50 @@ export default function RunSummaryPage() {
           </div>
         )}
 
+        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Loaded</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {totals.loaded}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Sold</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {totals.sold}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Returned</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {totals.returned}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Variance (Δ)</div>
+            <div
+              className={`text-lg font-semibold tabular-nums ${
+                totals.delta === 0 ? "text-slate-900" : "text-rose-600"
+              }`}
+            >
+              {totals.delta}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Cash Collected</div>
+            <div className="text-lg font-semibold">{peso(totals.cash)}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">Outstanding A/R</div>
+            <div className="text-lg font-semibold">{peso(totals.ar)}</div>
+          </div>
+        </div>
+        {ui.isFinalized ? (
+          <div className="mb-4 text-xs text-slate-500">
+            A/R shows remaining balance from non-voided receipts/orders.
+          </div>
+        ) : null}
+
         <div className="grid gap-4">
           {/* Stock / qty recap */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
@@ -491,17 +512,6 @@ export default function RunSummaryPage() {
             </table>
           </div>
 
-          {/* Cash / AR recap */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="text-xs text-slate-500">Cash collected</div>
-              <div className="text-lg font-semibold">{peso(totals.cash)}</div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="text-xs text-slate-500">A/R created</div>
-              <div className="text-lg font-semibold">{peso(totals.ar)}</div>
-            </div>
-          </div>
         </div>
       </div>
     </main>
