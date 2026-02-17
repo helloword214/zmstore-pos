@@ -1216,10 +1216,7 @@ export default function RunRemitPage() {
     }).format(n);
 
   const roadsideCashTotal = totals.roadsideCash;
-  const roadsideCreditTotal = totals.roadsideAR;
   const parentCashTotal = totals.parentCash;
-
-  const parentCreditTotal = totals.parentAR;
   const [stockDecision, setStockDecision] = React.useState<
     Record<number, "present" | "missing">
   >(() =>
@@ -1242,6 +1239,7 @@ export default function RunRemitPage() {
     missingRowsPreview.reduce((s, r) => s + Number(r.lineTotal || 0), 0),
   );
   const hasUnpricedMissing = missingRowsPreview.some((r) => r.unitValue == null);
+  const overallArTotal = r2(totals.parentAR + totals.roadsideAR);
   const canApproveNormal =
     run.status === "CHECKED_IN" &&
     nav.state === "idle" &&
@@ -1286,6 +1284,12 @@ export default function RunRemitPage() {
               <span className="font-medium">Loaded / Sold / Unsold</span> at
               listahan ng roadside sales bago i-approve.
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Total receivables (A/R):{" "}
+              <span className="font-semibold text-slate-700">
+                {peso(overallArTotal)}
+              </span>
+            </p>
           </div>
 
           {(() => {
@@ -1311,7 +1315,7 @@ export default function RunRemitPage() {
           ) : null}
 
           {/* Stock recap card */}
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -1323,8 +1327,8 @@ export default function RunRemitPage() {
                   <span className="font-medium">Mark Missing</span> per item.
                 </p>
               </div>
-              <div className="text-xs text-slate-500">
-                Mark Missing = rider charge candidate
+              <div className="text-[11px] text-slate-500">
+                Missing items become rider charge candidate
               </div>
             </div>
 
@@ -1372,8 +1376,8 @@ export default function RunRemitPage() {
                             <span
                               className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
                                 soldOnly
-                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border border-amber-200 bg-amber-50 text-amber-700"
+                                  ? "border border-slate-300 bg-slate-50 text-slate-700"
+                                  : "border border-slate-300 bg-white text-slate-700"
                               }`}
                             >
                               {soldOnly ? "Sold" : "Unsold"}
@@ -1385,54 +1389,40 @@ export default function RunRemitPage() {
                                 Sold / OK
                               </span>
                             ) : (
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-3">
                                 <input
                                   type="hidden"
                                   name={`verify_${r.productId}`}
                                   value={decision}
                                 />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setStockDecision((prev) => ({
-                                      ...prev,
-                                      [r.productId]: "present",
-                                    }))
-                                  }
-                                  className={`rounded-lg border px-2 py-1 text-xs font-medium ${
-                                    decision === "present"
-                                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                                      : "border-slate-200 bg-white text-slate-600"
-                                  }`}
-                                >
-                                  Stocks Present
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setStockDecision((prev) => ({
-                                      ...prev,
-                                      [r.productId]: "missing",
-                                    }))
-                                  }
-                                  className={`rounded-lg border px-2 py-1 text-xs font-medium ${
-                                    decision === "missing"
-                                      ? "border-rose-300 bg-rose-50 text-rose-800"
-                                      : "border-slate-200 bg-white text-slate-600"
-                                  }`}
-                                >
-                                  Mark Missing
-                                </button>
-                                {decision === "missing" ? (
-                                  <span className="text-[11px] text-rose-700">
-                                    Charge preview:{" "}
-                                    <span className="font-semibold">
-                                      {r.unitValue != null
-                                        ? peso(r2(r.unitValue * r.unsold))
-                                        : "No value source"}
-                                    </span>
-                                  </span>
-                                ) : null}
+                                <label className="inline-flex items-center gap-1 text-xs text-slate-700 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`verify_ui_${r.productId}`}
+                                    checked={decision === "present"}
+                                    onChange={() =>
+                                      setStockDecision((prev) => ({
+                                        ...prev,
+                                        [r.productId]: "present",
+                                      }))
+                                    }
+                                  />
+                                  <span>Stocks Present</span>
+                                </label>
+                                <label className="inline-flex items-center gap-1 text-xs text-slate-700 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`verify_ui_${r.productId}`}
+                                    checked={decision === "missing"}
+                                    onChange={() =>
+                                      setStockDecision((prev) => ({
+                                        ...prev,
+                                        [r.productId]: "missing",
+                                      }))
+                                    }
+                                  />
+                                  <span>Mark Missing</span>
+                                </label>
                               </div>
                             )}
                           </td>
@@ -1444,30 +1434,37 @@ export default function RunRemitPage() {
               </table>
             </div>
 
-            {missingRowsPreview.length > 0 ? (
-              <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-800">
-                <div className="font-semibold">
-                  Missing stock reminder ({missingRowsPreview.length} item
-                  {missingRowsPreview.length > 1 ? "s" : ""})
-                </div>
-                <div className="mt-1 space-y-0.5">
-                  {missingRowsPreview.map((r) => (
-                    <div key={`missing-${r.productId}`}>
-                      • {r.name} #{r.productId} · qty {r.unsold} ·{" "}
-                      {r.lineTotal != null ? peso(r.lineTotal) : "No value source"}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-1 font-semibold">
-                  Total rider charge preview: {peso(missingPreviewTotal)}
-                </div>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              <div className="font-semibold">
+                Missing stock reminder ({missingRowsPreview.length} item
+                {missingRowsPreview.length > 1 ? "s" : ""})
               </div>
-            ) : null}
+              {missingRowsPreview.length > 0 ? (
+                <>
+                  <div className="mt-1 space-y-0.5">
+                    {missingRowsPreview.map((r) => (
+                      <div key={`missing-${r.productId}`}>
+                        • {r.name} #{r.productId} · qty {r.unsold} ·{" "}
+                        {r.lineTotal != null ? peso(r.lineTotal) : "No value source"}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-1 font-semibold text-rose-700">
+                    Total rider charge preview: {peso(missingPreviewTotal)}{" "}
+                    {hasUnpricedMissing ? "(check value source)" : ""}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-1 text-slate-500">
+                  No missing items selected.
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Parent POS orders (from Order Pad / Cashier) */}
           {parentOrders.length > 0 && (
-            <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <section className="rounded-2xl border border-slate-200 bg-white">
               <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-medium text-slate-800">
@@ -1485,12 +1482,6 @@ export default function RunRemitPage() {
                       {peso(parentCashTotal)}
                     </span>
                   </div>
-                  <div>
-                    Parent Credit (A/R):{" "}
-                    <span className="font-semibold text-slate-900">
-                      {peso(parentCreditTotal)}
-                    </span>
-                  </div>
                 </div>
               </div>
 
@@ -1498,7 +1489,7 @@ export default function RunRemitPage() {
                 {parentOrders.map((o, idx) => (
                   <div
                     key={`${o.orderId}-${idx}`}
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                    className="rounded-2xl border border-slate-200 bg-white p-3"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-xs font-medium text-slate-700">
@@ -1512,8 +1503,8 @@ export default function RunRemitPage() {
                       <div
                         className={`rounded-full px-2 py-0.5 text-[11px] ${
                           o.isCredit
-                            ? "border border-amber-200 bg-amber-50 text-amber-700"
-                            : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                            ? "border border-slate-300 bg-slate-50 text-slate-700"
+                            : "border border-slate-300 bg-white text-slate-700"
                         }`}
                       >
                         {o.isCredit ? "Credit (A/R)" : "Cash"}
@@ -1613,7 +1604,7 @@ export default function RunRemitPage() {
           )}
 
           {/* Quick sales overview */}
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -1633,13 +1624,6 @@ export default function RunRemitPage() {
                     {peso(roadsideCashTotal)}
                   </span>
                 </div>
-                <div>
-                  Roadside Credit (A/R):{" "}
-                  <span className="font-semibold text-slate-900">
-                    {" "}
-                    {peso(roadsideCreditTotal)}
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -1652,7 +1636,7 @@ export default function RunRemitPage() {
                 quickReceipts.map((rec) => (
                   <div
                     key={rec.key}
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                    className="rounded-2xl border border-slate-200 bg-white p-3"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-xs font-medium text-slate-700">
@@ -1661,8 +1645,8 @@ export default function RunRemitPage() {
                       <div
                         className={`rounded-full px-2 py-0.5 text-[11px] ${
                           rec.isCredit
-                            ? "border border-amber-200 bg-amber-50 text-amber-700"
-                            : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                            ? "border border-slate-300 bg-slate-50 text-slate-700"
+                            : "border border-slate-300 bg-white text-slate-700"
                         }`}
                       >
                         {rec.isCredit ? "Credit (A/R)" : "Cash"}
@@ -1750,7 +1734,7 @@ export default function RunRemitPage() {
               type="submit"
               name="_intent"
               value="charge-remit"
-              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-800 shadow-sm transition hover:bg-rose-100 disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
               disabled={!canChargeMissing}
               onClick={(e) => {
                 if (
@@ -1772,7 +1756,7 @@ export default function RunRemitPage() {
               type="submit"
               name="_intent"
               value="post-remit"
-              className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-slate-800 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-900 disabled:opacity-50"
               disabled={!canApproveNormal}
             >
               {run.status === "CLOSED"
