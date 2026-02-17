@@ -157,6 +157,51 @@ Actions:
 
 ---
 
+## Manager Remit Stock Shortage Flow (Unsold Missing)
+
+This is separate from cashier cash-remit variance.
+
+**Route:** `runs.$id.remit.tsx`
+
+### Stock Verification Rule
+
+- `unsold = loaded - sold`
+- For each `unsold > 0` product, manager chooses:
+  - `Stocks Present` → quantity returns to inventory
+  - `Mark Missing` → quantity becomes rider shortage charge basis
+
+### Valuation Source of Truth (for `Mark Missing`)
+
+Priority order:
+
+1. `RunReceiptLine.unitPrice` (ROAD frozen lines, weighted average)
+2. `OrderItem.unitPrice` (PARENT frozen lines, weighted average)
+3. `Product.srp` fallback
+4. `Product.price` fallback (last resort)
+
+### Charge Posting Rule
+
+When manager clicks **Charge Rider (Missing Stocks) & Close Run**:
+
+- System creates `RiderRunVariance` with:
+  - `status = MANAGER_APPROVED`
+  - `resolution = CHARGE_RIDER`
+  - `variance < 0` (negative shortage amount)
+- System creates/links `RiderCharge(status = OPEN)` via `varianceId`
+- Run is closed after posting
+
+### Rider Acknowledgement + Collection
+
+- Appears in rider queue (`rider.variances.tsx`) because:
+  - `status = MANAGER_APPROVED`
+  - `resolution = CHARGE_RIDER`
+  - `variance < 0`
+- Rider accepts in `rider.variance.$id.tsx` (`RIDER_ACCEPTED`)
+- Manager collection tracking in `store.rider-charges.tsx`
+- Actual payroll deduction/payment posting in `store.payroll.tsx`
+
+---
+
 ## Important Business Rules
 
 - Rider cannot ignore shortage
@@ -195,6 +240,9 @@ Business decision: **acceptable trade-off**.
 ### Manager
 
 - `/store/rider-variances`
+- `runs.$id.remit.tsx` (stock-missing charge decision)
+- `/store/rider-charges`
+- `/store/payroll`
 
 ### Rider
 

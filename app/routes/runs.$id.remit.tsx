@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
+import * as React from "react";
 import {
   Form,
   Link,
@@ -10,7 +11,7 @@ import {
   useNavigation,
 } from "@remix-run/react";
 import { db } from "~/utils/db.server";
-import { UnitKind, Prisma } from "@prisma/client";
+import { RiderChargeStatus, UnitKind, Prisma } from "@prisma/client";
 import { allocateReceiptNo } from "~/utils/receipt";
 import { loadRunRecap } from "~/services/runRecap.server";
 import { r2 as r2Money } from "~/utils/money";
@@ -92,8 +93,8 @@ type LoaderData = {
     riderLabel: string | null;
   };
   recapRows: RecapRow[];
+  stockVerificationRows: StockVerificationRow[];
   quickReceipts: QuickSaleReceipt[];
-  hasDiffIssues: boolean;
   parentOrders: ParentOrderRow[];
   totals: {
     roadsideCash: number;
@@ -109,6 +110,130 @@ type ActionData =
       ok: false;
       error: string;
     };
+
+type StockValueSource =
+  | "ROAD_FROZEN"
+  | "PARENT_FROZEN"
+  | "PRODUCT_SRP"
+  | "PRODUCT_PRICE";
+
+type StockVerificationRow = {
+  productId: number;
+  name: string;
+  loaded: number;
+  sold: number;
+  unsold: number;
+  unitValue: number | null;
+  valueSource: StockValueSource | null;
+};
+
+async function loadStockUnitValues(
+  runId: number,
+  productIds: number[],
+): Promise<Map<number, { unitValue: number | null; source: StockValueSource | null }>> {
+  const out = new Map<
+    number,
+    { unitValue: number | null; source: StockValueSource | null }
+  >();
+  const ids = Array.from(
+    new Set(productIds.filter((x) => Number.isFinite(x) && x > 0)),
+  );
+  if (!ids.length) return out;
+
+  // Priority 1: ROAD frozen lines (RunReceiptLine)
+  const roadLines = await db.runReceiptLine.findMany({
+    where: {
+      productId: { in: ids },
+      receipt: { runId, kind: "ROAD" },
+    },
+    select: { productId: true, qty: true, unitPrice: true },
+  });
+  const roadAgg = new Map<number, { qty: number; amt: number }>();
+  for (const ln of roadLines) {
+    const pid = Number(ln.productId);
+    const qty = Math.max(0, Number(ln.qty ?? 0));
+    const up = Math.max(0, Number(ln.unitPrice ?? 0));
+    if (pid <= 0 || qty <= 0 || up <= 0) continue;
+    const cur = roadAgg.get(pid) || { qty: 0, amt: 0 };
+    cur.qty += qty;
+    cur.amt += qty * up;
+    roadAgg.set(pid, cur);
+  }
+
+  // Priority 2: Parent frozen lines (OrderItem)
+  const parentLinks = await db.deliveryRunOrder.findMany({
+    where: { runId },
+    select: {
+      order: {
+        select: {
+          orderCode: true,
+          items: {
+            where: { productId: { in: ids } },
+            select: { productId: true, qty: true, unitPrice: true },
+          },
+        },
+      },
+    },
+  });
+  const parentAgg = new Map<number, { qty: number; amt: number }>();
+  for (const link of parentLinks) {
+    const o = link.order;
+    if (!o) continue;
+    if ((o.orderCode || "").startsWith("RS-")) continue;
+    for (const it of o.items || []) {
+      const pid = Number(it.productId);
+      const qty = Math.max(0, Number(it.qty ?? 0));
+      const up = Math.max(0, Number(it.unitPrice ?? 0));
+      if (pid <= 0 || qty <= 0 || up <= 0) continue;
+      const cur = parentAgg.get(pid) || { qty: 0, amt: 0 };
+      cur.qty += qty;
+      cur.amt += qty * up;
+      parentAgg.set(pid, cur);
+    }
+  }
+
+  const products = await db.product.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, srp: true, price: true },
+  });
+  const byProduct = new Map(
+    products.map((p) => [
+      p.id,
+      { srp: Number(p.srp ?? 0), price: Number(p.price ?? 0) },
+    ]),
+  );
+
+  for (const pid of ids) {
+    const road = roadAgg.get(pid);
+    if (road && road.qty > 0) {
+      out.set(pid, {
+        unitValue: r2(road.amt / road.qty),
+        source: "ROAD_FROZEN",
+      });
+      continue;
+    }
+    const parent = parentAgg.get(pid);
+    if (parent && parent.qty > 0) {
+      out.set(pid, {
+        unitValue: r2(parent.amt / parent.qty),
+        source: "PARENT_FROZEN",
+      });
+      continue;
+    }
+    const p = byProduct.get(pid);
+    if (p && p.srp > 0) {
+      out.set(pid, { unitValue: r2(p.srp), source: "PRODUCT_SRP" });
+      continue;
+    }
+    if (p && p.price > 0) {
+      out.set(pid, { unitValue: r2(p.price), source: "PRODUCT_PRICE" });
+      continue;
+    }
+    out.set(pid, { unitValue: null, source: null });
+  }
+
+  return out;
+}
 
 // ─────────────────────────────────────────
 // Loader: overview only (no editing)
@@ -415,7 +540,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // ✅ Use recap from service (stable, same as action guard)
   const recapRows: RecapRow[] = recap.recapRows;
-  const hasDiffIssues = recap.hasDiffIssues;
+  const stockVerificationRowsBase = recapRows.map((r) => ({
+    productId: r.productId,
+    name: r.name,
+    loaded: Number(r.loaded || 0),
+    sold: Number(r.sold || 0),
+    unsold: Math.max(0, Number(r.loaded || 0) - Number(r.sold || 0)),
+  }));
+  const unsoldProductIds = stockVerificationRowsBase
+    .filter((r) => r.unsold > 0)
+    .map((r) => r.productId);
+  const unitValues = await loadStockUnitValues(id, unsoldProductIds);
+  const stockVerificationRows: StockVerificationRow[] = stockVerificationRowsBase.map(
+    (r) => {
+      const v = unitValues.get(r.productId);
+      return {
+        ...r,
+        unitValue: v?.unitValue ?? null,
+        valueSource: v?.source ?? null,
+      };
+    },
+  );
 
   // ✅ SOURCE OF TRUTH for parent CASH: sum of RunReceipt(kind=PARENT).cashCollected per parentOrderId
   // This avoids mismatch when loadRunReceiptCashMaps() is incomplete/out-of-sync.
@@ -472,8 +617,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       riderLabel,
     },
     recapRows,
+    stockVerificationRows,
     quickReceipts,
-    hasDiffIssues,
     parentOrders,
     totals: {
       roadsideCash,
@@ -502,6 +647,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     (typeof (me as any).userId !== "undefined"
       ? `USER#${(me as any).userId}`
       : "MANAGER");
+  const managerApprovedById = Number((me as any).userId) || null;
   if (!Number.isFinite(id)) {
     return json<ActionData>(
       { ok: false, error: "Invalid ID" },
@@ -523,35 +669,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!run)
     return json<ActionData>({ ok: false, error: "Not found" }, { status: 404 });
 
-  // ✅ If already CLOSED, treat as idempotent "posted" (avoid double-post from stale tabs/manual POST)
-  if (intent === "post-remit" && run.status === "CLOSED") {
-    return redirect(`/runs/${id}/summary?posted=1`);
+  const isApproveIntent = intent === "post-remit";
+  const isChargeIntent = intent === "charge-remit";
+  if (!isApproveIntent && !isChargeIntent) {
+    return json<ActionData>(
+      { ok: false, error: "Unsupported intent." },
+      { status: 400 },
+    );
   }
 
-  // ─────────────────────────────────────
-  // INTENT: Revert back to DISPATCHED
-  // ─────────────────────────────────────
-  if (intent === "revert-to-dispatched") {
-    if (run.status !== "CHECKED_IN") {
-      return json<ActionData>(
-        { ok: false, error: "Only CHECKED_IN runs can be reverted." },
-        { status: 400 },
-      );
-    }
-
-    // ✅ Best practice (Option A):
-    // Revert should ONLY change the run status so the rider can edit again.
-    // Do NOT delete snapshots or receipts here.
-    // - Keep RunReceipt (ROAD/PARENT) as draft data (source of truth for UI hydration)
-    // - Keep riderCheckinSnapshot (returns draft)
-    // Manager can re-check later and post remit only when consistent.
-    await db.deliveryRun.update({
-      where: { id },
-      data: { status: "DISPATCHED" },
-    });
-
-    // balik kay rider para ma-edit niya ulit ang check-in
-    return redirect(`/runs/${id}/rider-checkin?reverted=1`);
+  // ✅ If already CLOSED, treat as idempotent "posted" (avoid double-post from stale tabs/manual POST)
+  if ((isApproveIntent || isChargeIntent) && run.status === "CLOSED") {
+    return redirect(`/runs/${id}/summary?posted=1`);
   }
 
   // ─────────────────────────────────────
@@ -582,23 +711,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  // ─────────────────────────────────────
-  // SERVER-SIDE DIFF GUARD (Option A) — Source of truth
-  // Prevent posting remit if Loaded != Sold + Returned
-  // ─────────────────────────────────────
-
   const recap = await loadRunRecap(db, id);
-  if (recap.hasDiffIssues) {
-    return json<ActionData>(
-      {
-        ok: false,
-        error:
-          "Cannot post remit: Stock recap mismatch. Revert to Dispatched and re-check rider check-in.\n" +
-          recap.diffIssues.join("\n"),
-      },
-      { status: 400 },
-    );
-  }
+  const stockRowsForDecision = recap.recapRows.map((row) => {
+    const loaded = Number(row.loaded || 0);
+    const sold = Number(row.sold || 0);
+    const unsold = Math.max(0, loaded - sold);
+    const decisionRaw = String(formData.get(`verify_${row.productId}`) || "");
+    const decision = decisionRaw === "missing" ? "missing" : "present";
+    return {
+      productId: row.productId,
+      name: row.name,
+      loaded,
+      sold,
+      unsold,
+      decision,
+    };
+  });
 
   // Pull soldRows from rider check-in snapshot
   // SOURCE OF TRUTH: RunReceipt kind=ROAD (receipt-level quick sales)
@@ -709,6 +837,82 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
+  const unsoldRows = stockRowsForDecision.filter((r) => r.unsold > 0);
+  const missingRowsRaw = unsoldRows.filter((r) => r.decision === "missing");
+
+  if (isApproveIntent && missingRowsRaw.length > 0) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "Cannot approve normal remit: some unsold items are marked missing. Use 'Charge Rider (Missing Stocks) & Close Run'.",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (isChargeIntent && missingRowsRaw.length === 0) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "No missing unsold items selected. Mark at least one unsold item as missing before charging rider.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const missingProductIds = missingRowsRaw.map((r) => r.productId);
+  const missingUnitValues = await loadStockUnitValues(id, missingProductIds);
+  const missingRows = missingRowsRaw.map((r) => {
+    const v = missingUnitValues.get(r.productId);
+    const unitValue = v?.unitValue ?? null;
+    const amount =
+      unitValue != null ? r2(Math.max(0, Number(r.unsold || 0)) * unitValue) : 0;
+    return {
+      ...r,
+      unitValue,
+      valueSource: v?.source ?? null,
+      amount,
+    };
+  });
+
+  const unpricedMissing = missingRows.filter((r) => r.unitValue == null);
+  if (unpricedMissing.length) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          "Cannot charge rider: some missing products have no valuation source.\n" +
+          unpricedMissing
+            .map((r) => `• ${r.name} (#${r.productId})`)
+            .join("\n"),
+      },
+      { status: 400 },
+    );
+  }
+
+  const missingTotal = r2(missingRows.reduce((s, r) => s + r.amount, 0));
+  if (isChargeIntent && missingTotal <= 0.009) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error: "Cannot charge rider: computed shortage value is zero.",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (isChargeIntent && !run.riderId) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error: "Cannot charge rider: run has no assigned rider.",
+      },
+      { status: 400 },
+    );
+  }
+
   // Price guard for remit:
   // ✅ NO PRICING ENGINE HERE.
   // Manager remit must NEVER recompute unit prices.
@@ -760,6 +964,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
       [e?.firstName, e?.lastName].filter(Boolean).join(" ") ||
       null;
   }
+
+  const returnRows = stockRowsForDecision
+    .filter((r) => r.unsold > 0 && r.decision !== "missing")
+    .map((r) => ({
+      productId: r.productId,
+      qty: r.unsold,
+      name: r.name,
+    }));
 
   await db.$transaction(async (tx) => {
     // ✅ Re-check status inside transaction (race safety)
@@ -891,10 +1103,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
 
     if (existingMoves.length === 0) {
-      // ✅ single source of truth: recap service (same numbers used by diff guard)
-      for (const row of recap.recapRows) {
+      // Return only rows manager verified as physically present (unsold, not marked missing).
+      for (const row of returnRows) {
         const pid = row.productId;
-        const qty = Math.max(0, Number(row.returned || 0));
+        const qty = Math.max(0, Number(row.qty || 0));
         if (qty <= 0) continue;
         await tx.product.update({
           where: { id: pid },
@@ -907,10 +1119,68 @@ export async function action({ request, params }: ActionFunctionArgs) {
             qty: new Prisma.Decimal(qty),
             refKind: "RUN",
             refId: id,
-            notes: "Run remit return (from recap)",
+            notes: "Run remit return (manager verified unsold present)",
           },
         });
       }
+    }
+
+    if (isChargeIntent && missingRows.length > 0 && run.riderId) {
+      const shortageNoteLines = missingRows.map((r) => {
+        const sourceLabel =
+          r.valueSource === "ROAD_FROZEN"
+            ? "ROAD_FROZEN"
+            : r.valueSource === "PARENT_FROZEN"
+              ? "PARENT_FROZEN"
+              : r.valueSource === "PRODUCT_SRP"
+                ? "PRODUCT_SRP"
+                : "PRODUCT_PRICE";
+        return `${r.name} (#${r.productId}) qty ${r.unsold} x ${r2(r.unitValue || 0)} = ${r.amount} [${sourceLabel}]`;
+      });
+      const shortageNote = [
+        "AUTO: remit stock shortage charge (manager verified missing unsold stocks).",
+        ...shortageNoteLines,
+      ].join(" | ");
+
+      const variance = await tx.riderRunVariance.create({
+        data: {
+          runId: id,
+          riderId: run.riderId,
+          expected: new Prisma.Decimal(missingTotal.toFixed(2)),
+          actual: new Prisma.Decimal("0.00"),
+          variance: new Prisma.Decimal((-missingTotal).toFixed(2)),
+          status: "MANAGER_APPROVED",
+          resolution: "CHARGE_RIDER",
+          managerApprovedAt: new Date(),
+          managerApprovedById:
+            managerApprovedById && managerApprovedById > 0
+              ? managerApprovedById
+              : null,
+          note: shortageNote,
+        },
+        select: { id: true },
+      });
+
+      await tx.riderCharge.upsert({
+        where: { varianceId: variance.id },
+        create: {
+          varianceId: variance.id,
+          runId: id,
+          riderId: run.riderId,
+          amount: new Prisma.Decimal(missingTotal.toFixed(2)),
+          status: RiderChargeStatus.OPEN,
+          note: shortageNote,
+          createdById:
+            managerApprovedById && managerApprovedById > 0
+              ? managerApprovedById
+              : null,
+        },
+        update: {
+          amount: new Prisma.Decimal(missingTotal.toFixed(2)),
+          status: RiderChargeStatus.OPEN,
+          note: shortageNote,
+        },
+      });
     }
 
     // Finally, CLOSE the run – dito nagiging CLOSED ang status
@@ -930,7 +1200,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 // React Page: overview + approve
 // ─────────────────────────────────────────
 export default function RunRemitPage() {
-  const { run, recapRows, quickReceipts, hasDiffIssues, parentOrders, totals } =
+  const { run, stockVerificationRows, quickReceipts, parentOrders, totals } =
     useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
@@ -950,6 +1220,37 @@ export default function RunRemitPage() {
   const parentCashTotal = totals.parentCash;
 
   const parentCreditTotal = totals.parentAR;
+  const [stockDecision, setStockDecision] = React.useState<
+    Record<number, "present" | "missing">
+  >(() =>
+    Object.fromEntries(
+      stockVerificationRows
+        .filter((r) => r.unsold > 0)
+        .map((r) => [r.productId, "present" as const]),
+    ),
+  );
+
+  const missingRowsPreview = stockVerificationRows
+    .filter((r) => r.unsold > 0 && stockDecision[r.productId] === "missing")
+    .map((r) => ({
+      ...r,
+      lineTotal:
+        r.unitValue != null ? r2(Math.max(0, r.unsold) * r.unitValue) : null,
+    }));
+
+  const missingPreviewTotal = r2(
+    missingRowsPreview.reduce((s, r) => s + Number(r.lineTotal || 0), 0),
+  );
+  const hasUnpricedMissing = missingRowsPreview.some((r) => r.unitValue == null);
+  const canApproveNormal =
+    run.status === "CHECKED_IN" &&
+    nav.state === "idle" &&
+    missingRowsPreview.length === 0;
+  const canChargeMissing =
+    run.status === "CHECKED_IN" &&
+    nav.state === "idle" &&
+    missingRowsPreview.length > 0 &&
+    !hasUnpricedMissing;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -982,7 +1283,7 @@ export default function RunRemitPage() {
             </div>
             <p className="mt-1 text-xs text-slate-500">
               Overview lang ito: check kung tama ang{" "}
-              <span className="font-medium">Loaded / Sold / Returned</span> at
+              <span className="font-medium">Loaded / Sold / Unsold</span> at
               listahan ng roadside sales bago i-approve.
             </p>
           </div>
@@ -1017,23 +1318,14 @@ export default function RunRemitPage() {
                   1. Stock Recap
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Auto-compute ng{" "}
-                  <span className="font-medium">
-                    Loaded vs Sold vs Returned
-                  </span>{" "}
-                  per product. Dapat{" "}
-                  <span className="font-mono">Loaded = Sold + Returned</span>.
+                  Manager verification ito ng unsold stocks: piliin kung{" "}
+                  <span className="font-medium">Stocks Present</span> o{" "}
+                  <span className="font-medium">Mark Missing</span> per item.
                 </p>
               </div>
-              {hasDiffIssues && (
-                <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                  May mga product na hindi nagtutugma ang Loaded vs Sold vs
-                  Returned. Gamitin muna ang{" "}
-                  <span className="font-semibold">“Revert to Dispatched”</span>{" "}
-                  sa ibaba para ma-edit ulit ng rider ang Check-in bago
-                  mag-approve ng remit.
-                </div>
-              )}
+              <div className="text-xs text-slate-500">
+                Mark Missing = rider charge candidate
+              </div>
             </div>
 
             <div className="overflow-x-auto px-4 py-3">
@@ -1043,31 +1335,29 @@ export default function RunRemitPage() {
                     <th className="px-3 py-2 text-left">Product</th>
                     <th className="px-3 py-2 text-right">Loaded</th>
                     <th className="px-3 py-2 text-right">Sold</th>
-                    <th className="px-3 py-2 text-right">Returned</th>
-                    <th className="px-3 py-2 text-right">
-                      Loaded − Sold − Ret
-                    </th>
+                    <th className="px-3 py-2 text-right">Unsold</th>
+                    <th className="px-3 py-2 text-center">Status</th>
+                    <th className="px-3 py-2 text-left">Manager Check</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recapRows.length === 0 ? (
+                  {stockVerificationRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-3 py-4 text-center text-slate-500"
                       >
                         No loadout snapshot or rider check-in data for this run.
                       </td>
                     </tr>
                   ) : (
-                    recapRows.map((r) => {
-                      const bad = r.diff !== 0;
+                    stockVerificationRows.map((r) => {
+                      const soldOnly = r.unsold <= 0.0001;
+                      const decision = stockDecision[r.productId] ?? "present";
                       return (
                         <tr
                           key={r.productId}
-                          className={`border-t border-slate-100 ${
-                            bad ? "bg-amber-50/70" : ""
-                          }`}
+                          className="border-t border-slate-100"
                         >
                           <td className="px-3 py-2">
                             {r.name}{" "}
@@ -1077,13 +1367,74 @@ export default function RunRemitPage() {
                           </td>
                           <td className="px-3 py-2 text-right">{r.loaded}</td>
                           <td className="px-3 py-2 text-right">{r.sold}</td>
-                          <td className="px-3 py-2 text-right">{r.returned}</td>
-                          <td
-                            className={`px-3 py-2 text-right font-mono ${
-                              bad ? "text-amber-700 font-semibold" : ""
-                            }`}
-                          >
-                            {r.diff}
+                          <td className="px-3 py-2 text-right">{r.unsold}</td>
+                          <td className="px-3 py-2 text-center">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
+                                soldOnly
+                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border border-amber-200 bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {soldOnly ? "Sold" : "Unsold"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {soldOnly ? (
+                              <span className="text-xs text-slate-500">
+                                Sold / OK
+                              </span>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                  type="hidden"
+                                  name={`verify_${r.productId}`}
+                                  value={decision}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setStockDecision((prev) => ({
+                                      ...prev,
+                                      [r.productId]: "present",
+                                    }))
+                                  }
+                                  className={`rounded-lg border px-2 py-1 text-xs font-medium ${
+                                    decision === "present"
+                                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                      : "border-slate-200 bg-white text-slate-600"
+                                  }`}
+                                >
+                                  Stocks Present
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setStockDecision((prev) => ({
+                                      ...prev,
+                                      [r.productId]: "missing",
+                                    }))
+                                  }
+                                  className={`rounded-lg border px-2 py-1 text-xs font-medium ${
+                                    decision === "missing"
+                                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                                      : "border-slate-200 bg-white text-slate-600"
+                                  }`}
+                                >
+                                  Mark Missing
+                                </button>
+                                {decision === "missing" ? (
+                                  <span className="text-[11px] text-rose-700">
+                                    Charge preview:{" "}
+                                    <span className="font-semibold">
+                                      {r.unitValue != null
+                                        ? peso(r2(r.unitValue * r.unsold))
+                                        : "No value source"}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1093,14 +1444,25 @@ export default function RunRemitPage() {
               </table>
             </div>
 
-            {hasDiffIssues && (
-              <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                May mga product na hindi nagtutugma ang Loaded vs Sold vs
-                Returned. Paki-open muna ang{" "}
-                <span className="font-semibold">Rider Check-in</span> page para
-                i-correct bago mag-approve ng remit.
+            {missingRowsPreview.length > 0 ? (
+              <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+                <div className="font-semibold">
+                  Missing stock reminder ({missingRowsPreview.length} item
+                  {missingRowsPreview.length > 1 ? "s" : ""})
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {missingRowsPreview.map((r) => (
+                    <div key={`missing-${r.productId}`}>
+                      • {r.name} #{r.productId} · qty {r.unsold} ·{" "}
+                      {r.lineTotal != null ? peso(r.lineTotal) : "No value source"}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1 font-semibold">
+                  Total rider charge preview: {peso(missingPreviewTotal)}
+                </div>
               </div>
-            )}
+            ) : null}
           </section>
 
           {/* Parent POS orders (from Order Pad / Cashier) */}
@@ -1384,36 +1746,42 @@ export default function RunRemitPage() {
 
           {/* Submit / Approve */}
           <div className="sticky bottom-4 flex flex-col gap-2">
-            {/* Revert button – allow manager to send back to rider */}
-            {run.status === "CHECKED_IN" && (
-              <button
-                type="submit"
-                name="_intent"
-                value="revert-to-dispatched"
-                className="inline-flex w-full items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:opacity-50"
-                disabled={nav.state !== "idle"}
-              >
-                ⤺ Revert to Dispatched (allow rider to edit Check-in)
-              </button>
-            )}
+            <button
+              type="submit"
+              name="_intent"
+              value="charge-remit"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-800 shadow-sm transition hover:bg-rose-100 disabled:opacity-50"
+              disabled={!canChargeMissing}
+              onClick={(e) => {
+                if (
+                  !window.confirm(
+                    "Proceed to charge rider for all items marked as missing and close this run?",
+                  )
+                ) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              {hasUnpricedMissing
+                ? "Cannot charge: missing value source for some items"
+                : nav.state !== "idle"
+                  ? "Posting…"
+                  : "Charge Rider (Missing Stocks) & Close Run"}
+            </button>
             <button
               type="submit"
               name="_intent"
               value="post-remit"
               className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
-              disabled={
-                nav.state !== "idle" ||
-                run.status !== "CHECKED_IN" ||
-                hasDiffIssues
-              }
+              disabled={!canApproveNormal}
             >
-              {hasDiffIssues
-                ? "Cannot post: fix mismatches in Rider Check-in first"
-                : run.status === "CLOSED"
+              {run.status === "CLOSED"
                 ? "Run already closed"
                 : nav.state !== "idle"
-                ? "Posting…"
-                : "Approve Remit & Close Run"}
+                  ? "Posting…"
+                  : missingRowsPreview.length > 0
+                    ? "Use charge action for missing stocks"
+                    : "Approve Remit & Close Run"}
             </button>
           </div>
         </Form>
