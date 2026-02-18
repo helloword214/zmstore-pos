@@ -1,5 +1,13 @@
 # 🔒 Pricing & Collection Architecture — Why This Exists
 
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/RunReceipt_Architecture.md`
+> - `docs/guide/Commercial Clearance System V2`
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 ## Purpose of This Document
 
 This document exists to answer ONE question in the future:

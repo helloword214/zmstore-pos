@@ -1,0 +1,57 @@
+# Guide Index
+
+Status: LOCKED
+Owner: POS Platform
+Last Reviewed: 2026-02-18
+
+This folder contains both binding rules and historical implementation notes.
+Use the sections below to avoid outdated references.
+
+## A. Canonical (Binding)
+
+Use these as source of truth for implementation and review:
+
+1. `Commercial Clearance System V2`
+2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+3. `DIAGRAMS_DELIVERY_CSS_AR.md`
+4. `Accounts Receivable — Canonical Source of Truth (SoT)`
+5. `RIDER_SHORTAGE_WORKFLOW.md`
+6. `RunReceipt_Architecture.md`
+
+Current route-level mapping coverage (canonical):
+
+1. `store.dispatch.tsx`
+2. `runs.$id.dispatch.tsx`
+3. `runs.$id.summary.tsx`
+4. `runs.$id.rider-checkin.tsx`
+5. `store.clearance.tsx`
+6. `store.clearance_.$caseId.tsx`
+7. `runs.$id.remit.tsx`
+8. `cashier.delivery._index.tsx`
+9. `cashier.delivery.$runId.tsx`
+10. `delivery-remit.$id.tsx`
+11. `ar._index.tsx`
+12. `ar.customers.$id.tsx`
+
+## B. Supporting (Context / Detailed Rationale)
+
+1. `Clearance CSS Alignment Rules.md`
+2. `Remit_Cleanup_Checklist.md`
+
+These help implementation but must not override Canonical docs.
+
+## C. Deprecated or Plan-Only (Do Not Use as Authority)
+
+See `../archive/README.md` for the current deprecation list and superseding docs.
+Archived guide files now live under `../archive/guide/`.
+
+## D. Conflict Rule inside `docs/guide`
+
+When two guide docs conflict, apply this order:
+
+1. `Commercial Clearance System V2`
+2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+3. `DIAGRAMS_DELIVERY_CSS_AR.md`
+4. `Accounts Receivable — Canonical Source of Truth (SoT)`
+5. `RIDER_SHORTAGE_WORKFLOW.md`
+6. all other guide docs

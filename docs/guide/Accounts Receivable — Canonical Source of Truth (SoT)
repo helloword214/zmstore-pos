@@ -1,250 +1,70 @@
 # Accounts Receivable (AR) — Source of Truth (SoT)
 
-Version: v1 (Draft for Smoke Test)
+Status: LOCKED
+Owner: POS Platform
+Last Reviewed: 2026-02-18
+Supersedes: legacy status-based AR listing rules
 
 ## Scope
 
-Defines the canonical rules for:
+Defines canonical rules for:
 
-- Customer charges (debits)
-- Customer payments / settlements (credits)
-- Cashier drawer truth
-- Rider shortage handling
-- Consistency across DELIVERY and WALK-IN
+- AR list eligibility
+- customer ledger balances
+- relationship between CSS decisions and AR
+- separation of customer AR vs rider/cashier variance workflows
 
-This document applies to:
+## Non-Negotiable AR Authority
 
-- AR Index
-- Customer Ledger
-- Statement of Account (SOA)
+1. AR balance comes from `customerAr` entries only.
+2. `customerAr` is created only from manager-approved CSS decisions where `arBalance > 0`.
+3. `Order.status` (`UNPAID`, `PARTIALLY_PAID`) is operational only; not AR authority.
+4. `isOnCredit` is operational/display only; not AR authority.
 
----
+## Commercial Decision Mapping
 
-## 1. Core Principles (Ukit-sa-Bato)
+For a receipt with `remaining = frozenTotal - cashCollected`:
 
-1. **Customer fairness comes first**
+1. `APPROVE_OPEN_BALANCE` -> `arBalance = remaining` -> create/update `customerAr`.
+2. `APPROVE_HYBRID` -> `arBalance = remaining - approvedDiscount` -> create/update `customerAr` for AR part.
+3. `APPROVE_DISCOUNT_OVERRIDE` -> `arBalance = 0` -> no AR entry.
+4. `REJECT` -> no AR entry unless customer later pays/settles under accepted rule.
 
-   - If customer already paid, the order is considered settled from the customer’s perspective.
+## AR Index Eligibility Rule
 
-2. **No recomputation in AR**
+A customer appears in AR list only when:
 
-   - AR must NEVER call pricing engines or recompute discounts.
-   - AR reads only frozen values.
+- customer has at least one `customerAr` row with open `balance > 0`.
 
-3. **Separate truths**
-   - Customer settlement truth ≠ Cashier drawer truth.
-   - Rider shortages are NEVER customer utang.
+Not valid as inclusion criteria by themselves:
 
----
+- open order status
+- partial payment state
+- run still in turnover processing
 
-## 2. Canonical Source of Truth — ORDER CHARGE (Debit)
+## Customer Ledger Rule
 
-### Definition
+Customer ledger debit/credit must be decision-traceable:
 
-**Charge Amount** = amount owed by customer for an order.
+1. Debits: from approved `customerAr` principal/balance states.
+2. Credits: payments applied to `customerAr` balances.
+3. Rider shortage bridge lines are rider-accountability artifacts and must not create new customer AR principal.
 
-### Primary SoT (required)
+## Data Source Matrix
 
-- **Sum of frozen line totals**
-  - `OrderItem.lineTotal` (WALK-IN, PAD, normal DELIVERY)
-  - `RunReceiptLine.lineTotal` (ROAD / origin receipt orders)
+1. AR Principal SoT: `customerAr.principal`, `customerAr.balance`, `customerAr.status`.
+2. Decision Trace SoT: `clearanceDecision` linked to `customerAr.clearanceDecisionId`.
+3. Frozen commercial basis SoT: `OrderItem.lineTotal` and `RunReceiptLine.lineTotal`.
 
-> Charge = Σ(lineTotal)
+## Explicit Anti-Rules
 
-### Priority Rule
+1. Do not compute AR as `order total - payments` for list eligibility.
+2. Do not rely on `PARTIALLY_PAID` to classify AR.
+3. Do not create customer AR from cashier turnover shortage alone.
+4. Do not infer discount/AR without manager CSS decision.
 
-1. If `originRunReceipt.lines` exist → use `RunReceiptLine.lineTotal`
-2. Else if parent `RunReceipt.lines` exist → use `RunReceiptLine.lineTotal`
-3. Else → use `OrderItem.lineTotal`
+## Operational Notes
 
-### Explicit Non-Rules
-
-- ❌ Do NOT use `Product.price`, `Product.srp`
-- ❌ Do NOT call `applyDiscounts`
-- ❌ Do NOT infer discounts
-- ❌ Do NOT recompute totals in AR
-
----
-
-## 3. Canonical Source of Truth — PAYMENTS / CREDITS
-
-### Payment Record
-
-All settlements are recorded in `Payment` table.
-
-Relevant fields:
-
-- `amount`
-- `method`
-- `refNo`
-- `cashierId`
-- `shiftId`
-
----
-
-## 4. Two Different Truths (IMPORTANT)
-
-### A. Customer Settlement Truth (AR / SOA)
-
-Counts **anything that settles customer liability**.
-
-Included:
-
-- `CASH`
-- future: `GCASH`, `CARD`
-- `INTERNAL_CREDIT` **ONLY IF** it represents:
-  > “Customer already paid, cashier received less → rider shortage bridge”
-
-Excluded:
-
-- ❌ Rider payroll deductions
-- ❌ Rider personal liabilities
-
-**Effect:**
-
-- Reduces customer balance
-- Order may become `PAID`
-
----
-
-### B. Cashier Drawer Truth (Shift / Cash on Hand)
-
-Counts **physical cash only**.
-
-Included:
-
-- `Payment.method === "CASH"`
-
-Excluded:
-
-- `INTERNAL_CREDIT`
-- future non-cash methods
-
-**Effect:**
-
-- Used for shift balancing
-- Used for variance detection
-
----
-
-## 5. INTERNAL_CREDIT — Rider Shortage Bridge
-
-### Meaning
-
-`INTERNAL_CREDIT` = system settlement line when:
-
-- `riderCash == orderFinal`
-- cashier received less cash
-- shortage is rider’s fault
-
-### Rules
-
-- Appears in **customer ledger** as settlement
-- Does NOT go to cashier drawer
-- Does NOT create customer utang
-- Linked to `RiderRunVariance`
-- Rider pays this later via payroll deduction
-
-> “Wag idamay ang rider shortage sa customer.”
-
----
-
-## 6. Customer Ledger (AR) — Behavior
-
-### Ledger Rows
-
-- **Charge** → from frozen order charge
-- **Payment / Settlement** → from Payment records
-
-### Balance Formula
-
-Customer Balance
-= Σ(Charges)
-− Σ(Settlement Credits)
-
-Where:
-
-- Settlement Credits = CASH + INTERNAL_CREDIT (bridge)
-
----
-
-## 7. Where Customer Payments Are Recorded
-
-### Entry Point
-
-**Customer Ledger page** (`/ar/customers/:id`)
-
-### Behavior
-
-- Accepts customer payment (CASH for now)
-- Creates `Payment` record
-- Allocates to oldest open orders (FIFO) or selected order
-- Updates order status:
-  - `PAID` if fully settled
-  - `PARTIALLY_PAID` otherwise
-
-### Result
-
-- Customer SOA updated
-- Cashier drawer updated
-- No effect on rider shortage records
-
----
-
-## 8. AR Index Page
-
-### Purpose
-
-- Read-only summary
-- No recomputation
-- No payments here
-
-Displays:
-
-- Customer
-- Total open balance
-- Open orders count
-- Link to Ledger
-
----
-
-## 9. Statement of Account (SOA)
-
-### Purpose
-
-- Read-only
-- Printable
-- Period-based view
-
-Rules:
-
-- Uses same charge + settlement logic
-- Running balance never goes negative
-- INTERNAL_CREDIT shown as settlement (labeled clearly)
-
----
-
-## 10. Status Alignment
-
-- Order `PAID`
-  - Customer balance for that order = 0
-- Order `PARTIALLY_PAID`
-  - Balance > 0
-- Rider shortage does NOT affect order status once bridged
-
----
-
-## 11. Smoke Test Checklist
-
-- [ ] Delivery order with rider shortage → customer balance = 0
-- [ ] Cash drawer shows only actual cash
-- [ ] Customer later pays → recorded in ledger, drawer increases
-- [ ] AR index matches ledger totals
-- [ ] SOA matches ledger running balance
-
----
-
-## Status
-
-**DRAFT – v1**
-Subject to revision after smoke testing.
+1. A customer may have multiple approved utang events across weeks.
+2. Each approved event appends to the same customer ledger via new/updated `customerAr` records.
+3. Ledger continuity is per customer, decision-driven, and auditable.
