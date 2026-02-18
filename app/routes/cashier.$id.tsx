@@ -4,6 +4,7 @@
 /* Patch: taga-sa-bato guard — block cashier settle if any lineTotal is missing (read-only totals). */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
+import { Prisma } from "@prisma/client";
 import { r2, peso } from "~/utils/money";
 import {
   useLoaderData,
@@ -23,6 +24,34 @@ import { sumAllPayments, EPS } from "~/services/settlementSoT";
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
 
+type ClearanceDecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+type ClearanceClaimTypeUI = "OPEN_BALANCE" | "PRICE_BARGAIN" | "OTHER";
+
+const parseClearanceDecisionKind = (
+  raw: unknown,
+): ClearanceDecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+    ? "APPROVE_OPEN_BALANCE"
+    : raw === "APPROVE_DISCOUNT_OVERRIDE"
+    ? "APPROVE_DISCOUNT_OVERRIDE"
+    : raw === "APPROVE_HYBRID"
+    ? "APPROVE_HYBRID"
+    : null;
+
+const normalizeClearanceClaimType = (raw: unknown): ClearanceClaimTypeUI =>
+  raw === "PRICE_BARGAIN"
+    ? "PRICE_BARGAIN"
+    : raw === "OTHER"
+    ? "OTHER"
+    : "OPEN_BALANCE";
+
 function isMineLock(lockedBy: unknown, meId: string) {
   const v = String(lockedBy ?? "");
   if (!v) return false;
@@ -41,6 +70,19 @@ type LoaderData = {
   lockedByLabel: string | null;
   canClaim: boolean;
   meId: string;
+  clearance: {
+    caseId: number | null;
+    receiptKey: string;
+    status: "NEEDS_CLEARANCE" | "DECIDED" | null;
+    decisionKind: ClearanceDecisionKindUI | null;
+    intent: ClearanceClaimTypeUI | null;
+    note: string | null;
+    flaggedAt: string | null;
+    snapshotCashCollected: number;
+    snapshotFrozenTotal: number;
+    approvedBargainDiscount: number;
+    approvedArAmount: number;
+  };
 };
 
 type FrozenLine = {
@@ -165,6 +207,59 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 
   if (!order) throw new Response("Not found", { status: 404 });
+  const receiptKey = `PARENT:${order.id}`;
+
+  const clearanceCase = await db.clearanceCase.findUnique({
+    where: { receiptKey } as any,
+    select: {
+      id: true,
+      status: true,
+      note: true,
+      flaggedAt: true,
+      frozenTotal: true,
+      cashCollected: true,
+      claims: {
+        select: { type: true },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+      decisions: {
+        select: {
+          kind: true,
+          arBalance: true,
+          overrideDiscountApproved: true,
+          customerAr: {
+            select: {
+              principal: true,
+              balance: true,
+            },
+          },
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+    },
+  });
+  const latestDecision = clearanceCase?.decisions?.[0];
+  const decisionArAmount = r2(Math.max(0, Number(latestDecision?.arBalance ?? 0)));
+  const approvedArAmount = r2(
+    Math.max(
+      0,
+      Number(
+        latestDecision?.customerAr?.principal ??
+          latestDecision?.customerAr?.balance ??
+          decisionArAmount,
+      ),
+    ),
+  );
+  const approvedBargainDiscount = r2(
+    Math.max(0, Number(latestDecision?.overrideDiscountApproved ?? 0)),
+  );
+  const clearanceStatus =
+    clearanceCase?.status === "NEEDS_CLEARANCE" ||
+    clearanceCase?.status === "DECIDED"
+      ? clearanceCase.status
+      : null;
 
   // lockedBy is a USER id string (new) or "CASHIER-<id>" (legacy).
   function extractUserIdFromLock(lockedBy: unknown) {
@@ -235,6 +330,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     lockedByLabel,
     canClaim,
     meId,
+    clearance: {
+      caseId: clearanceCase?.id ? Number(clearanceCase.id) : null,
+      receiptKey,
+      status: clearanceStatus,
+      decisionKind: parseClearanceDecisionKind(latestDecision?.kind),
+      intent: clearanceCase?.claims?.[0]?.type
+        ? normalizeClearanceClaimType(clearanceCase.claims[0].type)
+        : null,
+      note: clearanceCase?.note ?? null,
+      flaggedAt: clearanceCase?.flaggedAt
+        ? new Date(clearanceCase.flaggedAt as any).toISOString()
+        : null,
+      snapshotCashCollected: r2(
+        Math.max(0, Number(clearanceCase?.cashCollected ?? 0)),
+      ),
+      snapshotFrozenTotal: r2(
+        Math.max(0, Number(clearanceCase?.frozenTotal ?? 0)),
+      ),
+      approvedBargainDiscount,
+      approvedArAmount,
+    },
   });
 }
 
@@ -334,8 +450,170 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect(`${url.pathname}${url.search || ""}`);
   }
 
+  if (act === "sendClearance") {
+    const sendNote = String(fd.get("clearanceReason") || "")
+      .trim()
+      .slice(0, 500);
+    const rawIntent = String(fd.get("clearanceIntent") || "").trim();
+    const sendIntent: "OPEN_BALANCE" | "PRICE_BARGAIN" =
+      rawIntent === "PRICE_BARGAIN" ? "PRICE_BARGAIN" : "OPEN_BALANCE";
+    const sendCashGiven = Number(fd.get("sendCashGiven") || 0);
+
+    if (!sendNote) {
+      return json(
+        {
+          ok: false,
+          error: "Clearance reason is required before sending to manager.",
+        },
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(sendCashGiven) || sendCashGiven < 0) {
+      return json(
+        { ok: false, error: "Invalid cash value for clearance snapshot." },
+        { status: 400 },
+      );
+    }
+
+    const order = await db.order.findUnique({
+      where: { id },
+      include: { items: true, payments: true },
+    });
+    if (!order)
+      return json({ ok: false, error: "Order not found" }, { status: 404 });
+    if (order.channel !== "PICKUP") {
+      return json(
+        { ok: false, error: "This page is for WALK-IN orders only." },
+        { status: 400 },
+      );
+    }
+    if (order.status !== "UNPAID" && order.status !== "PARTIALLY_PAID") {
+      return json(
+        { ok: false, error: "Order is already settled/voided" },
+        { status: 400 },
+      );
+    }
+    const sendMeId = String(me.userId);
+    const sendNowMs = Date.now();
+    const sendLockExpiresAtMs = order.lockedAt
+      ? order.lockedAt.getTime() + LOCK_TTL_MS
+      : null;
+    const hasFreshLockForSend =
+      !!order.lockedAt &&
+      !!order.lockedBy &&
+      sendLockExpiresAtMs != null &&
+      sendLockExpiresAtMs > sendNowMs;
+    if (!hasFreshLockForSend || !isMineLock(order.lockedBy, sendMeId)) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Please click “Start settlement” first to claim the lock before sending clearance.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const hasFrozenLineTotals =
+      (order.items ?? []).length > 0 &&
+      (order.items as any[]).every((it) => it?.lineTotal != null);
+    if (!hasFrozenLineTotals) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Totals are not frozen yet (missing line totals). Please finalize/freeze this order first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (sendIntent === "OPEN_BALANCE" && !order.customerId) {
+      return json(
+        {
+          ok: false,
+          error:
+            "OPEN_BALANCE requires customer record. Attach a customer first in order/PAD flow.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const alreadyPaid = sumAllPayments(order.payments);
+    const frozenTotal = r2(
+      (order.items ?? []).reduce(
+        (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+        0,
+      ),
+    );
+    const dueBefore = Math.max(0, frozenTotal - alreadyPaid);
+    const appliedNow = Math.min(Math.max(0, sendCashGiven), dueBefore);
+    const snapshotCashCollected = r2(alreadyPaid + appliedNow);
+    const snapshotRemaining = Math.max(0, r2(frozenTotal - snapshotCashCollected));
+    if (snapshotRemaining <= EPS) {
+      return json(
+        {
+          ok: false,
+          error:
+            "No remaining balance after the current cash snapshot. Clearance is only for kulang/utang/discount cases.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const receiptKey = `PARENT:${order.id}`;
+    try {
+      await db.$transaction(async (tx) => {
+        const existing = await tx.clearanceCase.findUnique({
+          where: { receiptKey } as any,
+          select: { id: true, status: true },
+        });
+        if (existing) {
+          throw new Error(
+            `Clearance already exists for this order (case #${existing.id}, status: ${existing.status}).`,
+          );
+        }
+
+        const created = await tx.clearanceCase.create({
+          data: {
+            receiptKey,
+            status: "NEEDS_CLEARANCE",
+            origin: "CASHIER",
+            flaggedAt: new Date(),
+            ...(me?.userId ? { flaggedById: Number(me.userId) } : {}),
+            note: sendNote,
+            frozenTotal: new Prisma.Decimal(frozenTotal.toFixed(2)),
+            cashCollected: new Prisma.Decimal(snapshotCashCollected.toFixed(2)),
+            orderId: order.id,
+            customerId: order.customerId ?? null,
+          } as any,
+          select: { id: true },
+        });
+
+        await tx.clearanceClaim.create({
+          data: {
+            caseId: Number(created.id),
+            type: sendIntent,
+          } as any,
+        });
+      });
+    } catch (e: any) {
+      return json(
+        {
+          ok: false,
+          error: String(e?.message || "Failed to send clearance."),
+        },
+        { status: 400 },
+      );
+    }
+
+    const qs = new URLSearchParams(url.searchParams);
+    qs.set("clearance_sent", "1");
+    return redirect(`${url.pathname}?${qs.toString()}`);
+  }
+
   if (act === "settlePayment") {
-    const cashGiven = Number(fd.get("cashGiven") || 0);
+    const requestedCashGiven = Number(fd.get("cashGiven") || 0);
     const printReceipt = fd.get("printReceipt") === "1";
     const releaseWithBalance = fd.get("releaseWithBalance") === "1";
     const releasedApprovedBy =
@@ -351,17 +629,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       request,
       next: `${url.pathname}${url.search || ""}`,
     });
-
-    // Cashier requires an actual payment (> 0). Full utang is a separate flow.
-    if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
-      return json(
-        {
-          ok: false,
-          error: "Enter cash > 0. For full utang, use “Record as Credit”.",
-        },
-        { status: 400 },
-      );
-    }
 
     // Load order (with items + payments for running balance)
     const order = await db.order.findUnique({
@@ -468,25 +735,177 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     const byId = new Map(products.map((p) => [p.id, p]));
 
+    const receiptKey = `PARENT:${order.id}`;
+    const clearanceCase = await db.clearanceCase.findUnique({
+      where: { receiptKey } as any,
+      select: {
+        id: true,
+        status: true,
+        cashCollected: true,
+        decisions: {
+          select: {
+            kind: true,
+            arBalance: true,
+            overrideDiscountApproved: true,
+            customerAr: {
+              select: {
+                principal: true,
+                balance: true,
+              },
+            },
+          },
+          orderBy: { id: "desc" },
+          take: 1,
+        },
+      },
+    });
+    const latestDecision = clearanceCase?.decisions?.[0];
+    const clearanceStatus =
+      clearanceCase?.status === "NEEDS_CLEARANCE" ||
+      clearanceCase?.status === "DECIDED"
+        ? clearanceCase.status
+        : null;
+    const decisionKind = parseClearanceDecisionKind(latestDecision?.kind);
+    const approvedBargainDiscount = r2(
+      Math.max(0, Number(latestDecision?.overrideDiscountApproved ?? 0)),
+    );
+    const decisionArAmount = r2(
+      Math.max(0, Number(latestDecision?.arBalance ?? 0)),
+    );
+    const approvedArAmount = r2(
+      Math.max(
+        0,
+        Number(
+          latestDecision?.customerAr?.principal ??
+            latestDecision?.customerAr?.balance ??
+            decisionArAmount,
+        ),
+      ),
+    );
     const dueBefore = Math.max(0, total - alreadyPaid);
+    const hasClearanceCase = !!clearanceCase;
+    const lockedSnapshotCashGiven = hasClearanceCase
+      ? Math.max(0, r2(Number(clearanceCase?.cashCollected ?? 0) - alreadyPaid))
+      : 0;
+
+    if (!Number.isFinite(requestedCashGiven) || requestedCashGiven < 0) {
+      return json(
+        { ok: false, error: "Invalid cash input." },
+        { status: 400 },
+      );
+    }
+    if (
+      hasClearanceCase &&
+      Math.abs(requestedCashGiven - lockedSnapshotCashGiven) > EPS
+    ) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Cash received is locked by the sent clearance snapshot. Refresh and use the locked amount.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const cashGiven = hasClearanceCase
+      ? lockedSnapshotCashGiven
+      : requestedCashGiven;
+    if (!hasClearanceCase && cashGiven <= 0) {
+      return json(
+        {
+          ok: false,
+          error: "Enter cash > 0. For full utang, use “Record as Credit”.",
+        },
+        { status: 400 },
+      );
+    }
+
     const appliedPayment = Math.min(Math.max(0, cashGiven), dueBefore);
     const change = Math.max(0, cashGiven - appliedPayment);
     const nowPaid = alreadyPaid + appliedPayment;
     const remaining = Math.max(0, total - nowPaid);
 
-    // For utang/partial balance, require a customer to carry the balance
-    if (remaining > 0 && !effectiveCustomerId) {
+    const needsClearance = remaining > EPS;
+    const appliedDecisionDiscount = needsClearance
+      ? Math.min(remaining, approvedBargainDiscount)
+      : 0;
+    const appliedDecisionAr = needsClearance
+      ? Math.min(
+          Math.max(0, remaining - appliedDecisionDiscount),
+          approvedArAmount,
+        )
+      : 0;
+    const remainingAfterCommercial = Math.max(
+      0,
+      r2(remaining - appliedDecisionDiscount - appliedDecisionAr),
+    );
+
+    // ✅ HARD BLOCK: when kulang, cashier cannot submit unless valid manager clearance exists.
+    if (needsClearance && !clearanceStatus) {
       return json(
         {
           ok: false,
           error:
-            "This order has a remaining balance but has no customer attached. Customer is read-only at cashier — please attach a customer in the order/PAD flow first.",
+            "Kulang pa ang bayad. Send for clearance first before submitting.",
         },
         { status: 400 },
       );
     }
-    // If releasing goods with balance, require manager approval note
-    if (remaining > 0 && releaseWithBalance && !releasedApprovedBy) {
+    if (needsClearance && clearanceStatus === "NEEDS_CLEARANCE") {
+      return json(
+        {
+          ok: false,
+          error:
+            "Clearance is still pending manager decision. Submit is blocked.",
+        },
+        { status: 400 },
+      );
+    }
+    if (needsClearance && decisionKind === "REJECT") {
+      return json(
+        {
+          ok: false,
+          error:
+            "Manager rejected this clearance. Collect full cash or ask manager to issue a new decision.",
+        },
+        { status: 400 },
+      );
+    }
+    if (needsClearance && !decisionKind) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Clearance has no valid manager decision yet. Submit is blocked.",
+        },
+        { status: 400 },
+      );
+    }
+    if (needsClearance && remainingAfterCommercial > EPS) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Current payment is still below manager-approved clearance coverage. Increase cash or ask manager to update the decision.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // For approved A/R outcome, customer record is mandatory.
+    if (appliedDecisionAr > EPS && !effectiveCustomerId) {
+      return json(
+        {
+          ok: false,
+          error:
+            "This approval requires OPEN_BALANCE but order has no customer attached. Attach customer in order/PAD flow first.",
+        },
+        { status: 400 },
+      );
+    }
+    // If releasing goods while A/R remains, require manager approval note.
+    if (appliedDecisionAr > EPS && releaseWithBalance && !releasedApprovedBy) {
       return json(
         {
           ok: false,
@@ -539,8 +958,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     // WALK-IN/PICKUP: deduct stock only when fully paid OR released with balance.
+    const hasArOutstanding = appliedDecisionAr > EPS;
     const willDeductNow =
-      remaining <= EPS || (releaseWithBalance && !order.releasedAt);
+      (!hasArOutstanding && remainingAfterCommercial <= EPS) ||
+      (hasArOutstanding && releaseWithBalance && !order.releasedAt);
 
     if (errors.length && willDeductNow) {
       return json({ ok: false, errors }, { status: 400 });
@@ -596,8 +1017,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       // 3) Update order status & fields
-      if (remaining <= EPS) {
-        // Fully paid
+      if (!hasArOutstanding && remainingAfterCommercial <= EPS) {
+        // Fully settled: paid cash and/or approved discount override
         const receiptNo = await allocateReceiptNo(tx);
         await tx.order.update({
           where: { id: order.id },
@@ -618,7 +1039,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           },
         });
       } else {
-        // Partial payment
+        // Partial with approved OPEN_BALANCE / HYBRID
         await tx.order.update({
           where: { id: order.id },
           data: {
@@ -664,13 +1085,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function CashierOrder() {
-  const { order, isStale, lockExpiresAt, lockedByLabel, canClaim, meId } =
+  const { order, isStale, lockExpiresAt, lockedByLabel, canClaim, meId, clearance } =
     useLoaderData<LoaderData>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
+  const alreadyPaid = sumAllPayments(order.payments);
+  const initialCashGivenFromSnapshot =
+    clearance.caseId != null
+      ? Math.max(0, r2(clearance.snapshotCashCollected - alreadyPaid))
+      : 0;
   const [printReceipt, setPrintReceipt] = React.useState(true); // default: checked like order-pad toggle
   // Cash input + change preview
-  const [cashGiven, setCashGiven] = React.useState("");
+  const [cashGiven, setCashGiven] = React.useState<string>(() =>
+    clearance.caseId != null ? initialCashGivenFromSnapshot.toFixed(2) : "",
+  );
 
   const [remaining, setRemaining] = React.useState(
     lockExpiresAt ? lockExpiresAt - Date.now() : 0,
@@ -722,7 +1150,6 @@ export default function CashierOrder() {
 
   // 🔢 Use discounted total for payment figures (UI)
   // ✅ WALK-IN settlement truth: ALL payments count against remaining balance
-  const alreadyPaid = sumAllPayments(order.payments);
   const entered = Number(cashGiven) || 0;
   // ✅ “taga-sa-bato” alignment:
   // UI payment math should also be based on frozen line totals (same as action)
@@ -738,8 +1165,74 @@ export default function CashierOrder() {
     0,
     effectiveTotal - alreadyPaid - entered,
   );
-  const willBePartial = balanceAfterThisPayment > 0;
   const hasCustomer = Boolean(order.customerId);
+  React.useEffect(() => {
+    if (clearance.caseId == null) return;
+    const next = initialCashGivenFromSnapshot.toFixed(2);
+    setCashGiven((prev) => (prev === next ? prev : next));
+  }, [clearance.caseId, initialCashGivenFromSnapshot]);
+
+  const snapshotCashNow = clearance.caseId
+    ? Math.max(0, r2(clearance.snapshotCashCollected - alreadyPaid))
+    : Math.min(dueBefore, Math.max(0, entered));
+  const snapshotRemaining = clearance.caseId
+    ? Math.max(0, r2(clearance.snapshotFrozenTotal - clearance.snapshotCashCollected))
+    : balanceAfterThisPayment;
+  const hasClearanceCase = clearance.caseId != null;
+  const clearanceIntentLabel =
+    clearance.intent === "PRICE_BARGAIN"
+      ? "Price bargain"
+      : clearance.intent === "OPEN_BALANCE"
+      ? "Open balance"
+      : "—";
+  const projectedDecisionDiscount =
+    balanceAfterThisPayment > EPS
+      ? Math.min(balanceAfterThisPayment, clearance.approvedBargainDiscount)
+      : 0;
+  const projectedDecisionAr =
+    balanceAfterThisPayment > EPS
+      ? Math.min(
+          Math.max(0, balanceAfterThisPayment - projectedDecisionDiscount),
+          clearance.approvedArAmount,
+        )
+      : 0;
+  const projectedAfterDecision = Math.max(
+    0,
+    r2(balanceAfterThisPayment - projectedDecisionDiscount - projectedDecisionAr),
+  );
+  const balanceAfterDisplay =
+    clearance.status === "DECIDED"
+      ? projectedAfterDecision
+      : balanceAfterThisPayment;
+  const balanceAfterLabel =
+    clearance.status === "DECIDED" ? "Balance after decision" : "Balance after";
+  const needsClearanceForSubmit = balanceAfterThisPayment > EPS;
+  const clearanceApprovedEnough =
+    clearance.status === "DECIDED" &&
+    clearance.decisionKind !== "REJECT" &&
+    projectedAfterDecision <= EPS;
+  const blockedByClearance = needsClearanceForSubmit && !clearanceApprovedEnough;
+  const projectedNeedsCustomerForAr = projectedDecisionAr > EPS;
+  const willFinalizeAsPartial = projectedNeedsCustomerForAr;
+  const waitingManagerDecision = clearance.status === "NEEDS_CLEARANCE";
+  const submitBlockedByLock =
+    isStale || !order.lockedBy || !isMineLock(order.lockedBy, meId);
+  const canSendForClearance =
+    needsClearanceForSubmit &&
+    !clearance.status &&
+    !missingLineTotals &&
+    !submitBlockedByLock &&
+    nav.state === "idle";
+  const submitLockReason = isStale
+    ? "Lock is stale; re-open from queue"
+    : "Click Start settlement first to claim the lock";
+  const submitDisabled =
+    submitBlockedByLock ||
+    nav.state !== "idle" ||
+    missingLineTotals ||
+    waitingManagerDecision ||
+    blockedByClearance ||
+    (projectedNeedsCustomerForAr && !hasCustomer);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -785,6 +1278,23 @@ export default function CashierOrder() {
                     </span>
                   </span>
                 )}
+                {clearance.status ? (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ring-1 ${
+                      clearance.status === "NEEDS_CLEARANCE"
+                        ? "bg-amber-50 text-amber-800 ring-amber-200"
+                        : clearance.decisionKind === "REJECT"
+                        ? "bg-rose-50 text-rose-700 ring-rose-200"
+                        : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                    }`}
+                  >
+                    {clearance.status === "NEEDS_CLEARANCE"
+                      ? "Clearance pending"
+                      : clearance.decisionKind === "REJECT"
+                      ? "Clearance rejected"
+                      : "Clearance decided"}
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -965,7 +1475,11 @@ export default function CashierOrder() {
 
           {/* Right: payment card (simplified) */}
           <aside className="lg:col-span-1">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div
+              className={`rounded-2xl border border-slate-200 shadow-sm ${
+                waitingManagerDecision ? "bg-slate-50/90" : "bg-white"
+              }`}
+            >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <h3 className="text-sm font-medium tracking-wide text-slate-800">
@@ -974,8 +1488,16 @@ export default function CashierOrder() {
                 {hasCustomer ? (
                   <a
                     href={`/orders/${order.id}/credit?returnTo=/cashier/${order.id}`}
-                    className="text-xs text-indigo-600 hover:underline"
-                    title="Record this as full utang / credit without taking payment"
+                    className={`text-xs ${
+                      waitingManagerDecision || hasClearanceCase
+                        ? "pointer-events-none text-slate-400"
+                        : "text-indigo-600 hover:underline"
+                    }`}
+                    title={
+                      hasClearanceCase
+                        ? "Disabled while this order is under clearance flow."
+                        : "Record this as full utang / credit without taking payment"
+                    }
                   >
                     Record as Credit
                   </a>
@@ -989,33 +1511,129 @@ export default function CashierOrder() {
                 )}
               </div>
 
-              {/* Notices */}
-              <div className="px-4 pt-4 space-y-2">
-                {actionData &&
-                "errors" in actionData &&
-                actionData.errors?.length ? (
-                  <ul className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    {actionData.errors.map((e: any, i: number) => (
-                      <li key={i}>
-                        Product #{e.id}: {e.reason}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {actionData &&
-                "error" in actionData &&
-                (actionData as any).error ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    {(actionData as any).error}
+              <section className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
+                {hasClearanceCase ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-700">Clearance</span>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${
+                          clearance.status === "NEEDS_CLEARANCE"
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : clearance.decisionKind === "REJECT"
+                            ? "border-rose-200 bg-rose-50 text-rose-700"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        {clearance.status === "NEEDS_CLEARANCE"
+                          ? "Pending"
+                          : clearance.decisionKind === "REJECT"
+                          ? "Rejected"
+                          : "Decided"}
+                      </span>
+                    </div>
+                    <div className="text-slate-600">
+                      {clearance.decisionKind ? (
+                        <>
+                          {clearance.decisionKind} • Disc {peso(clearance.approvedBargainDiscount)} • A/R{" "}
+                          {peso(clearance.approvedArAmount)}
+                        </>
+                      ) : (
+                        <>Waiting for manager decision</>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600">
+                      <div>
+                        Frozen
+                        <div className="font-mono text-slate-800">
+                          {peso(clearance.snapshotFrozenTotal)}
+                        </div>
+                      </div>
+                      <div>
+                        Cash
+                        <div className="font-mono text-slate-800">
+                          {peso(clearance.snapshotCashCollected)}
+                        </div>
+                      </div>
+                      <div>
+                        Remaining
+                        <div className="font-mono text-slate-800">
+                          {peso(snapshotRemaining)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      #{clearance.caseId} • {clearanceIntentLabel}
+                    </div>
                   </div>
-                ) : null}
-              </div>
+                ) : (
+                  <Form method="post" className="space-y-2">
+                    <input type="hidden" name="_action" value="sendClearance" />
+                    <input
+                      type="hidden"
+                      name="sendCashGiven"
+                      value={Number.isFinite(entered) ? entered.toFixed(2) : "0.00"}
+                    />
+                    <div className="text-slate-700">Send to manager for clearance</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <select
+                        name="clearanceIntent"
+                        defaultValue={hasCustomer ? "OPEN_BALANCE" : "PRICE_BARGAIN"}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                        disabled={!canSendForClearance}
+                      >
+                        <option value="OPEN_BALANCE">Open balance (utang)</option>
+                        <option value="PRICE_BARGAIN">Price bargain</option>
+                      </select>
+                      <textarea
+                        name="clearanceReason"
+                        rows={2}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                        placeholder="Reason"
+                        required
+                        disabled={!canSendForClearance}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-slate-500">
+                        Cash {peso(snapshotCashNow)} • Remaining {peso(snapshotRemaining)}
+                      </div>
+                      <button
+                        type="submit"
+                        className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                        disabled={!canSendForClearance}
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </Form>
+                )}
+              </section>
+
+              {actionData &&
+              "errors" in actionData &&
+              actionData.errors?.length ? (
+                <div className="mx-4 mt-2 text-[11px] text-rose-700">
+                  {actionData.errors
+                    .map((e: any) => `Product #${e.id}: ${e.reason}`)
+                    .join(" • ")}
+                </div>
+              ) : null}
+              {actionData &&
+              "error" in actionData &&
+              (actionData as any).error ? (
+                <div className="mx-4 mt-2 text-[11px] text-rose-700">
+                  {(actionData as any).error}
+                </div>
+              ) : null}
 
               {/* Form */}
               <Form
                 id="settle-form"
                 method="post"
-                className="px-4 pb-4 mt-3 space-y-4"
+                className={`px-4 pb-4 mt-3 space-y-4 ${
+                  waitingManagerDecision ? "opacity-60" : ""
+                }`}
               >
                 <input type="hidden" name="_action" value="settlePayment" />
                 {/* Totals strip */}
@@ -1044,17 +1662,17 @@ export default function CashierOrder() {
 
                 {/* Customer (READ-ONLY at cashier) */}
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">
+                  <div className="block text-sm text-slate-700 mb-1">
                     Customer
-                  </label>
+                  </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                     {formatCustomerLabel((order as any).customer)}
                   </div>
-                  {willBePartial && !hasCustomer ? (
+                  {projectedNeedsCustomerForAr && !hasCustomer ? (
                     <div className="mt-1 text-xs text-amber-800">
-                      Balance will remain after this payment, but this order has
-                      no customer attached. Customer is read-only at cashier —
-                      attach a customer in the order/PAD flow first.
+                      Approved open-balance flow requires a customer, but this
+                      order has none. Attach a customer in the order/PAD flow
+                      first.
                     </div>
                   ) : null}{" "}
                 </div>
@@ -1063,7 +1681,9 @@ export default function CashierOrder() {
                 <div className="grid grid-cols-1 gap-3">
                   <label className="block">
                     <span className="block text-sm text-slate-700">
-                      Cash received
+                      {hasClearanceCase
+                        ? "Cash received (snapshot locked)"
+                        : "Cash received"}
                     </span>
                     <input
                       name="cashGiven"
@@ -1072,10 +1692,14 @@ export default function CashierOrder() {
                       min="0"
                       value={cashGiven}
                       onChange={(e) => setCashGiven(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                      className={`mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200 ${
+                        hasClearanceCase
+                          ? "border-slate-200 bg-slate-100 text-slate-500"
+                          : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
+                      }`}
                       placeholder="0.00"
                       inputMode="decimal"
-                      autoFocus
+                      readOnly={hasClearanceCase}
                     />
                   </label>
                   <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -1086,6 +1710,7 @@ export default function CashierOrder() {
                       checked={printReceipt}
                       onChange={(e) => setPrintReceipt(e.target.checked)}
                       className="h-4 w-4 accent-indigo-600"
+                      disabled={waitingManagerDecision}
                     />
                     <span>Print receipt</span>
                   </label>
@@ -1106,13 +1731,13 @@ export default function CashierOrder() {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                     <div className="text-[11px] text-slate-600">
-                      Balance after
+                      {balanceAfterLabel}
                     </div>
                     <div className="mt-0.5 text-lg font-semibold tabular-nums">
                       {new Intl.NumberFormat("en-PH", {
                         style: "currency",
                         currency: "PHP",
-                      }).format(balanceAfterThisPayment)}
+                      }).format(balanceAfterDisplay)}
                     </div>
                   </div>
                 </div>
@@ -1129,6 +1754,7 @@ export default function CashierOrder() {
                         name="releaseWithBalance"
                         value="1"
                         className="h-4 w-4 accent-indigo-600"
+                        disabled={waitingManagerDecision}
                       />
                       <span>Release goods now (with balance)</span>
                     </label>
@@ -1139,6 +1765,7 @@ export default function CashierOrder() {
                         type="text"
                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
                         placeholder="e.g. 1234 or MGR-ANA"
+                        disabled={waitingManagerDecision}
                       />
                     </label>
                   </div>
@@ -1148,28 +1775,33 @@ export default function CashierOrder() {
                 <button
                   type="submit"
                   className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
-                  disabled={
-                    isStale ||
-                    nav.state !== "idle" ||
-                    (willBePartial && !hasCustomer) ||
-                    missingLineTotals ||
-                    !order.lockedBy || // must have lock
-                    !isMineLock(order.lockedBy, meId) // must be MY lock
-                  }
+                  disabled={submitDisabled}
                   title={
-                    isStale
-                      ? "Lock is stale; re-open from queue"
-                      : missingLineTotals
+                    submitBlockedByLock
+                      ? submitLockReason
+                    : missingLineTotals
                       ? "Totals not frozen yet"
-                      : willBePartial
-                      ? "Record partial payment"
+                      : blockedByClearance && !clearance.status
+                      ? "Kulang ang bayad. Send for clearance first."
+                      : blockedByClearance && clearance.status === "NEEDS_CLEARANCE"
+                      ? "Pending manager clearance."
+                      : blockedByClearance && clearance.decisionKind === "REJECT"
+                      ? "Clearance rejected by manager."
+                      : blockedByClearance
+                      ? "Payment is below approved clearance coverage."
+                      : projectedNeedsCustomerForAr && !hasCustomer
+                      ? "Customer is required for approved open-balance."
+                      : willFinalizeAsPartial
+                      ? "Complete payment with approved open balance."
                       : "Submit payment"
                   }
                 >
                   {nav.state !== "idle"
                     ? "Completing…"
+                    : waitingManagerDecision
+                    ? "Waiting Manager Decision…"
                     : printReceipt
-                    ? willBePartial
+                    ? willFinalizeAsPartial
                       ? "Complete & Print Ack"
                       : "Complete & Print Receipt"
                     : "Complete Sale"}
@@ -1187,28 +1819,35 @@ export default function CashierOrder() {
             type="submit"
             form="settle-form"
             className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-            disabled={
-              isStale ||
-              nav.state !== "idle" ||
-              (willBePartial && !hasCustomer) ||
-              missingLineTotals ||
-              !order.lockedBy ||
-              !isMineLock(order.lockedBy, meId)
-            }
+            disabled={submitDisabled}
             title={
-              isStale
-                ? "Lock is stale; re-open from queue"
-                : missingLineTotals
+              submitBlockedByLock
+                ? submitLockReason
+              : waitingManagerDecision
+              ? "Waiting for manager clearance decision."
+              : missingLineTotals
                 ? "Totals not frozen yet"
-                : willBePartial
-                ? "Record partial payment"
+                : blockedByClearance && !clearance.status
+                ? "Kulang ang bayad. Send for clearance first."
+                : blockedByClearance && clearance.status === "NEEDS_CLEARANCE"
+                ? "Pending manager clearance."
+                : blockedByClearance && clearance.decisionKind === "REJECT"
+                ? "Clearance rejected by manager."
+                : blockedByClearance
+                ? "Payment is below approved clearance coverage."
+                : projectedNeedsCustomerForAr && !hasCustomer
+                ? "Customer is required for approved open-balance."
+                : willFinalizeAsPartial
+                ? "Complete payment with approved open balance."
                 : "Mark as PAID"
             }
           >
             {nav.state !== "idle"
               ? "Completing…"
+              : waitingManagerDecision
+              ? "Waiting Manager Decision…"
               : printReceipt
-              ? willBePartial
+              ? willFinalizeAsPartial
                 ? "Complete & Print Ack"
                 : "Complete & Print Receipt"
               : "Complete Sale"}
