@@ -1,6 +1,14 @@
 # Rider Shortage / Variance / Settlement
 
-## Option A — Implementation Guide (Authoritative)
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+> - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
+## Option A — Historical Implementation Guide
 
 This document defines how **rider shortages**, **cash variances**, and **run settlement**
 are handled in the POS system.

@@ -1,5 +1,13 @@
 # 🔒 Pricing, Collection & Unit Freeze — Source of Truth Guide
 
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/RunReceipt_Architecture.md`
+> - `docs/guide/Commercial Clearance System V2`
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 **Decision log:** We explicitly chose **Option B (Order → originRunReceipt)**  
 **Date:** _(fill later if needed)_
 

@@ -1,5 +1,12 @@
 # Cashier Shift + Payments Hardening Plan (SoT + Guards)
 
+> DEPRECATED (Plan-only)
+> Superseded by:
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+> - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 > Goal: One consistent rule-set so CASH posting is audit-safe, shift-safe, and SoT-safe across:
 >
 > - Walk-in POS

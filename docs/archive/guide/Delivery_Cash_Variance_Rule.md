@@ -1,5 +1,12 @@
 # Delivery Cash Variance Rule (Option A)
 
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 > **Purpose**: Define the canonical, non-negotiable rule for handling delivery cash shortages where the **customer has already paid**, but the **cashier received less** due to rider remittance issues.
 
 ---

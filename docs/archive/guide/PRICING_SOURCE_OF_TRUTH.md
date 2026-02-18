@@ -1,5 +1,13 @@
 # Pricing Source of Truth – Architecture Rule
 
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/RunReceipt_Architecture.md`
+> - `docs/guide/Commercial Clearance System V2`
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 ## Goal
 
 Make the **database the single source of truth (DB SoT)** for pricing so that:

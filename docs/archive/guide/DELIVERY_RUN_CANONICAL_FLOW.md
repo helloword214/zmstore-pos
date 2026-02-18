@@ -1,5 +1,11 @@
 # Delivery Run – Canonical Flow & Source of Truth
 
+> DEPRECATED
+> Superseded by:
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 This document is the SINGLE SOURCE OF TRUTH for how a Delivery Run behaves
 from order creation until cashier settlement.
 

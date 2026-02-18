@@ -1,5 +1,12 @@
 # SHIFT FLOW IMPLEMENTATION PLAN (Manager-open shift)
 
+> DEPRECATED (Plan-only)
+> Superseded by:
+> - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+> - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+>
+> This file is retained for historical context only. Do not use it as implementation authority.
+
 ## Source of Truth (SoT)
 - Shift truth = `CashierShift` row in DB + cookie `shiftId`.
 - Cashier routes that move money MUST call `requireOpenShift(request)`.
