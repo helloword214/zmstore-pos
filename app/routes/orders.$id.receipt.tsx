@@ -8,6 +8,23 @@ import { requireRole } from "~/utils/auth.server";
 
 const EPS = 0.009;
 
+type ClearanceDecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+const parseDecisionKind = (raw: unknown): ClearanceDecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+    ? "APPROVE_OPEN_BALANCE"
+    : raw === "APPROVE_DISCOUNT_OVERRIDE"
+    ? "APPROVE_DISCOUNT_OVERRIDE"
+    : raw === "APPROVE_HYBRID"
+    ? "APPROVE_HYBRID"
+    : null;
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["CASHIER", "ADMIN"]);
   const id = Number(params.id);
@@ -34,6 +51,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   });
   if (!order) throw new Response("Not found", { status: 404 });
+  const receiptKey = `PARENT:${order.id}`;
+  const clearanceCase = await db.clearanceCase.findUnique({
+    where: { receiptKey } as any,
+    select: {
+      id: true,
+      status: true,
+      decisions: {
+        select: {
+          kind: true,
+          arBalance: true,
+          overrideDiscountApproved: true,
+          customerAr: {
+            select: {
+              principal: true,
+              balance: true,
+            },
+          },
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+    },
+  });
 
   const customerName = (() => {
     const c: any = order.customer;
@@ -121,9 +161,36 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Payments breakdown (customer-facing settled truth)
   const payments = (order.payments ?? []) as any[];
   const paidToDate = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const remaining = Math.max(
+  const remainingRaw = Math.max(
     0,
     Number(totalPayable || 0) - Number(paidToDate || 0),
+  );
+  const latestDecision = clearanceCase?.decisions?.[0];
+  const decisionKind = parseDecisionKind(latestDecision?.kind);
+  const decisionArAmount = Math.max(0, Number(latestDecision?.arBalance ?? 0));
+  const approvedArAmount = Math.max(
+    0,
+    Number(
+      latestDecision?.customerAr?.principal ??
+        latestDecision?.customerAr?.balance ??
+        decisionArAmount,
+    ),
+  );
+  const approvedClearanceDiscount = Math.max(
+    0,
+    Number(latestDecision?.overrideDiscountApproved ?? 0),
+  );
+  const appliedClearanceDiscount =
+    clearanceCase?.status === "DECIDED" && decisionKind !== "REJECT"
+      ? Math.min(remainingRaw, approvedClearanceDiscount)
+      : 0;
+  const transferredToAr =
+    clearanceCase?.status === "DECIDED" && decisionKind !== "REJECT"
+      ? Math.min(Math.max(0, remainingRaw - appliedClearanceDiscount), approvedArAmount)
+      : 0;
+  const remaining = Math.max(
+    0,
+    remainingRaw - appliedClearanceDiscount - transferredToAr,
   );
 
   const isCash = (p: any) => String(p?.method ?? "").toUpperCase() === "CASH";
@@ -144,6 +211,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const mode: PrintMode = (() => {
     const hasFeatured = !!featuredPayment;
     const isFullySettled = remaining <= EPS;
+    const hasArTransfer = transferredToAr > EPS;
+
+    if (hasFeatured && hasArTransfer) {
+      return "AR_PAYMENT_ACK";
+    }
 
     // Official Receipt requires receiptNo + PAID (your rule)
     if (isFullySettled && order.status === "PAID" && order.receiptNo) {
@@ -176,6 +248,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       totalPayable,
       paidToDate,
       remaining,
+      remainingRaw,
+      approvedClearanceDiscount: appliedClearanceDiscount,
+      transferredToAr,
       paidCash,
       paidNonCash,
     },
@@ -194,6 +269,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         }
       : null,
     mode,
+    commercial: {
+      clearanceStatus:
+        clearanceCase?.status === "NEEDS_CLEARANCE" ||
+        clearanceCase?.status === "DECIDED"
+          ? clearanceCase.status
+          : null,
+      decisionKind,
+    },
     ui: {
       customerName,
       customerPhone: (order.customer as any)?.phone
@@ -224,6 +307,7 @@ export default function ReceiptPage() {
     hasMissingLineTotals,
     featuredPayment,
     mode,
+    commercial,
     ui,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
@@ -333,9 +417,22 @@ export default function ReceiptPage() {
 
   const grandTotal = Number(totals?.totalPayable ?? 0);
   const paidToDate = Number(totals?.paidToDate ?? 0);
+  const remainingRaw = Number(totals?.remainingRaw ?? 0);
   const remaining = Number(totals?.remaining ?? 0);
+  const approvedClearanceDiscount = Number(
+    totals?.approvedClearanceDiscount ?? 0,
+  );
+  const transferredToAr = Number(totals?.transferredToAr ?? 0);
   const paidCash = Number(totals?.paidCash ?? 0);
   const paidNonCash = Number(totals?.paidNonCash ?? 0);
+  const hasClearanceAdjustments =
+    approvedClearanceDiscount > EPS || transferredToAr > EPS;
+  const balanceLabel =
+    commercial?.clearanceStatus === "DECIDED" &&
+    commercial?.decisionKind !== "REJECT" &&
+    hasClearanceAdjustments
+      ? "Balance after clearance"
+      : "Balance";
 
   // If caller didn't pass change, compute a best-effort one.
   // NOTE: For acknowledgments, change may be irrelevant; we still show it if positive.
@@ -529,9 +626,33 @@ export default function ReceiptPage() {
                   <span className="text-slate-900">{peso(paidNonCash)}</span>
                 </div>
               ) : null}
+              {approvedClearanceDiscount > EPS ? (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">
+                    Approved Clearance Discount
+                  </span>
+                  <span className="text-slate-900">
+                    - {peso(approvedClearanceDiscount)}
+                  </span>
+                </div>
+              ) : null}
+              {transferredToAr > EPS ? (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Transferred to A/R</span>
+                  <span className="text-slate-900">
+                    - {peso(transferredToAr)}
+                  </span>
+                </div>
+              ) : null}
+              {hasClearanceAdjustments ? (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Balance before clearance</span>
+                  <span className="text-slate-900">{peso(remainingRaw)}</span>
+                </div>
+              ) : null}
 
               <div className="flex justify-between mt-1">
-                <span className="text-slate-700">Balance</span>
+                <span className="text-slate-700">{balanceLabel}</span>
                 <span className="font-semibold text-slate-900">
                   {peso(remaining)}
                 </span>
