@@ -59,6 +59,16 @@ type LoaderData = {
     riderCash: number; // = RunReceipt.cashCollected (PARENT/ROAD), clamped to totalFinal
     // Gap between customer-paid (RunReceipt) vs cashier-received (Order.payments), capped per order
     remaining: number; // rider short (run-scope) = riderCash - min(alreadyPaid, riderCash)
+    systemDiscount: number;
+    approvedBargainDiscount: number;
+    approvedAr: number;
+    clearanceStatus: "NEEDS_CLEARANCE" | "DECIDED" | null;
+    decisionKind:
+      | "APPROVE_OPEN_BALANCE"
+      | "APPROVE_DISCOUNT_OVERRIDE"
+      | "APPROVE_HYBRID"
+      | "REJECT"
+      | null;
     lockedByMe: boolean;
     lockedByOther: boolean;
     lockOwner: string | null;
@@ -77,6 +87,82 @@ type LoaderData = {
 };
 
 const EPS = 0.01;
+const r2 = (n: number) =>
+  Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+
+type DecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+type CaseInfo = {
+  status: "NEEDS_CLEARANCE" | "DECIDED";
+  decisionKind: DecisionKindUI | null;
+  approvedBargainDiscount: number;
+  approvedAr: number;
+};
+
+type FrozenCommercialLine = {
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+  baseUnitPrice: number | null;
+  discountAmount: number | null;
+};
+
+const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+    ? "APPROVE_OPEN_BALANCE"
+    : raw === "APPROVE_DISCOUNT_OVERRIDE"
+    ? "APPROVE_DISCOUNT_OVERRIDE"
+    : raw === "APPROVE_HYBRID"
+    ? "APPROVE_HYBRID"
+    : null;
+
+const normalizeFrozenLines = (linesIn: any[] | null | undefined) =>
+  (linesIn ?? []).map(
+    (ln): FrozenCommercialLine => ({
+      qty: Math.max(0, Number((ln as any)?.qty ?? 0)),
+      unitPrice: Math.max(0, Number((ln as any)?.unitPrice ?? 0)),
+      lineTotal: Math.max(0, Number((ln as any)?.lineTotal ?? 0)),
+      baseUnitPrice:
+        (ln as any)?.baseUnitPrice != null
+          ? Math.max(0, Number((ln as any).baseUnitPrice))
+          : null,
+      discountAmount:
+        (ln as any)?.discountAmount != null
+          ? Math.max(0, Number((ln as any).discountAmount))
+          : null,
+    })
+  );
+
+const sumSystemDiscountFromFrozen = (linesIn: FrozenCommercialLine[]) =>
+  r2(
+    (linesIn || []).reduce((sum, ln) => {
+      const qty = Math.max(0, Number(ln.qty ?? 0));
+      if (qty <= 0) return sum;
+
+      const explicitPerUnitDiscount = Number(ln.discountAmount ?? 0);
+      if (
+        Number.isFinite(explicitPerUnitDiscount) &&
+        explicitPerUnitDiscount > 0
+      ) {
+        return sum + qty * explicitPerUnitDiscount;
+      }
+
+      const base = Number(ln.baseUnitPrice ?? 0);
+      if (!(Number.isFinite(base) && base > 0)) return sum;
+
+      const lineFinal = Number(ln.lineTotal ?? 0);
+      const fallbackFinal = qty * Number(ln.unitPrice ?? 0);
+      const final = Number.isFinite(lineFinal) ? lineFinal : fallbackFinal;
+      const baseTotal = qty * base;
+      return sum + Math.max(0, baseTotal - final);
+    }, 0)
+  );
 
 // Cash expected vs actual must be CASH-only.
 // Non-cash (fund transfer/card) is still a Payment, but not rider cash remit.
@@ -185,6 +271,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
                   qty: true,
                   unitPrice: true,
                   lineTotal: true,
+                  baseUnitPrice: true,
+                  discountAmount: true,
                 },
                 orderBy: { id: "asc" },
               },
@@ -205,10 +293,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       status: 400,
     });
   }
-
-  // Helper: safe money rounding
-  const r2 = (n: number) =>
-    Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
   // ────────────────────────────────────────────────
   // Existing variance (run-level) for gating + UI
@@ -306,11 +390,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const parentReceipts = await db.runReceipt.findMany({
     where: { runId, kind: "PARENT", parentOrderId: { not: null } },
     select: {
+      receiptKey: true,
       parentOrderId: true,
       cashCollected: true,
       note: true,
       lines: {
-        select: { qty: true, unitPrice: true, lineTotal: true },
+        select: {
+          qty: true,
+          unitPrice: true,
+          lineTotal: true,
+          baseUnitPrice: true,
+          discountAmount: true,
+        },
         orderBy: { id: "asc" },
       },
     },
@@ -318,7 +409,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const parentReceiptByOrderId = new Map<
     number,
-    { total: number; cash: number; isCredit: boolean }
+    {
+      total: number;
+      cash: number;
+      isCredit: boolean;
+      receiptKey: string;
+      lines: FrozenCommercialLine[];
+    }
   >();
 
   for (const r of parentReceipts) {
@@ -339,7 +436,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     try {
       const meta = r.note ? JSON.parse(r.note) : null;
       if (meta && typeof meta.isCredit === "boolean") isCredit = meta.isCredit;
-    } catch {}
+    } catch {
+      // ignore malformed legacy note payload
+    }
+    const normalizedLines = normalizeFrozenLines(r.lines as any[]);
     // ✅ Aggregate per parent orderId (avoid overwrite if multiple receipts exist)
     const prev = parentReceiptByOrderId.get(oid);
     parentReceiptByOrderId.set(oid, {
@@ -347,6 +447,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       cash: r2((prev?.cash || 0) + cash),
       // if ANY receipt says credit, treat as credit
       isCredit: Boolean(prev?.isCredit || isCredit),
+      receiptKey: `PARENT:${oid}`,
+      lines: [...(prev?.lines || []), ...normalizedLines],
     });
   }
 
@@ -359,14 +461,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: { runId, kind: "ROAD" },
     select: {
       id: true,
+      receiptKey: true,
       cashCollected: true,
       lines: {
-        select: { qty: true, unitPrice: true, lineTotal: true },
+        select: {
+          qty: true,
+          unitPrice: true,
+          lineTotal: true,
+          baseUnitPrice: true,
+          discountAmount: true,
+        },
         orderBy: { id: "asc" },
       },
     },
   });
-  const roadReceiptById = new Map<number, { total: number; cash: number }>();
+  const roadReceiptById = new Map<
+    number,
+    {
+      total: number;
+      cash: number;
+      receiptKey: string;
+      lines: FrozenCommercialLine[];
+    }
+  >();
   for (const rr of roadReceipts) {
     const total = (rr.lines || []).reduce((s, ln) => {
       const lt = Number((ln as any).lineTotal ?? NaN);
@@ -376,7 +493,66 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       return s + qty * up;
     }, 0);
     const cash = Math.max(0, Number(rr.cashCollected ?? 0));
-    roadReceiptById.set(rr.id, { total: r2(total), cash: r2(cash) });
+    roadReceiptById.set(rr.id, {
+      total: r2(total),
+      cash: r2(cash),
+      receiptKey: String(rr.receiptKey || `ROAD:${rr.id}`).slice(0, 64),
+      lines: normalizeFrozenLines(rr.lines as any[]),
+    });
+  }
+
+  const cases = await db.clearanceCase.findMany({
+    where: {
+      runId,
+      status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
+    } as any,
+    select: {
+      receiptKey: true,
+      status: true,
+      decisions: {
+        select: {
+          kind: true,
+          arBalance: true,
+          overrideDiscountApproved: true,
+          customerAr: {
+            select: {
+              principal: true,
+              balance: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { id: "desc" },
+        take: 1,
+      },
+    },
+  });
+  const caseByReceiptKey = new Map<string, CaseInfo>();
+  for (const c of cases || []) {
+    const rk = String((c as any).receiptKey || "").slice(0, 64).trim();
+    if (!rk) continue;
+    const status = String((c as any).status || "");
+    if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
+
+    const d = (c as any)?.decisions?.[0];
+    const approvedBargainDiscount = r2(
+      Math.max(0, Number(d?.overrideDiscountApproved ?? 0))
+    );
+    const decisionAr = r2(Math.max(0, Number(d?.arBalance ?? 0)));
+    const customerArAmount = r2(
+      Math.max(
+        0,
+        Number(d?.customerAr?.principal ?? d?.customerAr?.balance ?? 0)
+      )
+    );
+    const approvedAr = customerArAmount > EPS ? customerArAmount : decisionAr;
+
+    caseByReceiptKey.set(rk, {
+      status,
+      decisionKind: parseDecisionKind(d?.kind),
+      approvedBargainDiscount,
+      approvedAr,
+    });
   }
 
   const parseRoadReceiptIdFromOrderCode = (orderCode: string | null) => {
@@ -396,7 +572,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     roadsideCashByOrderCode,
     parentCashByOrderId,
     expectedCashRoad,
-    expectedARRoad,
   } = await loadRunReceiptCashMaps(db, runId);
 
   // ────────────────────────────────────────────────
@@ -428,7 +603,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   let expectedCash = 0;
   let expectedAR = 0;
   expectedCash += expectedCashRoad;
-  expectedAR += expectedARRoad;
 
   const mappedOrders = run.orders
     .map((ro) => ro.order)
@@ -480,19 +654,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const orders = await Promise.all(
     mappedOrders.map(async (o) => {
       let riderCash = 0; // ✅ FIX: must be per-row
+      let systemDiscount = 0;
+      let approvedBargainDiscount = 0;
+      let approvedAr = 0;
+      let clearanceStatus: "NEEDS_CLEARANCE" | "DECIDED" | null = null;
+      let decisionKind: DecisionKindUI | null = null;
       // ✅ Prefer RunReceipt totals for parent orders (discounted/frozen)
       const isRoadside = !!o.orderCode && o.orderCode.startsWith("RS-");
       const parentReceipt = !isRoadside
         ? parentReceiptByOrderId.get(o.id)
         : null;
+      let roadReceipt:
+        | {
+            total: number;
+            cash: number;
+            receiptKey: string;
+            lines: FrozenCommercialLine[];
+          }
+        | null = null;
 
       let finalTotalNum = 0;
       if (isRoadside) {
         const rrId = parseRoadReceiptIdFromOrderCode(o.orderCode);
-        const rr = rrId ? roadReceiptById.get(rrId) : null;
-        if (rr) {
-          finalTotalNum = rr.total;
-          riderCash = Math.max(0, Math.min(rr.total, rr.cash));
+        roadReceipt = rrId ? roadReceiptById.get(rrId) ?? null : null;
+        if (roadReceipt) {
+          finalTotalNum = roadReceipt.total;
+          riderCash = Math.max(0, Math.min(roadReceipt.total, roadReceipt.cash));
         } else {
           // legacy fallback when ROAD receipt not resolvable
           const { finalTotal } = await resolveFinalTotalFreezeFirst(
@@ -587,21 +774,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
         // ✅ Expected CASH always counts what rider should remit (what rider actually collected per receipts)
         expectedCash += riderCash;
+      }
 
-        // ✅ Expected AR only counts if order is CREDIT (override > isOnCredit)
-        const override = parentOverrideMap.get(o.id);
-        const isCreditFromOrder =
-          override !== undefined ? override : Boolean(o.isOnCredit);
+      const commercialLines = isRoadside
+        ? roadReceipt?.lines ?? normalizeFrozenLines(o.items as any[])
+        : parentReceipt?.lines ?? normalizeFrozenLines(o.items as any[]);
+      systemDiscount = sumSystemDiscountFromFrozen(commercialLines);
 
-        // If we have a parentReceipt, it may also carry explicit isCredit from receipt meta
-        const isCreditEffective =
-          parentReceipt != null
-            ? Boolean(parentReceipt.isCredit)
-            : isCreditFromOrder;
-
-        if (isCreditEffective) {
-          expectedAR += Math.max(0, Number(finalTotalNum ?? 0) - riderCash);
-        }
+      const receiptKey = isRoadside
+        ? roadReceipt?.receiptKey ?? null
+        : parentReceipt?.receiptKey ?? `PARENT:${o.id}`;
+      const cInfo = receiptKey ? caseByReceiptKey.get(receiptKey) : undefined;
+      if (cInfo) {
+        clearanceStatus = cInfo.status;
+        decisionKind = cInfo.decisionKind;
+        approvedBargainDiscount = r2(cInfo.approvedBargainDiscount);
+        approvedAr = r2(cInfo.approvedAr);
       }
 
       // IMPORTANT:
@@ -642,6 +830,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         bridgePaid: r2(bridgePaid),
         remaining: r2(riderShort),
         riderCash: r2(riderCash),
+        systemDiscount: r2(systemDiscount),
+        approvedBargainDiscount: r2(approvedBargainDiscount),
+        approvedAr: r2(approvedAr),
+        clearanceStatus,
+        decisionKind,
         lockedByMe,
         lockedByOther,
         lockOwner: o.lockedBy,
@@ -659,6 +852,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const totalOrders = orders.length;
   const unsettledCount = unsettled.length;
+  expectedAR = r2(orders.reduce((sum, o) => sum + o.approvedAr, 0));
 
   const totalFinal = orders.reduce((sum, o) => sum + o.totalFinal, 0);
   const totalPaid = totalRunPaid;
@@ -883,7 +1077,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     try {
       const meta = r.note ? JSON.parse(r.note) : null;
       if (meta && typeof meta.isCredit === "boolean") isCredit = meta.isCredit;
-    } catch {}
+    } catch {
+      // ignore malformed legacy note payload
+    }
     const prev = parentReceiptByOrderId.get(oid);
     parentReceiptByOrderId.set(oid, {
       total: r2((prev?.total || 0) + total),
@@ -1154,6 +1350,43 @@ export default function CashierDeliveryRunRemitPage() {
     if (!isOpen) return false;
     if (o.riderCash <= 0.009) return false; // full A/R (no cash remit)
     return o.remaining > 0.009;
+  };
+
+  const getCommercialBadge = (o: (typeof orders)[number]) => {
+    if (o.clearanceStatus === "NEEDS_CLEARANCE") {
+      return {
+        label: "Pending Clearance",
+        className: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    if (o.decisionKind === "REJECT") {
+      return {
+        label: "Rejected",
+        className: "border-rose-200 bg-rose-50 text-rose-700",
+      };
+    }
+    if (o.approvedBargainDiscount > EPS && o.approvedAr > EPS) {
+      return {
+        label: "Approved Hybrid",
+        className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+      };
+    }
+    if (o.approvedBargainDiscount > EPS) {
+      return {
+        label: "Approved Discount",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (o.approvedAr > EPS) {
+      return {
+        label: "Approved Open Balance",
+        className: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    return {
+      label: "Settled Cash",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
   };
 
   return (
@@ -1513,6 +1746,9 @@ export default function CashierDeliveryRunRemitPage() {
                 <th className="px-3 py-2 text-right font-medium">
                   Cash Short (Rider Accountability)
                 </th>
+                <th className="px-3 py-2 text-left font-medium">
+                  Commercial (CCS)
+                </th>
                 <th className="px-3 py-2 text-left font-medium">Lock</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -1521,7 +1757,7 @@ export default function CashierDeliveryRunRemitPage() {
               {orders.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={11}
                     className="px-3 py-4 text-center text-slate-500"
                   >
                     No delivery orders attached to this run.
@@ -1576,6 +1812,43 @@ export default function CashierDeliveryRunRemitPage() {
                       title="Cash short (rider accountability) = customer-paid (receipt) - cashier received CASH (run-scope)"
                     >
                       {peso(o.remaining)}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {(() => {
+                        const badge = getCommercialBadge(o);
+                        return (
+                          <div className="space-y-1">
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                            <div className="text-[11px] text-slate-600">
+                              System disc:{" "}
+                              <span className="font-semibold text-rose-700">
+                                {peso(o.systemDiscount)}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-600">
+                              Approved bargain:{" "}
+                              <span className="font-semibold text-emerald-700">
+                                {peso(o.approvedBargainDiscount)}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-600">
+                              Approved AR:{" "}
+                              <span className="font-semibold text-amber-700">
+                                {peso(o.approvedAr)}
+                              </span>
+                            </div>
+                            {o.decisionKind ? (
+                              <div className="text-[11px] text-slate-500">
+                                {o.decisionKind}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500">
                       {isSettled ? (

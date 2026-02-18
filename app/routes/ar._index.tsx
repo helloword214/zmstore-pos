@@ -5,165 +5,100 @@ import { Form, Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 
-// --------------------
-// AR SoT helpers
-// --------------------
 const r2 = (n: number) =>
   Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
-const isRiderShortageRef = (refNo: unknown) => {
-  const ref = String(refNo ?? "").toUpperCase();
-  return ref === "RIDER_SHORTAGE" || ref.startsWith("RIDER-SHORTAGE");
-};
-
-const sumSettlementCredits = (
-  payments: Array<{ amount: any; method: any; refNo: any }> | null | undefined,
-) =>
-  r2(
-    (payments ?? []).reduce((sum, p) => {
-      const method = String(p?.method ?? "").toUpperCase();
-      const amt = Number(p?.amount ?? 0);
-      if (!Number.isFinite(amt) || amt <= 0) return sum;
-      if (method === "CASH") return sum + amt;
-      if (method === "INTERNAL_CREDIT" && isRiderShortageRef(p?.refNo))
-        return sum + amt;
-      return sum;
-    }, 0),
-  );
-
-const sumFrozenLineTotals = (
-  lines: Array<{ lineTotal: any }> | null | undefined,
-) => r2((lines ?? []).reduce((s, it) => s + Number(it?.lineTotal ?? 0), 0));
-
-// --------------------
 type Row = {
   customerId: number;
   name: string;
   alias: string | null;
   phone: string | null;
-  openOrders: number;
+  openEntries: number;
   nextDue: string | null;
   balance: number;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // ✅ Shift required for CASHIER (Admin bypass is built-in)
   const url = new URL(request.url);
   await requireOpenShift(request, { next: `${url.pathname}${url.search}` });
 
   const q = (url.searchParams.get("q") || "").trim();
 
-  // Customers + open orders (UNPAID/PARTIALLY_PAID)
-  const customers = await db.customer.findMany({
-    where: q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { alias: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+  const customerFilter = q
+    ? {
+        OR: [
+          { firstName: { contains: q, mode: "insensitive" as const } },
+          { lastName: { contains: q, mode: "insensitive" as const } },
+          { alias: { contains: q, mode: "insensitive" as const } },
+          { phone: { contains: q, mode: "insensitive" as const } },
+        ],
+      }
+    : undefined;
+
+  const arRows = await db.customerAr.findMany({
+    where: {
+      balance: { gt: 0 },
+      status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
+      ...(customerFilter ? { customer: customerFilter } : {}),
+    },
     select: {
-      id: true,
-      firstName: true,
-      middleName: true,
-      lastName: true,
-      alias: true,
-      phone: true,
-      orders: {
-        where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+      customerId: true,
+      balance: true,
+      dueDate: true,
+      customer: {
         select: {
-          id: true,
-          dueDate: true,
-          originRunReceiptId: true,
-          originRunReceipt: {
-            select: {
-              id: true,
-              lines: { select: { lineTotal: true } },
-            },
-          },
-          items: { select: { lineTotal: true } },
-          payments: { select: { amount: true, method: true, refNo: true } },
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          alias: true,
+          phone: true,
         },
-        orderBy: { createdAt: "asc" },
       },
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    take: 250,
+    orderBy: [{ customerId: "asc" }, { createdAt: "asc" }],
+    take: 500,
   });
 
-  // For DELIVERY parent orders: load PARENT receipts in one batch
-  const orderIds = customers.flatMap((c) => c.orders.map((o) => o.id));
-  const parentReceipts = orderIds.length
-    ? await db.runReceipt.findMany({
-        where: { kind: "PARENT", parentOrderId: { in: orderIds } },
-        select: {
-          id: true,
-          parentOrderId: true,
-          lines: { select: { lineTotal: true } },
-        },
-      })
-    : [];
-  const parentByOrderId = new Map<
-    number,
-    { lines: Array<{ lineTotal: any }> }
-  >();
-  for (const rr of parentReceipts) {
-    if (rr.parentOrderId != null && !parentByOrderId.has(rr.parentOrderId)) {
-      parentByOrderId.set(rr.parentOrderId, { lines: rr.lines ?? [] });
+  const grouped = new Map<number, Row>();
+
+  for (const ar of arRows) {
+    const cid = Number(ar.customerId ?? 0);
+    if (!cid) continue;
+
+    const bal = r2(Math.max(0, Number(ar.balance ?? 0)));
+    if (bal <= 0) continue;
+
+    const existing = grouped.get(cid);
+    if (!existing) {
+      const c = ar.customer;
+      const name = `${c?.firstName || ""}${c?.middleName ? ` ${c.middleName}` : ""} ${
+        c?.lastName || ""
+      }`.trim();
+
+      grouped.set(cid, {
+        customerId: cid,
+        name: name || `Customer #${cid}`,
+        alias: c?.alias ?? null,
+        phone: c?.phone ?? null,
+        openEntries: 1,
+        nextDue: ar.dueDate ? ar.dueDate.toISOString() : null,
+        balance: bal,
+      });
+      continue;
     }
-  }
 
-  const rows: Row[] = [];
-  for (const c of customers) {
-    if (!c.orders.length) continue;
+    existing.openEntries += 1;
+    existing.balance = r2(existing.balance + bal);
 
-    let balance = 0;
-    let nextDue: Date | null = null;
-
-    for (const o of c.orders) {
-      const originLines = o.originRunReceipt?.lines ?? [];
-      const parentLines = parentByOrderId.get(o.id)?.lines ?? [];
-      const itemLines = (o.items ?? []).map((x: any) => ({
-        lineTotal: x?.lineTotal,
-      }));
-
-      const charge =
-        originLines.length > 0
-          ? sumFrozenLineTotals(originLines as any)
-          : parentLines.length > 0
-          ? sumFrozenLineTotals(parentLines as any)
-          : sumFrozenLineTotals(itemLines as any);
-
-      const settled = sumSettlementCredits(o.payments as any);
-      const remaining = Math.max(0, r2(charge - settled));
-      balance = r2(balance + remaining);
-
-      if (remaining > 0 && o.dueDate) {
-        if (!nextDue || o.dueDate < nextDue) nextDue = o.dueDate;
+    if (ar.dueDate) {
+      const next = existing.nextDue ? new Date(existing.nextDue) : null;
+      if (!next || ar.dueDate < next) {
+        existing.nextDue = ar.dueDate.toISOString();
       }
     }
-
-    if (balance <= 0) continue;
-
-    const name = `${c.firstName}${c.middleName ? ` ${c.middleName}` : ""} ${
-      c.lastName
-    }`.trim();
-
-    rows.push({
-      customerId: c.id,
-      name,
-      alias: c.alias ?? null,
-      phone: c.phone ?? null,
-      openOrders: c.orders.length,
-      nextDue: nextDue ? nextDue.toISOString() : null,
-      balance,
-    });
   }
 
-  rows.sort((a, b) => {
+  const rows = Array.from(grouped.values()).sort((a, b) => {
     if (b.balance !== a.balance) return b.balance - a.balance;
     const ad = a.nextDue ? +new Date(a.nextDue) : Infinity;
     const bd = b.nextDue ? +new Date(b.nextDue) : Infinity;
@@ -190,8 +125,7 @@ export default function ARIndexPage() {
               Accounts Receivable
             </h1>
             <div className="text-xs text-slate-500">
-              SoT: frozen line totals only • settlement = CASH + rider-shortage
-              bridge
+              SoT: customerAr open balances only
             </div>
           </div>
 
@@ -218,13 +152,11 @@ export default function ARIndexPage() {
       <div className="mx-auto max-w-5xl px-5 py-6">
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Customers with Open Balance
+            Customers with Open Approved Balance
           </div>
 
           {rows.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-slate-600">
-              No open balances.
-            </div>
+            <div className="px-4 py-8 text-sm text-slate-600">No open balances.</div>
           ) : (
             <div className="divide-y divide-slate-100">
               {rows.map((r) => (
@@ -240,7 +172,7 @@ export default function ARIndexPage() {
                       ) : null}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {r.phone ?? "—"} • {r.openOrders} open order(s)
+                      {r.phone ?? "—"} • {r.openEntries} open A/R entr{r.openEntries === 1 ? "y" : "ies"}
                       {r.nextDue
                         ? ` • due ${new Date(r.nextDue).toLocaleDateString()}`
                         : ""}
