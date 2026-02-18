@@ -117,6 +117,59 @@ type DiscountRow = {
   lineFinal: number;
 };
 
+type DecisionKindUI =
+  | "APPROVE_OPEN_BALANCE"
+  | "APPROVE_DISCOUNT_OVERRIDE"
+  | "APPROVE_HYBRID"
+  | "REJECT";
+
+type CommercialDecisionView = {
+  frozenTotal: number;
+  riderCash: number;
+  remaining: number;
+  systemDiscountTotal: number;
+  approvedBargainDiscount: number;
+  approvedArAmount: number;
+  clearanceStatus: "NEEDS_CLEARANCE" | "DECIDED" | null;
+  decisionKind: DecisionKindUI | null;
+};
+
+const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
+  raw === "REJECT"
+    ? "REJECT"
+    : raw === "APPROVE_OPEN_BALANCE"
+      ? "APPROVE_OPEN_BALANCE"
+      : raw === "APPROVE_DISCOUNT_OVERRIDE"
+        ? "APPROVE_DISCOUNT_OVERRIDE"
+        : raw === "APPROVE_HYBRID"
+          ? "APPROVE_HYBRID"
+          : null;
+
+const sumSystemDiscountFromFrozen = (linesIn: FrozenLine[]) =>
+  r2(
+    (linesIn || []).reduce((sum, ln) => {
+      const qty = Math.max(0, Number(ln.qty ?? 0));
+      if (qty <= 0) return sum;
+
+      const explicitPerUnitDiscount = Number(ln.discountAmount ?? 0);
+      if (
+        Number.isFinite(explicitPerUnitDiscount) &&
+        explicitPerUnitDiscount > 0
+      ) {
+        return sum + qty * explicitPerUnitDiscount;
+      }
+
+      const base = Number(ln.baseUnitPrice ?? 0);
+      if (!(Number.isFinite(base) && base > 0)) return sum;
+
+      const lineFinal = Number(ln.lineTotal ?? 0);
+      const fallbackFinal = qty * Number(ln.unitPrice ?? 0);
+      const final = Number.isFinite(lineFinal) ? lineFinal : fallbackFinal;
+      const baseTotal = qty * base;
+      return sum + Math.max(0, baseTotal - final);
+    }, 0),
+  );
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const me = await requireOpenShift(request, {
@@ -160,6 +213,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       originRunReceipt: {
         select: {
           id: true,
+          receiptKey: true,
           cashCollected: true,
           runId: true,
           lines: {
@@ -252,6 +306,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         where: { kind: "PARENT", parentOrderId: order.id },
         select: {
           id: true,
+          receiptKey: true,
           cashCollected: true,
           runId: true,
           lines: {
@@ -363,6 +418,83 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   riderCash = Math.max(0, Math.min(orderFinal, riderCash));
+  const remaining = Math.max(0, r2(orderFinal - riderCash));
+  const systemDiscountTotal = sumSystemDiscountFromFrozen(chosenLines);
+
+  const caseKeys = Array.from(
+    new Set(
+      [
+        order.originRunReceipt?.receiptKey
+          ? String(order.originRunReceipt.receiptKey).slice(0, 64)
+          : null,
+        parentReceipt?.receiptKey
+          ? String(parentReceipt.receiptKey).slice(0, 64)
+          : null,
+        order.originRunReceipt?.id ? `ROAD:${Number(order.originRunReceipt.id)}` : null,
+        `PARENT:${order.id}`,
+      ].filter((x): x is string => !!x),
+    ),
+  );
+  const clearanceCase =
+    caseKeys.length > 0
+      ? await db.clearanceCase.findFirst({
+          where: {
+            receiptKey: { in: caseKeys },
+            status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
+          } as any,
+          select: {
+            status: true,
+            decisions: {
+              select: {
+                kind: true,
+                arBalance: true,
+                overrideDiscountApproved: true,
+                customerAr: {
+                  select: {
+                    principal: true,
+                    balance: true,
+                    status: true,
+                  },
+                },
+              },
+              orderBy: { id: "desc" },
+              take: 1,
+            },
+          },
+          orderBy: { id: "desc" },
+        })
+      : null;
+  const latestDecision = clearanceCase?.decisions?.[0];
+  const approvedBargainDiscount = r2(
+    Math.max(0, Number(latestDecision?.overrideDiscountApproved ?? 0)),
+  );
+  const decisionAr = r2(Math.max(0, Number(latestDecision?.arBalance ?? 0)));
+  const approvedArAmount = r2(
+    Math.max(
+      0,
+      Number(
+        latestDecision?.customerAr?.principal ??
+          latestDecision?.customerAr?.balance ??
+          decisionAr,
+      ),
+    ),
+  );
+  const clearanceStatus =
+    clearanceCase?.status === "NEEDS_CLEARANCE" ||
+    clearanceCase?.status === "DECIDED"
+      ? clearanceCase.status
+      : null;
+  const decisionKind = parseDecisionKind(latestDecision?.kind);
+  const commercialDecision: CommercialDecisionView = {
+    frozenTotal: r2(orderFinal),
+    riderCash: r2(riderCash),
+    remaining,
+    systemDiscountTotal: r2(systemDiscountTotal),
+    approvedBargainDiscount,
+    approvedArAmount,
+    clearanceStatus,
+    decisionKind,
+  };
 
   const customerName =
     order.customer?.firstName || order.customer?.lastName
@@ -376,6 +508,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     discountView,
     hasFrozenTotal: hasFrozenTotalSafe,
     riderCash,
+    commercialDecision,
     runId,
     fromRunId: fromRunIdParam ? Number(fromRunIdParam) : null,
     ui: {
@@ -859,8 +992,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function RemitOrderPage() {
-  const { order, discountView, hasFrozenTotal, riderCash, fromRunId, ui } =
-    useLoaderData<typeof loader>();
+  const {
+    order,
+    discountView,
+    hasFrozenTotal,
+    riderCash,
+    commercialDecision,
+    fromRunId,
+    ui,
+  } = useLoaderData<typeof loader>();
 
   const nav = useNavigation();
 
@@ -888,6 +1028,46 @@ export default function RemitOrderPage() {
   const customerLabel =
     ui?.customerName ||
     (order.customerId ? `Customer #${order.customerId}` : "Walk-in / Unknown");
+
+  const commercialBadge = (() => {
+    if (commercialDecision.clearanceStatus === "NEEDS_CLEARANCE") {
+      return {
+        label: "Pending Clearance",
+        className: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    if (commercialDecision.decisionKind === "REJECT") {
+      return {
+        label: "Rejected",
+        className: "border-rose-200 bg-rose-50 text-rose-700",
+      };
+    }
+    if (
+      commercialDecision.approvedBargainDiscount > EPS &&
+      commercialDecision.approvedArAmount > EPS
+    ) {
+      return {
+        label: "Approved Hybrid",
+        className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+      };
+    }
+    if (commercialDecision.approvedBargainDiscount > EPS) {
+      return {
+        label: "Approved Discount",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (commercialDecision.approvedArAmount > EPS) {
+      return {
+        label: "Approved Open Balance",
+        className: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+    return {
+      label: "Settled Cash",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  })();
 
   // 🔒 UI hint: if missing frozen line totals, we should already be blocking "Post Remit"
   // but keep this defensive for visibility.
@@ -1084,6 +1264,71 @@ export default function RemitOrderPage() {
                       value={peso(discountView.totalAfter)}
                       valueClass="text-slate-900 font-semibold"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-slate-800">
+                    Commercial Decision
+                  </h2>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${commercialBadge.className}`}
+                  >
+                    {commercialBadge.label}
+                  </span>
+                </div>
+
+                <div className="px-4 py-4 space-y-2 text-sm">
+                  <Row
+                    label="Frozen total"
+                    value={peso(commercialDecision.frozenTotal)}
+                  />
+                  <Row
+                    label="Rider cash"
+                    value={peso(commercialDecision.riderCash)}
+                  />
+                  <Row
+                    label="Remaining"
+                    value={peso(commercialDecision.remaining)}
+                    valueClass={
+                      commercialDecision.remaining > EPS
+                        ? "text-amber-700 font-semibold"
+                        : ""
+                    }
+                  />
+                  <div className="pt-2 border-t border-slate-100">
+                    <Row
+                      label="System discount"
+                      value={`−${peso(commercialDecision.systemDiscountTotal)}`}
+                      valueClass={
+                        commercialDecision.systemDiscountTotal > EPS
+                          ? "text-rose-600 font-semibold"
+                          : ""
+                      }
+                    />
+                    <Row
+                      label="Approved bargain"
+                      value={peso(commercialDecision.approvedBargainDiscount)}
+                      valueClass={
+                        commercialDecision.approvedBargainDiscount > EPS
+                          ? "text-emerald-700 font-semibold"
+                          : ""
+                      }
+                    />
+                    <Row
+                      label="Approved AR"
+                      value={peso(commercialDecision.approvedArAmount)}
+                      valueClass={
+                        commercialDecision.approvedArAmount > EPS
+                          ? "text-amber-700 font-semibold"
+                          : ""
+                      }
+                    />
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Decision: {commercialDecision.decisionKind ?? "—"}
                   </div>
                 </div>
               </div>

@@ -6,22 +6,9 @@ import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { r2, peso } from "~/utils/money";
 
-// --------------------
-// AR SoT helpers
-// --------------------
-
-const isRiderShortageRef = (refNo: unknown) => {
-  const ref = String(refNo ?? "").toUpperCase();
-  return ref === "RIDER_SHORTAGE" || ref.startsWith("RIDER-SHORTAGE");
-};
-
-const sumFrozenLineTotals = (
-  lines: Array<{ lineTotal: any }> | null | undefined,
-) => r2((lines ?? []).reduce((s, it) => s + Number(it?.lineTotal ?? 0), 0));
-
 type Txn = {
   kind: "charge" | "settlement";
-  date: string; // ISO
+  date: string;
   label: string;
   debit: number;
   credit: number;
@@ -42,7 +29,6 @@ type LoaderData = {
   closingBalance: number;
 };
 
-// Parse "YYYY-MM-DD" as local midnight
 function parseYmdLocal(v: string | null): Date | null {
   if (!v) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
@@ -52,13 +38,13 @@ function parseYmdLocal(v: string | null): Date | null {
   const dd = Number(m[3]);
   return new Date(yy, mm - 1, dd);
 }
+
 function ymd(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  // ✅ Enforce shift for CASHIER; ADMIN bypass remains handled by requireOpenShift
   const url = new URL(request.url);
   await requireOpenShift(request, {
     next: `${url.pathname}${url.search || ""}`,
@@ -70,7 +56,6 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   const startParam = parseYmdLocal(url.searchParams.get("start"));
   const endParam = parseYmdLocal(url.searchParams.get("end"));
 
-  // default: current month → today
   const now = new Date();
   const start = startParam ?? new Date(now.getFullYear(), now.getMonth(), 1);
   const end =
@@ -97,28 +82,39 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       lastName: true,
       alias: true,
       phone: true,
-      orders: {
-        where: { status: { in: ["UNPAID", "PARTIALLY_PAID", "PAID"] } },
+      customerAr: {
         select: {
           id: true,
-          orderCode: true,
-          channel: true,
+          principal: true,
           createdAt: true,
-          originRunReceiptId: true,
-          originRunReceipt: {
-            select: { id: true, lines: { select: { lineTotal: true } } },
-          },
-          items: { select: { lineTotal: true } },
-          payments: {
+          order: {
             select: {
-              amount: true,
-              method: true,
-              refNo: true,
-              createdAt: true,
+              orderCode: true,
+              channel: true,
             },
           },
+          clearanceDecision: {
+            select: {
+              kind: true,
+              clearanceCase: {
+                select: {
+                  receiptKey: true,
+                },
+              },
+            },
+          },
+          payments: {
+            select: {
+              id: true,
+              amount: true,
+              refNo: true,
+              note: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "asc" },
+          },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
     },
   });
@@ -128,108 +124,60 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     customer.middleName ? ` ${customer.middleName}` : ""
   } ${customer.lastName}`.trim();
 
-  // Batch PARENT receipts for delivery orders
-  const orderIds = customer.orders.map((o) => o.id);
-  const parentReceipts = orderIds.length
-    ? await db.runReceipt.findMany({
-        where: { kind: "PARENT", parentOrderId: { in: orderIds } },
-        select: { parentOrderId: true, lines: { select: { lineTotal: true } } },
-      })
-    : [];
-  const parentByOrderId = new Map<number, Array<{ lineTotal: any }>>();
-  for (const rr of parentReceipts) {
-    if (rr.parentOrderId != null && !parentByOrderId.has(rr.parentOrderId)) {
-      parentByOrderId.set(rr.parentOrderId, rr.lines ?? []);
-    }
-  }
-
-  // Opening balance = charges before start - settlements before start
   let openingCharges = 0;
   let openingSettlements = 0;
 
-  for (const o of customer.orders) {
-    // Charges are dated at order.createdAt
-    if (o.createdAt < start) {
-      const originLines = o.originRunReceipt?.lines ?? [];
-      const parentLines = parentByOrderId.get(o.id) ?? [];
-      const itemLines = (o.items ?? []).map((x: any) => ({
-        lineTotal: x?.lineTotal,
-      }));
-
-      const charge =
-        originLines.length > 0
-          ? sumFrozenLineTotals(originLines as any)
-          : parentLines.length > 0
-          ? sumFrozenLineTotals(parentLines as any)
-          : sumFrozenLineTotals(itemLines as any);
-
-      openingCharges = r2(openingCharges + charge);
+  for (const ar of customer.customerAr) {
+    const principal = r2(Math.max(0, Number(ar.principal ?? 0)));
+    if (ar.createdAt < start) {
+      openingCharges = r2(openingCharges + principal);
     }
 
-    // Settlements are dated at payment.createdAt
-    for (const p of o.payments ?? []) {
-      const method = String(p.method ?? "").toUpperCase();
-      const isSettlement =
-        method === "CASH" ||
-        (method === "INTERNAL_CREDIT" && isRiderShortageRef(p.refNo));
-      if (!isSettlement) continue;
-
+    for (const p of ar.payments ?? []) {
       if (p.createdAt < start) {
-        openingSettlements = r2(openingSettlements + Number(p.amount ?? 0));
+        openingSettlements = r2(
+          openingSettlements + Math.max(0, Number(p.amount ?? 0)),
+        );
       }
     }
   }
 
   const openingBalance = r2(openingCharges - openingSettlements);
 
-  // In-range txns
   const txnsRaw: Array<Omit<Txn, "running">> = [];
 
-  for (const o of customer.orders) {
-    // charge in-range
-    if (o.createdAt >= start && o.createdAt < endExclusive) {
-      const originLines = o.originRunReceipt?.lines ?? [];
-      const parentLines = parentByOrderId.get(o.id) ?? [];
-      const itemLines = (o.items ?? []).map((x: any) => ({
-        lineTotal: x?.lineTotal,
-      }));
+  for (const ar of customer.customerAr) {
+    const principal = r2(Math.max(0, Number(ar.principal ?? 0)));
+    const orderPart = ar.order?.orderCode
+      ? ` • ${ar.order.orderCode}${ar.order.channel ? ` (${ar.order.channel})` : ""}`
+      : "";
+    const decisionPart = ar.clearanceDecision?.kind
+      ? ` • ${String(ar.clearanceDecision.kind)}`
+      : "";
+    const receiptPart = ar.clearanceDecision?.clearanceCase?.receiptKey
+      ? ` • ${String(ar.clearanceDecision.clearanceCase.receiptKey)}`
+      : "";
 
-      const charge =
-        originLines.length > 0
-          ? sumFrozenLineTotals(originLines as any)
-          : parentLines.length > 0
-          ? sumFrozenLineTotals(parentLines as any)
-          : sumFrozenLineTotals(itemLines as any);
-
+    if (ar.createdAt >= start && ar.createdAt < endExclusive) {
       txnsRaw.push({
         kind: "charge",
-        date: o.createdAt.toISOString(),
-        label: `Order ${o.orderCode} (${o.channel})`,
-        debit: charge,
+        date: ar.createdAt.toISOString(),
+        label: `A/R #${ar.id}${orderPart}${decisionPart}${receiptPart}`,
+        debit: principal,
         credit: 0,
       });
     }
 
-    // settlements in-range
-    for (const p of o.payments ?? []) {
-      const method = String(p.method ?? "").toUpperCase();
-      const isSettlement =
-        method === "CASH" ||
-        (method === "INTERNAL_CREDIT" && isRiderShortageRef(p.refNo));
-      if (!isSettlement) continue;
-
+    for (const p of ar.payments ?? []) {
       if (p.createdAt >= start && p.createdAt < endExclusive) {
         txnsRaw.push({
           kind: "settlement",
           date: p.createdAt.toISOString(),
-          label:
-            method === "INTERNAL_CREDIT"
-              ? `Settlement (Rider shortage bridge)${
-                  p.refNo ? ` • ${p.refNo}` : ""
-                }`
-              : `Payment ${method}${p.refNo ? ` • ${p.refNo}` : ""}`,
+          label: `Payment (A/R #${ar.id})${p.refNo ? ` • ${p.refNo}` : ""}${
+            p.note ? ` • ${p.note}` : ""
+          }`,
           debit: 0,
-          credit: r2(Number(p.amount ?? 0)),
+          credit: r2(Math.max(0, Number(p.amount ?? 0))),
         });
       }
     }
@@ -237,7 +185,6 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
   txnsRaw.sort((a, b) => +new Date(a.date) - +new Date(b.date));
 
-  // Running balance, never negative (cap credits)
   let run = openingBalance;
   const txns: Txn[] = txnsRaw.map((t) => {
     if (t.debit > 0) {
@@ -282,17 +229,19 @@ export default function CustomerStatementPage() {
   const [sp] = useSearchParams();
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur no-print">
-        <div className="mx-auto max-w-5xl px-5 py-4 flex items-center justify-between">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef2ff_0%,_#f8fafc_45%,_#f3f4f6_100%)]">
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/85 backdrop-blur no-print">
+        <div className="mx-auto max-w-6xl px-5 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               Statement of Account
             </h1>
             <div className="text-sm text-slate-600">
               {customer.name}
-              {customer.alias ? ` (${customer.alias})` : ""} •{" "}
-              {customer.phone ?? "—"}
+              {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"}
+            </div>
+            <div className="text-xs text-slate-500">
+              SoT: customerAr debits + customerArPayment credits
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -312,10 +261,10 @@ export default function CustomerStatementPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-5xl px-5 py-6 space-y-4">
+      <div className="mx-auto max-w-6xl px-5 py-6 space-y-4">
         <Form
           method="get"
-          className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 flex flex-wrap items-end gap-3 no-print"
+          className="rounded-2xl border border-slate-200 bg-white/90 shadow-sm p-3 flex flex-wrap items-end gap-3 no-print"
         >
           <label className="text-sm">
             <span className="text-slate-700">Start</span>
@@ -340,67 +289,95 @@ export default function CustomerStatementPage() {
           </button>
         </Form>
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Statement • {period.start} → {period.end}
+        <section className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-xs text-slate-500">Opening Balance</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 tabular-nums">
+              {peso(openingBalance)}
+            </div>
           </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-xs text-slate-500">Charges (Period)</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 tabular-nums">
+              {peso(totals.debits)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-xs text-slate-500">Settlements (Period)</div>
+            <div className="mt-1 text-lg font-semibold text-emerald-700 tabular-nums">
+              {peso(totals.credits)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm">
+            <div className="text-xs text-indigo-700">Closing Balance</div>
+            <div className="mt-1 text-lg font-semibold text-indigo-900 tabular-nums">
+              {peso(closingBalance)}
+            </div>
+          </div>
+        </section>
 
-          <div className="px-4 py-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Opening Balance</span>
-              <span className="font-medium">{peso(openingBalance)}</span>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+            <div className="text-sm font-medium text-slate-800">
+              Statement • {period.start} → {period.end}
+            </div>
+            <div className="text-xs text-slate-500">
+              {txns.length} transaction{txns.length === 1 ? "" : "s"}
             </div>
           </div>
 
-          <div className="divide-y divide-slate-100">
-            {txns.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-600">
-                No transactions in this period.
-              </div>
-            ) : (
-              <>
-                <div className="px-4 py-2 text-xs text-slate-500 flex items-center justify-between">
-                  <div className="w-[60%]">Date • Details</div>
-                  <div className="flex gap-6 w-[40%] justify-end">
-                    <div className="w-28 text-right">Charges</div>
-                    <div className="w-28 text-right">Settlements</div>
-                    <div className="w-28 text-right">Balance</div>
-                  </div>
-                </div>
-
-                {txns.map((t, i) => (
-                  <div
-                    key={i}
-                    className="px-4 py-2 text-sm flex items-center justify-between"
-                  >
-                    <div className="w-[60%] text-slate-700">
-                      {new Date(t.date).toLocaleString()} • {t.label}
-                    </div>
-                    <div className="flex gap-6 w-[40%] justify-end">
-                      <div className="w-28 text-right">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Date / Details</th>
+                  <th className="px-4 py-2 text-right font-medium">Charges</th>
+                  <th className="px-4 py-2 text-right font-medium">Settlements</th>
+                  <th className="px-4 py-2 text-right font-medium">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txns.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-sm text-slate-600">
+                      No transactions in this period.
+                    </td>
+                  </tr>
+                ) : (
+                  txns.map((t, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-slate-700">
+                        <div>{new Date(t.date).toLocaleString()}</div>
+                        <div className="text-xs text-slate-500">{t.label}</div>
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
                         {t.debit ? `+ ${peso(t.debit)}` : "—"}
-                      </div>
-                      <div className="w-28 text-right text-emerald-700">
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-emerald-700">
                         {t.credit ? `− ${peso(t.credit)}` : "—"}
-                      </div>
-                      <div className="w-28 text-right font-medium tabular-nums">
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-900">
                         {peso(t.running)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className="px-4 py-3 text-sm space-y-1 border-t border-slate-100 bg-slate-50/50">
+          <div className="px-4 py-3 text-sm space-y-1 border-t border-slate-100 bg-slate-50/60">
             <div className="flex justify-between">
-              <span className="text-slate-600">Total Charges</span>
+              <span className="text-slate-600">Opening</span>
+              <span className="font-medium">{peso(openingBalance)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">+ Charges</span>
               <span className="font-medium">{peso(totals.debits)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Total Settlements</span>
-              <span className="font-medium">- {peso(totals.credits)}</span>
+              <span className="text-slate-600">- Settlements</span>
+              <span className="font-medium">{peso(totals.credits)}</span>
             </div>
             <div className="flex justify-between font-semibold text-slate-900">
               <span>Closing Balance</span>
@@ -408,12 +385,19 @@ export default function CustomerStatementPage() {
             </div>
           </div>
         </div>
+
+        <div className="no-print rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+          This statement is generated from approved customer A/R entries and A/R payment records only.
+        </div>
       </div>
 
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { size: A4; margin: 14mm; }
+          @page { size: A4; margin: 12mm; }
+          body { background: white !important; }
+          table { font-size: 11px; }
+          th, td { padding-top: 6px !important; padding-bottom: 6px !important; }
         }
       `}</style>
     </main>

@@ -4,7 +4,6 @@ import { json, redirect } from "@remix-run/node";
 import {
   Form,
   Link,
-  Outlet,
   useLoaderData,
   useNavigation,
   useSearchParams,
@@ -12,32 +11,39 @@ import {
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
-import { allocateReceiptNo } from "~/utils/receipt";
 import { r2 } from "~/utils/money";
-import {
-  type PaymentLite,
-  EPS,
-  isSettlementPayment,
-  sumSettlementCredits,
-  sumFrozenLineTotals,
-  hasAllFrozenLineTotals,
-} from "~/services/settlementSoT";
+
+const EPS = 0.009;
 
 function parseMoney(v: FormDataEntryValue | null) {
   const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
+type EntryRow = {
+  id: number;
+  createdAt: string;
+  dueDate: string | null;
+  status: string;
+  principal: number;
+  paid: number;
+  remaining: number;
+  orderCode: string | null;
+  channel: string | null;
+  decisionKind: string | null;
+  receiptKey: string | null;
+};
+
 type LedgerRow =
   | {
-      kind: "order";
+      kind: "ar";
       date: string;
       label: string;
       debit: number;
       credit: 0;
-      orderId: number;
+      arId: number;
       due: string | null;
-      remainingAfter: number;
+      runningAfter: number;
     }
   | {
       kind: "payment";
@@ -46,10 +52,10 @@ type LedgerRow =
       debit: 0;
       credit: number;
       creditApplied: number;
-      orderId: number;
+      arId: number;
       paymentId: number;
-      method: string;
       refNo: string | null;
+      runningAfter: number;
     };
 
 type LoaderData = {
@@ -59,31 +65,21 @@ type LoaderData = {
     alias: string | null;
     phone: string | null;
   };
-  orders: Array<{
-    id: number;
-    orderCode: string;
-    channel: string;
-    status: string;
-    createdAt: string;
-    dueDate: string | null;
-    charge: number; // SoT
-    settled: number; // SoT
-    remaining: number; // SoT
-  }>;
+  entries: EntryRow[];
   rows: LedgerRow[];
   balance: number;
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // ✅ Shift required for CASHIER; keep exact return URL
   const url = new URL(request.url);
   await requireOpenShift(request, {
     next: `${url.pathname}${url.search || ""}`,
   });
 
   const customerId = Number(params.id);
-  if (!Number.isFinite(customerId))
+  if (!Number.isFinite(customerId)) {
     throw new Response("Invalid ID", { status: 400 });
+  }
 
   const customer = await db.customer.findUnique({
     where: { id: customerId },
@@ -94,33 +90,43 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       lastName: true,
       alias: true,
       phone: true,
-      orders: {
-        // Show all open + paid (for context)
-        where: { status: { in: ["UNPAID", "PARTIALLY_PAID", "PAID"] } },
+      customerAr: {
         select: {
           id: true,
-          orderCode: true,
-          channel: true,
-          status: true,
           createdAt: true,
           dueDate: true,
-          originRunReceiptId: true,
-          originRunReceipt: {
-            select: { id: true, lines: { select: { lineTotal: true } } },
+          status: true,
+          principal: true,
+          balance: true,
+          order: {
+            select: {
+              id: true,
+              orderCode: true,
+              channel: true,
+            },
           },
-          items: { select: { lineTotal: true } },
+          clearanceDecision: {
+            select: {
+              kind: true,
+              clearanceCase: {
+                select: {
+                  receiptKey: true,
+                },
+              },
+            },
+          },
           payments: {
             select: {
               id: true,
               amount: true,
-              method: true,
               refNo: true,
+              note: true,
               createdAt: true,
             },
             orderBy: { createdAt: "asc" },
           },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
     },
   });
@@ -131,127 +137,117 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     customer.middleName ? ` ${customer.middleName}` : ""
   } ${customer.lastName}`.trim();
 
-  // Batch load PARENT receipts for non-origin orders
-  const orderIds = customer.orders.map((o) => o.id);
-  const parentReceipts = orderIds.length
-    ? await db.runReceipt.findMany({
-        where: { kind: "PARENT", parentOrderId: { in: orderIds } },
-        select: {
-          id: true,
-          parentOrderId: true,
-          lines: { select: { lineTotal: true } },
-        },
-      })
-    : [];
-  const parentByOrderId = new Map<number, Array<{ lineTotal: any }>>();
-  for (const rr of parentReceipts) {
-    if (rr.parentOrderId != null && !parentByOrderId.has(rr.parentOrderId)) {
-      parentByOrderId.set(rr.parentOrderId, rr.lines ?? []);
-    }
-  }
-
-  // Build order summaries (SoT)
-  const orders = customer.orders.map((o) => {
-    const originLines = o.originRunReceipt?.lines ?? [];
-    const parentLines = parentByOrderId.get(o.id) ?? [];
-    const itemLines = (o.items ?? []).map((x: any) => ({
-      lineTotal: x?.lineTotal,
-    }));
-
-    const charge =
-      originLines.length > 0
-        ? sumFrozenLineTotals(originLines as any)
-        : parentLines.length > 0
-        ? sumFrozenLineTotals(parentLines as any)
-        : sumFrozenLineTotals(itemLines as any);
-
-    const settled = sumSettlementCredits(o.payments as any);
-    const remaining = Math.max(0, r2(charge - settled));
+  const entries: EntryRow[] = customer.customerAr.map((ar) => {
+    const principal = r2(Math.max(0, Number(ar.principal ?? 0)));
+    const remaining = r2(Math.max(0, Number(ar.balance ?? 0)));
+    const paid = r2(Math.max(0, principal - remaining));
 
     return {
-      id: o.id,
-      orderCode: o.orderCode,
-      channel: o.channel,
-      status: o.status,
-      createdAt: o.createdAt.toISOString(),
-      dueDate: o.dueDate ? o.dueDate.toISOString() : null,
-      charge,
-      settled,
+      id: ar.id,
+      createdAt: ar.createdAt.toISOString(),
+      dueDate: ar.dueDate ? ar.dueDate.toISOString() : null,
+      status: String(ar.status ?? ""),
+      principal,
+      paid,
       remaining,
+      orderCode: ar.order?.orderCode ?? null,
+      channel: ar.order?.channel ?? null,
+      decisionKind: ar.clearanceDecision?.kind
+        ? String(ar.clearanceDecision.kind)
+        : null,
+      receiptKey: ar.clearanceDecision?.clearanceCase?.receiptKey
+        ? String(ar.clearanceDecision.clearanceCase.receiptKey)
+        : null,
     };
   });
 
-  // Ledger rows (chronological): charge then payments
-  const rows: LedgerRow[] = [];
-  let balance = 0;
+  const events: Array<{
+    kind: "ar" | "payment";
+    date: string;
+    arId: number;
+    label: string;
+    debit: number;
+    credit: number;
+    due?: string | null;
+    paymentId?: number;
+    refNo?: string | null;
+  }> = [];
 
-  for (const o of customer.orders) {
-    const originLines = o.originRunReceipt?.lines ?? [];
-    const parentLines = parentByOrderId.get(o.id) ?? [];
-    const itemLines = (o.items ?? []).map((x: any) => ({
-      lineTotal: x?.lineTotal,
-    }));
+  for (const ar of customer.customerAr) {
+    const principal = r2(Math.max(0, Number(ar.principal ?? 0)));
+    const orderPart = ar.order?.orderCode ? ` • ${ar.order.orderCode}` : "";
+    const decisionPart = ar.clearanceDecision?.kind
+      ? ` • ${String(ar.clearanceDecision.kind)}`
+      : "";
 
-    const charge =
-      originLines.length > 0
-        ? sumFrozenLineTotals(originLines as any)
-        : parentLines.length > 0
-        ? sumFrozenLineTotals(parentLines as any)
-        : sumFrozenLineTotals(itemLines as any);
-
-    // charge row
-    balance = r2(balance + charge);
-    rows.push({
-      kind: "order",
-      date: o.createdAt.toISOString(),
-      label: `Order ${o.orderCode} (${o.channel})`,
-      debit: charge,
+    events.push({
+      kind: "ar",
+      date: ar.createdAt.toISOString(),
+      arId: ar.id,
+      label: `A/R #${ar.id}${orderPart}${decisionPart}`,
+      debit: principal,
       credit: 0,
-      orderId: o.id,
-      due: o.dueDate ? o.dueDate.toISOString() : null,
-      remainingAfter: balance,
+      due: ar.dueDate ? ar.dueDate.toISOString() : null,
     });
 
-    // payments (AR settlement truth shown in ledger):
-    // - CASH always counts
-    // - INTERNAL_CREDIT only if rider-shortage bridge
-    for (const p of o.payments) {
-      const method = String(p.method ?? "").toUpperCase();
-      const amt = Number(p.amount ?? 0);
-      if (!isSettlementPayment(p as any as PaymentLite)) continue;
-
-      // Cap credit to never make customer balance negative (display correctness)
-      const dueNow = Math.max(0, balance);
-      const applied = Math.min(Math.max(0, amt), dueNow);
-
-      balance = r2(balance - applied);
-
-      rows.push({
+    for (const p of ar.payments ?? []) {
+      events.push({
         kind: "payment",
         date: p.createdAt.toISOString(),
-        label:
-          method === "INTERNAL_CREDIT"
-            ? `Settlement (Rider shortage bridge)${
-                p.refNo ? ` • ${p.refNo}` : ""
-              }`
-            : `Payment ${method}${p.refNo ? ` • ${p.refNo}` : ""}`,
+        arId: ar.id,
+        label: `Payment${p.refNo ? ` • ${p.refNo}` : ""}${
+          p.note ? ` • ${p.note}` : ""
+        }`,
         debit: 0,
-        credit: r2(amt),
-        creditApplied: r2(applied),
-        orderId: o.id,
+        credit: r2(Math.max(0, Number(p.amount ?? 0))),
         paymentId: p.id,
-        method,
         refNo: p.refNo ?? null,
       });
     }
   }
 
-  rows.sort((a, b) => +new Date(a.date) - +new Date(b.date));
+  events.sort((a, b) => {
+    const d = +new Date(a.date) - +new Date(b.date);
+    if (d !== 0) return d;
+    if (a.kind === b.kind) return 0;
+    return a.kind === "ar" ? -1 : 1;
+  });
 
-  // Closing balance should match SoT remaining sum for open orders
-  const openBalance = r2(
-    orders.reduce((s, x) => s + Math.max(0, x.remaining), 0),
-  );
+  let running = 0;
+  const rows: LedgerRow[] = events.map((evt) => {
+    if (evt.kind === "ar") {
+      running = r2(running + evt.debit);
+      return {
+        kind: "ar",
+        date: evt.date,
+        label: evt.label,
+        debit: evt.debit,
+        credit: 0,
+        arId: evt.arId,
+        due: evt.due ?? null,
+        runningAfter: running,
+      };
+    }
+
+    const dueNow = Math.max(0, running);
+    const applied = r2(Math.min(Math.max(0, evt.credit), dueNow));
+    running = r2(running - applied);
+
+    return {
+      kind: "payment",
+      date: evt.date,
+      label: evt.label,
+      debit: 0,
+      credit: r2(evt.credit),
+      creditApplied: applied,
+      arId: evt.arId,
+      paymentId: Number(evt.paymentId ?? 0),
+      refNo: evt.refNo ?? null,
+      runningAfter: running,
+    };
+  });
+
+  const balance = r2(entries.reduce((sum, e) => sum + Math.max(0, e.remaining), 0));
 
   return json<LoaderData>({
     customer: {
@@ -260,9 +256,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       alias: customer.alias ?? null,
       phone: customer.phone ?? null,
     },
-    orders,
+    entries,
     rows,
-    balance: openBalance,
+    balance,
   });
 }
 
@@ -271,15 +267,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const me = await requireOpenShift(request, {
     next: `${url.pathname}${url.search || ""}`,
   });
-  const customerId = Number(params.id);
-  if (!Number.isFinite(customerId))
-    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
 
-  // ─────────────────────────────────────────────
-  // 🔒 SHIFT WRITABLE GUARD (writes happen here)
-  // - NO SHIFT     → redirect to open shift
-  // - LOCKED SHIFT → redirect shift console (?locked=1)
-  // ─────────────────────────────────────────────
+  const customerId = Number(params.id);
+  if (!Number.isFinite(customerId)) {
+    return json({ ok: false, error: "Invalid ID" }, { status: 400 });
+  }
+
   const { shiftId: shiftIdForPayment } = await assertActiveShiftWritable({
     request,
     next: `${url.pathname}${url.search || ""}`,
@@ -287,168 +280,97 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
-
   if (act !== "recordPayment") {
     return json({ ok: false, error: "Unknown action" }, { status: 400 });
   }
 
-  // CASH only for now
   const amountRaw = parseMoney(fd.get("amount"));
   const refNo = String(fd.get("refNo") || "").trim() || null;
-  const orderIdRaw = Number(fd.get("orderId") || 0);
-  const orderId =
-    Number.isFinite(orderIdRaw) && orderIdRaw > 0 ? orderIdRaw : null;
+  const arIdRaw = Number(fd.get("arId") || 0);
+  const arId = Number.isFinite(arIdRaw) && arIdRaw > 0 ? arIdRaw : null;
 
   if (!Number.isFinite(amountRaw) || amountRaw <= 0) {
     return json({ ok: false, error: "Enter amount > 0" }, { status: 400 });
   }
 
-  // Helper inside tx: compute SoT remaining for an order
-  const getSoTRemaining = async (tx: any, oid: number) => {
-    const ord = await tx.order.findUnique({
-      where: { id: oid },
-      select: {
-        id: true,
-        customerId: true,
-        originRunReceiptId: true,
-        originRunReceipt: {
-          select: { id: true, lines: { select: { lineTotal: true } } },
-        },
-        items: { select: { lineTotal: true } },
-        payments: { select: { amount: true, method: true, refNo: true } },
-      },
-    });
-    if (!ord) return 0;
-
-    const parentReceipt = !ord.originRunReceiptId
-      ? await tx.runReceipt.findFirst({
-          where: { kind: "PARENT", parentOrderId: ord.id },
-          select: { id: true, lines: { select: { lineTotal: true } } },
-        })
-      : null;
-
-    const originLines = ord.originRunReceipt?.lines ?? [];
-    const parentLines = parentReceipt?.lines ?? [];
-    const itemLines = (ord.items ?? []).map((x: any) => ({
-      lineTotal: x?.lineTotal,
-    }));
-
-    // ✅ HARD GUARD: Block AR payment if totals are not frozen (no trusted lineTotal SoT).
-    // Acceptable sources of truth for "charge":
-    // 1) originRunReceipt.lines.lineTotal
-    // 2) parentReceipt.lines.lineTotal
-    // 3) order.items.lineTotal (fallback snapshot)
-    const hasFrozenOrigin = hasAllFrozenLineTotals(originLines as any);
-    const hasFrozenParent = hasAllFrozenLineTotals(parentLines as any);
-    const hasFrozenItems = hasAllFrozenLineTotals(itemLines as any);
-
-    if (!hasFrozenOrigin && !hasFrozenParent && !hasFrozenItems) {
-      throw new Error(
-        `Blocked: Order #${ord.id} totals are not frozen yet (missing line totals). Finalize/freeze first (Manager check-in / parent receipt).`,
-      );
-    }
-
-    const charge =
-      originLines.length > 0
-        ? sumFrozenLineTotals(originLines as any)
-        : parentLines.length > 0
-        ? sumFrozenLineTotals(parentLines as any)
-        : sumFrozenLineTotals(itemLines as any);
-
-    const settled = sumSettlementCredits(ord.payments as any);
-    return Math.max(0, r2(charge - settled));
-  };
-
   let change = 0;
-  let lastAppliedOrderId: number | null = null;
-  let lastPaymentId: number | null = null;
 
   try {
     await db.$transaction(async (tx) => {
-      // Validate customer exists
-      const cust = await tx.customer.findUnique({
+      const customer = await tx.customer.findUnique({
         where: { id: customerId },
         select: { id: true },
       });
-      if (!cust) throw new Error("Customer not found");
+      if (!customer) throw new Error("Customer not found.");
 
-      // Determine targets: either one order, or FIFO open orders
       let targets: Array<{ id: number }> = [];
-
-      if (orderId) {
-        // Confirm this order belongs to customer
-        const ord = await tx.order.findUnique({
-          where: { id: orderId },
-          select: { id: true, customerId: true, status: true },
+      if (arId) {
+        const row = await tx.customerAr.findFirst({
+          where: { id: arId, customerId },
+          select: { id: true, balance: true },
         });
-        if (!ord || ord.customerId !== customerId) {
-          throw new Error("Order not found for this customer.");
+        if (!row) throw new Error("A/R entry not found for this customer.");
+        if (Number(row.balance ?? 0) <= EPS) {
+          throw new Error("Selected A/R entry is already settled.");
         }
-        targets = [{ id: orderId }];
+        targets = [{ id: row.id }];
       } else {
-        targets = await tx.order.findMany({
-          where: { customerId, status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+        targets = await tx.customerAr.findMany({
+          where: {
+            customerId,
+            balance: { gt: 0 },
+            status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
+          },
           select: { id: true },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         });
-        if (!targets.length)
-          throw new Error("No open orders for this customer.");
+        if (!targets.length) throw new Error("No open A/R entries for this customer.");
       }
 
       let remainingToApply = r2(amountRaw);
+      let appliedTotal = 0;
 
       for (const t of targets) {
         if (remainingToApply <= EPS) break;
 
-        const due = await getSoTRemaining(tx, t.id);
+        const row = await tx.customerAr.findUnique({
+          where: { id: t.id },
+          select: { id: true, balance: true, status: true },
+        });
+        if (!row) continue;
+
+        const due = r2(Math.max(0, Number(row.balance ?? 0)));
         if (due <= EPS) continue;
 
-        const apply = Math.min(remainingToApply, due);
+        const apply = r2(Math.min(remainingToApply, due));
         if (apply <= EPS) continue;
 
-        // Record CASH payment (capture last payment id for print redirect)
-        const p = await tx.payment.create({
+        await tx.customerArPayment.create({
           data: {
-            orderId: t.id,
-            method: "CASH",
-            amount: r2(apply),
+            arId: row.id,
+            amount: apply,
             refNo,
-            cashierId: me.userId,
-            // ✅ Always tag to an ACTIVE + WRITABLE shift
             shiftId: shiftIdForPayment ?? null,
-            // Keep types consistent w/ other routes (string money fields)
-            tendered: r2(apply).toFixed(2),
-            change: "0.00",
-          },
-          select: { id: true, orderId: true },
+            cashierId: me.userId,
+          } as any,
         });
-        lastAppliedOrderId = Number(p.orderId);
-        lastPaymentId = Number(p.id);
+
+        const newBalance = r2(Math.max(0, due - apply));
+        await tx.customerAr.update({
+          where: { id: row.id },
+          data: {
+            balance: newBalance,
+            status: newBalance <= EPS ? "SETTLED" : "PARTIALLY_SETTLED",
+            settledAt: newBalance <= EPS ? new Date() : null,
+          } as any,
+        });
 
         remainingToApply = r2(remainingToApply - apply);
+        appliedTotal = r2(appliedTotal + apply);
+      }
 
-        // Update order status based on SoT after payment
-        const dueAfter = await getSoTRemaining(tx, t.id);
-        if (dueAfter <= EPS) {
-          const receiptNo = await allocateReceiptNo(tx);
-          await tx.order.update({
-            where: { id: t.id },
-            data: {
-              status: "PAID",
-              paidAt: new Date(),
-              receiptNo,
-              isOnCredit: false,
-            },
-          });
-        } else {
-          await tx.order.update({
-            where: { id: t.id },
-            data: {
-              status: "PARTIALLY_PAID",
-              isOnCredit: true,
-            },
-          });
-        }
+      if (appliedTotal <= EPS) {
+        throw new Error("No open A/R entries available for this payment.");
       }
 
       change = Math.max(0, r2(remainingToApply));
@@ -456,23 +378,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } catch (e: any) {
     const msg = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: msg }, { status: 400 });
-  }
-
-  // ✅ Centralized print route (do not delete old routes yet)
-  // If at least one payment was applied, bounce to /orders/:id/receipt and let it decide:
-  // - OFFICIAL RECEIPT (PAID + receiptNo)
-  // - ACK / CREDIT ACK (partial / on-credit)
-  if (lastAppliedOrderId && lastPaymentId) {
-    const returnTo = `/ar/customers/${customerId}`;
-    const qs = new URLSearchParams({
-      autoprint: "1",
-      autoback: "1",
-      returnTo,
-      pid: String(lastPaymentId),
-      tendered: r2(amountRaw).toFixed(2),
-      change: r2(change).toFixed(2),
-    });
-    return redirect(`/orders/${lastAppliedOrderId}/receipt?${qs.toString()}`);
   }
 
   const qs = new URLSearchParams();
@@ -486,11 +391,9 @@ const peso = (n: number) =>
   );
 
 export default function CustomerLedgerPage() {
-  const { customer, orders, rows, balance } = useLoaderData<LoaderData>();
+  const { customer, entries, rows, balance } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const [sp] = useSearchParams();
-
-  // Default current month → today
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -508,16 +411,14 @@ export default function CustomerLedgerPage() {
         <div className="mx-auto max-w-5xl px-5 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Customer Ledger
+              Customer A/R Ledger
             </h1>
             <div className="text-sm text-slate-600">
               {customer.name}
-              {customer.alias ? ` (${customer.alias})` : ""} •{" "}
-              {customer.phone ?? "—"}
+              {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"}
             </div>
             <div className="text-xs text-slate-500">
-              SoT: frozen totals only • settlement includes rider-shortage
-              bridge
+              SoT: customerAr debits + customerArPayment credits
             </div>
           </div>
 
@@ -547,52 +448,49 @@ export default function CustomerLedgerPage() {
       {sp.get("change") ? (
         <div className="mx-auto max-w-5xl px-5 pt-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Change not applied to AR (excess payment):{" "}
-            <b>{peso(Number(sp.get("change") || 0))}</b>
+            Excess cash not applied: <b>{peso(Number(sp.get("change") || 0))}</b>
           </div>
         </div>
       ) : null}
 
       <div className="mx-auto max-w-5xl px-5 py-6 grid gap-6 lg:grid-cols-3">
-        {/* Orders summary */}
         <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Open / Recent Orders (SoT)
+            A/R Entries (Decision-backed)
           </div>
 
-          {orders.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-slate-600">No orders.</div>
+          {entries.length === 0 ? (
+            <div className="px-4 py-8 text-sm text-slate-600">No A/R entries.</div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {orders.map((o) => (
-                <div
-                  key={o.id}
-                  className="px-4 py-3 flex items-center justify-between"
-                >
+              {entries.map((e) => (
+                <div key={e.id} className="px-4 py-3 flex items-center justify-between">
                   <div>
                     <div className="text-sm font-medium text-slate-900">
-                      {o.orderCode}{" "}
-                      <span className="text-xs text-slate-500">
-                        ({o.channel})
-                      </span>
+                      A/R #{e.id}
+                      {e.orderCode ? (
+                        <span className="text-xs text-slate-500">
+                          {` • ${e.orderCode}${e.channel ? ` (${e.channel})` : ""}`}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {new Date(o.createdAt).toLocaleString()}
-                      {o.dueDate
-                        ? ` • due ${new Date(o.dueDate).toLocaleDateString()}`
+                      {new Date(e.createdAt).toLocaleString()}
+                      {e.dueDate
+                        ? ` • due ${new Date(e.dueDate).toLocaleDateString()}`
                         : ""}
-                      {" • "}
-                      <span className="uppercase">{o.status}</span>
+                      {e.decisionKind ? ` • ${e.decisionKind}` : ""}
                     </div>
                     <div className="text-xs text-slate-600 mt-1">
-                      Charge {peso(o.charge)} • Settled {peso(o.settled)}
+                      Principal {peso(e.principal)} • Paid {peso(e.paid)}
+                      {e.receiptKey ? ` • ${e.receiptKey}` : ""}
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-semibold text-indigo-700 tabular-nums">
-                      {peso(o.remaining)}
+                      {peso(e.remaining)}
                     </div>
-                    <div className="text-[11px] text-slate-500">remaining</div>
+                    <div className="text-[11px] text-slate-500">{e.status}</div>
                   </div>
                 </div>
               ))}
@@ -600,10 +498,9 @@ export default function CustomerLedgerPage() {
           )}
         </section>
 
-        {/* Record Payment */}
         <aside className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Record Customer Payment (CASH)
+            Record A/R Payment (CASH)
           </div>
 
           <Form method="post" className="p-4 space-y-3">
@@ -623,11 +520,11 @@ export default function CustomerLedgerPage() {
             </label>
 
             <label className="block text-sm">
-              <span className="text-slate-700">Apply to Order (optional)</span>
+              <span className="text-slate-700">A/R Entry ID (optional)</span>
               <input
-                name="orderId"
+                name="arId"
                 type="number"
-                placeholder="Order ID (blank = FIFO oldest)"
+                placeholder="Blank = FIFO oldest"
                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
               />
             </label>
@@ -636,7 +533,7 @@ export default function CustomerLedgerPage() {
               <span className="text-slate-700">Reference (optional)</span>
               <input
                 name="refNo"
-                placeholder="notes / OR / last4"
+                placeholder="OR / notes"
                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
               />
             </label>
@@ -650,47 +547,45 @@ export default function CustomerLedgerPage() {
             </button>
 
             <div className="text-xs text-slate-500">
-              Note: rider shortage is <b>not</b> collected from customer.
+              Payments are applied to approved customerAr balances only.
             </div>
           </Form>
         </aside>
 
-        {/* Activity */}
         <section className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Activity (Charges + Settlements)
+            Activity (A/R Charges + Payments)
           </div>
           {rows.length === 0 ? (
             <div className="px-4 py-8 text-sm text-slate-600">No activity.</div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {rows.map((r: any, i: number) => (
-                <div
-                  key={i}
-                  className="px-4 py-3 flex items-center justify-between"
-                >
+              {rows.map((r, i) => (
+                <div key={`${r.kind}-${i}`} className="px-4 py-3 flex items-center justify-between">
                   <div className="min-w-0">
                     <div className="text-sm text-slate-900 truncate">
-                      {r.kind === "order" ? "Charge" : "Settlement"} • {r.label}
+                      {r.kind === "ar" ? "A/R Charge" : "Payment"} • {r.label}
                     </div>
                     <div className="text-xs text-slate-500">
                       {new Date(r.date).toLocaleString()}
-                      {r.kind === "order" && r.due
+                      {r.kind === "ar" && r.due
                         ? ` • due ${new Date(r.due).toLocaleDateString()}`
                         : ""}
+                      {` • A/R #${r.arId}`}
                     </div>
                   </div>
                   <div className="text-right">
                     <div
                       className={`text-sm font-semibold tabular-nums ${
-                        r.kind === "order"
-                          ? "text-slate-900"
-                          : "text-emerald-700"
+                        r.kind === "ar" ? "text-slate-900" : "text-emerald-700"
                       }`}
                     >
-                      {r.kind === "order"
+                      {r.kind === "ar"
                         ? `+ ${peso(r.debit)}`
                         : `− ${peso(r.creditApplied ?? r.credit)}`}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Running: {peso(r.runningAfter)}
                     </div>
                   </div>
                 </div>
@@ -700,8 +595,6 @@ export default function CustomerLedgerPage() {
         </section>
       </div>
 
-      {/* Nested statement route */}
-      <Outlet />
     </main>
   );
 }
