@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-18
+Last Reviewed: 2026-02-19
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -13,10 +13,11 @@ Use these as source of truth for implementation and review:
 
 1. `Commercial Clearance System V2`
 2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-3. `DIAGRAMS_DELIVERY_CSS_AR.md`
-4. `Accounts Receivable — Canonical Source of Truth (SoT)`
-5. `RIDER_SHORTAGE_WORKFLOW.md`
-6. `RunReceipt_Architecture.md`
+3. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+4. `DIAGRAMS_DELIVERY_CSS_AR.md`
+5. `Accounts Receivable — Canonical Source of Truth (SoT)`
+6. `RIDER_SHORTAGE_WORKFLOW.md`
+7. `RunReceipt_Architecture.md`
 
 Current route-level mapping coverage (canonical):
 
@@ -32,6 +33,12 @@ Current route-level mapping coverage (canonical):
 10. `delivery-remit.$id.tsx`
 11. `ar._index.tsx`
 12. `ar.customers.$id.tsx`
+13. `cashier.shift.tsx`
+14. `store.cashier-shifts.tsx`
+15. `store.cashier-variances.tsx`
+16. `cashier.charges.tsx`
+17. `store.cashier-ar.tsx`
+18. `store.payroll.tsx`
 
 ## B. Supporting (Context / Detailed Rationale)
 
@@ -51,7 +58,8 @@ When two guide docs conflict, apply this order:
 
 1. `Commercial Clearance System V2`
 2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-3. `DIAGRAMS_DELIVERY_CSS_AR.md`
-4. `Accounts Receivable — Canonical Source of Truth (SoT)`
-5. `RIDER_SHORTAGE_WORKFLOW.md`
-6. all other guide docs
+3. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+4. `DIAGRAMS_DELIVERY_CSS_AR.md`
+5. `Accounts Receivable — Canonical Source of Truth (SoT)`
+6. `RIDER_SHORTAGE_WORKFLOW.md`
+7. all other guide docs

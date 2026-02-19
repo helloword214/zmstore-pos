@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-18
+Last Reviewed: 2026-02-19
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -14,11 +14,13 @@ Defines one end-to-end behavior for:
 - rider check-in + CSS
 - manager remit + stock audit
 - cashier turnover audit
+- cashier shift close + variance decision
 - AR ledger entry authority
 
 Visual map reference:
 
 - `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
+- `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 
 ## Core Rule Set
 
@@ -43,6 +45,12 @@ This map is the primary route-level reference for the current implementation.
 | Cashier run list | Cashier | `app/routes/cashier.delivery._index.tsx` | Open closed runs for turnover remit | Run/order cash turnover visibility |
 | Cashier run remit hub | Cashier | `app/routes/cashier.delivery.$runId.tsx` | Track turnover cash gap and finalize run settlement | `runReceipt.cashCollected` vs cashier cash payments |
 | Cashier order remit | Cashier | `app/routes/delivery-remit.$id.tsx` | Post per-order cash turnover | `payment` + rider shortage bridge workflow |
+| Shift console | Cashier | `app/routes/cashier.shift.tsx` | Opening verification, drawer txns, close count submit | `cashierShift` lifecycle and closing count snapshot |
+| Shift manager panel | Manager | `app/routes/store.cashier-shifts.tsx` | Open shift and final close submitted shift | Shift status authority (`PENDING_ACCEPT -> OPEN -> SUBMITTED -> FINAL_CLOSED`) |
+| Cashier variance review | Manager | `app/routes/store.cashier-variances.tsx` | Decide shortage handling (`CHARGE_CASHIER/INFO_ONLY/WAIVE`) | `cashierShiftVariance` and `cashierCharge` linkage |
+| Cashier charge acknowledgement | Cashier | `app/routes/cashier.charges.tsx` | Acknowledge manager-charged items | Charged variance visibility and acknowledgement trail |
+| Cashier AR payroll tagging | Manager | `app/routes/store.cashier-ar.tsx` | Tag cashier charge items for payroll collection plan | Cashier charge collection planning |
+| Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync |
 | AR customer list | Cashier | `app/routes/ar._index.tsx` | List customers with open approved balances | `customerAr` authority (target behavior) |
 | AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments | `customerAr` ledger/payment application |
 
@@ -54,6 +62,10 @@ This map is the primary route-level reference for the current implementation.
 | `app/routes/runs.$id.remit.tsx` | Infer customer AR from `PARTIALLY_PAID` alone |
 | `app/routes/cashier.delivery.$runId.tsx` | Treat turnover shortage as automatic customer AR |
 | `app/routes/delivery-remit.$id.tsx` | Recompute prices from product table for remit totals |
+| `app/routes/cashier.shift.tsx` | Re-open or keep drawer writable after close count submit |
+| `app/routes/store.cashier-shifts.tsx` | Final-close without enforcing submitted-count prerequisite |
+| `app/routes/store.cashier-variances.tsx` | Charge cashier for overage or without manager decision trace |
+| `app/routes/cashier.charges.tsx` | Allow non-owner cashier to acknowledge another cashier charge |
 | `app/routes/ar._index.tsx` | Build AR list directly from open order status only |
 | `app/routes/ar.customers.$id.tsx` | Create AR principal without decision-backed authority |
 
@@ -111,6 +123,19 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 - Do not include orders in AR merely because status is `UNPAID`/`PARTIALLY_PAID`.
 - Do not infer AR from payment gaps without approved CSS decision.
 
+### T7 Cashier Shift Close (Manual Count + Manager Close)
+
+- Cashier records denomination-based physical count and submits shift close count.
+- Submission changes shift to `SUBMITTED` and locks drawer writes for cashier.
+- Manager final close changes shift to `FINAL_CLOSED` when submitted-count gate passes.
+
+### T8 Cashier Variance and Charge Handling
+
+- Manager reviews shift variance and decides `CHARGE_CASHIER`, `INFO_ONLY`, or `WAIVE`.
+- Only shortage-aligned manager decisions should produce cashier charge ledger entries.
+- Charge collection planning and payroll deduction happen in manager payroll routes.
+- This variance/charge flow is separate from customer AR authority.
+
 ## Forbidden Shortcuts
 
 1. `PARTIALLY_PAID -> AR list` direct mapping.
@@ -125,3 +150,5 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 3. Every run moved to cashier has completed manager stock audit.
 4. Cashier shortage events route to rider shortage workflow.
 5. No customer appears on AR list without open `customerAr` balance.
+6. Shift close count submission and manager final close are traceable per shift.
+7. Cashier variance decisions are manager-authored and auditable when charge is applied.
