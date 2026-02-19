@@ -2,14 +2,15 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-18
-Diagram Version: v1.0
+Last Reviewed: 2026-02-19
+Diagram Version: v1.1
 
 ## Purpose
 
 Visual map for the canonical flow described in:
 
 - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+- `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 - `docs/guide/Commercial Clearance System V2`
 - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
 
@@ -33,11 +34,16 @@ flowchart TD
     K --> L["Run CHECKED_IN gate passes"]
     L --> M["Manager Remit (stock audit)"]
     M --> N["Run CLOSED"]
-    N --> O["Cashier Delivery Remit (turnover audit)"]
-    O --> P{"Turnover short?"}
+    N --> O["Cashier collections (walk-in + delivery remit + AR payment)"]
+    O --> P{"Delivery turnover short?"}
     P -- "Yes" --> Q["Rider shortage workflow (variance/charge)"]
     P -- "No" --> R["Run SETTLED"]
-    H --> S["AR list/ledger from open customerAr balances"]
+    O --> S["Cashier shift count submit (SUBMITTED)"]
+    S --> T["Manager shift close (FINAL_CLOSED)"]
+    T --> U{"Cashier variance decision path"}
+    U -- "CHARGE_CASHIER" --> V["Cashier charge ledger -> payroll settlement"]
+    U -- "INFO_ONLY / WAIVE" --> W["Variance audit closed"]
+    H --> X["AR list/ledger from open customerAr balances"]
 ```
 
 ## 2) Clearance Decision Tree
@@ -85,6 +91,9 @@ flowchart LR
         M3["store.clearance.tsx"]
         M4["store.clearance_.$caseId.tsx"]
         M5["runs.$id.remit.tsx"]
+        M6["store.cashier-shifts.tsx"]
+        M7["store.cashier-variances.tsx"]
+        M8["store.cashier-ar.tsx / store.payroll.tsx"]
     end
 
     subgraph Rider["Rider Routes"]
@@ -95,6 +104,9 @@ flowchart LR
         C1["cashier.delivery._index.tsx"]
         C2["cashier.delivery.$runId.tsx"]
         C3["delivery-remit.$id.tsx"]
+        C4["cashier.$id.tsx"]
+        C5["cashier.shift.tsx"]
+        C6["cashier.charges.tsx"]
     end
 
     subgraph AR["AR Routes"]
@@ -105,6 +117,7 @@ flowchart LR
     M0 --> M1 --> R1 --> M2
     R1 --> M3 --> M4 --> M5
     M5 --> C1 --> C2 --> C3
+    C4 --> C5 --> M6 --> M7 --> C6 --> M8
     M4 --> A1 --> A2
 ```
 
@@ -117,8 +130,33 @@ flowchart LR
 | `runs.$id.remit.tsx` | stock recap + run close records |
 | `cashier.delivery.$runId.tsx` | turnover comparison (`runReceipt.cashCollected` vs `payment`) |
 | `delivery-remit.$id.tsx` | per-order `payment` + shortage bridge records |
+| `cashier.$id.tsx` | walk-in cash posting to `payment` (shift-tagged) |
+| `cashier.shift.tsx` | shift status transitions + close count submission |
+| `store.cashier-shifts.tsx` | manager open/final-close control |
+| `store.cashier-variances.tsx` | manager variance decision + cashier charge linkage |
+| `cashier.charges.tsx` | cashier acknowledgement trail for charged variances |
+| `store.cashier-ar.tsx` | cashier charge list and payroll-tag planning |
+| `store.payroll.tsx` | payroll deduction posting and status synchronization |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
+
+## 6) Cashier Shift Audit Path (As-Is Note)
+
+```mermaid
+flowchart TD
+    A["Cashier submits denomination count"] --> B["Shift status = SUBMITTED (locked)"]
+    B --> C["Manager closes shift (FINAL_CLOSED)"]
+    C --> D{"Variance row exists?"}
+    D -- "Yes" --> E["Manager decides: CHARGE_CASHIER / INFO_ONLY / WAIVE"]
+    E --> F["If short + charged: create/update CashierCharge"]
+    F --> G["Cashier acknowledge / payroll deduction"]
+    D -- "No" --> H["No in-route variance decision path available"]
+```
+
+As-is control note:
+
+1. Current shift close route is status-gated and does not itself create `CashierShiftVariance`.
+2. Independent manager recount workflow is a documented hardening target.
 
 ## Diagram Upgrade Rule
 
@@ -126,4 +164,5 @@ flowchart LR
 2. Major (`v2.0`) when business rules or SoT authority changes.
 3. Any major update must also update:
    - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+   - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
    - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
