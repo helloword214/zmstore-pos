@@ -101,6 +101,18 @@ Then wait for explicit `GO`.
    b. Final merge reference (squash commit hash or merge commit hash)
 2. Use these references as canonical trace anchors for future threads.
 
+## Documentation Sync Rule (Mandatory)
+
+1. Any change that affects business behavior must update docs in the same objective/branch.
+2. Business behavior includes flow/state transitions, decision gates, route responsibility, and audit/print process changes.
+3. Minimum update set for flow changes:
+   a. relevant canonical flow guide (`docs/guide/CANONICAL_*.md`)
+   b. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md` when flow nodes or handoffs change
+   c. `docs/guide/README.md` when guide authority/mapping changes
+4. Before PR/merge recommendation, assistant must report `Docs Impact`:
+   a. files updated, or
+   b. `none` with one-line reason.
+
 ## Change Safety
 
 1. No silent assumptions. Ask one focused question if unclear.

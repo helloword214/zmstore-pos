@@ -2,8 +2,8 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-19
-Diagram Version: v1.1
+Last Reviewed: 2026-02-20
+Diagram Version: v1.2
 
 ## Purpose
 
@@ -39,11 +39,14 @@ flowchart TD
     P -- "Yes" --> Q["Rider shortage workflow (variance/charge)"]
     P -- "No" --> R["Run SETTLED"]
     O --> S["Cashier shift count submit (SUBMITTED)"]
-    S --> T["Manager shift close (FINAL_CLOSED)"]
-    T --> U{"Cashier variance decision path"}
-    U -- "CHARGE_CASHIER" --> V["Cashier charge ledger -> payroll settlement"]
-    U -- "INFO_ONLY / WAIVE" --> W["Variance audit closed"]
-    H --> X["AR list/ledger from open customerAr balances"]
+    S --> T["Manager recount + final close (/store/cashier-shifts)"]
+    T --> U{"Variance on manager recount?"}
+    U -- "No" --> V["Shift FINAL_CLOSED"]
+    U -- "Yes" --> W["Upsert cashierShiftVariance (manager-authored)"]
+    W --> X{"Decision path"}
+    X -- "CHARGE_CASHIER + short" --> Y["Upsert CashierCharge -> payroll settlement"]
+    X -- "INFO_ONLY / WAIVE / overage" --> Z["Variance audit trail"]
+    H --> AA["AR list/ledger from open customerAr balances"]
 ```
 
 ## 2) Clearance Decision Tree
@@ -92,7 +95,7 @@ flowchart LR
         M4["store.clearance_.$caseId.tsx"]
         M5["runs.$id.remit.tsx"]
         M6["store.cashier-shifts.tsx"]
-        M7["store.cashier-variances.tsx"]
+        M7["store.cashier-variances.tsx (read-only)"]
         M8["store.cashier-ar.tsx / store.payroll.tsx"]
     end
 
@@ -117,7 +120,8 @@ flowchart LR
     M0 --> M1 --> R1 --> M2
     R1 --> M3 --> M4 --> M5
     M5 --> C1 --> C2 --> C3
-    C4 --> C5 --> M6 --> M7 --> C6 --> M8
+    C4 --> C5 --> M6 --> C6 --> M8
+    M6 --> M7
     M4 --> A1 --> A2
 ```
 
@@ -132,31 +136,39 @@ flowchart LR
 | `delivery-remit.$id.tsx` | per-order `payment` + shortage bridge records |
 | `cashier.$id.tsx` | walk-in cash posting to `payment` (shift-tagged) |
 | `cashier.shift.tsx` | shift status transitions + close count submission |
-| `store.cashier-shifts.tsx` | manager open/final-close control |
-| `store.cashier-variances.tsx` | manager variance decision + cashier charge linkage |
+| `store.cashier-shifts.tsx` | manager recount/final-close authority, variance upsert, charge decision write path |
+| `store.cashier-variances.tsx` | read-only variance queue/history |
 | `cashier.charges.tsx` | cashier acknowledgement trail for charged variances |
 | `store.cashier-ar.tsx` | cashier charge list and payroll-tag planning |
 | `store.payroll.tsx` | payroll deduction posting and status synchronization |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
 
-## 6) Cashier Shift Audit Path (As-Is Note)
+## 6) Cashier Shift Audit Path (Current)
 
 ```mermaid
 flowchart TD
-    A["Cashier submits denomination count"] --> B["Shift status = SUBMITTED (locked)"]
-    B --> C["Manager closes shift (FINAL_CLOSED)"]
-    C --> D{"Variance row exists?"}
-    D -- "Yes" --> E["Manager decides: CHARGE_CASHIER / INFO_ONLY / WAIVE"]
-    E --> F["If short + charged: create/update CashierCharge"]
-    F --> G["Cashier acknowledge / payroll deduction"]
-    D -- "No" --> H["No in-route variance decision path available"]
+    A["Cashier submits denomination count"] --> B["Shift status = SUBMITTED (cashier locked)"]
+    B --> C["Manager recount + optional A4 print form"]
+    C --> D{"Variance on manager recount?"}
+    D -- "No" --> E["Finalize shift (FINAL_CLOSED)"]
+    D -- "Yes" --> F["Apply decision rules (short requires decision + paper ref)"]
+    F --> G["Upsert CashierShiftVariance (shiftId authority)"]
+    G --> H{"CHARGE_CASHIER + short?"}
+    H -- "Yes" --> I["Upsert CashierCharge"]
+    H -- "No" --> J["Variance remains audit trail"]
+    I --> E
+    J --> E
+    E --> K["store.cashier-variances read-only queue/history"]
+    K --> L["cashier.charges / payroll settlement"]
 ```
 
-As-is control note:
+As-implemented control note:
 
-1. Current shift close route is status-gated and does not itself create `CashierShiftVariance`.
-2. Independent manager recount workflow is a documented hardening target.
+1. Manager decision and variance write path live in `store.cashier-shifts.tsx` during final close.
+2. `store.cashier-variances.tsx` is read-only for audit visibility.
+3. Short variance close requires decision plus paper reference.
+4. A4 variance form is printable from manager shift panel and supports paper reference capture.
 
 ## Diagram Upgrade Rule
 

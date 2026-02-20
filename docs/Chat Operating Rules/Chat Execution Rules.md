@@ -105,4 +105,15 @@ If you violate the gate (project mode), I may reply:
 
 ---
 
+## 10) Documentation Sync Gate (Project Mode)
+
+- If a patch changes flow behavior (states, decisions, handoff routes, variance/charge logic), docs update is mandatory in the same task.
+- Minimum flow-doc sync:
+  - canonical flow guide(s)
+  - related diagram guide
+- Do not mark output as `FINALIZE` until docs are aligned, or explicitly state:
+  - `Docs Impact: none` + one-line reason.
+
+---
+
 End.
