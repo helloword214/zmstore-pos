@@ -3,6 +3,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
+import * as React from "react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -12,6 +13,26 @@ import { CashDrawerTxnType } from "@prisma/client";
 const EPS = 0.005;
 const CASHIER_CHARGE_TAG = "CASHIER_SHIFT_VARIANCE";
 const r2 = (n: number) => Math.round(toNum(n) * 100) / 100;
+
+function generatePaperRefNo(shiftId: number, at = new Date()) {
+  const yyyy = String(at.getFullYear());
+  const mm = String(at.getMonth() + 1).padStart(2, "0");
+  const dd = String(at.getDate()).padStart(2, "0");
+  const hh = String(at.getHours()).padStart(2, "0");
+  const mi = String(at.getMinutes()).padStart(2, "0");
+  const ss = String(at.getSeconds()).padStart(2, "0");
+  const shiftPart = String(shiftId).padStart(4, "0");
+  return `CS-${yyyy}${mm}${dd}-${shiftPart}-${hh}${mi}${ss}`;
+}
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 async function computeExpectedDrawerForShift(
   tx: typeof db,
@@ -540,6 +561,43 @@ export default function StoreCashierShiftsPage() {
   const { me, cashiers, openShifts } = useLoaderData<LoaderData>();
   const nav = useNavigation();
 
+  const makeDefaultCloseForm = (
+    shift?: OpenShiftRow,
+  ): {
+    managerCounted: string;
+    resolution: "" | "CHARGE_CASHIER" | "INFO_ONLY" | "WAIVE";
+    paperRefNo: string;
+    managerNote: string;
+  } => ({
+    managerCounted: String(shift?.closingTotal ?? shift?.expectedDrawer ?? 0),
+    resolution: "",
+    paperRefNo: "",
+    managerNote: "",
+  });
+
+  const [closeFormByShift, setCloseFormByShift] = React.useState<
+    Record<
+      number,
+      {
+        managerCounted: string;
+        resolution: "" | "CHARGE_CASHIER" | "INFO_ONLY" | "WAIVE";
+        paperRefNo: string;
+        managerNote: string;
+      }
+    >
+  >({});
+
+  React.useEffect(() => {
+    setCloseFormByShift((prev) => {
+      const next = { ...prev };
+      for (const s of openShifts) {
+        if (next[s.id]) continue;
+        next[s.id] = makeDefaultCloseForm(s);
+      }
+      return next;
+    });
+  }, [openShifts]);
+
   const statusLabel = (s: string) => {
     switch (s) {
       case "PENDING_ACCEPT":
@@ -575,6 +633,112 @@ export default function StoreCashierShiftsPage() {
       return base + " border-slate-200 bg-slate-50 text-slate-700";
     }
     return base + " border-slate-200 bg-slate-50 text-slate-700";
+  };
+
+  const setCloseField = (
+    shiftId: number,
+    field: "managerCounted" | "resolution" | "paperRefNo" | "managerNote",
+    value: string,
+  ) => {
+    const shift = openShifts.find((x) => x.id === shiftId);
+    setCloseFormByShift((prev) => ({
+      ...prev,
+      [shiftId]: {
+        ...makeDefaultCloseForm(shift),
+        ...(prev[shiftId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const printVarianceForm = (s: OpenShiftRow) => {
+    const current = closeFormByShift[s.id] ?? makeDefaultCloseForm(s);
+
+    const paperRef = current.paperRefNo || generatePaperRefNo(s.id);
+    if (!current.paperRefNo) {
+      setCloseField(s.id, "paperRefNo", paperRef);
+    }
+
+    const managerCounted = r2(Number(current.managerCounted || 0));
+    const expected = r2(Number(s.expectedDrawer || 0));
+    const cashierCounted = r2(Number(s.closingTotal || 0));
+    const variance = r2(managerCounted - expected);
+    const varianceLabel =
+      Math.abs(variance) < EPS ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Cashier Variance Recount Form</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; }
+    .sheet { width: 100%; max-width: 190mm; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 18px; }
+    .meta { font-size: 11px; color: #334155; margin-bottom: 10px; }
+    .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .k { color: #475569; }
+    .v { font-weight: 600; }
+    .note { min-height: 32px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; font-size: 12px; }
+    .sig { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .sigline { margin-top: 32px; border-top: 1px solid #334155; padding-top: 4px; font-size: 11px; color: #475569; }
+    .small { font-size: 10px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <h1>Cashier Variance Recount Form</h1>
+    <div class="meta">Paper Ref: <strong>${escapeHtml(paperRef)}</strong> • Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+
+    <div class="card grid">
+      <div class="row"><span class="k">Shift ID</span><span class="v">#${s.id}</span></div>
+      <div class="row"><span class="k">Cashier</span><span class="v">${escapeHtml(s.cashier.label)}</span></div>
+      <div class="row"><span class="k">Opened</span><span class="v">${escapeHtml(new Date(s.openedAt).toLocaleString())}</span></div>
+      <div class="row"><span class="k">Manager</span><span class="v">#${me.userId} (${escapeHtml(me.role)})</span></div>
+      <div class="row"><span class="k">Device</span><span class="v">${escapeHtml(s.deviceId ?? "—")}</span></div>
+      <div class="row"><span class="k">Status</span><span class="v">${escapeHtml(statusLabel(s.status))}</span></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="k">Expected Drawer</span><span class="v">${escapeHtml(peso(expected))}</span></div>
+      <div class="row"><span class="k">Cashier Counted</span><span class="v">${escapeHtml(peso(cashierCounted))}</span></div>
+      <div class="row"><span class="k">Manager Recount</span><span class="v">${escapeHtml(peso(managerCounted))}</span></div>
+      <div class="row"><span class="k">Variance (manager - expected)</span><span class="v">${escapeHtml(peso(variance))} (${escapeHtml(varianceLabel)})</span></div>
+      <div class="row"><span class="k">Decision</span><span class="v">${escapeHtml(current.resolution || "PENDING")}</span></div>
+      <div class="small" style="margin-top:8px;">Cash sales ${escapeHtml(peso(s.cashInFromSales))} • Dep ${escapeHtml(peso(s.deposits))} • W/D ${escapeHtml(peso(s.withdrawals))}</div>
+    </div>
+
+    <div class="card">
+      <div class="k" style="font-size:11px; margin-bottom:4px;">Manager Note</div>
+      <div class="note">${escapeHtml(current.managerNote || "")}</div>
+    </div>
+
+    <div class="sig">
+      <div>
+        <div class="sigline">Cashier Signature / Date</div>
+      </div>
+      <div>
+        <div class="sigline">Manager Signature / Date</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.onload = function () {
+      setTimeout(function () { window.print(); }, 0);
+    };
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "noopener,noreferrer,width=960,height=1200");
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
   };
 
   return (
@@ -681,6 +845,14 @@ export default function StoreCashierShiftsPage() {
             ) : (
               <div className="grid gap-2">
                 {openShifts.map((s) => (
+                  (() => {
+                    const closeForm = closeFormByShift[s.id] ?? {
+                      managerCounted: String(s.closingTotal ?? s.expectedDrawer ?? 0),
+                      resolution: "",
+                      paperRefNo: "",
+                      managerNote: "",
+                    };
+                    return (
                   <div
                     key={s.id}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
@@ -849,9 +1021,10 @@ export default function StoreCashierShiftsPage() {
                             type="number"
                             step="0.01"
                             min="0"
-                            defaultValue={String(
-                              s.closingTotal ?? s.expectedDrawer ?? 0,
-                            )}
+                            value={closeForm.managerCounted}
+                            onChange={(e) =>
+                              setCloseField(s.id, "managerCounted", e.target.value)
+                            }
                             required
                             disabled={String(s.status) !== "SUBMITTED"}
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs tabular-nums disabled:bg-slate-100"
@@ -864,7 +1037,10 @@ export default function StoreCashierShiftsPage() {
                           </span>
                           <select
                             name="resolution"
-                            defaultValue=""
+                            value={closeForm.resolution}
+                            onChange={(e) =>
+                              setCloseField(s.id, "resolution", e.target.value)
+                            }
                             disabled={String(s.status) !== "SUBMITTED"}
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
                           >
@@ -884,6 +1060,10 @@ export default function StoreCashierShiftsPage() {
                             name="paperRefNo"
                             type="text"
                             placeholder="e.g. CS-2026-00125"
+                            value={closeForm.paperRefNo}
+                            onChange={(e) =>
+                              setCloseField(s.id, "paperRefNo", e.target.value)
+                            }
                             disabled={String(s.status) !== "SUBMITTED"}
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
                           />
@@ -896,10 +1076,23 @@ export default function StoreCashierShiftsPage() {
                             name="managerNote"
                             type="text"
                             placeholder="Optional decision/recount note"
+                            value={closeForm.managerNote}
+                            onChange={(e) =>
+                              setCloseField(s.id, "managerNote", e.target.value)
+                            }
                             disabled={String(s.status) !== "SUBMITTED"}
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
                           />
                         </label>
+                        <button
+                          type="button"
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:col-span-2"
+                          disabled={String(s.status) !== "SUBMITTED"}
+                          onClick={() => printVarianceForm(s)}
+                          title="Print A4 variance recount form and auto-fill reference number"
+                        >
+                          Print variance form (A4)
+                        </button>
                         <button
                           type="submit"
                           className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50 sm:col-span-2"
@@ -920,6 +1113,8 @@ export default function StoreCashierShiftsPage() {
                       </Form>
                     </div>
                   </div>
+                    );
+                  })()
                 ))}
               </div>
             )}
