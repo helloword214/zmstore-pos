@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-20
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -14,7 +14,7 @@ Defines one end-to-end behavior for:
 - rider check-in + CSS
 - manager remit + stock audit
 - cashier turnover audit
-- cashier shift close + variance decision
+- cashier shift close + manager recount decision
 - AR ledger entry authority
 
 Visual map reference:
@@ -46,8 +46,8 @@ This map is the primary route-level reference for the current implementation.
 | Cashier run remit hub | Cashier | `app/routes/cashier.delivery.$runId.tsx` | Track turnover cash gap and finalize run settlement | `runReceipt.cashCollected` vs cashier cash payments |
 | Cashier order remit | Cashier | `app/routes/delivery-remit.$id.tsx` | Post per-order cash turnover | `payment` + rider shortage bridge workflow |
 | Shift console | Cashier | `app/routes/cashier.shift.tsx` | Opening verification, drawer txns, close count submit | `cashierShift` lifecycle and closing count snapshot |
-| Shift manager panel | Manager | `app/routes/store.cashier-shifts.tsx` | Open shift and final close submitted shift | Shift status authority (`PENDING_ACCEPT -> OPEN -> SUBMITTED -> FINAL_CLOSED`) |
-| Cashier variance review | Manager | `app/routes/store.cashier-variances.tsx` | Decide shortage handling (`CHARGE_CASHIER/INFO_ONLY/WAIVE`) | `cashierShiftVariance` and `cashierCharge` linkage |
+| Shift manager panel | Manager | `app/routes/store.cashier-shifts.tsx` | Open shift, manager recount, decision capture, final close | Shift status authority + variance/charge write authority at close |
+| Cashier variance review | Manager | `app/routes/store.cashier-variances.tsx` | Read-only variance queue/history | `cashierShiftVariance` audit visibility |
 | Cashier charge acknowledgement | Cashier | `app/routes/cashier.charges.tsx` | Acknowledge manager-charged items | Charged variance visibility and acknowledgement trail |
 | Cashier AR payroll tagging | Manager | `app/routes/store.cashier-ar.tsx` | Tag cashier charge items for payroll collection plan | Cashier charge collection planning |
 | Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync |
@@ -62,9 +62,9 @@ This map is the primary route-level reference for the current implementation.
 | `app/routes/runs.$id.remit.tsx` | Infer customer AR from `PARTIALLY_PAID` alone |
 | `app/routes/cashier.delivery.$runId.tsx` | Treat turnover shortage as automatic customer AR |
 | `app/routes/delivery-remit.$id.tsx` | Recompute prices from product table for remit totals |
-| `app/routes/cashier.shift.tsx` | Re-open or keep drawer writable after close count submit |
-| `app/routes/store.cashier-shifts.tsx` | Final-close without enforcing submitted-count prerequisite |
-| `app/routes/store.cashier-variances.tsx` | Charge cashier for overage or without manager decision trace |
+| `app/routes/cashier.shift.tsx` | Re-open shift or keep drawer writable after count submit |
+| `app/routes/store.cashier-shifts.tsx` | Final-close without submitted gate, manager recount, and shortage controls (decision + paper ref) |
+| `app/routes/store.cashier-variances.tsx` | Accept decision writes; manager decisions are captured at final close in `store.cashier-shifts.tsx` |
 | `app/routes/cashier.charges.tsx` | Allow non-owner cashier to acknowledge another cashier charge |
 | `app/routes/ar._index.tsx` | Build AR list directly from open order status only |
 | `app/routes/ar.customers.$id.tsx` | Create AR principal without decision-backed authority |
@@ -123,18 +123,20 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 - Do not include orders in AR merely because status is `UNPAID`/`PARTIALLY_PAID`.
 - Do not infer AR from payment gaps without approved CSS decision.
 
-### T7 Cashier Shift Close (Manual Count + Manager Close)
+### T7 Cashier Shift Close (Cashier Submit + Manager Recount Final Close)
 
-- Cashier records denomination-based physical count and submits shift close count.
-- Submission changes shift to `SUBMITTED` and locks drawer writes for cashier.
-- Manager final close changes shift to `FINAL_CLOSED` when submitted-count gate passes.
+- Cashier records denomination-based physical count and submits close count.
+- Submission changes shift to `SUBMITTED` and locks cashier drawer writes.
+- Manager final close is executed in `store.cashier-shifts.tsx` with required manager recount total.
+- If shortage is detected on manager recount, final close requires decision and paper reference number.
 
 ### T8 Cashier Variance and Charge Handling
 
-- Manager reviews shift variance and decides `CHARGE_CASHIER`, `INFO_ONLY`, or `WAIVE`.
-- Only shortage-aligned manager decisions should produce cashier charge ledger entries.
+- Variance decision is captured during manager final close in `store.cashier-shifts.tsx`.
+- Mismatch upserts `cashierShiftVariance` (authoritative row by `shiftId`).
+- Only short variance with `CHARGE_CASHIER` creates/updates `cashierCharge`.
+- `store.cashier-variances.tsx` is read-only queue/history for audit visibility.
 - Charge collection planning and payroll deduction happen in manager payroll routes.
-- This variance/charge flow is separate from customer AR authority.
 
 ## Forbidden Shortcuts
 
@@ -150,5 +152,6 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 3. Every run moved to cashier has completed manager stock audit.
 4. Cashier shortage events route to rider shortage workflow.
 5. No customer appears on AR list without open `customerAr` balance.
-6. Shift close count submission and manager final close are traceable per shift.
-7. Cashier variance decisions are manager-authored and auditable when charge is applied.
+6. Shift close submission and manager final close are traceable per shift.
+7. Short variance close has manager decision + paper reference trace.
+8. Cashier charge records exist only for short variance with manager `CHARGE_CASHIER`.

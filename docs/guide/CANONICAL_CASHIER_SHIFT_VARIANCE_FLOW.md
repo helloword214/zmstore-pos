@@ -2,13 +2,11 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-20
 
 ## Purpose
 
-Defines one route-level source of truth for cashier shift lifecycle, shift close counting, manager close acceptance, and cashier variance-to-charge handling.
-
-This document is implementation-facing and reflects current as-is behavior plus identified control gaps.
+Defines one route-level source of truth for cashier shift lifecycle, shift close counting, manager recount, manager final-close authority, and cashier variance-to-charge handling.
 
 ## Scope
 
@@ -20,7 +18,8 @@ This document is implementation-facing and reflects current as-is behavior plus 
 - Cashier shift console (`cashier.shift.tsx`)
 - Manager shift panel (`store.cashier-shifts.tsx`)
 3. Variance and charge handling:
-- Manager variance decision (`store.cashier-variances.tsx`)
+- Manager recount decision capture during final close (`store.cashier-shifts.tsx`)
+- Read-only variance queue/history (`store.cashier-variances.tsx`)
 - Cashier charge acknowledgement (`cashier.charges.tsx`)
 - Cashier AR/payroll tagging and settlement (`store.cashier-ar.tsx`, `store.payroll.tsx`)
 
@@ -32,7 +31,7 @@ Canonical statuses:
 2. `OPEN`
 3. `OPENING_DISPUTED`
 4. `SUBMITTED`
-5. `RECOUNT_REQUIRED`
+5. `RECOUNT_REQUIRED` (legacy enum value)
 6. `FINAL_CLOSED`
 
 Current transition map (as implemented):
@@ -45,20 +44,20 @@ Current transition map (as implemented):
 - `OPENING_DISPUTED -> PENDING_ACCEPT`
 4. Cashier submit counted cash (manual denomination count):
 - `OPEN -> SUBMITTED`
-- `RECOUNT_REQUIRED -> SUBMITTED`
 5. Manager final close:
 - `SUBMITTED -> FINAL_CLOSED`
+6. Current routes do not actively transition to `RECOUNT_REQUIRED`; it remains a legacy status value for history compatibility.
 
 ## Route Responsibility Map
 
 | Route file | Role | Responsibility |
 | --- | --- | --- |
-| `app/routes/cashier.shift.tsx` | Cashier | Opening verification, drawer txns, denomination-based count submit |
-| `app/routes/store.cashier-shifts.tsx` | Store Manager/Admin | Open shift, resend opening verification, final-close submitted shift |
+| `app/routes/cashier.shift.tsx` | Cashier | Opening verification, drawer txns, denomination-based count submit (`SUBMITTED`) |
+| `app/routes/store.cashier-shifts.tsx` | Store Manager/Admin | Open shift, resend opening verification, manager recount + final close, decision capture, variance upsert, optional charge creation |
 | `app/routes/cashier.$id.tsx` | Cashier | Walk-in collection posting |
 | `app/routes/delivery-remit.$id.tsx` | Cashier | Delivery remit cash posting and rider-shortage bridge posting |
 | `app/routes/ar.customers.$id.tsx` | Cashier | A/R payment posting against `customerAr` balances |
-| `app/routes/store.cashier-variances.tsx` | Store Manager/Admin | Variance decision and optional cashier-charge creation |
+| `app/routes/store.cashier-variances.tsx` | Store Manager/Admin | Read-only variance queue/history (decision is not written here) |
 | `app/routes/cashier.charges.tsx` | Cashier/Admin | View/acknowledge manager-charged cashier variance items |
 | `app/routes/store.cashier-ar.tsx` | Store Manager/Admin | Cashier charge list and payroll-plan tagging |
 | `app/routes/store.payroll.tsx` | Store Manager/Admin | Payroll deduction posting and charge/variance status sync |
@@ -71,7 +70,7 @@ Current transition map (as implemented):
 
 Where:
 
-1. `cashInFromSales` comes from `Payment` rows (`method = CASH`) via tendered-change cash in.
+1. `cashInFromSales` comes from `Payment` rows (`method = CASH`) via `tendered - change`.
 2. `deposits/withdrawals` come from `CashDrawerTxn` (`CASH_IN`, `CASH_OUT`, `DROP`).
 
 ### Collection route posting behavior
@@ -82,30 +81,49 @@ Where:
 - optional `Payment(method=INTERNAL_CREDIT)` bridge for rider shortage workflow
 3. A/R (`ar.customers.$id.tsx`) posts to `CustomerArPayment` with `shiftId` and `cashierId` (not `Payment` table).
 
+## Manager Final-Close Contract (As Implemented)
+
+### Input and pre-close gates
+
+1. Shift must exist and must not be closed yet.
+2. Shift status must be `SUBMITTED`.
+3. Cashier `closingTotal` must already exist.
+4. `managerCounted` is required and must be a valid number (`>= 0`).
+
+### Recount and variance math
+
+1. `expectedDrawer` is recomputed from drawer SoT.
+2. `variance = managerCounted - expectedDrawer`.
+3. `short` means `variance < -EPS`.
+
+### Resolution rules
+
+1. Allowed explicit decisions: `CHARGE_CASHIER`, `INFO_ONLY`, `WAIVE`.
+2. If short, manager decision is required before close.
+3. If short, `paperRefNo` is required before close.
+4. `CHARGE_CASHIER` is valid only for short variance.
+5. For overage mismatch without selected decision, system defaults to `INFO_ONLY`.
+
+### Persistence and outputs
+
+1. Manager recount audit note is appended to `cashierShift.notes` (expected, cashier count, manager recount, variance, decision, paper ref, manager note).
+2. If mismatch exists, system upserts one authoritative `CashierShiftVariance` by `shiftId`.
+3. If decision is `CHARGE_CASHIER` and variance is short, system upserts `CashierCharge` by `varianceId` (idempotent linkage).
+4. Shift is then finalized to `FINAL_CLOSED` with `closedAt` and `finalClosedById`.
+
 ## Variance and Charge Lifecycle (Current)
 
-1. Cashier submits close count (`SUBMITTED`), then shift is locked on cashier side.
-2. Manager final-closes submitted shift (`FINAL_CLOSED`).
-3. Manager variance decision page (`store.cashier-variances.tsx`) supports:
-- `CHARGE_CASHIER`
-- `INFO_ONLY`
-- `WAIVE`
-4. If `CHARGE_CASHIER` and variance is short (negative), system upserts `CashierCharge` linked by `varianceId`.
-5. Cashier can acknowledge charged variance item in `cashier.charges.tsx`.
-6. Payroll deduction can settle cashier charges in `store.payroll.tsx`.
+1. Cashier submits close count once in `cashier.shift.tsx`, and drawer writes become locked for cashier.
+2. Manager recounts and decides in `store.cashier-shifts.tsx` during final close.
+3. Manager can print an A4 recount form from `store.cashier-shifts.tsx`; UI can auto-generate paper reference number.
+4. Variance rows are created/updated in final close when mismatch exists.
+5. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
+6. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
 
-## Control Gaps (As-Is, for audit visibility)
+## Mandatory Controls (Current)
 
-1. Manager final close in `store.cashier-shifts.tsx` is currently status-gated (`SUBMITTED`) and does not perform an independent physical recount step.
-2. No in-route automatic creation path for `CashierShiftVariance` was found in cashier shift close/final close routes.
-3. `RECOUNT_REQUIRED` exists in schema and UI handling, but no active manager action path currently sets it in these shift routes.
-4. Because of #2 and #3, charge workflow reliability depends on variance rows already existing from a separate creation path.
-
-## Required Audit Rule (Target Behavior)
-
-Policy target for hardening (implementation follow-up, not part of this docs-only update):
-
-1. Every manager final-close decision must have an explicit manager recount outcome.
-2. Every counted-vs-expected mismatch must create or update one authoritative `CashierShiftVariance(shiftId unique)`.
-3. `RECOUNT_REQUIRED` must be actionable by manager when cashier count is disputed.
-4. Cashier charge creation must remain idempotent and derived only from manager-approved short variance.
+1. No manager final close without cashier submit gate (`SUBMITTED`) and manager recount input.
+2. No short final close without manager decision and paper reference.
+3. Final recount authority is manager-side at close time; no post-close back-and-forth path in shift routes.
+4. Variance authority is manager-authored and auditable from final close note trail.
+5. Cashier charge creation is limited to short variance with explicit `CHARGE_CASHIER` decision and is idempotent by `varianceId`.

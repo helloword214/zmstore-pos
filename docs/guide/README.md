@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-20
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -63,3 +63,11 @@ When two guide docs conflict, apply this order:
 5. `Accounts Receivable — Canonical Source of Truth (SoT)`
 6. `RIDER_SHORTAGE_WORKFLOW.md`
 7. all other guide docs
+
+## E. Flow Change Sync Rule (Mandatory)
+
+1. If code changes flow behavior, update the corresponding canonical guide docs in the same objective/PR.
+2. Minimum required docs for flow-affecting updates:
+   - relevant `CANONICAL_*.md` flow guide
+   - `DIAGRAMS_DELIVERY_CSS_AR.md` when flow nodes/handoffs/decision gates changed
+3. Manager/cashier flow changes must not be considered complete until both behavior doc and diagram doc are aligned.

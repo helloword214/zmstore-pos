@@ -36,6 +36,7 @@ Every new or updated domain document must include:
 - `Last Reviewed:` (YYYY-MM-DD)
 - `Supersedes:` (optional)
 - `Superseded By:` (optional)
+- If behavior/flow changed in code, update the impacted canonical flow and diagram docs in the same objective/PR.
 
 ## 5) Fast Path
 
