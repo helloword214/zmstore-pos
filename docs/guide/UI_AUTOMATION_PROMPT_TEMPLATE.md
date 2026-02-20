@@ -4,6 +4,11 @@ Status: READY TO COPY
 Owner: POS Platform  
 Last Reviewed: 2026-02-19
 
+Scope note:
+
+1. This template is for UI consistency automation.
+2. For deterministic business-flow smoke automation, use `docs/automation/BUSINESS_FLOW_ENGINE.md`.
+
 ## 1. Full Prompt (Recommended)
 
 ```md
@@ -193,3 +198,19 @@ Task:
 1. Job A (Manager): weekdays, morning
 2. Job B (Rider): daily, late afternoon
 3. Job C (Full): weekly (Friday evening)
+
+## 5. Business-Flow Smoke Prompt (Separate Job)
+
+Use this when you want setup-driven smoke checks for delivery flow records.
+
+```md
+Run business-flow smoke automation using the deterministic engine.
+
+Task:
+1. Execute `npm run automation:flow:smoke`.
+2. Report whether setup, auth, smoke, and cleanup completed.
+3. Include latest context and summary artifacts:
+   - `test-results/automation/business-flow/context.latest.json`
+   - `test-results/automation/business-flow/summary.latest.md`
+4. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
+```

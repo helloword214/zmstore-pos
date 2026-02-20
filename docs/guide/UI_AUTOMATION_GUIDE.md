@@ -239,6 +239,13 @@ Do not mark UI PR as ready to merge when:
 4. `npm run ui:cycle`
 5. `npm run ui:cycle -- --dry-run`
 
+Business-flow engine (separate from UI consistency):
+
+1. `npm run automation:flow:setup`
+2. `npm run automation:flow:smoke`
+3. `npm run automation:flow:cleanup`
+4. Reference: `docs/automation/BUSINESS_FLOW_ENGINE.md`
+
 Run evidence output:
 
 1. `docs/automation/runs/<timestamp>/summary.md`

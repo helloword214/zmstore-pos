@@ -6,7 +6,10 @@ Last Reviewed: 2026-02-19
 
 ## 1. Purpose
 
-This folder stores the execution trail of UI automation runs and incidents.
+This folder stores automation execution trails for:
+
+1. UI consistency checks
+2. Business flow smoke checks
 
 Flow intent:
 
@@ -20,9 +23,11 @@ Flow intent:
 
 1. `docs/automation/runs/`
 2. `docs/automation/incidents/`
+3. `docs/automation/business-flow/runs/`
+4. `docs/automation/business-flow/incidents/`
 
-`runs/` contains per-run summaries and JSON report outputs.  
-`incidents/` contains failure records generated when a run fails.
+`runs/` and `incidents/` are for UI consistency cycle output.  
+`business-flow/runs/` and `business-flow/incidents/` are for business-flow engine output.
 
 ## 3. Commands
 
@@ -31,6 +36,9 @@ Flow intent:
 3. `npm run ui:test:update`
 4. `npm run ui:cycle`
 5. `npm run ui:cycle -- --dry-run`
+6. `npm run automation:flow:setup`
+7. `npm run automation:flow:smoke`
+8. `npm run automation:flow:cleanup`
 
 ## 4. Required Runtime Inputs
 
@@ -130,3 +138,20 @@ Default commands per job:
 1. Manager: `UI_ROLE_SCOPE=manager npm run ui:cycle`
 2. Rider: `UI_ROLE_SCOPE=rider npm run ui:cycle`
 3. Full: `UI_ROLE_SCOPE=all npm run ui:cycle`
+
+## 8. Business Flow Engine
+
+For deterministic delivery flow smoke checks (setup -> run -> cleanup), use:
+
+1. `npm run automation:flow:setup`
+2. `npm run automation:flow:smoke`
+3. `npm run automation:flow:cleanup`
+
+Reference doc:
+
+1. `docs/automation/BUSINESS_FLOW_ENGINE.md`
+
+Boundary:
+
+1. UI cycle (`ui:cycle`) = visual/minimalist consistency checks
+2. Business flow engine = deterministic fixture + role smoke routes for flow observability
