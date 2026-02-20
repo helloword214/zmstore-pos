@@ -726,19 +726,25 @@ export default function StoreCashierShiftsPage() {
       </div>
     </div>
   </div>
-  <script>
-    window.onload = function () {
-      setTimeout(function () { window.print(); }, 0);
-    };
-  </script>
 </body>
 </html>`;
 
-    const w = window.open("", "_blank", "noopener,noreferrer,width=960,height=1200");
-    if (!w) return;
+    const w = window.open("about:blank", "_blank", "width=960,height=1200");
+    if (!w) {
+      window.alert("Popup blocked. Please allow popups for printing.");
+      return;
+    }
     w.document.open();
     w.document.write(html);
     w.document.close();
+    w.focus();
+    window.setTimeout(() => {
+      try {
+        w.print();
+      } catch {
+        // no-op; user can still print manually from opened window
+      }
+    }, 120);
   };
 
   return (
@@ -852,6 +858,10 @@ export default function StoreCashierShiftsPage() {
                       paperRefNo: "",
                       managerNote: "",
                     };
+                    const managerCountedNum = Number(closeForm.managerCounted || 0);
+                    const expectedNum = Number(s.expectedDrawer || 0);
+                    const varianceNum = r2(managerCountedNum - expectedNum);
+                    const isShortDraft = varianceNum < -EPS;
                     return (
                   <div
                     key={s.id}
@@ -1006,6 +1016,24 @@ export default function StoreCashierShiftsPage() {
                         method="post"
                         className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 sm:max-w-3xl sm:grid-cols-2"
                         onSubmit={(e) => {
+                          if (String(s.status) !== "SUBMITTED") return;
+                          if (isShortDraft && !closeForm.resolution) {
+                            e.preventDefault();
+                            window.alert(
+                              "Shortage detected: please select a decision before final close.",
+                            );
+                            return;
+                          }
+                          if (
+                            isShortDraft &&
+                            !String(closeForm.paperRefNo || "").trim()
+                          ) {
+                            e.preventDefault();
+                            window.alert(
+                              "Shortage detected: paper reference number is required before final close.",
+                            );
+                            return;
+                          }
                           if (!confirm("Manager close this shift now?"))
                             e.preventDefault();
                         }}
@@ -1084,6 +1112,12 @@ export default function StoreCashierShiftsPage() {
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
                           />
                         </label>
+                        {isShortDraft ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
+                            Shortage detected. Select decision and paper
+                            reference before final close.
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:col-span-2"
