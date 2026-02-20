@@ -503,7 +503,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // 🔒 Once cashier submits counted cash, lock drawer movements.
-    // Status is the SoT (SUBMITTED/RECOUNT_REQUIRED/FINAL_CLOSED lock all writes)
+    // Status is the SoT: only OPEN is writable.
     if (shift.status !== "OPEN") {
       return json(
         {
@@ -660,10 +660,10 @@ export async function action({ request }: ActionFunctionArgs) {
         if (!s) throw new Error("SHIFT_NOT_FOUND");
         if (s.closedAt) throw new Error("SHIFT_ALREADY_CLOSED");
         if (s.cashierId !== me.userId) throw new Error("FORBIDDEN");
-        // If already submitted, prevent double-submit unless manager forced recount.
+        // If already submitted, prevent double-submit.
         if (s.status === "SUBMITTED") throw new Error("ALREADY_SUBMITTED");
-        // Allow re-submit only when manager requested recount.
-        if (s.status !== "OPEN" && s.status !== "RECOUNT_REQUIRED")
+        // Submit is allowed only while shift is OPEN.
+        if (s.status !== "OPEN")
           throw new Error("SHIFT_NOT_WRITABLE");
 
         const countedR2 = Math.round(Number(countedCash) * 100) / 100;
@@ -1267,8 +1267,7 @@ export default function ShiftConsole() {
                       {activeShift.status !== "OPEN" ? (
                         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                           Shift is locked ({activeShift.status}). You can’t
-                          submit the closing count until it’s OPEN (or manager
-                          requested RECOUNT_REQUIRED).
+                          submit the closing count until it’s OPEN.
                         </div>
                       ) : null}
 
@@ -1373,10 +1372,7 @@ export default function ShiftConsole() {
                             required
                             className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums"
                             readOnly={useDenoms}
-                            disabled={
-                              drawerLocked &&
-                              activeShift.status !== "RECOUNT_REQUIRED"
-                            }
+                            disabled={drawerLocked}
                           />
                         </label>
 
@@ -1384,19 +1380,14 @@ export default function ShiftConsole() {
                           name="notes"
                           placeholder="Notes (optional)"
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                          disabled={
-                            drawerLocked &&
-                            activeShift.status !== "RECOUNT_REQUIRED"
-                          }
+                          disabled={drawerLocked}
                         />
 
                         <button
                           type="submit"
                           className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
                           disabled={
-                            nav.state !== "idle" ||
-                            (activeShift.status !== "OPEN" &&
-                              activeShift.status !== "RECOUNT_REQUIRED")
+                            nav.state !== "idle" || activeShift.status !== "OPEN"
                           }
                         >
                           {nav.state !== "idle"
@@ -1406,7 +1397,8 @@ export default function ShiftConsole() {
 
                         <div className="text-xs text-slate-500">
                           Expected is system cash; counted is physical cash.
-                          Cashier submits the count; manager closes the shift.
+                          Cashier submits once; manager recounts and final-closes
+                          in <code>/store/cashier-shifts</code>.
                         </div>
                       </Form>
                     </div>

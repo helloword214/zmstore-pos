@@ -1,14 +1,12 @@
 /* app/routes/store.cashier-variances.tsx */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { json } from "@remix-run/node";
+import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { Prisma } from "@prisma/client";
-
-const CASHIER_CHARGE_TAG = "CASHIER_SHIFT_VARIANCE";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -177,116 +175,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
-
-  const fd = await request.formData();
-  const intent = String(fd.get("_intent") || "");
-  const id = Number(fd.get("id"));
-  const resolution = String(fd.get("resolution") || "");
-  const note = String(fd.get("note") || "").trim();
-  const tab = String(fd.get("tab") || "");
-  const safeTab =
-    tab === "history" || tab === "open" ? (tab as "history" | "open") : "open";
-
-  if (intent !== "manager-decide")
-    throw new Response("Unsupported intent", { status: 400 });
-  if (!Number.isFinite(id) || id <= 0)
-    throw new Response("Invalid variance id", { status: 400 });
-
-  if (!["CHARGE_CASHIER", "INFO_ONLY", "WAIVE"].includes(resolution)) {
-    throw new Response("Invalid resolution", { status: 400 });
-  }
-
-  const row = await db.cashierShiftVariance.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      status: true,
-      shiftId: true,
-      expected: true,
-      counted: true,
-      variance: true,
-      note: true,
-      shift: { select: { cashierId: true } },
-    },
-  });
-
-  if (!row) throw new Response("Variance not found", { status: 404 });
-
-  if (!["OPEN", "MANAGER_APPROVED"].includes(String(row.status ?? ""))) {
-    throw new Response("Variance is not editable", { status: 400 });
-  }
-
-  const now = new Date();
-  const nextStatus = resolution === "WAIVE" ? "WAIVED" : "MANAGER_APPROVED";
-  const managerApprovedById = Number((me as any).userId) || null;
-  await db.$transaction(async (tx) => {
-    // 1) save manager decision on the variance row
-    await tx.cashierShiftVariance.update({
-      where: { id },
-      data: {
-        resolution: resolution as any,
-        status: nextStatus as any,
-        managerApprovedAt: now,
-        managerApprovedById,
-        note: note.length ? note : undefined,
-        resolvedAt: resolution === "WAIVE" ? now : undefined,
-      },
-    });
-
-    // 2) if CHARGE_CASHIER → create/update CashierCharge ledger (idempotent)
-    if (resolution === "CHARGE_CASHIER") {
-      const v = Number(row.variance ?? 0);
-      // Business rule: charge only when SHORT (variance negative)
-      // If OVER, we still allow manager to select CHARGE_CASHIER but it will not create a negative/invalid charge.
-      const amountToCharge =
-        v < -0.005 ? Math.round(Math.abs(v) * 100) / 100 : 0;
-
-      if (amountToCharge > 0) {
-        const cashierId = Number((row.shift as any)?.cashierId || 0);
-        if (!cashierId)
-          throw new Response("Shift cashier not found", { status: 400 });
-
-        await tx.cashierCharge.upsert({
-          where: { varianceId: row.id },
-          create: {
-            varianceId: row.id,
-            shiftId: row.shiftId,
-            cashierId,
-            amount: new Prisma.Decimal(amountToCharge.toFixed(2)),
-            status: "OPEN",
-            createdById: managerApprovedById,
-            note: [
-              CASHIER_CHARGE_TAG,
-              `shift#${row.shiftId}`,
-              `expected=${Number(row.expected ?? 0)}`,
-              `counted=${Number(row.counted ?? 0)}`,
-              note || row.note || "",
-            ]
-              .filter(Boolean)
-              .join(" | "),
-          },
-          update: {
-            // keep it OPEN unless you later implement settlements/payroll
-            amount: new Prisma.Decimal(amountToCharge.toFixed(2)),
-            status: "OPEN",
-            shiftId: row.shiftId,
-            note: [
-              CASHIER_CHARGE_TAG,
-              `shift#${row.shiftId}`,
-              `expected=${Number(row.expected ?? 0)}`,
-              `counted=${Number(row.counted ?? 0)}`,
-              note || row.note || "",
-            ]
-              .filter(Boolean)
-              .join(" | "),
-          },
-        });
-      }
-    }
-  });
-
-  return redirect(`/store/cashier-variances?tab=${safeTab}`);
+  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  throw new Response(
+    "Read-only: manager decisions are recorded in /store/cashier-shifts during final close.",
+    { status: 405 },
+  );
 }
 
 function DenomsTable({ denoms }: { denoms: Denoms | null }) {
@@ -372,7 +265,7 @@ export default function StoreCashierVariancesPage() {
   };
 
   const isHistory = tab === "history";
-  const pageTitle = isHistory ? "History (resolved)" : "Open (needs decision)";
+  const pageTitle = isHistory ? "History (resolved)" : "Open (read-only queue)";
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -401,6 +294,10 @@ export default function StoreCashierVariancesPage() {
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium text-slate-800">
                 {pageTitle}
+              </div>
+              <div className="text-xs text-slate-500">
+                Manager decision is captured during final close in{" "}
+                <code>/store/cashier-shifts</code>.
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 <Link
@@ -447,9 +344,7 @@ export default function StoreCashierVariancesPage() {
                 <th className="px-3 py-2 text-right font-medium">Expected</th>
                 <th className="px-3 py-2 text-right font-medium">Counted</th>
                 <th className="px-3 py-2 text-right font-medium">Diff</th>
-                <th className="px-3 py-2 text-left font-medium">
-                  {isHistory ? "Details" : "Decision"}
-                </th>
+                <th className="px-3 py-2 text-left font-medium">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -575,61 +470,18 @@ export default function StoreCashierVariancesPage() {
                                 {v.note ?? "—"}
                               </span>
                             </div>
-
-                            {isHistory ? (
-                              <div className="space-y-1 text-[11px] text-slate-600">
-                                <div>
-                                  Manager approved:{" "}
-                                  <span className="font-medium">
-                                    {v.managerApprovedAt
-                                      ? new Date(
-                                          v.managerApprovedAt,
-                                        ).toLocaleString()
-                                      : "—"}
-                                  </span>
-                                </div>
+                            <div className="space-y-1 text-[11px] text-slate-600">
+                              <div>
+                                Manager approved:{" "}
+                                <span className="font-medium">
+                                  {v.managerApprovedAt
+                                    ? new Date(
+                                        v.managerApprovedAt,
+                                      ).toLocaleString()
+                                    : "—"}
+                                </span>
                               </div>
-                            ) : (
-                              <Form method="post" className="grid gap-2">
-                                <input type="hidden" name="tab" value={tab} />
-                                {/* ✅ REQUIRED: variance id for action() */}
-                                <input
-                                  type="hidden"
-                                  name="id"
-                                  value={String(v.id)}
-                                />
-                                <select
-                                  name="resolution"
-                                  defaultValue={v.resolution ?? ""}
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                                >
-                                  <option value="" disabled>
-                                    Select decision…
-                                  </option>
-                                  <option value="CHARGE_CASHIER">
-                                    Charge cashier
-                                  </option>
-                                  <option value="INFO_ONLY">
-                                    Info only (audit)
-                                  </option>
-                                  <option value="WAIVE">Waive</option>
-                                </select>
-                                <input
-                                  name="note"
-                                  placeholder="Optional note"
-                                  defaultValue={v.note ?? ""}
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                                />
-                                <button
-                                  type="submit"
-                                  name="_intent"
-                                  value="manager-decide"
-                                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
-                                >
-                                  Save decision
-                                </button>
-                              </Form>
-                            )}
+                            </div>
                           </div>
                         </details>
                       </td>

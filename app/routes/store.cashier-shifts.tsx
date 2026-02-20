@@ -9,6 +9,52 @@ import { requireRole } from "~/utils/auth.server";
 import { peso, toNum } from "~/utils/money";
 import { CashDrawerTxnType } from "@prisma/client";
 
+const EPS = 0.005;
+const CASHIER_CHARGE_TAG = "CASHIER_SHIFT_VARIANCE";
+const r2 = (n: number) => Math.round(toNum(n) * 100) / 100;
+
+async function computeExpectedDrawerForShift(
+  tx: typeof db,
+  shiftId: number,
+  openingFloat: number,
+) {
+  const cashAgg = await tx.payment.aggregate({
+    where: { shiftId, method: "CASH" },
+    _sum: { tendered: true, change: true },
+  });
+
+  const txByType = await tx.cashDrawerTxn.groupBy({
+    by: ["type"],
+    where: { shiftId },
+    _sum: { amount: true },
+  });
+
+  const cashInFromSales = r2(
+    toNum(cashAgg?._sum?.tendered) - toNum(cashAgg?._sum?.change),
+  );
+
+  let deposits = 0;
+  let withdrawals = 0;
+  for (const row of txByType as any[]) {
+    const amt = r2(toNum((row as any)?._sum?.amount));
+    if (row.type === CashDrawerTxnType.CASH_IN) deposits += amt;
+    if (
+      row.type === CashDrawerTxnType.CASH_OUT ||
+      row.type === CashDrawerTxnType.DROP
+    ) {
+      withdrawals += amt;
+    }
+  }
+
+  const expectedDrawer = r2(openingFloat + deposits + cashInFromSales - withdrawals);
+  return {
+    expectedDrawer,
+    cashInFromSales,
+    deposits: r2(deposits),
+    withdrawals: r2(withdrawals),
+  };
+}
+
 type CashierOption = {
   id: number;
   label: string;
@@ -112,8 +158,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     else if (type === CashDrawerTxnType.DROP) cur.drop += amt;
     txMap.set(sid, cur);
   }
-
-  const r2 = (n: number) => Math.round(toNum(n) * 100) / 100;
 
   const openShifts: OpenShiftRow[] = rows.map((s: any) => {
     const emp = s.cashier?.employee;
@@ -227,8 +271,33 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (act === "close") {
     const shiftId = Number(fd.get("shiftId") || 0);
+    const managerCountedRaw = String(fd.get("managerCounted") || "").trim();
+    const managerCounted = Number(managerCountedRaw);
+    const requestedResolution = String(fd.get("resolution") || "").trim();
+    const managerNote = String(fd.get("managerNote") || "").trim();
+    const paperRefNo = String(fd.get("paperRefNo") || "").trim();
+
     if (!shiftId) {
       return json({ ok: false, error: "Missing shiftId." }, { status: 400 });
+    }
+    if (
+      !managerCountedRaw.length ||
+      !Number.isFinite(managerCounted) ||
+      managerCounted < 0
+    ) {
+      return json(
+        { ok: false, error: "Manager recount total is required (>= 0)." },
+        { status: 400 },
+      );
+    }
+    if (
+      requestedResolution.length &&
+      !["CHARGE_CASHIER", "INFO_ONLY", "WAIVE"].includes(requestedResolution)
+    ) {
+      return json(
+        { ok: false, error: "Invalid manager decision selected." },
+        { status: 400 },
+      );
     }
 
     const now = new Date();
@@ -236,7 +305,15 @@ export async function action({ request }: ActionFunctionArgs) {
       async (tx) => {
         const s = await tx.cashierShift.findUnique({
           where: { id: shiftId },
-          select: { id: true, closedAt: true, status: true },
+          select: {
+            id: true,
+            closedAt: true,
+            status: true,
+            openingFloat: true,
+            closingTotal: true,
+            notes: true,
+            cashierId: true,
+          },
         });
         if (!s) throw new Response("Shift not found", { status: 404 });
         if (s.closedAt) return; // idempotent
@@ -248,6 +325,138 @@ export async function action({ request }: ActionFunctionArgs) {
             { status: 400 },
           );
         }
+        if (s.closingTotal == null) {
+          throw new Response(
+            "Cannot close: cashier submitted status but counted cash is missing.",
+            { status: 400 },
+          );
+        }
+
+        const openingFloat = r2(toNum(s.openingFloat));
+        const { expectedDrawer } = await computeExpectedDrawerForShift(
+          tx as any,
+          shiftId,
+          openingFloat,
+        );
+        const managerCountedR2 = r2(managerCounted);
+        const cashierCounted = r2(toNum(s.closingTotal));
+        const variance = r2(managerCountedR2 - expectedDrawer);
+        const hasMismatch = Math.abs(variance) >= EPS;
+        const isShort = variance < -EPS;
+        const resolution =
+          hasMismatch && !isShort && !requestedResolution
+            ? "INFO_ONLY"
+            : requestedResolution;
+
+        if (isShort && !resolution) {
+          throw new Response(
+            "Manager decision is required before closing a short drawer.",
+            { status: 400 },
+          );
+        }
+        if (isShort && !paperRefNo) {
+          throw new Response(
+            "Paper reference number is required when drawer is short.",
+            { status: 400 },
+          );
+        }
+        if (resolution === "CHARGE_CASHIER" && !isShort) {
+          throw new Response(
+            "CHARGE_CASHIER is only allowed for shortage variances.",
+            { status: 400 },
+          );
+        }
+
+        const shiftAuditNote = [
+          "[MANAGER_RECOUNT]",
+          `expected=${expectedDrawer.toFixed(2)}`,
+          `cashier=${cashierCounted.toFixed(2)}`,
+          `manager=${managerCountedR2.toFixed(2)}`,
+          `variance=${variance.toFixed(2)}`,
+          resolution ? `decision=${resolution}` : null,
+          paperRefNo ? `paperRef=${paperRefNo}` : null,
+          managerNote ? `note=${managerNote}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | ");
+
+        let nextShiftNote = (s.notes || "").trim();
+        nextShiftNote = nextShiftNote
+          ? `${nextShiftNote}\n${shiftAuditNote}`
+          : shiftAuditNote;
+
+        if (hasMismatch) {
+          const resolvedAt = resolution === "WAIVE" ? now : null;
+          const managerApprovedAt = resolution ? now : null;
+          const managerApprovedById = resolution ? me.userId : null;
+          const nextStatus =
+            resolution === "WAIVE"
+              ? "WAIVED"
+              : resolution
+              ? "MANAGER_APPROVED"
+              : "OPEN";
+
+          const varianceRow = await tx.cashierShiftVariance.upsert({
+            where: { shiftId },
+            create: {
+              shiftId,
+              expected: expectedDrawer,
+              counted: managerCountedR2,
+              variance,
+              status: nextStatus as any,
+              resolution: resolution ? (resolution as any) : null,
+              note: shiftAuditNote,
+              managerApprovedAt,
+              managerApprovedById,
+              resolvedAt,
+            },
+            update: {
+              expected: expectedDrawer,
+              counted: managerCountedR2,
+              variance,
+              status: nextStatus as any,
+              resolution: resolution ? (resolution as any) : null,
+              note: shiftAuditNote,
+              managerApprovedAt,
+              managerApprovedById,
+              resolvedAt,
+            },
+          });
+
+          if (resolution === "CHARGE_CASHIER" && isShort) {
+            const amountToCharge = r2(Math.abs(variance));
+            const chargeNote = [
+              CASHIER_CHARGE_TAG,
+              `shift#${shiftId}`,
+              `expected=${expectedDrawer.toFixed(2)}`,
+              `managerCounted=${managerCountedR2.toFixed(2)}`,
+              paperRefNo ? `paperRef=${paperRefNo}` : null,
+              managerNote || null,
+            ]
+              .filter(Boolean)
+              .join(" | ");
+
+            await tx.cashierCharge.upsert({
+              where: { varianceId: varianceRow.id },
+              create: {
+                varianceId: varianceRow.id,
+                shiftId,
+                cashierId: s.cashierId,
+                amount: amountToCharge,
+                status: "OPEN" as any,
+                createdById: me.userId,
+                note: chargeNote,
+              },
+              update: {
+                shiftId,
+                cashierId: s.cashierId,
+                amount: amountToCharge,
+                status: "OPEN" as any,
+                note: chargeNote,
+              },
+            });
+          }
+        }
 
         await tx.cashierShift.update({
           where: { id: shiftId },
@@ -255,6 +464,7 @@ export async function action({ request }: ActionFunctionArgs) {
             status: "FINAL_CLOSED" as any,
             closedAt: now,
             finalClosedById: me.userId,
+            notes: nextShiftNote,
           },
         });
       },
@@ -622,6 +832,7 @@ export default function StoreCashierShiftsPage() {
 
                       <Form
                         method="post"
+                        className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 sm:max-w-3xl sm:grid-cols-2"
                         onSubmit={(e) => {
                           if (!confirm("Manager close this shift now?"))
                             e.preventDefault();
@@ -629,9 +840,69 @@ export default function StoreCashierShiftsPage() {
                       >
                         <input type="hidden" name="_action" value="close" />
                         <input type="hidden" name="shiftId" value={s.id} />
+                        <label className="block">
+                          <span className="text-[11px] text-slate-600">
+                            Manager recount total
+                          </span>
+                          <input
+                            name="managerCounted"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            defaultValue={String(
+                              s.closingTotal ?? s.expectedDrawer ?? 0,
+                            )}
+                            required
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs tabular-nums disabled:bg-slate-100"
+                            title="Required: manager physical recount total"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-[11px] text-slate-600">
+                            Decision (required if short)
+                          </span>
+                          <select
+                            name="resolution"
+                            defaultValue=""
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          >
+                            <option value="">No decision</option>
+                            <option value="CHARGE_CASHIER">
+                              Charge cashier
+                            </option>
+                            <option value="INFO_ONLY">Info only</option>
+                            <option value="WAIVE">Waive</option>
+                          </select>
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="text-[11px] text-slate-600">
+                            Paper reference no. (required if short)
+                          </span>
+                          <input
+                            name="paperRefNo"
+                            type="text"
+                            placeholder="e.g. CS-2026-00125"
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          />
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="text-[11px] text-slate-600">
+                            Manager note
+                          </span>
+                          <input
+                            name="managerNote"
+                            type="text"
+                            placeholder="Optional decision/recount note"
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          />
+                        </label>
                         <button
                           type="submit"
-                          className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                          className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50 sm:col-span-2"
                           disabled={
                             nav.state !== "idle" ||
                             String(s.status) !== "SUBMITTED"
@@ -639,10 +910,12 @@ export default function StoreCashierShiftsPage() {
                           title={
                             String(s.status) !== "SUBMITTED"
                               ? "Disabled: cashier has not submitted count (status must be SUBMITTED)"
-                              : "Final close shift (status SUBMITTED → FINAL_CLOSED)"
+                              : "Final close shift (requires manager recount; shortage also requires decision + paper ref)"
                           }
                         >
-                          {nav.state !== "idle" ? "Closing…" : "Close shift"}
+                          {nav.state !== "idle"
+                            ? "Closing…"
+                            : "Final close shift"}
                         </button>
                       </Form>
                     </div>
