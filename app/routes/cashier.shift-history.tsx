@@ -52,7 +52,13 @@ type LoaderData = {
     id: number;
     openedAt: string;
     closedAt: string | null;
-    status: "OPEN" | "SUBMITTED" | "RECOUNT_REQUIRED" | "FINAL_CLOSED";
+    status:
+      | "PENDING_ACCEPT"
+      | "OPEN"
+      | "OPENING_DISPUTED"
+      | "SUBMITTED"
+      | "RECOUNT_REQUIRED"
+      | "FINAL_CLOSED";
     openingFloat: string | null;
     closingTotal: string | null;
     deviceId: string | null;
@@ -138,7 +144,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const where: Prisma.CashierShiftWhereInput = {
     ...(me.role === "CASHIER" ? { cashierId: me.userId } : {}),
     ...(status === "open"
-      ? { status: { in: ["OPEN", "SUBMITTED", "RECOUNT_REQUIRED"] as any } }
+      ? {
+          status: {
+            in: [
+              "PENDING_ACCEPT",
+              "OPEN",
+              "OPENING_DISPUTED",
+              "SUBMITTED",
+              "RECOUNT_REQUIRED",
+            ] as any,
+          },
+        }
       : status === "closed"
       ? { status: "FINAL_CLOSED" as any }
       : {}),
@@ -488,6 +504,30 @@ export default function ShiftHistory() {
                           </span>
                         );
                       }
+                      if (st === "PENDING_ACCEPT") {
+                        return (
+                          <div>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-slate-200">
+                              PENDING ACCEPT
+                            </span>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Waiting cashier opening verification
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (st === "OPENING_DISPUTED") {
+                        return (
+                          <div>
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700 ring-1 ring-rose-200">
+                              OPENING DISPUTED
+                            </span>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Opening float dispute; manager action required
+                            </div>
+                          </div>
+                        );
+                      }
                       if (st === "SUBMITTED") {
                         return (
                           <div>
@@ -504,10 +544,10 @@ export default function ShiftHistory() {
                         return (
                           <div>
                             <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700 ring-1 ring-rose-200">
-                              RECOUNT
+                              LEGACY RECOUNT
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Manager requested recount
+                              Legacy status from old flow
                             </div>
                           </div>
                         );

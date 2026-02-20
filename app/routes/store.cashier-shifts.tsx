@@ -3,11 +3,78 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
+import * as React from "react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { peso, toNum } from "~/utils/money";
 import { CashDrawerTxnType } from "@prisma/client";
+
+const EPS = 0.005;
+const CASHIER_CHARGE_TAG = "CASHIER_SHIFT_VARIANCE";
+const r2 = (n: number) => Math.round(toNum(n) * 100) / 100;
+
+function generatePaperRefNo(shiftId: number, at = new Date()) {
+  const yyyy = String(at.getFullYear());
+  const mm = String(at.getMonth() + 1).padStart(2, "0");
+  const dd = String(at.getDate()).padStart(2, "0");
+  const hh = String(at.getHours()).padStart(2, "0");
+  const mi = String(at.getMinutes()).padStart(2, "0");
+  const ss = String(at.getSeconds()).padStart(2, "0");
+  const shiftPart = String(shiftId).padStart(4, "0");
+  return `CS-${yyyy}${mm}${dd}-${shiftPart}-${hh}${mi}${ss}`;
+}
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function computeExpectedDrawerForShift(
+  tx: typeof db,
+  shiftId: number,
+  openingFloat: number,
+) {
+  const cashAgg = await tx.payment.aggregate({
+    where: { shiftId, method: "CASH" },
+    _sum: { tendered: true, change: true },
+  });
+
+  const txByType = await tx.cashDrawerTxn.groupBy({
+    by: ["type"],
+    where: { shiftId },
+    _sum: { amount: true },
+  });
+
+  const cashInFromSales = r2(
+    toNum(cashAgg?._sum?.tendered) - toNum(cashAgg?._sum?.change),
+  );
+
+  let deposits = 0;
+  let withdrawals = 0;
+  for (const row of txByType as any[]) {
+    const amt = r2(toNum((row as any)?._sum?.amount));
+    if (row.type === CashDrawerTxnType.CASH_IN) deposits += amt;
+    if (
+      row.type === CashDrawerTxnType.CASH_OUT ||
+      row.type === CashDrawerTxnType.DROP
+    ) {
+      withdrawals += amt;
+    }
+  }
+
+  const expectedDrawer = r2(openingFloat + deposits + cashInFromSales - withdrawals);
+  return {
+    expectedDrawer,
+    cashInFromSales,
+    deposits: r2(deposits),
+    withdrawals: r2(withdrawals),
+  };
+}
 
 type CashierOption = {
   id: number;
@@ -112,8 +179,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     else if (type === CashDrawerTxnType.DROP) cur.drop += amt;
     txMap.set(sid, cur);
   }
-
-  const r2 = (n: number) => Math.round(toNum(n) * 100) / 100;
 
   const openShifts: OpenShiftRow[] = rows.map((s: any) => {
     const emp = s.cashier?.employee;
@@ -227,8 +292,33 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (act === "close") {
     const shiftId = Number(fd.get("shiftId") || 0);
+    const managerCountedRaw = String(fd.get("managerCounted") || "").trim();
+    const managerCounted = Number(managerCountedRaw);
+    const requestedResolution = String(fd.get("resolution") || "").trim();
+    const managerNote = String(fd.get("managerNote") || "").trim();
+    const paperRefNo = String(fd.get("paperRefNo") || "").trim();
+
     if (!shiftId) {
       return json({ ok: false, error: "Missing shiftId." }, { status: 400 });
+    }
+    if (
+      !managerCountedRaw.length ||
+      !Number.isFinite(managerCounted) ||
+      managerCounted < 0
+    ) {
+      return json(
+        { ok: false, error: "Manager recount total is required (>= 0)." },
+        { status: 400 },
+      );
+    }
+    if (
+      requestedResolution.length &&
+      !["CHARGE_CASHIER", "INFO_ONLY", "WAIVE"].includes(requestedResolution)
+    ) {
+      return json(
+        { ok: false, error: "Invalid manager decision selected." },
+        { status: 400 },
+      );
     }
 
     const now = new Date();
@@ -236,7 +326,15 @@ export async function action({ request }: ActionFunctionArgs) {
       async (tx) => {
         const s = await tx.cashierShift.findUnique({
           where: { id: shiftId },
-          select: { id: true, closedAt: true, status: true },
+          select: {
+            id: true,
+            closedAt: true,
+            status: true,
+            openingFloat: true,
+            closingTotal: true,
+            notes: true,
+            cashierId: true,
+          },
         });
         if (!s) throw new Response("Shift not found", { status: 404 });
         if (s.closedAt) return; // idempotent
@@ -248,6 +346,138 @@ export async function action({ request }: ActionFunctionArgs) {
             { status: 400 },
           );
         }
+        if (s.closingTotal == null) {
+          throw new Response(
+            "Cannot close: cashier submitted status but counted cash is missing.",
+            { status: 400 },
+          );
+        }
+
+        const openingFloat = r2(toNum(s.openingFloat));
+        const { expectedDrawer } = await computeExpectedDrawerForShift(
+          tx as any,
+          shiftId,
+          openingFloat,
+        );
+        const managerCountedR2 = r2(managerCounted);
+        const cashierCounted = r2(toNum(s.closingTotal));
+        const variance = r2(managerCountedR2 - expectedDrawer);
+        const hasMismatch = Math.abs(variance) >= EPS;
+        const isShort = variance < -EPS;
+        const resolution =
+          hasMismatch && !isShort && !requestedResolution
+            ? "INFO_ONLY"
+            : requestedResolution;
+
+        if (isShort && !resolution) {
+          throw new Response(
+            "Manager decision is required before closing a short drawer.",
+            { status: 400 },
+          );
+        }
+        if (isShort && !paperRefNo) {
+          throw new Response(
+            "Paper reference number is required when drawer is short.",
+            { status: 400 },
+          );
+        }
+        if (resolution === "CHARGE_CASHIER" && !isShort) {
+          throw new Response(
+            "CHARGE_CASHIER is only allowed for shortage variances.",
+            { status: 400 },
+          );
+        }
+
+        const shiftAuditNote = [
+          "[MANAGER_RECOUNT]",
+          `expected=${expectedDrawer.toFixed(2)}`,
+          `cashier=${cashierCounted.toFixed(2)}`,
+          `manager=${managerCountedR2.toFixed(2)}`,
+          `variance=${variance.toFixed(2)}`,
+          resolution ? `decision=${resolution}` : null,
+          paperRefNo ? `paperRef=${paperRefNo}` : null,
+          managerNote ? `note=${managerNote}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | ");
+
+        let nextShiftNote = (s.notes || "").trim();
+        nextShiftNote = nextShiftNote
+          ? `${nextShiftNote}\n${shiftAuditNote}`
+          : shiftAuditNote;
+
+        if (hasMismatch) {
+          const resolvedAt = resolution === "WAIVE" ? now : null;
+          const managerApprovedAt = resolution ? now : null;
+          const managerApprovedById = resolution ? me.userId : null;
+          const nextStatus =
+            resolution === "WAIVE"
+              ? "WAIVED"
+              : resolution
+              ? "MANAGER_APPROVED"
+              : "OPEN";
+
+          const varianceRow = await tx.cashierShiftVariance.upsert({
+            where: { shiftId },
+            create: {
+              shiftId,
+              expected: expectedDrawer,
+              counted: managerCountedR2,
+              variance,
+              status: nextStatus as any,
+              resolution: resolution ? (resolution as any) : null,
+              note: shiftAuditNote,
+              managerApprovedAt,
+              managerApprovedById,
+              resolvedAt,
+            },
+            update: {
+              expected: expectedDrawer,
+              counted: managerCountedR2,
+              variance,
+              status: nextStatus as any,
+              resolution: resolution ? (resolution as any) : null,
+              note: shiftAuditNote,
+              managerApprovedAt,
+              managerApprovedById,
+              resolvedAt,
+            },
+          });
+
+          if (resolution === "CHARGE_CASHIER" && isShort) {
+            const amountToCharge = r2(Math.abs(variance));
+            const chargeNote = [
+              CASHIER_CHARGE_TAG,
+              `shift#${shiftId}`,
+              `expected=${expectedDrawer.toFixed(2)}`,
+              `managerCounted=${managerCountedR2.toFixed(2)}`,
+              paperRefNo ? `paperRef=${paperRefNo}` : null,
+              managerNote || null,
+            ]
+              .filter(Boolean)
+              .join(" | ");
+
+            await tx.cashierCharge.upsert({
+              where: { varianceId: varianceRow.id },
+              create: {
+                varianceId: varianceRow.id,
+                shiftId,
+                cashierId: s.cashierId,
+                amount: amountToCharge,
+                status: "OPEN" as any,
+                createdById: me.userId,
+                note: chargeNote,
+              },
+              update: {
+                shiftId,
+                cashierId: s.cashierId,
+                amount: amountToCharge,
+                status: "OPEN" as any,
+                note: chargeNote,
+              },
+            });
+          }
+        }
 
         await tx.cashierShift.update({
           where: { id: shiftId },
@@ -255,6 +485,7 @@ export async function action({ request }: ActionFunctionArgs) {
             status: "FINAL_CLOSED" as any,
             closedAt: now,
             finalClosedById: me.userId,
+            notes: nextShiftNote,
           },
         });
       },
@@ -330,6 +561,43 @@ export default function StoreCashierShiftsPage() {
   const { me, cashiers, openShifts } = useLoaderData<LoaderData>();
   const nav = useNavigation();
 
+  const makeDefaultCloseForm = (
+    shift?: OpenShiftRow,
+  ): {
+    managerCounted: string;
+    resolution: "" | "CHARGE_CASHIER" | "INFO_ONLY" | "WAIVE";
+    paperRefNo: string;
+    managerNote: string;
+  } => ({
+    managerCounted: String(shift?.closingTotal ?? shift?.expectedDrawer ?? 0),
+    resolution: "",
+    paperRefNo: "",
+    managerNote: "",
+  });
+
+  const [closeFormByShift, setCloseFormByShift] = React.useState<
+    Record<
+      number,
+      {
+        managerCounted: string;
+        resolution: "" | "CHARGE_CASHIER" | "INFO_ONLY" | "WAIVE";
+        paperRefNo: string;
+        managerNote: string;
+      }
+    >
+  >({});
+
+  React.useEffect(() => {
+    setCloseFormByShift((prev) => {
+      const next = { ...prev };
+      for (const s of openShifts) {
+        if (next[s.id]) continue;
+        next[s.id] = makeDefaultCloseForm(s);
+      }
+      return next;
+    });
+  }, [openShifts]);
+
   const statusLabel = (s: string) => {
     switch (s) {
       case "PENDING_ACCEPT":
@@ -365,6 +633,118 @@ export default function StoreCashierShiftsPage() {
       return base + " border-slate-200 bg-slate-50 text-slate-700";
     }
     return base + " border-slate-200 bg-slate-50 text-slate-700";
+  };
+
+  const setCloseField = (
+    shiftId: number,
+    field: "managerCounted" | "resolution" | "paperRefNo" | "managerNote",
+    value: string,
+  ) => {
+    const shift = openShifts.find((x) => x.id === shiftId);
+    setCloseFormByShift((prev) => ({
+      ...prev,
+      [shiftId]: {
+        ...makeDefaultCloseForm(shift),
+        ...(prev[shiftId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const printVarianceForm = (s: OpenShiftRow) => {
+    const current = closeFormByShift[s.id] ?? makeDefaultCloseForm(s);
+
+    const paperRef = current.paperRefNo || generatePaperRefNo(s.id);
+    if (!current.paperRefNo) {
+      setCloseField(s.id, "paperRefNo", paperRef);
+    }
+
+    const managerCounted = r2(Number(current.managerCounted || 0));
+    const expected = r2(Number(s.expectedDrawer || 0));
+    const cashierCounted = r2(Number(s.closingTotal || 0));
+    const variance = r2(managerCounted - expected);
+    const varianceLabel =
+      Math.abs(variance) < EPS ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Cashier Variance Recount Form</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; }
+    .sheet { width: 100%; max-width: 190mm; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 18px; }
+    .meta { font-size: 11px; color: #334155; margin-bottom: 10px; }
+    .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .k { color: #475569; }
+    .v { font-weight: 600; }
+    .note { min-height: 32px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; font-size: 12px; }
+    .sig { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .sigline { margin-top: 32px; border-top: 1px solid #334155; padding-top: 4px; font-size: 11px; color: #475569; }
+    .small { font-size: 10px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <h1>Cashier Variance Recount Form</h1>
+    <div class="meta">Paper Ref: <strong>${escapeHtml(paperRef)}</strong> • Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+
+    <div class="card grid">
+      <div class="row"><span class="k">Shift ID</span><span class="v">#${s.id}</span></div>
+      <div class="row"><span class="k">Cashier</span><span class="v">${escapeHtml(s.cashier.label)}</span></div>
+      <div class="row"><span class="k">Opened</span><span class="v">${escapeHtml(new Date(s.openedAt).toLocaleString())}</span></div>
+      <div class="row"><span class="k">Manager</span><span class="v">#${me.userId} (${escapeHtml(me.role)})</span></div>
+      <div class="row"><span class="k">Device</span><span class="v">${escapeHtml(s.deviceId ?? "—")}</span></div>
+      <div class="row"><span class="k">Status</span><span class="v">${escapeHtml(statusLabel(s.status))}</span></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="k">Expected Drawer</span><span class="v">${escapeHtml(peso(expected))}</span></div>
+      <div class="row"><span class="k">Cashier Counted</span><span class="v">${escapeHtml(peso(cashierCounted))}</span></div>
+      <div class="row"><span class="k">Manager Recount</span><span class="v">${escapeHtml(peso(managerCounted))}</span></div>
+      <div class="row"><span class="k">Variance (manager - expected)</span><span class="v">${escapeHtml(peso(variance))} (${escapeHtml(varianceLabel)})</span></div>
+      <div class="row"><span class="k">Decision</span><span class="v">${escapeHtml(current.resolution || "PENDING")}</span></div>
+      <div class="small" style="margin-top:8px;">Cash sales ${escapeHtml(peso(s.cashInFromSales))} • Dep ${escapeHtml(peso(s.deposits))} • W/D ${escapeHtml(peso(s.withdrawals))}</div>
+    </div>
+
+    <div class="card">
+      <div class="k" style="font-size:11px; margin-bottom:4px;">Manager Note</div>
+      <div class="note">${escapeHtml(current.managerNote || "")}</div>
+    </div>
+
+    <div class="sig">
+      <div>
+        <div class="sigline">Cashier Signature / Date</div>
+      </div>
+      <div>
+        <div class="sigline">Manager Signature / Date</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const w = window.open("about:blank", "_blank", "width=960,height=1200");
+    if (!w) {
+      window.alert("Popup blocked. Please allow popups for printing.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    window.setTimeout(() => {
+      try {
+        w.print();
+      } catch {
+        // no-op; user can still print manually from opened window
+      }
+    }, 120);
   };
 
   return (
@@ -471,6 +851,18 @@ export default function StoreCashierShiftsPage() {
             ) : (
               <div className="grid gap-2">
                 {openShifts.map((s) => (
+                  (() => {
+                    const closeForm = closeFormByShift[s.id] ?? {
+                      managerCounted: String(s.closingTotal ?? s.expectedDrawer ?? 0),
+                      resolution: "",
+                      paperRefNo: "",
+                      managerNote: "",
+                    };
+                    const managerCountedNum = Number(closeForm.managerCounted || 0);
+                    const expectedNum = Number(s.expectedDrawer || 0);
+                    const varianceNum = r2(managerCountedNum - expectedNum);
+                    const isShortDraft = varianceNum < -EPS;
+                    return (
                   <div
                     key={s.id}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
@@ -622,16 +1014,122 @@ export default function StoreCashierShiftsPage() {
 
                       <Form
                         method="post"
+                        className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 sm:max-w-3xl sm:grid-cols-2"
                         onSubmit={(e) => {
+                          if (String(s.status) !== "SUBMITTED") return;
+                          if (isShortDraft && !closeForm.resolution) {
+                            e.preventDefault();
+                            window.alert(
+                              "Shortage detected: please select a decision before final close.",
+                            );
+                            return;
+                          }
+                          if (
+                            isShortDraft &&
+                            !String(closeForm.paperRefNo || "").trim()
+                          ) {
+                            e.preventDefault();
+                            window.alert(
+                              "Shortage detected: paper reference number is required before final close.",
+                            );
+                            return;
+                          }
                           if (!confirm("Manager close this shift now?"))
                             e.preventDefault();
                         }}
                       >
                         <input type="hidden" name="_action" value="close" />
                         <input type="hidden" name="shiftId" value={s.id} />
+                        <label className="block">
+                          <span className="text-[11px] text-slate-600">
+                            Manager recount total
+                          </span>
+                          <input
+                            name="managerCounted"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={closeForm.managerCounted}
+                            onChange={(e) =>
+                              setCloseField(s.id, "managerCounted", e.target.value)
+                            }
+                            required
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs tabular-nums disabled:bg-slate-100"
+                            title="Required: manager physical recount total"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-[11px] text-slate-600">
+                            Decision (required if short)
+                          </span>
+                          <select
+                            name="resolution"
+                            value={closeForm.resolution}
+                            onChange={(e) =>
+                              setCloseField(s.id, "resolution", e.target.value)
+                            }
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          >
+                            <option value="">No decision</option>
+                            <option value="CHARGE_CASHIER">
+                              Charge cashier
+                            </option>
+                            <option value="INFO_ONLY">Info only</option>
+                            <option value="WAIVE">Waive</option>
+                          </select>
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="text-[11px] text-slate-600">
+                            Paper reference no. (required if short)
+                          </span>
+                          <input
+                            name="paperRefNo"
+                            type="text"
+                            placeholder="e.g. CS-2026-00125"
+                            value={closeForm.paperRefNo}
+                            onChange={(e) =>
+                              setCloseField(s.id, "paperRefNo", e.target.value)
+                            }
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          />
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="text-[11px] text-slate-600">
+                            Manager note
+                          </span>
+                          <input
+                            name="managerNote"
+                            type="text"
+                            placeholder="Optional decision/recount note"
+                            value={closeForm.managerNote}
+                            onChange={(e) =>
+                              setCloseField(s.id, "managerNote", e.target.value)
+                            }
+                            disabled={String(s.status) !== "SUBMITTED"}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                          />
+                        </label>
+                        {isShortDraft ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
+                            Shortage detected. Select decision and paper
+                            reference before final close.
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:col-span-2"
+                          disabled={String(s.status) !== "SUBMITTED"}
+                          onClick={() => printVarianceForm(s)}
+                          title="Print A4 variance recount form and auto-fill reference number"
+                        >
+                          Print variance form (A4)
+                        </button>
                         <button
                           type="submit"
-                          className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                          className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50 sm:col-span-2"
                           disabled={
                             nav.state !== "idle" ||
                             String(s.status) !== "SUBMITTED"
@@ -639,14 +1137,18 @@ export default function StoreCashierShiftsPage() {
                           title={
                             String(s.status) !== "SUBMITTED"
                               ? "Disabled: cashier has not submitted count (status must be SUBMITTED)"
-                              : "Final close shift (status SUBMITTED → FINAL_CLOSED)"
+                              : "Final close shift (requires manager recount; shortage also requires decision + paper ref)"
                           }
                         >
-                          {nav.state !== "idle" ? "Closing…" : "Close shift"}
+                          {nav.state !== "idle"
+                            ? "Closing…"
+                            : "Final close shift"}
                         </button>
                       </Form>
                     </div>
                   </div>
+                    );
+                  })()
                 ))}
               </div>
             )}
