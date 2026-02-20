@@ -52,7 +52,6 @@ for (const target of targets) {
 
     await expect(page.locator(".rounded-2xl").first()).toBeVisible();
 
-    // Guardrail: keep row-level noisy "Note:" labels from exploding.
     const noteCount = await page.getByText(/note:/i).count();
     expect(noteCount).toBeLessThanOrEqual(25);
 

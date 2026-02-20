@@ -10,6 +10,7 @@
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc",
     "ui:test": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts",
+    "ui:test:auth": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=setup-manager-auth --project=setup-rider-auth --project=setup-cashier-auth",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
   },
@@ -29,6 +30,7 @@
     "sharp": "^0.34.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@remix-run/dev": "^2.16.8",
     "@remix-run/serve": "^2.16.8",
     "@types/bcryptjs": "^2.4.6",

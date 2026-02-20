@@ -92,7 +92,7 @@ Output format:
 4. Remaining UX risks.
 
 After patch, run:
-1. `npm run ui:cycle`
+1. `UI_ROLE_SCOPE=manager npm run ui:cycle`
 2. Attach latest `docs/automation/runs/<timestamp>/summary.md` in report.
 ```
 
@@ -130,3 +130,66 @@ Target routes only:
 Match UI/UX to check-in/remit reference routes and follow `docs/guide/UI_AUTOMATION_GUIDE.md`.
 UI-only patch. Minimal diffs. Update matrix status for targeted routes.
 ```
+
+## 4. Three-Job Operational Set (Recommended)
+
+Use these as three separate automation jobs.
+
+Why this works better than one giant job:
+
+1. failures are easier to isolate by role/scope
+2. critical manager flow can run more frequently
+3. weekly full sweep catches cross-role regressions
+
+Analogy:
+
+1. Job A = front gate guard (critical path check, frequent)
+2. Job B = loading bay guard (rider lane check, frequent)
+3. Job C = chief inspector (full building audit, weekly)
+
+### 4.1 Job A: Manager Monitor (Daily)
+
+```md
+Run UI monitoring for manager-critical routes.
+
+Task:
+1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
+2. If `UI_RUN_ID` is available, use it.
+3. If `UI_RUN_ID` is not available, require `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`.
+4. If required route inputs are missing, report `BLOCKED` and stop.
+5. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+```
+
+### 4.2 Job B: Rider Monitor (Daily)
+
+```md
+Run UI monitoring for rider routes.
+
+Task:
+1. Execute `UI_ROLE_SCOPE=rider npm run ui:cycle`.
+2. Use `UI_ROUTE_RIDER_LIST` (default `/rider/variances`).
+3. Use `UI_ROUTE_RIDER_DETAIL` when available; if missing, run list-only and note it.
+4. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+```
+
+### 4.3 Job C: Full Weekly Audit
+
+```md
+Run full UI monitoring across manager, rider, and cashier scopes.
+
+Task:
+1. Execute `UI_ROLE_SCOPE=all npm run ui:cycle`.
+2. Prefer setting `UI_RUN_ID`; fallback to explicit route env vars.
+3. Report consolidated status:
+   - manager
+   - rider
+   - cashier
+4. Include latest `docs/automation/runs/<timestamp>/summary.md`.
+5. If failed, include top failure samples and point to incident file under `docs/automation/incidents/`.
+```
+
+### 4.4 Suggested Cadence
+
+1. Job A (Manager): weekdays, morning
+2. Job B (Rider): daily, late afternoon
+3. Job C (Full): weekly (Friday evening)

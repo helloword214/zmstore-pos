@@ -54,9 +54,47 @@ function resolveRoute(envKey, fallbackPath) {
   return "not-set";
 }
 
+function parseCsv(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function resolveProjects() {
+  const explicit = parseCsv(process.env.UI_PROJECTS);
+  if (explicit.length > 0) return explicit;
+
+  const roleToProjects = {
+    manager: ["manager-desktop", "manager-mobile"],
+    rider: ["rider-desktop", "rider-mobile"],
+    cashier: ["cashier-desktop"],
+  };
+
+  const rawScope = (process.env.UI_ROLE_SCOPE ?? "manager").trim().toLowerCase();
+  const scopes =
+    rawScope === "all"
+      ? ["manager", "rider", "cashier"]
+      : parseCsv(rawScope).map((s) => s.toLowerCase());
+
+  const out = [];
+  for (const scope of scopes) {
+    const projects = roleToProjects[scope];
+    if (!projects) continue;
+    out.push(...projects);
+  }
+  return Array.from(new Set(out));
+}
+
 const dryRun = process.argv.includes("--dry-run");
 const root = process.cwd();
 const stamp = nowStamp();
+const selectedProjectsRaw = resolveProjects();
+const selectedProjects =
+  selectedProjectsRaw.length > 0
+    ? selectedProjectsRaw
+    : ["manager-desktop", "manager-mobile"];
+const projectArgs = selectedProjects.flatMap((project) => ["--project", project]);
 
 const runsDir = path.join(root, "docs/automation/runs");
 const incidentsDir = path.join(root, "docs/automation/incidents");
@@ -77,6 +115,7 @@ if (!dryRun) {
       "run",
       "ui:test",
       "--",
+      ...projectArgs,
       `--reporter=line,json=${reportJsonPath}`,
       "--output",
       "test-results/ui/artifacts",
@@ -101,6 +140,8 @@ const checkInRoute = resolveRoute("UI_ROUTE_CHECKIN", (runId) => {
 const remitRoute = resolveRoute("UI_ROUTE_REMIT", (runId) => {
   return `/runs/${runId}/remit`;
 });
+const riderRoute = process.env.UI_ROUTE_RIDER_LIST ?? "/rider/variances";
+const cashierRoute = process.env.UI_ROUTE_CASHIER_SHIFT ?? "/cashier/shift";
 
 const summaryLines = [
   `# UI Automation Run — ${stamp}`,
@@ -108,8 +149,12 @@ const summaryLines = [
   `- Status: ${dryRun ? "DRY_RUN" : exitCode === 0 ? "PASS" : "FAIL"}`,
   `- Timestamp: ${new Date().toISOString()}`,
   `- Base URL: ${process.env.UI_BASE_URL ?? "http://127.0.0.1:4173"}`,
+  `- Role scope: ${process.env.UI_ROLE_SCOPE ?? "manager"}`,
+  `- Projects: ${selectedProjects.length ? selectedProjects.join(", ") : "none"}`,
   `- Check-in route: ${checkInRoute}`,
   `- Remit route: ${remitRoute}`,
+  `- Rider list route: ${riderRoute}`,
+  `- Cashier shift route: ${cashierRoute}`,
   "",
   "## Stats",
   "",
@@ -183,4 +228,3 @@ if (dryRun) {
 }
 
 process.exit(exitCode);
-

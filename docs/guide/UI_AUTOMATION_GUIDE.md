@@ -234,9 +234,10 @@ Do not mark UI PR as ready to merge when:
 ## 13. Automation Commands (MVP)
 
 1. `npm run ui:test`
-2. `npm run ui:test:update`
-3. `npm run ui:cycle`
-4. `npm run ui:cycle -- --dry-run`
+2. `npm run ui:test:auth`
+3. `npm run ui:test:update`
+4. `npm run ui:cycle`
+5. `npm run ui:cycle -- --dry-run`
 
 Run evidence output:
 
