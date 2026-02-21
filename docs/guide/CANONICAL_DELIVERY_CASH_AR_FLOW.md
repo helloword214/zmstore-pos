@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-20
+Last Reviewed: 2026-02-21
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -52,7 +52,7 @@ This map is the primary route-level reference for the current implementation.
 | Cashier AR payroll tagging | Manager | `app/routes/store.cashier-ar.tsx` | Tag cashier charge items for payroll collection plan | Cashier charge collection planning |
 | Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync |
 | AR customer list | Cashier | `app/routes/ar._index.tsx` | List customers with open approved balances | `customerAr` authority (target behavior) |
-| AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments | `customerAr` ledger/payment application |
+| AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments, show post-submit feedback, print receipt proof | `customerAr` ledger/payment application |
 
 ## Route SoT Guardrails
 
@@ -122,6 +122,7 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 
 - Do not include orders in AR merely because status is `UNPAID`/`PARTIALLY_PAID`.
 - Do not infer AR from payment gaps without approved CSS decision.
+- On successful payment post, UI must show explicit confirmation (paid/applied/change/reference/payment IDs) and support 58mm receipt printing from the same page.
 
 ### T7 Cashier Shift Close (Cashier Submit + Manager Recount Final Close)
 

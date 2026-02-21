@@ -85,4 +85,30 @@ Selected mode:
 
 ---
 
+## 9. Command Contract (optional but recommended)
+
+(Para iwas ambiguity sa `GO`)
+
+- Mode:
+  - [ ] Manual
+  - [ ] Combined (busy mode)
+
+- Manual commands:
+  - `GO-PATCH` = edits only
+  - `EXECUTE: <command>` = run specific command only
+  - `CHECK` = checks only
+  - `COMMIT: <message>` = commit only
+  - `PR` = create PR only
+  - `MERGE-SQUASH` = squash merge only
+
+- Combined commands:
+  - `FLOW SAVE: <message>` = patch + check + commit
+  - `FLOW PR: <message>` = flow save + push + PR create
+  - `FLOW SHIP: <message>` = flow PR + squash merge + cleanup
+
+- Safety overrides:
+  - `FORCE-COMMIT` (only if check fails and user still wants commit)
+
+---
+
 End of Session Kickoff

@@ -43,6 +43,10 @@ async function computeExpectedDrawerForShift(
     where: { shiftId, method: "CASH" },
     _sum: { tendered: true, change: true },
   });
+  const arCashAgg = await tx.customerArPayment.aggregate({
+    where: { shiftId },
+    _sum: { amount: true },
+  });
 
   const txByType = await tx.cashDrawerTxn.groupBy({
     by: ["type"],
@@ -53,6 +57,8 @@ async function computeExpectedDrawerForShift(
   const cashInFromSales = r2(
     toNum(cashAgg?._sum?.tendered) - toNum(cashAgg?._sum?.change),
   );
+  const cashInFromAr = r2(toNum(arCashAgg?._sum?.amount));
+  const cashInTotal = r2(cashInFromSales + cashInFromAr);
 
   let deposits = 0;
   let withdrawals = 0;
@@ -67,10 +73,12 @@ async function computeExpectedDrawerForShift(
     }
   }
 
-  const expectedDrawer = r2(openingFloat + deposits + cashInFromSales - withdrawals);
+  const expectedDrawer = r2(openingFloat + deposits + cashInTotal - withdrawals);
   return {
     expectedDrawer,
     cashInFromSales,
+    cashInFromAr,
+    cashInTotal,
     deposits: r2(deposits),
     withdrawals: r2(withdrawals),
   };
@@ -95,6 +103,8 @@ type OpenShiftRow = {
   deviceId: string | null;
   expectedDrawer: number;
   cashInFromSales: number;
+  cashInFromAr: number;
+  cashInTotal: number;
   deposits: number;
   withdrawals: number; // CASH_OUT + DROP
 };
@@ -147,6 +157,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
         _sum: { tendered: true, change: true },
       })
     : [];
+  const arByShift = shiftIds.length
+    ? await db.customerArPayment.groupBy({
+        by: ["shiftId"],
+        where: { shiftId: { in: shiftIds as any } },
+        _sum: { amount: true },
+      })
+    : [];
 
   const payMap = new Map<number, { tendered: number; change: number }>();
   for (const r of payByShift as any[]) {
@@ -156,6 +173,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       tendered: toNum((r as any)?._sum?.tendered),
       change: toNum((r as any)?._sum?.change),
     });
+  }
+  const arMap = new Map<number, number>();
+  for (const r of arByShift as any[]) {
+    const sid = Number((r as any).shiftId || 0);
+    if (!sid) continue;
+    arMap.set(sid, toNum((r as any)?._sum?.amount));
   }
 
   // Drawer txns: CASH_IN adds, CASH_OUT + DROP subtract
@@ -191,12 +214,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const openingFloat = toNum(s.openingFloat);
     const p = payMap.get(Number(s.id)) || { tendered: 0, change: 0 };
     const cashInFromSales = r2(p.tendered - p.change);
+    const cashInFromAr = r2(arMap.get(Number(s.id)) ?? 0);
+    const cashInTotal = r2(cashInFromSales + cashInFromAr);
     const t = txMap.get(Number(s.id)) || { in: 0, out: 0, drop: 0 };
     const deposits = r2(t.in);
     const withdrawals = r2(t.out + t.drop);
-    const expectedDrawer = r2(
-      openingFloat + cashInFromSales + deposits - withdrawals,
-    );
+    const expectedDrawer = r2(openingFloat + cashInTotal + deposits - withdrawals);
 
     return {
       id: s.id,
@@ -213,6 +236,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       deviceId: s.deviceId ?? null,
       expectedDrawer,
       cashInFromSales,
+      cashInFromAr,
+      cashInTotal,
       deposits,
       withdrawals,
     };
@@ -709,7 +734,7 @@ export default function StoreCashierShiftsPage() {
       <div class="row"><span class="k">Manager Recount</span><span class="v">${escapeHtml(peso(managerCounted))}</span></div>
       <div class="row"><span class="k">Variance (manager - expected)</span><span class="v">${escapeHtml(peso(variance))} (${escapeHtml(varianceLabel)})</span></div>
       <div class="row"><span class="k">Decision</span><span class="v">${escapeHtml(current.resolution || "PENDING")}</span></div>
-      <div class="small" style="margin-top:8px;">Cash sales ${escapeHtml(peso(s.cashInFromSales))} • Dep ${escapeHtml(peso(s.deposits))} • W/D ${escapeHtml(peso(s.withdrawals))}</div>
+      <div class="small" style="margin-top:8px;">Cash in ${escapeHtml(peso(s.cashInTotal))} (Sales ${escapeHtml(peso(s.cashInFromSales))} + A/R ${escapeHtml(peso(s.cashInFromAr))}) • Dep ${escapeHtml(peso(s.deposits))} • W/D ${escapeHtml(peso(s.withdrawals))}</div>
     </div>
 
     <div class="card">
@@ -929,8 +954,10 @@ export default function StoreCashierShiftsPage() {
                           {peso(s.expectedDrawer)}
                         </div>
                         <div className="mt-1 text-[11px] text-slate-500">
-                          Cash sales {peso(s.cashInFromSales)} · Dep{" "}
-                          {peso(s.deposits)} · W/D {peso(s.withdrawals)}
+                          Cash in {peso(s.cashInTotal)} (Sales{" "}
+                          {peso(s.cashInFromSales)} + A/R{" "}
+                          {peso(s.cashInFromAr)}) · Dep {peso(s.deposits)} ·
+                          W/D {peso(s.withdrawals)}
                         </div>
                       </div>
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
