@@ -1,6 +1,6 @@
 # Enterprise Chat Operating Rules (Option D – Hybrid, Anti–Silent Assumption)
 
-Version: 1.0  
+Version: 1.1  
 Purpose: This is the **starter context** I will paste at the top of a new chat to force stable, enterprise-style collaboration.
 
 ---
@@ -113,6 +113,36 @@ If you violate the gate (project mode), I may reply:
   - related diagram guide
 - Do not mark output as `FINALIZE` until docs are aligned, or explicitly state:
   - `Docs Impact: none` + one-line reason.
+
+---
+
+## 11) Explicit Command Protocol (Manual + Combined)
+
+### Default rule
+
+- `GO` alone means `GO-PATCH` only (approved edits only).
+- `GO` alone must never auto-run check/commit/PR/merge.
+
+### Manual commands (granular)
+
+- `GO-PATCH` -> apply approved edits only, then stop with diff summary.
+- `EXECUTE: <command>` -> run exactly that command only.
+- `CHECK` -> run agreed non-mutating checks only.
+- `COMMIT: <type(scope): summary>` -> commit only.
+- `PR` -> create PR only.
+- `MERGE-SQUASH` -> squash-merge only.
+
+### Combined commands (busy mode)
+
+- `FLOW SAVE: <type(scope): summary>` -> `GO-PATCH` + `CHECK` + diff summary + `COMMIT`.
+- `FLOW PR: <type(scope): summary>` -> `FLOW SAVE` + push + PR create.
+- `FLOW SHIP: <type(scope): summary>` -> `FLOW PR` + `MERGE-SQUASH` + post-merge cleanup.
+
+### Safety contract
+
+- Execute only the exact command contract requested by the user.
+- Stop at first error and report status.
+- If `CHECK` fails, no commit unless user says `FORCE-COMMIT`.
 
 ---
 
