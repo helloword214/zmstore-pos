@@ -2,13 +2,14 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-20
-Diagram Version: v1.2
+Last Reviewed: 2026-02-21
+Diagram Version: v1.3
 
 ## Purpose
 
 Visual map for the canonical flow described in:
 
+- `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 - `docs/guide/Commercial Clearance System V2`
@@ -18,7 +19,11 @@ Visual map for the canonical flow described in:
 
 ```mermaid
 flowchart TD
-    A["Dispatch (PLANNED -> DISPATCHED)"] --> B["Rider Check-in (receipts + cash)"]
+    A0["Order Pad (/order-pad)"] --> A1["Order Create (/orders/new)"]
+    A1 --> A2["Apply policy discounts (customer rules if present)"]
+    A2 --> A3["Freeze OrderItem + Order pricing snapshots"]
+    A3 --> A["Dispatch (PLANNED -> DISPATCHED)"]
+    A --> B["Rider Check-in (receipts + cash)"]
     B --> C{"remaining > EPS?"}
     C -- "No" --> D["Receipt settled by cash"]
     C -- "Yes" --> E["ClearanceCase(status=NEEDS_CLEARANCE)"]
@@ -75,18 +80,27 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A["RunReceipt + RunReceiptLine (frozen lines and rider cash)"] --> B["clearanceCase + clearanceDecision (commercial authority)"]
-    B --> C["customerAr (approved AR principal and balance)"]
-    D["Payment (cash and settlement postings)"] --> C
-    A --> E["Cashier turnover expected cash view"]
-    D --> F["Cash drawer truth"]
-    C --> G["AR list and customer ledger"]
+    A["Product.price/srp + CustomerItemPrice rules"] --> B["orders.new pricing engine (one-time)"]
+    B --> C["Order + OrderItem frozen pricing snapshots"]
+    C --> D["RunReceipt(PARENT) mirrors + rider cash"]
+    D --> E["clearanceCase + clearanceDecision (commercial authority)"]
+    E --> F["customerAr (approved AR principal and balance)"]
+    G["Payment (cash and settlement postings)"] --> F
+    D --> H["Cashier turnover expected cash view"]
+    G --> I["Cash drawer truth"]
+    F --> J["AR list and customer ledger"]
 ```
 
 ## 4) Route-Level Swimlane
 
 ```mermaid
 flowchart LR
+    subgraph POS["Order Pricing Routes"]
+        P0["pad-order._index.tsx"]
+        P1["orders.new.tsx"]
+        P2["customers.$id.pricing.*"]
+    end
+
     subgraph Manager["Manager Routes"]
         M0["store.dispatch.tsx"]
         M1["runs.$id.dispatch.tsx"]
@@ -117,6 +131,8 @@ flowchart LR
         A2["ar.customers.$id.tsx"]
     end
 
+    P0 --> P1 --> M0
+    P2 --> P1
     M0 --> M1 --> R1 --> M2
     R1 --> M3 --> M4 --> M5
     M5 --> C1 --> C2 --> C3
@@ -129,6 +145,8 @@ flowchart LR
 
 | Route | SoT read/write anchor |
 | --- | --- |
+| `pad-order._index.tsx` | client cart/preflight only (not final pricing authority) |
+| `orders.new.tsx` | policy discount engine apply + frozen `order/orderItem` pricing snapshots |
 | `runs.$id.rider-checkin.tsx` | `runReceipt`, `clearanceCase` |
 | `store.clearance_.$caseId.tsx` | `clearanceDecision`, `customerAr` |
 | `runs.$id.remit.tsx` | stock recap + run close records |
@@ -175,6 +193,7 @@ As-implemented control note:
 1. Minor (`v1.x`) for additive nodes/links without rule changes.
 2. Major (`v2.0`) when business rules or SoT authority changes.
 3. Any major update must also update:
+   - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
    - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
    - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
    - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`

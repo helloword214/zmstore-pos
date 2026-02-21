@@ -12,15 +12,16 @@ If guidance conflicts, follow the order above.
 
 ## 2) Domain Canonical (Binding for Product Behavior)
 
-Start here for Delivery + Clearance + Cashier + AR behavior:
+Start here for Order Pricing + Delivery + Clearance + Cashier + AR behavior:
 
 1. `docs/guide/README.md`
-2. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-3. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
-4. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
-5. `docs/guide/Commercial Clearance System V2`
-6. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
-7. `docs/guide/RunReceipt_Architecture.md`
+2. `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
+3. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+4. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
+5. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+6. `docs/guide/Commercial Clearance System V2`
+7. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
+8. `docs/guide/RunReceipt_Architecture.md`
 
 ## 3) Archive and Superseded Notes
 
@@ -42,8 +43,9 @@ Every new or updated domain document must include:
 
 For delivery-commercial bugs, read in this order:
 
-1. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-2. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
-3. `docs/guide/Commercial Clearance System V2`
-4. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
-5. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
+1. `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
+2. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+3. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
+4. `docs/guide/Commercial Clearance System V2`
+5. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+6. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
