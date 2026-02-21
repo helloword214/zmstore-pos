@@ -10,6 +10,7 @@ Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
 Defines one end-to-end behavior for:
 
+- order creation + pricing freeze
 - dispatch
 - rider check-in + CSS
 - manager remit + stock audit
@@ -19,6 +20,7 @@ Defines one end-to-end behavior for:
 
 Visual map reference:
 
+- `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 
@@ -28,6 +30,7 @@ Visual map reference:
 2. Customer AR authority is `customerAr` only.
 3. `customerAr` rows are created only from manager-approved CSS decisions with `arBalance > 0`.
 4. Rider shortage is rider-accountability flow; it must not create customer AR by itself.
+5. Parent order pricing authority is frozen `OrderItem` snapshot created at `/orders/new`; settlement override discount is a separate CSS decision artifact.
 
 ## Authoritative Route Map
 
@@ -35,6 +38,8 @@ This map is the primary route-level reference for the current implementation.
 
 | Stage | Role | Route file | Primary responsibility | SoT focus |
 | --- | --- | --- | --- | --- |
+| Order Pad | Cashier/Manager | `app/routes/pad-order._index.tsx` | Build cart, capture customer/channel, submit order create request | Client preflight only, no pricing authority |
+| Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders and create/assign run | Order eligibility only, no AR authority |
 | Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
 | Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage | `runReceipt`, `clearanceCase/decision`, recap services |
@@ -58,6 +63,8 @@ This map is the primary route-level reference for the current implementation.
 
 | Route file | Must never do |
 | --- | --- |
+| `app/routes/pad-order._index.tsx` | Finalize payable totals without `/orders/new` server validation/freeze |
+| `app/routes/orders.new.tsx` | Reprice an already-created order or mix CSS override discount into policy discount freeze |
 | `app/routes/runs.$id.rider-checkin.tsx` | Auto-approve AR/discount without manager decision |
 | `app/routes/runs.$id.remit.tsx` | Infer customer AR from `PARTIALLY_PAID` alone |
 | `app/routes/cashier.delivery.$runId.tsx` | Treat turnover shortage as automatic customer AR |
@@ -70,6 +77,13 @@ This map is the primary route-level reference for the current implementation.
 | `app/routes/ar.customers.$id.tsx` | Create AR principal without decision-backed authority |
 
 ## Stage Flow
+
+### T0 Order Creation (Pricing Freeze Gate)
+
+- Cart is submitted from `pad-order._index.tsx` to `/orders/new`.
+- Server validates stock/mode/base freshness and delivery constraints.
+- Customer policy discounts (if customer rules exist) are applied once.
+- Frozen snapshots (`unitKind`, `baseUnitPrice`, `discountAmount`, `lineTotal`) become downstream pricing authority.
 
 ### T1 Dispatch (`PLANNED -> DISPATCHED`)
 
@@ -145,14 +159,16 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 2. Using `isOnCredit` alone as AR authority.
 3. Treating rider-shortage bridge as new customer utang.
 4. Recomputing prices to derive AR.
+5. Re-running customer pricing rules after order creation to change payable totals.
 
 ## Audit Checklist (Quick)
 
-1. Every AR entry has traceable approved CSS decision and `customerAr` row.
-2. Every run moved to `CHECKED_IN` has no pending clearance.
-3. Every run moved to cashier has completed manager stock audit.
-4. Cashier shortage events route to rider shortage workflow.
-5. No customer appears on AR list without open `customerAr` balance.
-6. Shift close submission and manager final close are traceable per shift.
-7. Short variance close has manager decision + paper reference trace.
-8. Cashier charge records exist only for short variance with manager `CHARGE_CASHIER`.
+1. Every parent order in the delivery flow has frozen pricing snapshot fields on `OrderItem`.
+2. Every AR entry has traceable approved CSS decision and `customerAr` row.
+3. Every run moved to `CHECKED_IN` has no pending clearance.
+4. Every run moved to cashier has completed manager stock audit.
+5. Cashier shortage events route to rider shortage workflow.
+6. No customer appears on AR list without open `customerAr` balance.
+7. Shift close submission and manager final close are traceable per shift.
+8. Short variance close has manager decision + paper reference trace.
+9. Cashier charge records exist only for short variance with manager `CHARGE_CASHIER`.
