@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-20
+Last Reviewed: 2026-02-21
 
 ## Purpose
 
@@ -66,12 +66,13 @@ Current transition map (as implemented):
 
 ### Drawer balance formula used by shift views
 
-`expectedDrawer = openingFloat + cashInFromSales + deposits - withdrawals`
+`expectedDrawer = openingFloat + cashInFromSales + cashInFromAr + deposits - withdrawals`
 
 Where:
 
 1. `cashInFromSales` comes from `Payment` rows (`method = CASH`) via `tendered - change`.
-2. `deposits/withdrawals` come from `CashDrawerTxn` (`CASH_IN`, `CASH_OUT`, `DROP`).
+2. `cashInFromAr` comes from `CustomerArPayment.amount` rows linked to the same `shiftId`.
+3. `deposits/withdrawals` come from `CashDrawerTxn` (`CASH_IN`, `CASH_OUT`, `DROP`).
 
 ### Collection route posting behavior
 
@@ -79,7 +80,7 @@ Where:
 2. Delivery remit (`delivery-remit.$id.tsx`) posts:
 - `Payment(method=CASH)` for actual cash drawer intake
 - optional `Payment(method=INTERNAL_CREDIT)` bridge for rider shortage workflow
-3. A/R (`ar.customers.$id.tsx`) posts to `CustomerArPayment` with `shiftId` and `cashierId` (not `Payment` table).
+3. A/R (`ar.customers.$id.tsx`) posts to `CustomerArPayment` with `shiftId` and `cashierId` (not `Payment` table), and is counted as cash inflow for drawer computations.
 
 ## Manager Final-Close Contract (As Implemented)
 

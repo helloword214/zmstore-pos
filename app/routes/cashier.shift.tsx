@@ -93,13 +93,17 @@ type LoaderData = {
       change: number | null;
     }>;
     grandAmount: number;
-    cashDrawerIn: number; // tendered - change for CASH
+    cashSalesIn: number; // tendered - change for CASH payments
+    arCashIn: number; // sum of CustomerArPayment.amount for shift
+    cashDrawerIn: number; // sales cash + AR cash
   };
 
   // computed cash drawer snapshot
   drawer?: {
     openingFloat: number;
     cashInFromSales: number;
+    cashInFromAr: number;
+    cashInTotal: number;
     deposits: number;
     withdrawals: number;
     balance: number;
@@ -250,13 +254,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
       where: { shiftId: activeShift.id },
       _sum: { amount: true, tendered: true, change: true },
     });
+    const arCashAgg = await db.customerArPayment.aggregate({
+      where: { shiftId: activeShift.id },
+      _sum: { amount: true },
+    });
     const grandAmount = byMethod.reduce(
       (s, r) => s + Number(r._sum.amount ?? 0),
       0,
     );
     const cashRow = byMethod.find((r) => r.method === "CASH");
-    const cashDrawerIn =
+    const cashSalesIn =
       Number(cashRow?._sum.tendered ?? 0) - Number(cashRow?._sum.change ?? 0);
+    const arCashIn = Number(arCashAgg?._sum?.amount ?? 0);
+    const cashDrawerIn = cashSalesIn + arCashIn;
     totals = {
       byMethod: byMethod.map((r) => ({
         method: r.method,
@@ -265,6 +275,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         change: (r._sum.change as any) ? Number(r._sum.change) : null,
       })),
       grandAmount,
+      cashSalesIn,
+      arCashIn,
       cashDrawerIn,
     };
 
@@ -296,7 +308,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
     drawer = {
       openingFloat,
-      cashInFromSales: cashDrawerIn,
+      cashInFromSales: cashSalesIn,
+      cashInFromAr: arCashIn,
+      cashInTotal: cashDrawerIn,
       deposits,
       withdrawals,
       balance,
@@ -349,7 +363,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 async function computeDrawerSnapshot(tx: typeof db, shiftId: number) {
-  // Cash sales in drawer = tendered - change for CASH
+  // Cash sales in drawer = tendered - change for CASH payments
   const cash = await tx.payment.groupBy({
     by: ["method"],
     where: { shiftId, method: "CASH" },
@@ -358,6 +372,12 @@ async function computeDrawerSnapshot(tx: typeof db, shiftId: number) {
   const cashRow = cash.find((r) => r.method === "CASH");
   const cashInFromSales =
     Number(cashRow?._sum.tendered ?? 0) - Number(cashRow?._sum.change ?? 0);
+  const arCashAgg = await tx.customerArPayment.aggregate({
+    where: { shiftId },
+    _sum: { amount: true },
+  });
+  const cashInFromAr = Number(arCashAgg?._sum?.amount ?? 0);
+  const cashInTotal = cashInFromSales + cashInFromAr;
 
   const grouped = await tx.cashDrawerTxn.groupBy({
     by: ["type"],
@@ -370,7 +390,7 @@ async function computeDrawerSnapshot(tx: typeof db, shiftId: number) {
   const withdrawals =
     sumType(CashDrawerTxnType.CASH_OUT) + sumType(CashDrawerTxnType.DROP);
 
-  return { cashInFromSales, deposits, withdrawals };
+  return { cashInFromSales, cashInFromAr, cashInTotal, deposits, withdrawals };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -539,7 +559,7 @@ export async function action({ request }: ActionFunctionArgs) {
             const snap = await computeDrawerSnapshot(tx as any, me.shiftId!);
             const expectedDrawerNow =
               openingFloat +
-              snap.cashInFromSales +
+              snap.cashInTotal +
               snap.deposits -
               snap.withdrawals;
             if (amount > expectedDrawerNow + 0.005) {
@@ -880,10 +900,14 @@ export default function ShiftConsole() {
                         </div>
                         <div className="rounded-xl bg-slate-50 p-3">
                           <div className="text-xs text-slate-500">
-                            Cash drawer in (tendered − change)
+                            Cash drawer in (sales + A/R)
                           </div>
                           <div className="text-lg font-semibold">
                             {peso(totals.cashDrawerIn)}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Sales {peso(totals.cashSalesIn)} • A/R{" "}
+                            {peso(totals.arCashIn)}
                           </div>
                         </div>
                         <div className="sm:col-span-2">
@@ -929,10 +953,14 @@ export default function ShiftConsole() {
                           </div>
                           <div className="rounded-xl bg-slate-50 p-3">
                             <div className="text-xs text-slate-500">
-                              In from sales (cash)
+                              In from sales + A/R (cash)
                             </div>
                             <div className="text-base font-semibold">
-                              {peso(drawer.cashInFromSales)}
+                              {peso(drawer.cashInTotal)}
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              Sales {peso(drawer.cashInFromSales)} • A/R{" "}
+                              {peso(drawer.cashInFromAr)}
                             </div>
                           </div>
                           <div className="rounded-xl bg-slate-50 p-3">

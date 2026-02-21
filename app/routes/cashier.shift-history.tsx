@@ -79,7 +79,9 @@ type LoaderData = {
     drawerOut: number; // CASH_OUT
     drawerDrops: number; // DROP
     cashSalesIn: number; // tendered - change (CASH only)
-    drawerBalance: number; // openingFloat + cashSalesIn + deposits - out - drops
+    arCashIn: number; // CustomerArPayment.amount linked to shift
+    cashInTotal: number; // sales + AR cash
+    drawerBalance: number; // openingFloat + cashInTotal + deposits - out - drops
     cashCountSummary?: string | null; // parsed from notes (manager audit)
   }>;
   filters: {
@@ -248,6 +250,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     cashSalesInMap.set(r.shiftId!, t - c);
   }
 
+  const arCashRows =
+    shiftIds.length > 0
+      ? await db.customerArPayment.groupBy({
+          by: ["shiftId"],
+          where: { shiftId: { in: shiftIds } },
+          _sum: { amount: true },
+        })
+      : [];
+  const arCashInMap = new Map<number, number>();
+  for (const r of arCashRows) {
+    arCashInMap.set(r.shiftId!, Number(r._sum.amount ?? 0));
+  }
+
   // Drawer transactions per shift (CASH_IN, CASH_OUT, DROP)
   const drawerRows =
     shiftIds.length > 0
@@ -313,8 +328,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const drawer = drawerMap.get(s.id) || { in: 0, out: 0, drop: 0 };
       const openingFloatNum = Number(s.openingFloat ?? 0);
       const cashSalesIn = cashSalesInMap.get(s.id) ?? 0;
+      const arCashIn = arCashInMap.get(s.id) ?? 0;
+      const cashInTotal = cashSalesIn + arCashIn;
       const drawerBalance =
-        openingFloatNum + cashSalesIn + drawer.in - drawer.out - drawer.drop;
+        openingFloatNum + cashInTotal + drawer.in - drawer.out - drawer.drop;
       return {
         id: s.id,
         openedAt: s.openedAt.toISOString(),
@@ -334,6 +351,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         drawerOut: drawer.out,
         drawerDrops: drawer.drop,
         cashSalesIn,
+        arCashIn,
+        cashInTotal,
         drawerBalance,
         cashCountSummary: parseCashCountFromNotes(s.notes ?? null),
       };
@@ -469,7 +488,7 @@ export default function ShiftHistory() {
                 <th className="px-4 py-3">Shift</th>
                 <th className="px-4 py-3">Cashier</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Cash In (Sales)</th>
+                <th className="px-4 py-3 text-right">Cash In (Sales + A/R)</th>
                 <th className="px-4 py-3 text-right">Bridge</th>
                 <th className="px-4 py-3 text-right">Moves</th>
                 <th className="px-4 py-3 text-right">Expected Drawer</th>
@@ -568,7 +587,10 @@ export default function ShiftHistory() {
                     })()}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
-                    {peso(s.cashSalesIn)}
+                    <div className="text-slate-900">{peso(s.cashInTotal)}</div>
+                    <div className="text-xs text-slate-500">
+                      Sales {peso(s.cashSalesIn)} • A/R {peso(s.arCashIn)}
+                    </div>
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
                     {s.varianceBridgeAmount > 0 ? (
