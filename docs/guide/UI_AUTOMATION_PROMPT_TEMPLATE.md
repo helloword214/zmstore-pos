@@ -8,6 +8,7 @@ Scope note:
 
 1. This template is for UI consistency automation.
 2. For deterministic business-flow smoke automation, use `docs/automation/BUSINESS_FLOW_ENGINE.md`.
+3. Resolve execution mode first using `docs/ui-automation/INTENT_ROUTER.md`.
 
 ## 1. Full Prompt (Recommended)
 
@@ -29,6 +30,7 @@ Primary docs to follow:
 1. `docs/guide/UI_AUTOMATION_GUIDE.md`
 2. `docs/guide/UI_CONFORMANCE_MATRIX.md`
 3. `docs/guide/Clearance CSS Alignment Rules.md`
+4. `docs/ui-automation/UI_CYCLE_RUNBOOK.md` (runtime gate and evidence rules)
 
 Route scope:
 1. `app/routes/store.dispatch.tsx`
@@ -219,6 +221,9 @@ Use this when you want setup-driven smoke checks for delivery flow records.
 
 ```md
 Run business-flow smoke automation using the deterministic engine.
+
+Runbook authority:
+1. `docs/ui-automation/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 
 Task:
 1. Execute `npm run automation:flow:smoke`.

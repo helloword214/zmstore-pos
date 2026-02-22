@@ -185,6 +185,7 @@ Interpretation rule:
 2. If a route in 9.2 is not yet represented by an active spec, treat it as planned coverage, not enforced coverage.
 3. `not-set` route gate applies to `ui:cycle` manager monitoring only.
 4. Business-flow smoke (`automation:flow:smoke`) is context-driven and should not require `UI_RUN_ID`.
+5. Execution intent routing and runtime inputs are governed by `docs/ui-automation/INTENT_ROUTER.md`.
 
 ### 9.1 Static conformance check
 
@@ -247,7 +248,13 @@ Do not mark UI PR as ready to merge when:
 2. This guide does not redefine AR authority rules.
 3. This guide does not replace canonical flow documentation.
 
-## 13. Automation Commands (MVP)
+## 13. Automation Commands (Reference)
+
+Execution source of truth:
+
+1. `docs/ui-automation/INTENT_ROUTER.md`
+2. `docs/ui-automation/UI_CYCLE_RUNBOOK.md`
+3. `docs/ui-automation/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 
 1. `npm run ui:test`
 2. `npm run ui:test:auth`
