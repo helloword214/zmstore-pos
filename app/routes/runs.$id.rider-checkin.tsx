@@ -2696,7 +2696,7 @@ export default function RiderCheckinPage() {
                           </div>
                         </div>
                         {/* ✅ Payment (Parent) — match Quick Sales layout/wording */}
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-0.5">
                               <div>
@@ -2714,7 +2714,7 @@ export default function RiderCheckinPage() {
                               ) : null}
                             </div>
 
-                            <label className="flex items-center gap-1">
+                            <label className="flex items-center gap-2 text-xs">
                               <span className="text-slate-500">
                                 Cash received:
                               </span>
@@ -2725,7 +2725,7 @@ export default function RiderCheckinPage() {
                                   rec.orderTotal || 0,
                                 ).toFixed(2)}
                                 disabled={recLocked}
-                                className="w-24 border rounded px-1 py-0.5 text-right bg-white"
+                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm"
                                 value={
                                   rec.cashInput ??
                                   (rec.cashCollected != null
@@ -3010,10 +3010,10 @@ export default function RiderCheckinPage() {
                 }}
                 aria-disabled={addQuickBlockedReason ? "true" : "false"}
                 title={addQuickBlockedReason ?? undefined}
-                className={`rounded border px-3 py-1 text-xs transition ${
+                className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
                   addQuickBlockedReason
-                    ? "opacity-50 cursor-not-allowed bg-slate-50 text-slate-500 border-slate-300"
-                    : "bg-white hover:bg-slate-50 border-slate-300 text-slate-700"
+                    ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400 opacity-50"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 + Add Customer
@@ -3023,7 +3023,7 @@ export default function RiderCheckinPage() {
             {/* Minimalist: no noisy banner. Only show the small stock note below. */}
 
             {!hasAnyAvailableStock && (
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 All products for this run are fully sold or returned. No more
                 quick sales can be added.
               </p>
@@ -3220,10 +3220,10 @@ export default function RiderCheckinPage() {
                               <div className="col-span-6 relative">
                                 <button
                                   type="button"
-                                  className={`w-full border rounded px-2 py-1 text-sm flex items-center justify-between ${
+                                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm ${
                                     isOutOfStock
                                       ? "bg-amber-50 border-amber-300 text-amber-800"
-                                      : "bg-white border-slate-300 text-slate-900"
+                                      : "bg-white border-slate-200 text-slate-900"
                                   } ${
                                     !hasAnyAvailableStock
                                       ? "bg-slate-100 text-slate-400"
@@ -3263,7 +3263,7 @@ export default function RiderCheckinPage() {
                                 {badge}
 
                                 {openProductDropdown === ln.key && (
-                                  <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-md border bg-white shadow-lg text-sm">
+                                  <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white text-sm shadow-lg">
                                     {(() => {
                                       const availableProducts =
                                         productOptions.filter((p) =>
@@ -3286,7 +3286,7 @@ export default function RiderCheckinPage() {
                                         <button
                                           key={p.productId}
                                           type="button"
-                                          className="w-full text-left px-2 py-1 hover:bg-indigo-50"
+                                          className="w-full px-3 py-2 text-left hover:bg-indigo-50"
                                           disabled={recLocked}
                                           onClick={() => {
                                             if (recLocked) return;
@@ -3354,7 +3354,7 @@ export default function RiderCheckinPage() {
 
                               {/* Qty with guard: loaded - (baseSold + other quick) */}
                               <input
-                                className="col-span-2 border rounded px-2 py-1 text-sm text-right"
+                                className="col-span-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm"
                                 type="number"
                                 min={0}
                                 disabled={recLocked}
@@ -3443,7 +3443,7 @@ export default function RiderCheckinPage() {
                               <div className="col-span-4">
                                 <div className="flex items-center gap-2">
                                   <input
-                                    className="flex-1 border rounded px-2 py-1 text-sm text-right bg-slate-50"
+                                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm"
                                     type="number"
                                     readOnly
                                     value={effectiveUnitPrice.toFixed(2)}
@@ -3476,7 +3476,7 @@ export default function RiderCheckinPage() {
                                 </div>
                               </div>
                               {/* Line total + Cash collected + discount helper */}
-                              <div className="col-span-12 flex items-center justify-between text-[11px] text-slate-500">
+                              <div className="col-span-12 flex items-center justify-between text-xs text-slate-500">
                                 <div>
                                   Total:{" "}
                                   <span className="font-mono font-semibold">
@@ -3490,10 +3490,10 @@ export default function RiderCheckinPage() {
 
                         <button
                           type="button"
-                          className={`mt-1 text-xs border rounded px-2 py-1 ${
+                          className={`mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${
                             !hasAnyAvailableStock
-                              ? "opacity-50 cursor-not-allowed"
-                              : ""
+                              ? "cursor-not-allowed opacity-50"
+                              : "bg-white hover:bg-slate-50"
                           }`}
                           disabled={recLocked || !hasAnyAvailableStock}
                           onClick={() =>
@@ -3529,7 +3529,7 @@ export default function RiderCheckinPage() {
                       </div>
                       {/* ✅ Payment (ONE place only) — put after items */}
                       {receiptTotal > 0 && (
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-0.5">
                               <div>
@@ -3545,7 +3545,7 @@ export default function RiderCheckinPage() {
                               ) : null}
                             </div>
 
-                            <label className="flex items-center gap-1">
+                            <label className="flex items-center gap-2 text-xs">
                               <span className="text-slate-500">
                                 Cash received:
                               </span>
@@ -3553,7 +3553,7 @@ export default function RiderCheckinPage() {
                                 type="text"
                                 inputMode="decimal"
                                 disabled={recLocked}
-                                className="w-24 border rounded px-1 py-0.5 text-right bg-white"
+                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm"
                                 placeholder={receiptTotal.toFixed(2)}
                                 value={rec.cashInput ?? receiptTotal.toFixed(2)}
                                 onChange={(e) => {
