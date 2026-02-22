@@ -9,6 +9,7 @@ import {
   requireUser,
   type SessionUser,
 } from "~/utils/auth.server";
+import { CashierChargeStatus } from "@prisma/client";
 import { db } from "~/utils/db.server";
 
 type LoaderData = {
@@ -28,6 +29,9 @@ type LoaderData = {
   };
   alerts: {
     openChargeItems: number; // manager-charged cashier variance items awaiting cashier ack
+  };
+  finance: {
+    outstandingCharges: number;
   };
 };
 
@@ -56,7 +60,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : userRow.email ?? "";
   const alias: string | null = emp?.alias ?? null;
 
-  const [shift, openChargeItems] = await Promise.all([
+  const [shift, openChargeItems, openCharges] = await Promise.all([
     getActiveShift(request),
     // Cashier Charges = manager approved + charged to cashier, waiting cashier acknowledgement
     db.cashierShiftVariance.count({
@@ -66,7 +70,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
         shift: { cashierId: me.userId },
       },
     }),
+    db.cashierCharge.findMany({
+      where: {
+        cashierId: me.userId,
+        status: {
+          in: [CashierChargeStatus.OPEN, CashierChargeStatus.PARTIALLY_SETTLED],
+        },
+      },
+      select: {
+        amount: true,
+        payments: { select: { amount: true } },
+      },
+    }),
   ]);
+  const outstandingCharges = openCharges.reduce((sum, ch) => {
+    const amt = Number(ch.amount ?? 0);
+    const paid = (ch.payments ?? []).reduce(
+      (s: number, p: any) => s + Number(p.amount ?? 0),
+      0
+    );
+    return sum + Math.max(0, amt - paid);
+  }, 0);
+
   const activeShift = shift
     ? {
         id: shift.id,
@@ -86,11 +111,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       email: userRow.email ?? "",
     },
     alerts: { openChargeItems },
+    finance: { outstandingCharges },
   });
 }
 
 export default function CashierDashboardPage() {
-  const { me, activeShift, userInfo, alerts } = useLoaderData<LoaderData>();
+  const { me, activeShift, userInfo, alerts, finance } =
+    useLoaderData<LoaderData>();
 
   const hasShift = !!activeShift;
   const shiftWritable = Boolean(
@@ -105,6 +132,14 @@ export default function CashierDashboardPage() {
     : shiftLocked
       ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
       : "Shift open";
+  const nextShiftLabel = hasShift
+    ? `Active shift #${activeShift?.id}`
+    : "No schedule loaded";
+  const scheduleSubtitle = hasShift && openedAt
+    ? `Opened ${openedAt}`
+    : "Open a shift to start your work schedule.";
+  const absentCountThisMonth = 0;
+  const paydayLabel = "15 & 30 of the month";
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
@@ -142,70 +177,31 @@ export default function CashierDashboardPage() {
               <span>{userInfo.email}</span>
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              {/* 🔔 Cashier Charges badge (does NOT require active shift) */}
-              <Link
-                to="/cashier/charges"
-                className={
-                  "relative inline-flex items-center rounded-xl border px-3 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 " +
-                  (alerts.openChargeItems > 0
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : "border-slate-200 bg-white text-slate-700")
-                }
-                title={
-                  alerts.openChargeItems > 0
-                    ? `${alerts.openChargeItems} charge item(s) awaiting acknowledgement`
-                    : "No pending charges"
-                }
-              >
-                Charges
-                {alerts.openChargeItems > 0 ? (
-                  <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-xl bg-rose-600 px-2 py-0.5 text-xs font-semibold leading-none text-white">
-                    {alerts.openChargeItems}
-                  </span>
-                ) : null}
-              </Link>
-              <span
-                className={
-                  "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium " +
-                  (!hasShift
-                    ? "border border-rose-200 bg-rose-50 text-rose-700"
-                    : shiftLocked
-                    ? "border border-amber-200 bg-amber-50 text-amber-800"
-                    : "border border-emerald-200 bg-emerald-50 text-emerald-700")
-                }
-              >
-                <span
-                  className={
-                    "h-1.5 w-1.5 rounded-full " +
-                    (!hasShift
-                      ? "bg-rose-500"
-                      : shiftLocked
-                      ? "bg-amber-500"
-                      : "bg-emerald-500")
-                  }
-                />
-                {!hasShift
-                  ? "No active shift"
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span
+              className={
+                "inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium " +
+                (!hasShift
+                  ? "border border-rose-200 bg-rose-50 text-rose-700"
                   : shiftLocked
-                  ? `LOCKED (${String(activeShift?.status ?? "UNKNOWN")})`
-                  : "Shift OPEN"}
-              </span>
-              <Form method="post" action="/logout">
-                <button
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                  title="Sign out"
-                >
-                  Logout
-                </button>
-              </Form>
-            </div>
-            {hasShift && openedAt && (
-              <span className="text-slate-500">
-                Shift #{activeShift?.id} • Opened {openedAt}
-              </span>
-            )}
+                  ? "border border-amber-200 bg-amber-50 text-amber-800"
+                  : "border border-emerald-200 bg-emerald-50 text-emerald-700")
+              }
+            >
+              {!hasShift
+                ? "No active shift"
+                : shiftLocked
+                ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
+                : "On-duty"}
+            </span>
+            <Form method="post" action="/logout">
+              <button
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                title="Sign out"
+              >
+                Logout
+              </button>
+            </Form>
           </div>
         </div>
       </div>
@@ -257,23 +253,47 @@ export default function CashierDashboardPage() {
 
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Shift Snapshot
+            Operations Snapshot
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Shift State
               </div>
               <div className="mt-1 text-sm font-medium text-slate-900">
                 {shiftStateLabel}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Writable shift is required for POS, AR, and remit tasks.
+              <p className="mt-1 text-xs text-slate-500">
+                Writable shift required for POS, AR, and remit tasks.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Next Shift
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                Tomorrow, 8:00 AM – Asingan Branch
+              </div>
+              <p className="mt-1 text-xs text-emerald-900/80">
+                Check complete schedule for branch and shift-hour updates.
+              </p>
+            </div>
+
+            <div
+              className={
+                "rounded-2xl border p-3 shadow-sm " +
+                (alerts.openChargeItems > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
+              <div
+                className={
+                  "text-xs font-semibold uppercase tracking-wide " +
+                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-600")
+                }
+              >
                 Pending Charges
               </div>
               <div
@@ -284,32 +304,39 @@ export default function CashierDashboardPage() {
               >
                 {alerts.openChargeItems}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Manager-tagged variance acknowledgements waiting action.
+              <p
+                className={
+                  "mt-1 text-xs " +
+                  (alerts.openChargeItems > 0 ? "text-rose-900/80" : "text-slate-500")
+                }
+              >
+                Manager-tagged acknowledgements waiting action.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div
+              className={
+                "rounded-2xl border p-3 shadow-sm " +
+                (finance.outstandingCharges > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Active Shift ID
+                Outstanding Charges
               </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {hasShift ? `#${activeShift?.id}` : "—"}
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (finance.outstandingCharges > 0
+                    ? "text-rose-700"
+                    : "text-slate-900")
+                }
+              >
+                ₱{finance.outstandingCharges.toFixed(2)}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
-                {openedAt ? `Opened ${openedAt}` : "Waiting for open shift."}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Access Route
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-900">
-                {hasShift && !shiftLocked ? "Direct task access" : "Guarded via Shift Console"}
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Links auto-route to shift console when shift is missing/locked.
+              <p className="mt-1 text-xs text-slate-500">
+                Total remaining balance assigned to this cashier account.
               </p>
             </div>
           </div>
@@ -322,181 +349,226 @@ export default function CashierDashboardPage() {
               Operations
             </h2>
             <span className="text-xs text-slate-500">
-              Execute cashier tasks in this order: charges, POS, AR, delivery remit.
+              Cashier lane: POS, AR, and delivery remit.
             </span>
           </div>
-          <h3 className="sr-only">
-            Cashier Actions
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Cashier Charges (manager-charged items) — no shift required */}
-            <Link
-              to="/cashier/charges"
-              className={
-                "group flex h-full flex-col justify-between rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md " +
-                (alerts.openChargeItems > 0
-                  ? "border-rose-200 bg-rose-50 hover:border-rose-300"
-                  : "border-slate-200 bg-white hover:border-slate-300")
-              }
-            >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Charges
-                </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Manager-Charged Variances
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Review items charged to you after shift close audit, add note,
-                  then acknowledge & close.
-                </p>
-                {alerts.openChargeItems > 0 ? (
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200">
-                    Pending: {alerts.openChargeItems}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-xs text-rose-700/70">
-                    No pending charge items
-                  </div>
-                )}
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Sales &amp; Collection
               </div>
-              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
-                Open charges →
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                POS and AR workflow
               </div>
-            </Link>
-            {/* Walk-in POS */}
-            <Link
-              to={guardLink("/cashier/pos")}
-              className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
-                (!hasShift ? disabledCard : "")
-              }
-            >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Walk-In
-                </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  New Sale (POS)
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Scan items, collect payment, and print receipt for in-store
-                  customers.
-                </p>
-                {!hasShift ? (
-                  <div className={disabledHint}>
-                    Requires open shift → click to open
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
-                Go to POS →
-              </div>
-            </Link>
+              <p className="mt-1 text-xs text-slate-500">
+                Encode walk-in sales, collect receivables, and post rider remits in
+                one lane.
+              </p>
 
-            {/* AR / Customer balance collection */}
-            <Link
-              to={guardLink("/ar")}
-              className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
-                (!hasShift ? disabledCard : "")
-              }
-            >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Accounts Receivable
+              <div className="mt-3 grid gap-2">
+                <Link
+                  to={guardLink("/cashier/pos")}
+                  className={
+                    "flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 " +
+                    (!hasShift ? disabledCard : "")
+                  }
+                >
+                  <span>New Sale (POS)</span>
+                  <span className="text-xs font-normal text-indigo-700">
+                    open POS →
+                  </span>
+                </Link>
+                <Link
+                  to={guardLink("/ar")}
+                  className={
+                    "flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 " +
+                    (!hasShift ? disabledCard : "")
+                  }
+                >
+                  <span>Collect on AR</span>
+                  <span className="text-xs font-normal text-emerald-700">
+                    open AR →
+                  </span>
+                </Link>
+                <Link
+                  to={guardLink("/cashier/delivery")}
+                  className={
+                    "flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 " +
+                    (!hasShift ? disabledCard : "")
+                  }
+                >
+                  <span>Rider Remittance</span>
+                  <span className="text-xs font-normal text-sky-700">
+                    open remit →
+                  </span>
+                </Link>
+              </div>
+
+              {!hasShift ? (
+                <div className={disabledHint}>
+                  Requires open shift for POS, AR, and rider remit actions.
                 </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Collect on AR
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Find a customer, view their ledger, and record AR payments.
-                </p>
-                {!hasShift ? (
-                  <div className={disabledHint}>
-                    Requires open shift → click to open
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Shift Console
                   </div>
-                ) : null}
-              </div>
-              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
-                Open AR list →
-              </div>
-            </Link>
-            {/* Delivery remit console (per delivery run) */}
-            <Link
-              to={guardLink("/cashier/delivery")}
-              className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
-                (!hasShift ? disabledCard : "")
-              }
-            >
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Delivery Remit
-                </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Rider Remittance
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Record rider remit per delivery run and review roadside sales.
-                </p>
-                {!hasShift ? (
-                  <div className={disabledHint}>
-                    Requires open shift → click to open
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    {hasShift
+                      ? "Open / close and monitor drawer"
+                      : "Open shift before cashier operations"}
                   </div>
-                ) : null}
+                </div>
+                <Link
+                  to="/cashier/shift?next=/cashier"
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  Open →
+                </Link>
               </div>
-              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
-                Open delivery remit console →
+              <p className="text-xs text-slate-500">
+                Open/close shift, record drawer deposits/withdrawals, and see
+                running drawer balance.
+              </p>
+
+              {hasShift ? (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  Active shift: #{activeShift?.id}
+                  {openedAt ? ` • Opened ${openedAt}` : ""}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  No active shift. Open shift first, then continue POS/AR/remit.
+                </div>
+              )}
+
+              {!hasShift ? (
+                <div className="mt-3">
+                  <Link
+                    to="/cashier/shift?open=1&next=/cashier"
+                    className="inline-flex items-center rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
+                  >
+                    Open Shift
+                  </Link>
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <span>Shift history</span>
+                <Link
+                  to="/cashier/shift-history"
+                  className="font-medium text-slate-700 hover:text-slate-900"
+                >
+                  View all →
+                </Link>
               </div>
-            </Link>
+            </div>
           </div>
         </section>
 
-        {/* Shift & drawer tools */}
-        <section className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-slate-900">
-                Shift Console
-              </h2>
-              <Link
-                to="/cashier/shift?next=/cashier"
-                className="text-sm font-medium text-slate-700 hover:text-slate-900"
-              >
-                Open →
-              </Link>
-            </div>
-            <p className="text-xs text-slate-500">
-              Open/close shift, record drawer deposits/withdrawals, and see
-              running drawer balance.
-            </p>
-            {hasShift && (
-              <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                Active shift: #{activeShift?.id} • Branch{" "}
-                <span className="font-mono">
-                  {activeShift?.branchId ?? "—"}
-                </span>
-              </div>
-            )}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Schedule &amp; Payroll
+            </h2>
+            <span className="text-xs text-slate-500">
+              Work schedule, attendance view, and payroll charges in one panel.
+            </span>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-medium text-slate-900">
-                Shift History
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                Work Schedule
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {nextShiftLabel}
+              </div>
+              <p className="mt-1 text-xs text-indigo-900/80">{scheduleSubtitle}</p>
+
+              <div className="mt-3 grid gap-2">
+                <Link
+                  to="/cashier/shift?next=/cashier"
+                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40"
+                >
+                  View full schedule
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Attendance &amp; Absences
               </h2>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">
+                {absentCountThisMonth}
+                <span className="ml-1 text-xs font-normal text-slate-500">
+                  absent this month
+                </span>
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Kasama dito ang hindi naka-time-in / naka-log sa schedule.
+              </p>
               <Link
                 to="/cashier/shift-history"
-                className="text-sm font-medium text-slate-600 hover:text-slate-800"
+                className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                View all →
+                Attendance history
               </Link>
             </div>
-            <p className="text-xs text-slate-500">
-              Review previous shifts: totals collected, drawer movements, and
-              variances.
-            </p>
+
+            <div
+              className={
+                "rounded-2xl border p-4 text-sm shadow-sm " +
+                (finance.outstandingCharges > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Payday &amp; Charges
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">Next payday</p>
+              <p className="text-sm font-medium text-slate-900">{paydayLabel}</p>
+
+              <div className="mt-3">
+                <p className="text-xs text-slate-500">Outstanding charges</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  ₱{finance.outstandingCharges.toFixed(2)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Pwedeng kasama dito ang shortage, penalties, o iba pang
+                  deductions na naka-assign sa account mo.
+                </p>
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <Link
+                  to="/cashier/shift-history"
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Payslip / payroll
+                </Link>
+                <Link
+                  to="/cashier/charges"
+                  className={
+                    "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
+                    (finance.outstandingCharges > 0 || alerts.openChargeItems > 0
+                      ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
+                  }
+                >
+                  View charges
+                </Link>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Pending acknowledgement: {alerts.openChargeItems}
+              </p>
+            </div>
           </div>
         </section>
       </div>

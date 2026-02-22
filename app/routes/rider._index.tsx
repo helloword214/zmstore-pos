@@ -111,7 +111,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function RiderDashboard() {
   const { user, hr, pendingVarianceCount } = useLoaderData<LoaderData>();
-  const hasPendingVariance = pendingVarianceCount > 0;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -134,18 +133,7 @@ export default function RiderDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span
-              className={`inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium ${
-                hasPendingVariance
-                  ? "border border-rose-200 bg-rose-50 text-rose-700"
-                  : "border border-slate-200 bg-white text-slate-600"
-              }`}
-            >
-              {hasPendingVariance
-                ? `${pendingVarianceCount} pending variance`
-                : "No pending variance"}
-            </span>
-            <span className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600">
+            <span className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
               On-duty
             </span>
             <form method="post" action="/logout">
@@ -178,7 +166,14 @@ export default function RiderDashboard() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div
+              className={
+                "rounded-2xl border p-4 shadow-sm " +
+                (hr.outstandingCharges > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Outstanding Charges
               </div>
@@ -195,14 +190,14 @@ export default function RiderDashboard() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
                 Next Shift
               </div>
               <div className="mt-1 text-sm font-medium text-slate-900">
                 {hr.nextShiftLabel ?? "No schedule loaded"}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-emerald-900/80">
                 Check complete schedule for branch and shift-hour updates.
               </p>
             </div>
@@ -249,10 +244,10 @@ export default function RiderDashboard() {
               {/* New Walk-in / Pad-Order */}
               <Link
                 to="/pad-order"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+                className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100"
               >
                 <span>New Walk-in / Pad-order</span>
-                <span className="text-xs font-normal text-slate-500">
+                <span className="text-xs font-normal text-indigo-700">
                   open pad-order board
                 </span>
               </Link>
@@ -298,10 +293,10 @@ export default function RiderDashboard() {
               {/* My Runs – filtered sa riderId (via /runs?mine=1) */}
               <Link
                 to="/runs?mine=1"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+                className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
               >
                 <span>My Delivery Runs (Check-in &amp; Summary)</span>
-                <span className="text-xs font-normal text-slate-500">
+                <span className="text-xs font-normal text-emerald-700">
                   open run list, then tap <strong>Open</strong> per run
                 </span>
               </Link>
@@ -343,18 +338,18 @@ export default function RiderDashboard() {
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              People &amp; Payroll
+              Schedule &amp; Payroll
             </h2>
             <span className="text-xs text-slate-500">
-              Attendance, payouts, and deductions in one panel.
+              Work schedule, attendance view, and payroll charges in one panel.
             </span>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
           {/* Schedule */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
                   Work Schedule
                 </h2>
                 <p className="mt-1 text-sm font-medium text-slate-900">
@@ -362,12 +357,12 @@ export default function RiderDashboard() {
                 </p>
               </div>
             </div>
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-indigo-900/80">
               Tingnan ang full schedule, rest day, at assigned branch.
             </p>
             <Link
               to="/me/schedule"
-              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="mt-3 inline-flex items-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40"
             >
               View full schedule
             </Link>
@@ -396,7 +391,14 @@ export default function RiderDashboard() {
           </div>
 
           {/* Payday & charges */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+          <div
+            className={
+              "rounded-2xl border p-4 text-sm shadow-sm " +
+              (hr.outstandingCharges > 0
+                ? "border-rose-200 bg-rose-50"
+                : "border-slate-200 bg-white")
+            }
+          >
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Payday &amp; Charges
             </h2>
@@ -425,7 +427,12 @@ export default function RiderDashboard() {
               </Link>
               <Link
                 to="/me/charges"
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className={
+                  "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
+                  (hr.outstandingCharges > 0
+                    ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
+                }
               >
                 View charges
               </Link>
