@@ -118,7 +118,7 @@ export default function CashierDashboardPage() {
   };
 
   const disabledCard = "opacity-70 select-none grayscale";
-  const disabledHint = "mt-2 text-xs font-medium text-rose-600";
+  const disabledHint = "mt-2 text-xs font-medium text-amber-700";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -211,7 +211,7 @@ export default function CashierDashboardPage() {
       </div>
 
       {/* Body */}
-      <div className="mx-auto max-w-6xl px-5 py-6 space-y-6">
+      <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
         {/* Callout kung walang shift */}
         {!hasShift && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -272,26 +272,31 @@ export default function CashierDashboardPage() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Pending Charges
               </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-900")
+                }
+              >
                 {alerts.openChargeItems}
               </div>
-              <p className="mt-2 text-xs text-rose-900/80">
+              <p className="mt-2 text-xs text-slate-500">
                 Manager-tagged variance acknowledgements waiting action.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Active Shift ID
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
                 {hasShift ? `#${activeShift?.id}` : "—"}
               </div>
-              <p className="mt-2 text-xs text-emerald-900/80">
+              <p className="mt-2 text-xs text-slate-500">
                 {openedAt ? `Opened ${openedAt}` : "Waiting for open shift."}
               </p>
             </div>
@@ -327,16 +332,21 @@ export default function CashierDashboardPage() {
             {/* Cashier Charges (manager-charged items) — no shift required */}
             <Link
               to="/cashier/charges"
-              className="group flex h-full flex-col justify-between rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md"
+              className={
+                "group flex h-full flex-col justify-between rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md " +
+                (alerts.openChargeItems > 0
+                  ? "border-rose-200 bg-rose-50 hover:border-rose-300"
+                  : "border-slate-200 bg-white hover:border-slate-300")
+              }
             >
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                   Charges
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-900">
                   Manager-Charged Variances
                 </div>
-                <p className="mt-1 text-xs text-rose-900/80">
+                <p className="mt-1 text-xs text-slate-500">
                   Review items charged to you after shift close audit, add note,
                   then acknowledge & close.
                 </p>
@@ -350,7 +360,7 @@ export default function CashierDashboardPage() {
                   </div>
                 )}
               </div>
-              <div className="mt-3 text-sm font-medium text-rose-700 group-hover:text-rose-800">
+              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
                 Open charges →
               </div>
             </Link>
@@ -358,12 +368,12 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/cashier/pos")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                   Walk-In
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-900">
@@ -379,7 +389,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-sm font-medium text-indigo-600 group-hover:text-indigo-700">
+              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
                 Go to POS →
               </div>
             </Link>
@@ -388,12 +398,12 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/ar")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                   Accounts Receivable
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-900">
@@ -408,7 +418,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-sm font-medium text-emerald-600 group-hover:text-emerald-700">
+              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
                 Open AR list →
               </div>
             </Link>
@@ -416,12 +426,12 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/cashier/delivery")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-sky-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                   Delivery Remit
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-900">
@@ -436,7 +446,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-sm font-medium text-sky-600 group-hover:text-sky-700">
+              <div className="mt-3 text-sm font-medium text-slate-700 group-hover:text-slate-900">
                 Open delivery remit console →
               </div>
             </Link>
@@ -452,7 +462,7 @@ export default function CashierDashboardPage() {
               </h2>
               <Link
                 to="/cashier/shift?next=/cashier"
-                className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                className="text-sm font-medium text-slate-700 hover:text-slate-900"
               >
                 Open →
               </Link>

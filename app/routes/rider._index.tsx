@@ -145,7 +145,7 @@ export default function RiderDashboard() {
                 ? `${pendingVarianceCount} pending variance`
                 : "No pending variance"}
             </span>
-            <span className="inline-flex items-center rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
+            <span className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600">
               On-duty
             </span>
             <form method="post" action="/logout">
@@ -153,14 +153,14 @@ export default function RiderDashboard() {
                 type="submit"
                 className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
               >
-                ⏏ Logout
+                Logout
               </button>
             </form>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl space-y-6 px-5 py-6">
+      <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Operations Snapshot
@@ -178,26 +178,31 @@ export default function RiderDashboard() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Outstanding Charges
               </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (hr.outstandingCharges > 0 ? "text-rose-700" : "text-slate-900")
+                }
+              >
                 ₱{hr.outstandingCharges.toFixed(2)}
               </div>
-              <p className="mt-2 text-xs text-rose-900/80">
+              <p className="mt-2 text-xs text-slate-500">
                 Includes shortage or penalties currently assigned to your account.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Next Shift
               </div>
               <div className="mt-1 text-sm font-medium text-slate-900">
                 {hr.nextShiftLabel ?? "No schedule loaded"}
               </div>
-              <p className="mt-2 text-xs text-emerald-900/80">
+              <p className="mt-2 text-xs text-slate-500">
                 Check complete schedule for branch and shift-hour updates.
               </p>
             </div>
@@ -226,7 +231,7 @@ export default function RiderDashboard() {
               Seller tasks and rider tasks are separated for faster scanning.
             </span>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
           {/* SELLER TOOLS CARD */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -240,14 +245,14 @@ export default function RiderDashboard() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3">
+            <div className="mt-3 grid gap-2">
               {/* New Walk-in / Pad-Order */}
               <Link
                 to="/pad-order"
-                className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100"
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
               >
-                <span>➕ New Walk-in / Pad-order</span>
-                <span className="text-xs font-normal text-indigo-700">
+                <span>New Walk-in / Pad-order</span>
+                <span className="text-xs font-normal text-slate-500">
                   open pad-order board
                 </span>
               </Link>
@@ -257,7 +262,7 @@ export default function RiderDashboard() {
                 to="/orders"
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
               >
-                <span>📋 My Orders</span>
+                <span>My Orders</span>
                 <span className="text-xs text-slate-500">
                   recent orders I created
                 </span>
@@ -268,7 +273,7 @@ export default function RiderDashboard() {
                 to="/customers"
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
               >
-                <span>👥 Customers</span>
+                <span>Customers</span>
                 <span className="text-xs text-slate-500">
                   search &amp; select customer
                 </span>
@@ -289,14 +294,14 @@ export default function RiderDashboard() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3">
+            <div className="mt-3 grid gap-2">
               {/* My Runs – filtered sa riderId (via /runs?mine=1) */}
               <Link
                 to="/runs?mine=1"
-                className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
               >
-                <span>🚚 My Delivery Runs (Check-in &amp; Summary)</span>
-                <span className="text-xs font-normal text-emerald-700">
+                <span>My Delivery Runs (Check-in &amp; Summary)</span>
+                <span className="text-xs font-normal text-slate-500">
                   open run list, then tap <strong>Open</strong> per run
                 </span>
               </Link>
@@ -309,7 +314,7 @@ export default function RiderDashboard() {
                     : "border-slate-200 bg-slate-50 text-slate-800"
                 }`}
               >
-                <span>🧾 Variances (Pending Accept)</span>
+                <span>Variances (Pending Accept)</span>
                 <span
                   className={`text-xs ${
                     pendingVarianceCount > 0
@@ -322,8 +327,8 @@ export default function RiderDashboard() {
                     : "no pending"}
                 </span>
               </Link>
-              <div className="mt-1 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                💸 Paalala: cash remit at final posting ay ginagawa ng{" "}
+              <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                Paalala: cash remit at final posting ay ginagawa ng{" "}
                 <span className="font-semibold">Store Manager / Cashier</span>.
                 Ikaw muna ang mag-check-in ng{" "}
                 <span className="font-semibold">Sold / Returned</span> per run
@@ -344,7 +349,7 @@ export default function RiderDashboard() {
               Attendance, payouts, and deductions in one panel.
             </span>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-3">
           {/* Schedule */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
             <div className="flex items-center justify-between">
@@ -364,7 +369,7 @@ export default function RiderDashboard() {
               to="/me/schedule"
               className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              🗓 View full schedule
+              View full schedule
             </Link>
           </div>
 
@@ -373,7 +378,7 @@ export default function RiderDashboard() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Attendance &amp; Absences
             </h2>
-            <p className="mt-1 text-3xl font-semibold text-slate-900">
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
               {hr.absentCountThisMonth}
               <span className="ml-1 text-xs font-normal text-slate-500">
                 absent this month
@@ -386,7 +391,7 @@ export default function RiderDashboard() {
               to="/me/attendance"
               className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              ✅ Attendance history
+              Attendance history
             </Link>
           </div>
 
@@ -402,7 +407,7 @@ export default function RiderDashboard() {
 
             <div className="mt-3">
               <p className="text-xs text-slate-500">Outstanding charges</p>
-              <p className="text-2xl font-semibold text-slate-900">
+              <p className="text-xl font-semibold text-slate-900">
                 ₱{hr.outstandingCharges.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
@@ -416,13 +421,13 @@ export default function RiderDashboard() {
                 to="/me/payroll"
                 className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                📄 Payslip / payroll
+                Payslip / payroll
               </Link>
               <Link
                 to="/me/charges"
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                💳 View charges
+                View charges
               </Link>
             </div>
           </div>
