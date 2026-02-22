@@ -15,4 +15,3 @@ test("setup cashier auth state", async ({ page }) => {
 
   await persistStorageState(page, stateFile);
 });
-
