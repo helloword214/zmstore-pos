@@ -137,17 +137,17 @@ export default function CashierDashboardPage() {
     : "No schedule loaded";
   const scheduleSubtitle = hasShift && openedAt
     ? `Opened ${openedAt}`
-    : "Open a shift to start your work schedule.";
+    : "Waiting for manager to open your shift.";
   const absentCountThisMonth = 0;
   const paydayLabel = "15 & 30 of the month";
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
     if (!hasShift) {
-      return `/cashier/shift?open=1&next=${encodeURIComponent(to)}`;
+      return `/cashier/shift?next=${encodeURIComponent(to)}`;
     }
     if (!shiftWritable) {
-      return `/cashier/shift?locked=1&next=${encodeURIComponent(to)}`;
+      return `/cashier/shift?next=${encodeURIComponent(to)}`;
     }
     return to;
   };
@@ -208,26 +208,6 @@ export default function CashierDashboardPage() {
 
       {/* Body */}
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
-        {/* Callout kung walang shift */}
-        {!hasShift && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="font-medium">No active cashier shift</div>
-                <div className="text-xs">
-                  Open a shift first before taking payments or recording remit.
-                </div>
-              </div>
-              <Link
-                to="/cashier/shift?open=1&next=/cashier"
-                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
-              >
-                Open Shift
-              </Link>
-            </div>
-          </div>
-        )}
-
         {/* Callout kung locked ang shift */}
         {hasShift && shiftLocked && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -240,7 +220,7 @@ export default function CashierDashboardPage() {
                 </div>
               </div>
               <Link
-                to={`/cashier/shift?locked=1&next=${encodeURIComponent(
+                to={`/cashier/shift?next=${encodeURIComponent(
                   "/cashier",
                 )}`}
                 className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
@@ -369,25 +349,13 @@ export default function CashierDashboardPage() {
                 <Link
                   to={guardLink("/cashier/pos")}
                   className={
-                    "flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 " +
-                    (!hasShift ? disabledCard : "")
-                  }
-                >
-                  <span>New Sale (POS)</span>
-                  <span className="text-xs font-normal text-indigo-700">
-                    open POS →
-                  </span>
-                </Link>
-                <Link
-                  to={guardLink("/ar")}
-                  className={
                     "flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 " +
                     (!hasShift ? disabledCard : "")
                   }
                 >
-                  <span>Collect on AR</span>
+                  <span>New Sale (POS)</span>
                   <span className="text-xs font-normal text-emerald-700">
-                    open AR →
+                    open POS →
                   </span>
                 </Link>
                 <Link
@@ -400,6 +368,18 @@ export default function CashierDashboardPage() {
                   <span>Rider Remittance</span>
                   <span className="text-xs font-normal text-sky-700">
                     open remit →
+                  </span>
+                </Link>
+                <Link
+                  to={guardLink("/ar")}
+                  className={
+                    "flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 " +
+                    (!hasShift ? disabledCard : "")
+                  }
+                >
+                  <span>Collect on AR</span>
+                  <span className="text-xs font-normal text-slate-500">
+                    open AR →
                   </span>
                 </Link>
               </div>
@@ -419,8 +399,8 @@ export default function CashierDashboardPage() {
                   </div>
                   <div className="mt-1 text-sm font-medium text-slate-900">
                     {hasShift
-                      ? "Open / close and monitor drawer"
-                      : "Open shift before cashier operations"}
+                      ? "Manage drawer and shift status"
+                      : "Waiting for manager-opened shift"}
                   </div>
                 </div>
                 <Link
@@ -431,8 +411,8 @@ export default function CashierDashboardPage() {
                 </Link>
               </div>
               <p className="text-xs text-slate-500">
-                Open/close shift, record drawer deposits/withdrawals, and see
-                running drawer balance.
+                Accept opening float, record drawer movements, and submit
+                counted cash for manager final close.
               </p>
 
               {hasShift ? (
@@ -442,20 +422,10 @@ export default function CashierDashboardPage() {
                 </div>
               ) : (
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  No active shift. Open shift first, then continue POS/AR/remit.
+                  No active shift yet. Manager must open your shift before
+                  POS/AR/remit.
                 </div>
               )}
-
-              {!hasShift ? (
-                <div className="mt-3">
-                  <Link
-                    to="/cashier/shift?open=1&next=/cashier"
-                    className="inline-flex items-center rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
-                  >
-                    Open Shift
-                  </Link>
-                </div>
-              ) : null}
 
               <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                 <span>Shift history</span>
