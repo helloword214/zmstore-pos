@@ -326,7 +326,7 @@ export default function StoreManagerDashboard() {
           <div className="flex items-center gap-2">
             <Link
               to="/store/dispatch"
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+              className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100/60"
               title="Open Dispatch Queue"
             >
               Dispatch <MiniBadge n={dispatch.forDispatchOrders} />
@@ -368,7 +368,7 @@ export default function StoreManagerDashboard() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl space-y-6 px-5 py-6">
+      <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
         {/* BIG: what manager checks often */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -379,7 +379,7 @@ export default function StoreManagerDashboard() {
             {/* Dispatch (big) */}
             <Link
               to="/store/dispatch"
-              className="group rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -398,7 +398,7 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="mt-3 grid gap-2">
-                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                   <span className="text-slate-700">
                     Staged (not dispatched)
                   </span>
@@ -406,7 +406,7 @@ export default function StoreManagerDashboard() {
                     {dispatch.stagedOrders}
                   </span>
                 </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                   <span className="text-slate-700">Action</span>
                   <span className="font-medium text-indigo-700">
                     assign rider / vehicle →
@@ -414,7 +414,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="mt-3 text-sm font-medium text-indigo-800 group-hover:text-indigo-900">
+              <div className="mt-3 text-sm font-medium text-indigo-700">
                 Open dispatch queue →
               </div>
             </Link>
@@ -422,7 +422,7 @@ export default function StoreManagerDashboard() {
             {/* Runs (big) */}
             <Link
               to="/runs"
-              className="group rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md"
+              className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -439,19 +439,19 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="mt-3 grid gap-2">
-                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                   <span className="text-slate-700">PLANNED</span>
                   <span className="font-semibold text-slate-900">
                     {runs.planned}
                   </span>
                 </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                   <span className="text-slate-700">DISPATCHED</span>
                   <span className="font-semibold text-slate-900">
                     {runs.dispatched}
                   </span>
                 </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                   <span className="text-slate-700">CHECKED_IN (manager)</span>
                   <span className="font-semibold text-slate-900">
                     {runs.needsManagerReview}
@@ -459,7 +459,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="mt-3 text-sm font-medium text-sky-800 group-hover:text-sky-900">
+              <div className="mt-3 text-sm font-medium text-sky-700">
                 Open runs →
               </div>
             </Link>
@@ -509,7 +509,7 @@ export default function StoreManagerDashboard() {
             </h2>
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
@@ -519,20 +519,20 @@ export default function StoreManagerDashboard() {
                   Drawer money + today cash signals
                 </div>
               </div>
-              <span className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800">
+              <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                 TODAY
               </span>
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl bg-white/70 px-3 py-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-xs text-slate-600">Open shifts</div>
                 <div className="text-sm font-semibold text-slate-900">
                   {cash.openShifts}
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white/70 px-3 py-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-xs text-slate-600">
                   Expected drawers
                 </div>
@@ -541,7 +541,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white/70 px-3 py-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-xs text-slate-600">
                   Cash sales today
                 </div>
@@ -550,7 +550,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white/70 px-3 py-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-xs text-slate-600">
                   Drawer movements
                 </div>
@@ -599,7 +599,7 @@ export default function StoreManagerDashboard() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Link
               to="/store/rider-variances"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -617,7 +617,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/cashier-variances"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -635,7 +635,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/payroll"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -653,7 +653,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/payroll"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
