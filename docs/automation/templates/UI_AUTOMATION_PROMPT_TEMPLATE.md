@@ -138,7 +138,27 @@ Match UI/UX to check-in/remit reference routes and follow `docs/guide/ui/UI_AUTO
 UI-only patch. Minimal diffs. Update matrix status for targeted routes.
 ```
 
-## 4. Three-Job Operational Set (Recommended)
+## 4. One-Job ALL (Starter)
+
+Use this if you want a single scheduled automation that checks manager, rider, and cashier in one run.
+
+```md
+Run `UI_ROLE_SCOPE=all npm run ui:cycle`.
+
+After run, locate the latest:
+1. `docs/automation/runs/<timestamp>/summary.md`
+2. `docs/automation/runs/<timestamp>/playwright-report.json`
+
+Report using this exact structure:
+1. Manager: PASS/FAIL + expected/unexpected/skipped
+2. Rider: PASS/FAIL + expected/unexpected/skipped
+3. Cashier: PASS/FAIL + expected/unexpected/skipped
+4. Overall: PASS/FAIL
+5. Latest summary path
+6. If failed: top failing tests and incident path under `docs/automation/incidents/<timestamp>.md`
+```
+
+## 5. Three-Job Operational Set (Recommended)
 
 Use these as three separate automation jobs.
 
@@ -154,23 +174,25 @@ Analogy:
 2. Job B = loading bay guard (rider lane check, frequent)
 3. Job C = chief inspector (full building audit, weekly)
 
-### 4.1 Job A: Manager Monitor (Daily)
+### 5.1 Job A: Manager Monitor (Daily)
 
 ```md
 Run UI monitoring for manager-critical routes.
 
 Task:
 1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
-2. If `UI_RUN_ID` is available, use it.
-3. If `UI_RUN_ID` is not available, require `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`.
-4. This `BLOCKED` rule is for `ui:cycle` manager monitoring only.
-5. If required route inputs are missing, report `BLOCKED` and stop. Do not report `PASS`.
-6. After run, inspect latest `docs/automation/runs/<timestamp>/summary.md`.
-7. If summary contains `Check-in route: not-set` or `Remit route: not-set`, report `BLOCKED` even if run exit status is `PASS`.
-8. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+2. Allow built-in route auto-wiring:
+   - explicit `UI_ROUTE_CHECKIN` / `UI_ROUTE_REMIT`
+   - `UI_RUN_ID`
+   - `test-results/automation/business-flow/context.latest.json`
+   - auto `npm run automation:flow:setup` (non-dry-run)
+3. Inspect latest `docs/automation/runs/<timestamp>/summary.md`.
+4. If summary has `Failure stage: preflight`, report `BLOCKED` and stop.
+5. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+6. If failed, include top failures and incident path under `docs/automation/incidents/<timestamp>.md`.
 ```
 
-### 4.2 Job B: Rider Monitor (Daily)
+### 5.2 Job B: Rider Monitor (Daily)
 
 ```md
 Run UI monitoring for rider routes.
@@ -182,14 +204,14 @@ Task:
 4. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
 ```
 
-### 4.3 Job C: Full Weekly Audit
+### 5.3 Job C: Full Weekly Audit
 
 ```md
 Run full UI monitoring across manager, rider, and cashier scopes.
 
 Task:
 1. Execute `UI_ROLE_SCOPE=all npm run ui:cycle`.
-2. Prefer setting `UI_RUN_ID`; fallback to explicit route env vars.
+2. Let manager routes use built-in auto-wiring (env/UI_RUN_ID/context.latest/auto-setup).
 3. Report consolidated status:
    - manager
    - rider
@@ -198,13 +220,13 @@ Task:
 5. If failed, include top failure samples and point to incident file under `docs/automation/incidents/`.
 ```
 
-### 4.4 Suggested Cadence
+### 5.4 Suggested Cadence
 
 1. Job A (Manager): weekdays, morning
 2. Job B (Rider): daily, late afternoon
 3. Job C (Full): weekly (Friday evening)
 
-### 4.5 First-Run Baseline Bootstrap (Manager, Optional)
+### 5.5 First-Run Baseline Bootstrap (Manager, Optional)
 
 Use this once when manager golden-reference snapshots are missing:
 
@@ -215,7 +237,7 @@ UI_ROUTE_REMIT=/runs/123/remit \
 npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
 ```
 
-## 5. Business-Flow Smoke Prompt (Separate Job)
+## 6. Business-Flow Smoke Prompt (Separate Job)
 
 Use this when you want setup-driven smoke checks for delivery flow records.
 

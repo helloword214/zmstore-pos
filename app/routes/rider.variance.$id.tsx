@@ -272,7 +272,7 @@ export default function RiderVarianceDetailPage() {
           <div className="flex gap-2">
             <Link
               to="/rider/variances"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               ← Back
             </Link>
@@ -346,7 +346,7 @@ export default function RiderVarianceDetailPage() {
                   type="submit"
                   name="_intent"
                   value="accept"
-                  className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                 >
                   Accept variance
                 </button>

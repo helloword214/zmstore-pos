@@ -196,13 +196,13 @@ export default function StoreCashierARPage() {
           <div className="flex gap-2">
             <Link
               to="/store/cashier-variances"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               Cashier Variances →
             </Link>
             <Link
               to="/store"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               ← Back
             </Link>
@@ -314,7 +314,7 @@ export default function StoreCashierARPage() {
                         <input
                           name="note"
                           placeholder="Note (optional) e.g., cutoff/date/remark"
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                         />
                         <input
                           type="hidden"
@@ -325,7 +325,7 @@ export default function StoreCashierARPage() {
                           type="submit"
                           name="_intent"
                           value="set-collection-plan"
-                          className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                          className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
                           disabled={hasPlanTag(c.note)}
                         >
                           {hasPlanTag(c.note)

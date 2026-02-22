@@ -322,7 +322,7 @@ export default function CashierChargesPage() {
             {canSeeAll ? (
               <Link
                 to={`?tab=${tab}${showAll ? "" : "&all=1"}`}
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 title="Admin only"
               >
                 {showAll ? "My scope" : "Show all"}
@@ -330,7 +330,7 @@ export default function CashierChargesPage() {
             ) : null}
             <Link
               to="/cashier"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               ← Back
             </Link>
@@ -533,13 +533,13 @@ export default function CashierChargesPage() {
                                 name="note"
                                 placeholder="Add/update note"
                                 defaultValue={v.note ?? ""}
-                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                               />
                               <button
                                 type="submit"
                                 name="_intent"
                                 value="cashier-note"
-                                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                               >
                                 Save note
                               </button>
@@ -568,13 +568,13 @@ export default function CashierChargesPage() {
                                 <input
                                   name="ackNote"
                                   placeholder="Optional acknowledgement note"
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                                 />
                                 <button
                                   type="submit"
                                   name="_intent"
                                   value="cashier-ack"
-                                  className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-3 py-2 text-xs font-medium text-white hover:bg-rose-700"
+                                  className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
                                 >
                                   Acknowledge & Close
                                 </button>
