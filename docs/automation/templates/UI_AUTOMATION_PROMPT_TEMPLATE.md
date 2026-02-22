@@ -27,9 +27,9 @@ Hard constraints:
 4. Reuse shared primitives first (`StatusPill`, shared button/card patterns).
 
 Primary docs to follow:
-1. `docs/guide/UI_AUTOMATION_GUIDE.md`
-2. `docs/guide/UI_CONFORMANCE_MATRIX.md`
-3. `docs/guide/Clearance CSS Alignment Rules.md`
+1. `docs/guide/ui/UI_AUTOMATION_GUIDE.md`
+2. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md`
+3. `docs/guide/ui/Clearance CSS Alignment Rules.md`
 4. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md` (runtime gate and evidence rules)
 
 Route scope:
@@ -90,7 +90,7 @@ Execution sequence:
 1. Audit target routes and list concrete drift with file references.
 2. Patch only UI/UX alignment issues.
 3. Keep behavior unchanged.
-4. Update `docs/guide/UI_CONFORMANCE_MATRIX.md` status for touched routes.
+4. Update `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` status for touched routes.
 
 Output format:
 1. Findings (file + line).
@@ -113,9 +113,9 @@ Align this route to the UI/UX style of:
 Rules:
 1. UI-only changes, no logic changes.
 2. Minimal diff, no broad refactor.
-3. Apply `docs/guide/UI_AUTOMATION_GUIDE.md` contract.
+3. Apply `docs/guide/ui/UI_AUTOMATION_GUIDE.md` contract.
 4. Reduce noise (fewer repeated notes/helper text).
-5. Update `docs/guide/UI_CONFORMANCE_MATRIX.md` for touched route.
+5. Update `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` for touched route.
 
 Return:
 1. Findings
@@ -134,7 +134,7 @@ Target routes only:
 1. <route-1>
 2. <route-2>
 
-Match UI/UX to check-in/remit reference routes and follow `docs/guide/UI_AUTOMATION_GUIDE.md`.
+Match UI/UX to check-in/remit reference routes and follow `docs/guide/ui/UI_AUTOMATION_GUIDE.md`.
 UI-only patch. Minimal diffs. Update matrix status for targeted routes.
 ```
 

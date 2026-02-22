@@ -223,7 +223,7 @@ Do not mark UI PR as ready to merge when:
 
 1. Static conformance check fails.
 2. Critical screenshot drift is unreviewed.
-3. `UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
+3. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
 4. `ui:cycle` manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
 
 ## 10. Rollout Order

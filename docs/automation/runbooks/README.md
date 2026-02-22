@@ -18,14 +18,14 @@ This hub separates two different execution modes:
 1. `docs/automation/runbooks/INTENT_ROUTER.md`
 2. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
 3. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
-4. `docs/guide/UI_AUTOMATION_GUIDE.md` (visual contract authority)
+4. `docs/guide/ui/UI_AUTOMATION_GUIDE.md` (visual contract authority)
 5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md` (prompt templates)
 
 ## 3. Quick Routing
 
 1. If the request is visual consistency monitoring, screenshot drift, or manager/rider/cashier UI checks, use `UI_CYCLE_RUNBOOK.md`.
 2. If the request is seeded flow smoke, deterministic setup, or delivery flow smoke automation, use `BUSINESS_FLOW_SMOKE_RUNBOOK.md`.
-3. If the request is UI-only patching/styling work, use `docs/guide/UI_AUTOMATION_GUIDE.md` and run validation using `UI_CYCLE_RUNBOOK.md`.
+3. If the request is UI-only patching/styling work, use `docs/guide/ui/UI_AUTOMATION_GUIDE.md` and run validation using `UI_CYCLE_RUNBOOK.md`.
 
 ## 4. Hard Boundaries
 

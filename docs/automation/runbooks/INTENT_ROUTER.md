@@ -43,7 +43,7 @@ Route UI automation requests to the correct execution mode with minimal ambiguit
 
 ### 3.3 `UI_PATCH_VALIDATION`
 
-1. Patch authority: `docs/guide/UI_AUTOMATION_GUIDE.md`
+1. Patch authority: `docs/guide/ui/UI_AUTOMATION_GUIDE.md`
 2. Prompt source: `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 3. Validation execution:
    - use `UI_CYCLE_MONITOR` via `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
