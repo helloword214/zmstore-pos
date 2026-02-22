@@ -2,12 +2,13 @@
 
 Status: READY TO COPY  
 Owner: POS Platform  
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-22
 
 Scope note:
 
 1. This template is for UI consistency automation.
-2. For deterministic business-flow smoke automation, use `docs/automation/BUSINESS_FLOW_ENGINE.md`.
+2. For deterministic business-flow smoke automation, use `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`.
+3. Resolve execution mode first using `docs/automation/runbooks/INTENT_ROUTER.md`.
 
 ## 1. Full Prompt (Recommended)
 
@@ -26,9 +27,10 @@ Hard constraints:
 4. Reuse shared primitives first (`StatusPill`, shared button/card patterns).
 
 Primary docs to follow:
-1. `docs/guide/UI_AUTOMATION_GUIDE.md`
-2. `docs/guide/UI_CONFORMANCE_MATRIX.md`
-3. `docs/guide/Clearance CSS Alignment Rules.md`
+1. `docs/guide/ui/UI_AUTOMATION_GUIDE.md`
+2. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md`
+3. `docs/guide/ui/Clearance CSS Alignment Rules.md`
+4. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md` (runtime gate and evidence rules)
 
 Route scope:
 1. `app/routes/store.dispatch.tsx`
@@ -88,7 +90,7 @@ Execution sequence:
 1. Audit target routes and list concrete drift with file references.
 2. Patch only UI/UX alignment issues.
 3. Keep behavior unchanged.
-4. Update `docs/guide/UI_CONFORMANCE_MATRIX.md` status for touched routes.
+4. Update `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` status for touched routes.
 
 Output format:
 1. Findings (file + line).
@@ -111,9 +113,9 @@ Align this route to the UI/UX style of:
 Rules:
 1. UI-only changes, no logic changes.
 2. Minimal diff, no broad refactor.
-3. Apply `docs/guide/UI_AUTOMATION_GUIDE.md` contract.
+3. Apply `docs/guide/ui/UI_AUTOMATION_GUIDE.md` contract.
 4. Reduce noise (fewer repeated notes/helper text).
-5. Update `docs/guide/UI_CONFORMANCE_MATRIX.md` for touched route.
+5. Update `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` for touched route.
 
 Return:
 1. Findings
@@ -132,11 +134,31 @@ Target routes only:
 1. <route-1>
 2. <route-2>
 
-Match UI/UX to check-in/remit reference routes and follow `docs/guide/UI_AUTOMATION_GUIDE.md`.
+Match UI/UX to check-in/remit reference routes and follow `docs/guide/ui/UI_AUTOMATION_GUIDE.md`.
 UI-only patch. Minimal diffs. Update matrix status for targeted routes.
 ```
 
-## 4. Three-Job Operational Set (Recommended)
+## 4. One-Job ALL (Starter)
+
+Use this if you want a single scheduled automation that checks manager, rider, and cashier in one run.
+
+```md
+Run `UI_ROLE_SCOPE=all npm run ui:cycle`.
+
+After run, locate the latest:
+1. `docs/automation/runs/<timestamp>/summary.md`
+2. `docs/automation/runs/<timestamp>/playwright-report.json`
+
+Report using this exact structure:
+1. Manager: PASS/FAIL + expected/unexpected/skipped
+2. Rider: PASS/FAIL + expected/unexpected/skipped
+3. Cashier: PASS/FAIL + expected/unexpected/skipped
+4. Overall: PASS/FAIL
+5. Latest summary path
+6. If failed: top failing tests and incident path under `docs/automation/incidents/<timestamp>.md`
+```
+
+## 5. Three-Job Operational Set (Recommended)
 
 Use these as three separate automation jobs.
 
@@ -152,20 +174,25 @@ Analogy:
 2. Job B = loading bay guard (rider lane check, frequent)
 3. Job C = chief inspector (full building audit, weekly)
 
-### 4.1 Job A: Manager Monitor (Daily)
+### 5.1 Job A: Manager Monitor (Daily)
 
 ```md
 Run UI monitoring for manager-critical routes.
 
 Task:
 1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
-2. If `UI_RUN_ID` is available, use it.
-3. If `UI_RUN_ID` is not available, require `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`.
-4. If required route inputs are missing, report `BLOCKED` and stop.
+2. Allow built-in route auto-wiring:
+   - explicit `UI_ROUTE_CHECKIN` / `UI_ROUTE_REMIT`
+   - `UI_RUN_ID`
+   - `test-results/automation/business-flow/context.latest.json`
+   - auto `npm run automation:flow:setup` (non-dry-run)
+3. Inspect latest `docs/automation/runs/<timestamp>/summary.md`.
+4. If summary has `Failure stage: preflight`, report `BLOCKED` and stop.
 5. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+6. If failed, include top failures and incident path under `docs/automation/incidents/<timestamp>.md`.
 ```
 
-### 4.2 Job B: Rider Monitor (Daily)
+### 5.2 Job B: Rider Monitor (Daily)
 
 ```md
 Run UI monitoring for rider routes.
@@ -177,14 +204,14 @@ Task:
 4. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
 ```
 
-### 4.3 Job C: Full Weekly Audit
+### 5.3 Job C: Full Weekly Audit
 
 ```md
 Run full UI monitoring across manager, rider, and cashier scopes.
 
 Task:
 1. Execute `UI_ROLE_SCOPE=all npm run ui:cycle`.
-2. Prefer setting `UI_RUN_ID`; fallback to explicit route env vars.
+2. Let manager routes use built-in auto-wiring (env/UI_RUN_ID/context.latest/auto-setup).
 3. Report consolidated status:
    - manager
    - rider
@@ -193,24 +220,39 @@ Task:
 5. If failed, include top failure samples and point to incident file under `docs/automation/incidents/`.
 ```
 
-### 4.4 Suggested Cadence
+### 5.4 Suggested Cadence
 
 1. Job A (Manager): weekdays, morning
 2. Job B (Rider): daily, late afternoon
 3. Job C (Full): weekly (Friday evening)
 
-## 5. Business-Flow Smoke Prompt (Separate Job)
+### 5.5 First-Run Baseline Bootstrap (Manager, Optional)
+
+Use this once when manager golden-reference snapshots are missing:
+
+```bash
+UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
+UI_ROUTE_REMIT=/runs/123/remit \
+npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
+```
+
+## 6. Business-Flow Smoke Prompt (Separate Job)
 
 Use this when you want setup-driven smoke checks for delivery flow records.
 
 ```md
 Run business-flow smoke automation using the deterministic engine.
 
+Runbook authority:
+1. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+
 Task:
 1. Execute `npm run automation:flow:smoke`.
-2. Report whether setup, auth, smoke, and cleanup completed.
-3. Include latest context and summary artifacts:
+2. Do not require `UI_RUN_ID`; use generated context from setup (`FLOW_CONTEXT_FILE`).
+3. Report whether setup, auth, smoke, and cleanup completed.
+4. Include latest context and summary artifacts:
    - `test-results/automation/business-flow/context.latest.json`
    - `test-results/automation/business-flow/summary.latest.md`
-4. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
+5. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
 ```

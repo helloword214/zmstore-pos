@@ -77,4 +77,4 @@ When a covered route is edited:
 
 1. Re-evaluate its conformance status in this matrix.
 2. Record the new status in the same PR.
-3. Keep route entries in this file aligned with the active-route list in `UI_AUTOMATION_GUIDE.md`.
+3. Keep route entries in this file aligned with the active-route list in `docs/guide/ui/UI_AUTOMATION_GUIDE.md`.

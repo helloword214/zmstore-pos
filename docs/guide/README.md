@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-21
+Last Reviewed: 2026-02-22
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -47,8 +47,16 @@ Current route-level mapping coverage (canonical):
 
 ## B. Supporting (Context / Detailed Rationale)
 
-1. `Clearance CSS Alignment Rules.md`
-2. `Remit_Cleanup_Checklist.md`
+1. `ui/README.md`
+2. `ui/UI_AUTOMATION_GUIDE.md`
+3. `ui/UI_CONFORMANCE_MATRIX.md`
+4. `ui/Clearance CSS Alignment Rules.md`
+5. `ui/Remit_Cleanup_Checklist.md`
+6. `../automation/runbooks/README.md`
+7. `../automation/runbooks/INTENT_ROUTER.md`
+8. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
+9. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+10. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 These help implementation but must not override Canonical docs.
 

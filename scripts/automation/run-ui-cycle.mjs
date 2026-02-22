@@ -20,6 +20,19 @@ function readJsonSafe(filePath) {
   }
 }
 
+function nonEmpty(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function toRouteOrNull(value) {
+  if (!nonEmpty(value)) return null;
+  return String(value).trim();
+}
+
+function routeHasValue(value) {
+  return nonEmpty(value) && String(value).trim() !== "not-set";
+}
+
 function collectUnexpectedTests(suites, carry = [], parentTitle = "") {
   for (const suite of suites ?? []) {
     const suitePrefix = [parentTitle, suite.title].filter(Boolean).join(" > ");
@@ -48,10 +61,28 @@ function collectUnexpectedTests(suites, carry = [], parentTitle = "") {
   return carry;
 }
 
-function resolveRoute(envKey, fallbackPath) {
-  if (process.env[envKey]) return process.env[envKey];
-  if (process.env.UI_RUN_ID) return fallbackPath(process.env.UI_RUN_ID);
-  return "not-set";
+function collectRunnerErrors(report, limit = 10) {
+  const errors = Array.isArray(report?.errors) ? report.errors : [];
+  const out = [];
+
+  for (const error of errors) {
+    const message = String(error?.message ?? error?.value ?? "").trim();
+    if (!message) continue;
+    out.push(message.split("\n")[0]);
+    if (out.length >= limit) break;
+  }
+
+  return out;
+}
+
+function readBusinessFlowContext(contextFilePath) {
+  const parsed = readJsonSafe(contextFilePath);
+  if (!parsed || typeof parsed !== "object") return null;
+  return parsed;
+}
+
+function toRelative(root, filePath) {
+  return path.relative(root, filePath);
 }
 
 function parseCsv(raw) {
@@ -107,22 +138,165 @@ const reportJsonPath = path.join(runDir, "playwright-report.json");
 const summaryPath = path.join(runDir, "summary.md");
 const incidentPath = path.join(incidentsDir, `${stamp}.md`);
 
+const managerCoverageEnabled = selectedProjects.some((project) =>
+  project.startsWith("manager-")
+);
+const businessFlowContextFile = path.join(
+  root,
+  "test-results/automation/business-flow/context.latest.json"
+);
+let businessFlowContext = readBusinessFlowContext(businessFlowContextFile);
+let businessFlowSetupAttempted = false;
+let businessFlowSetupExitCode = null;
+let preflightError = null;
+let failureStage = null;
+
+const routeSource = {
+  checkIn: "not-set",
+  remit: "not-set",
+  riderList: "not-set",
+  cashierShift: "not-set",
+};
+
+let checkInRoute = "not-set";
+let remitRoute = "not-set";
+
+const explicitCheckIn = toRouteOrNull(process.env.UI_ROUTE_CHECKIN);
+const explicitRemit = toRouteOrNull(process.env.UI_ROUTE_REMIT);
+const uiRunId = toRouteOrNull(process.env.UI_RUN_ID);
+
+if (explicitCheckIn) {
+  checkInRoute = explicitCheckIn;
+  routeSource.checkIn = "env:UI_ROUTE_CHECKIN";
+} else if (uiRunId) {
+  checkInRoute = `/runs/${uiRunId}/rider-checkin`;
+  routeSource.checkIn = "env:UI_RUN_ID";
+}
+
+if (explicitRemit) {
+  remitRoute = explicitRemit;
+  routeSource.remit = "env:UI_ROUTE_REMIT";
+} else if (uiRunId) {
+  remitRoute = `/runs/${uiRunId}/remit`;
+  routeSource.remit = "env:UI_RUN_ID";
+}
+
+let riderRoute = toRouteOrNull(process.env.UI_ROUTE_RIDER_LIST);
+if (riderRoute) routeSource.riderList = "env:UI_ROUTE_RIDER_LIST";
+
+let cashierRoute = toRouteOrNull(process.env.UI_ROUTE_CASHIER_SHIFT);
+if (cashierRoute) routeSource.cashierShift = "env:UI_ROUTE_CASHIER_SHIFT";
+
+function applyContextRoutes(context, sourceLabel) {
+  const ctxCheckIn = toRouteOrNull(context?.runs?.checkedIn?.routes?.riderCheckin);
+  if (!routeHasValue(checkInRoute) && ctxCheckIn) {
+    checkInRoute = ctxCheckIn;
+    routeSource.checkIn = sourceLabel;
+  }
+
+  const ctxRemit = toRouteOrNull(context?.runs?.checkedIn?.routes?.managerRemit);
+  if (!routeHasValue(remitRoute) && ctxRemit) {
+    remitRoute = ctxRemit;
+    routeSource.remit = sourceLabel;
+  }
+
+  const ctxRiderList = toRouteOrNull(context?.routes?.riderList);
+  if (!riderRoute && ctxRiderList) {
+    riderRoute = ctxRiderList;
+    routeSource.riderList = sourceLabel;
+  }
+
+  const ctxCashierShift = toRouteOrNull(context?.routes?.cashierShift);
+  if (!cashierRoute && ctxCashierShift) {
+    cashierRoute = ctxCashierShift;
+    routeSource.cashierShift = sourceLabel;
+  }
+}
+
+if (businessFlowContext) {
+  applyContextRoutes(businessFlowContext, "business-flow:context.latest");
+}
+
+const managerRoutesMissing = () =>
+  !routeHasValue(checkInRoute) || !routeHasValue(remitRoute);
+
+if (!dryRun && managerCoverageEnabled && managerRoutesMissing()) {
+  businessFlowSetupAttempted = true;
+  const setupRun = spawnSync(
+    "npm",
+    ["run", "automation:flow:setup"],
+    { stdio: "inherit", env: process.env }
+  );
+  businessFlowSetupExitCode = setupRun.status ?? 1;
+
+  if (businessFlowSetupExitCode !== 0) {
+    preflightError =
+      "Business-flow setup failed while auto-resolving manager routes.";
+  } else {
+    businessFlowContext = readBusinessFlowContext(businessFlowContextFile);
+    if (!businessFlowContext) {
+      preflightError =
+        "Business-flow setup succeeded but context.latest.json is missing.";
+    } else {
+      applyContextRoutes(businessFlowContext, "business-flow:setup");
+    }
+  }
+}
+
+if (!riderRoute) {
+  riderRoute = "/rider/variances";
+  routeSource.riderList = "default";
+}
+
+if (!cashierRoute) {
+  cashierRoute = "/cashier/shift";
+  routeSource.cashierShift = "default";
+}
+
+if (!dryRun && managerCoverageEnabled && managerRoutesMissing()) {
+  preflightError =
+    preflightError ??
+    "Manager routes unresolved. Provide UI_ROUTE_CHECKIN/UI_ROUTE_REMIT or allow business-flow setup.";
+}
+
 let exitCode = 0;
 if (!dryRun) {
-  const run = spawnSync(
-    "npm",
-    [
-      "run",
-      "ui:test",
-      "--",
-      ...projectArgs,
-      `--reporter=line,json=${reportJsonPath}`,
-      "--output",
-      "test-results/ui/artifacts",
-    ],
-    { stdio: "inherit", env: process.env },
-  );
-  exitCode = run.status ?? 1;
+  if (preflightError) {
+    exitCode = 1;
+    failureStage = "preflight";
+  } else {
+    const testEnv = {
+      ...process.env,
+      PLAYWRIGHT_JSON_OUTPUT_FILE: reportJsonPath,
+      UI_ROUTE_RIDER_LIST: riderRoute,
+      UI_ROUTE_CASHIER_SHIFT: cashierRoute,
+    };
+
+    if (routeHasValue(checkInRoute)) {
+      testEnv.UI_ROUTE_CHECKIN = checkInRoute;
+    }
+    if (routeHasValue(remitRoute)) {
+      testEnv.UI_ROUTE_REMIT = remitRoute;
+    }
+
+    const run = spawnSync(
+      "npm",
+      [
+        "run",
+        "ui:test",
+        "--",
+        ...projectArgs,
+        "--reporter=line,json",
+        "--output",
+        "test-results/ui/artifacts",
+      ],
+      { stdio: "inherit", env: testEnv },
+    );
+    exitCode = run.status ?? 1;
+    if (exitCode !== 0) {
+      failureStage = "ui-test";
+    }
+  }
 }
 
 const report = readJsonSafe(reportJsonPath);
@@ -133,15 +307,11 @@ const skipped = Number(stats.skipped ?? 0);
 const flaky = Number(stats.flaky ?? 0);
 const durationMs = Number(stats.duration ?? 0);
 const failures = collectUnexpectedTests(report?.suites ?? []).slice(0, 10);
+const runnerErrors = collectRunnerErrors(report, 10);
 
-const checkInRoute = resolveRoute("UI_ROUTE_CHECKIN", (runId) => {
-  return `/runs/${runId}/rider-checkin`;
-});
-const remitRoute = resolveRoute("UI_ROUTE_REMIT", (runId) => {
-  return `/runs/${runId}/remit`;
-});
-const riderRoute = process.env.UI_ROUTE_RIDER_LIST ?? "/rider/variances";
-const cashierRoute = process.env.UI_ROUTE_CASHIER_SHIFT ?? "/cashier/shift";
+if (!dryRun && exitCode !== 0 && !failureStage) {
+  failureStage = runnerErrors.length > 0 ? "runner" : "ui-test";
+}
 
 const summaryLines = [
   `# UI Automation Run — ${stamp}`,
@@ -151,10 +321,20 @@ const summaryLines = [
   `- Base URL: ${process.env.UI_BASE_URL ?? "http://127.0.0.1:4173"}`,
   `- Role scope: ${process.env.UI_ROLE_SCOPE ?? "manager"}`,
   `- Projects: ${selectedProjects.length ? selectedProjects.join(", ") : "none"}`,
+  `- Failure stage: ${dryRun ? "n/a" : failureStage ?? "none"}`,
   `- Check-in route: ${checkInRoute}`,
+  `- Check-in route source: ${routeSource.checkIn}`,
   `- Remit route: ${remitRoute}`,
+  `- Remit route source: ${routeSource.remit}`,
   `- Rider list route: ${riderRoute}`,
+  `- Rider list route source: ${routeSource.riderList}`,
   `- Cashier shift route: ${cashierRoute}`,
+  `- Cashier shift route source: ${routeSource.cashierShift}`,
+  `- Business-flow context file: ${toRelative(root, businessFlowContextFile)}`,
+  `- Business-flow context loaded: ${businessFlowContext ? "yes" : "no"}`,
+  `- Business-flow setup attempted: ${businessFlowSetupAttempted ? "yes" : "no"}`,
+  `- Business-flow setup exit code: ${businessFlowSetupExitCode ?? "n/a"}`,
+  `- Preflight note: ${preflightError ?? "none"}`,
   "",
   "## Stats",
   "",
@@ -169,7 +349,13 @@ const summaryLines = [
 ];
 
 if (failures.length === 0) {
-  summaryLines.push("- None");
+  if (runnerErrors.length === 0) {
+    summaryLines.push("- None");
+  } else {
+    for (const message of runnerErrors) {
+      summaryLines.push(`- [runner] ${message}`);
+    }
+  }
 } else {
   for (const f of failures) {
     summaryLines.push(`- [${f.status}] ${f.title} (${f.file})`);
@@ -189,25 +375,37 @@ summaryLines.push("");
 writeFileSync(summaryPath, summaryLines.join("\n"), "utf8");
 
 if (!dryRun && exitCode !== 0) {
+  const classification =
+    failureStage === "preflight"
+      ? "AUTOMATION_SETUP_FAILURE"
+      : runnerErrors.length > 0 && unexpected === 0
+        ? "AUTOMATION_INFRA_FAILURE"
+        : "UI_REGRESSION";
+
   const incidentLines = [
     `# UI Incident — ${stamp}`,
     "",
     "## Trigger",
     "",
     "- Source: `npm run ui:cycle`",
-    "- Classification: `UI_REGRESSION`",
+    `- Classification: \`${classification}\``,
+    `- Failure stage: ${failureStage ?? "unknown"}`,
     `- Unexpected tests: ${unexpected}`,
     "",
     "## Failure Samples",
     "",
   ];
 
-  if (failures.length === 0) {
-    incidentLines.push("- Failure detail unavailable from JSON report.");
-  } else {
+  if (failures.length > 0) {
     for (const f of failures) {
       incidentLines.push(`- [${f.status}] ${f.title} (${f.file})`);
     }
+  } else if (runnerErrors.length > 0) {
+    for (const message of runnerErrors) {
+      incidentLines.push(`- [runner] ${message}`);
+    }
+  } else {
+    incidentLines.push("- Failure detail unavailable from JSON report.");
   }
 
   incidentLines.push("");

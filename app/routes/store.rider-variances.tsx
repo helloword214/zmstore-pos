@@ -313,7 +313,7 @@ export default function StoreRiderVariancesPage() {
           </div>
           <Link
             to="/store"
-            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             ← Back
           </Link>
@@ -487,7 +487,7 @@ export default function StoreRiderVariancesPage() {
                             Waiting rider acceptance
                           </div>
                           <Link
-                            className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                            className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
                             to={`/rider/variance/${v.id}`}
                           >
                             View rider page →
@@ -503,7 +503,7 @@ export default function StoreRiderVariancesPage() {
                             <select
                               name="resolution"
                               defaultValue={v.resolution ?? ""}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             >
                               <option value="" disabled>
                                 Select decision…
@@ -520,13 +520,13 @@ export default function StoreRiderVariancesPage() {
                               name="note"
                               placeholder="Optional note"
                               defaultValue={v.note ?? ""}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
                             <button
                               type="submit"
                               name="_intent"
                               value="manager-decide"
-                              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
+                              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                             >
                               Save decision
                             </button>

@@ -111,7 +111,7 @@ export default function RiderVariancesListPage() {
           </div>
           <Link
             to="/rider"
-            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             ← Back
           </Link>
@@ -173,7 +173,7 @@ export default function RiderVariancesListPage() {
                     <td className="px-3 py-2 text-right">
                       <Link
                         to={`/rider/variance/${v.id}`}
-                        className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                        className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                       >
                         Open
                       </Link>

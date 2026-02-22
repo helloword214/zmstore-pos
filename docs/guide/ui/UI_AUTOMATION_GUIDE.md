@@ -2,7 +2,7 @@
 
 Status: ACTIVE (UI baseline, automation-first)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-22
 
 ## 1. Purpose
 
@@ -171,6 +171,22 @@ To keep screens quiet and operational:
 
 ## 9. Automation Gates (Target)
 
+### 9.0 Current Enforcement Boundary (Read This First)
+
+Current automated UI enforcement is limited to these active specs:
+
+1. `tests/ui/manager.golden-reference.spec.ts`
+2. `tests/ui/rider.golden-reference.spec.ts`
+3. `tests/ui/cashier.golden-reference.spec.ts`
+
+Interpretation rule:
+
+1. Section 9.2 list is the target critical coverage set.
+2. If a route in 9.2 is not yet represented by an active spec, treat it as planned coverage, not enforced coverage.
+3. `not-set` route gate applies to `ui:cycle` manager monitoring only.
+4. Business-flow smoke (`automation:flow:smoke`) is context-driven and should not require `UI_RUN_ID`.
+5. Execution intent routing and runtime inputs are governed by `docs/automation/runbooks/INTENT_ROUTER.md`.
+
 ### 9.1 Static conformance check
 
 Add a CI/static check that validates:
@@ -207,7 +223,8 @@ Do not mark UI PR as ready to merge when:
 
 1. Static conformance check fails.
 2. Critical screenshot drift is unreviewed.
-3. `UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
+3. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
+4. `ui:cycle` manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
 
 ## 10. Rollout Order
 
@@ -231,7 +248,14 @@ Do not mark UI PR as ready to merge when:
 2. This guide does not redefine AR authority rules.
 3. This guide does not replace canonical flow documentation.
 
-## 13. Automation Commands (MVP)
+## 13. Automation Commands (Reference)
+
+Execution source of truth:
+
+1. `docs/automation/runbooks/INTENT_ROUTER.md`
+2. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
+3. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+4. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 1. `npm run ui:test`
 2. `npm run ui:test:auth`
@@ -244,7 +268,7 @@ Business-flow engine (separate from UI consistency):
 1. `npm run automation:flow:setup`
 2. `npm run automation:flow:smoke`
 3. `npm run automation:flow:cleanup`
-4. Reference: `docs/automation/BUSINESS_FLOW_ENGINE.md`
+4. Reference: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 
 Run evidence output:
 
