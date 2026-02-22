@@ -27,7 +27,7 @@ type AssertOpts = {
  *
  * Rules:
  * - NO SHIFT        → redirect /cashier?needShift=1&next=...
- * - LOCKED SHIFT    → redirect /cashier?shiftLocked=1&next=...
+ * - LOCKED SHIFT    → redirect /cashier/shift?next=...
  * - CLOSED SHIFT    → treated like NO SHIFT
  * - OK              → return { shiftId }
  */
@@ -67,9 +67,7 @@ export async function assertActiveShiftWritable({ request, next }: AssertOpts) {
 
   // 🔒 LOCK: anything other than OPEN is not writable (SUBMITTED/RECOUNT_REQUIRED/FINAL_CLOSED)
   if (shift.status !== CashierShiftStatus.OPEN) {
-    throw redirect(
-      `/cashier?shiftLocked=1&next=${encodeURIComponent(nextSafe)}`,
-    );
+    throw redirect(`/cashier/shift?next=${encodeURIComponent(nextSafe)}`);
   }
 
   return { shiftId: shift.id };

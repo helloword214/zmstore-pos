@@ -405,28 +405,6 @@ export async function action({ request }: ActionFunctionArgs) {
     "/cashier",
   );
 
-  if (act === "open") {
-    // NO-BRANCH MODE + MANAGER-ONLY OPEN:
-    // Cashier is not allowed to create a shift here.
-    // But allow "resume" if an open shift exists for this cashier.
-    if (me.shiftId) return redirect(next);
-
-    const existing = await db.cashierShift.findFirst({
-      where: { cashierId: me.userId, closedAt: null },
-      orderBy: { openedAt: "desc" },
-      select: { id: true },
-    });
-    if (existing?.id) {
-      const { headers } = await setShiftId(request, existing.id);
-      return redirect(next, { headers });
-    }
-
-    return json(
-      { ok: false, error: "Shift must be opened by manager." },
-      { status: 403 },
-    );
-  }
-
   // ── Opening float acceptance (cashier recount) ─────────────────────────────
   if (act === "opening:accept" || act === "opening:dispute") {
     if (!me.shiftId) return redirectNeedShift(next);
@@ -486,8 +464,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return redirect(`/cashier/shift?next=${encodeURIComponent(next)}`);
   }
-
-  // NOTE: no second "open" branch; handled above.
 
   // ── Cash Drawer: deposit / withdraw
   if (act === "drawer:deposit" || act === "drawer:withdraw") {
@@ -794,7 +770,7 @@ export default function ShiftConsole() {
             <p className="text-sm text-slate-600">
               {activeShift
                 ? `Active shift #${activeShift.id} • ${activeShift.branchName}`
-                : "Open a shift to start cashiering."}
+                : "Waiting for manager to open your shift."}
               <span className="text-slate-400"> • </span>
               <span className="text-slate-500">User #{me.userId}</span>
             </p>

@@ -22,11 +22,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireOpenShift(request);
   // ✅ HARD GUARD: block queue access if shift is LOCKED (count submitted)
   await assertActiveShiftWritable({ request, next: "/cashier/pos" });
-  // If other pages bounced us here to request opening a shift, send user to shift console
-  const url = new URL(request.url);
-  if (url.searchParams.get("openShift") === "1") {
-    return redirect("/cashier/shift?open=1");
-  }
 
   // 🔒 Follow delivery lock format: lockedBy = userId (string)
   const meId = String(me.userId);
