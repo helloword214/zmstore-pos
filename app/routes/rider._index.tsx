@@ -133,13 +133,13 @@ export default function RiderDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-100">
+            <span className="inline-flex items-center rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
               On-duty
             </span>
             <form method="post" action="/logout">
               <button
                 type="submit"
-                className="inline-flex items-center rounded-full border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
               >
                 ⏏ Logout
               </button>
@@ -171,7 +171,7 @@ export default function RiderDashboard() {
                 className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100"
               >
                 <span>➕ New Walk-in / Pad-order</span>
-                <span className="text-[11px] font-normal text-indigo-700">
+                <span className="text-xs font-normal text-indigo-700">
                   open pad-order board
                 </span>
               </Link>
@@ -182,7 +182,7 @@ export default function RiderDashboard() {
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
               >
                 <span>📋 My Orders</span>
-                <span className="text-[11px] text-slate-500">
+                <span className="text-xs text-slate-500">
                   recent orders I created
                 </span>
               </Link>
@@ -193,7 +193,7 @@ export default function RiderDashboard() {
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
               >
                 <span>👥 Customers</span>
-                <span className="text-[11px] text-slate-500">
+                <span className="text-xs text-slate-500">
                   search &amp; select customer
                 </span>
               </Link>
@@ -220,7 +220,7 @@ export default function RiderDashboard() {
                 className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
               >
                 <span>🚚 My Delivery Runs (Check-in &amp; Summary)</span>
-                <span className="text-[11px] font-normal text-emerald-700">
+                <span className="text-xs font-normal text-emerald-700">
                   open run list, then tap <strong>Open</strong> per run
                 </span>
               </Link>
@@ -235,7 +235,7 @@ export default function RiderDashboard() {
               >
                 <span>🧾 Variances (Pending Accept)</span>
                 <span
-                  className={`text-[11px] ${
+                  className={`text-xs ${
                     pendingVarianceCount > 0
                       ? "text-rose-700"
                       : "text-slate-500"
@@ -246,7 +246,7 @@ export default function RiderDashboard() {
                     : "no pending"}
                 </span>
               </Link>
-              <div className="mt-1 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              <div className="mt-1 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 💸 Paalala: cash remit at final posting ay ginagawa ng{" "}
                 <span className="font-semibold">Store Manager / Cashier</span>.
                 Ikaw muna ang mag-check-in ng{" "}
@@ -276,7 +276,7 @@ export default function RiderDashboard() {
             </p>
             <Link
               to="/me/schedule"
-              className="mt-3 inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               🗓 View full schedule
             </Link>
@@ -298,7 +298,7 @@ export default function RiderDashboard() {
             </p>
             <Link
               to="/me/attendance"
-              className="mt-3 inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               ✅ Attendance history
             </Link>
@@ -319,7 +319,7 @@ export default function RiderDashboard() {
               <p className="text-2xl font-semibold text-slate-900">
                 ₱{hr.outstandingCharges.toFixed(2)}
               </p>
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 Pwedeng kasama dito ang shortage, penalties, o iba pang
                 deductions na naka-assign sa account mo.
               </p>
@@ -328,13 +328,13 @@ export default function RiderDashboard() {
             <div className="mt-3 flex gap-2">
               <Link
                 to="/me/payroll"
-                className="inline-flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 📄 Payslip / payroll
               </Link>
               <Link
                 to="/me/charges"
-                className="inline-flex flex-1 items-center justify-center rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
               >
                 💳 View charges
               </Link>

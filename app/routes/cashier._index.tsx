@@ -113,7 +113,7 @@ export default function CashierDashboardPage() {
   };
 
   const disabledCard = "opacity-70 select-none grayscale";
-  const disabledHint = "mt-2 text-[11px] text-rose-600 font-medium";
+  const disabledHint = "mt-2 text-xs font-medium text-rose-600";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -143,7 +143,7 @@ export default function CashierDashboardPage() {
               <Link
                 to="/cashier/charges"
                 className={
-                  "relative inline-flex items-center rounded-xl border px-3 py-1.5 text-[11px] font-medium shadow-sm hover:bg-slate-50 " +
+                  "relative inline-flex items-center rounded-xl border px-3 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 " +
                   (alerts.openChargeItems > 0
                     ? "border-rose-200 bg-rose-50 text-rose-700"
                     : "border-slate-200 bg-white text-slate-700")
@@ -163,7 +163,7 @@ export default function CashierDashboardPage() {
               </Link>
               <span
                 className={
-                  "inline-flex items-center gap-1 rounded-full px-2 py-1 " +
+                  "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium " +
                   (!hasShift
                     ? "border border-rose-200 bg-rose-50 text-rose-700"
                     : shiftLocked
@@ -189,7 +189,7 @@ export default function CashierDashboardPage() {
               </span>
               <Form method="post" action="/logout">
                 <button
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                   title="Sign out"
                 >
                   Logout
@@ -219,7 +219,7 @@ export default function CashierDashboardPage() {
               </div>
               <Link
                 to="/cashier/shift?open=1&next=/cashier"
-                className="rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800"
+                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
               >
                 Open Shift
               </Link>
@@ -242,7 +242,7 @@ export default function CashierDashboardPage() {
                 to={`/cashier/shift?locked=1&next=${encodeURIComponent(
                   "/cashier",
                 )}`}
-                className="rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800"
+                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
               >
                 Go to Shift Console
               </Link>
@@ -273,16 +273,16 @@ export default function CashierDashboardPage() {
                   then acknowledge & close.
                 </p>
                 {alerts.openChargeItems > 0 ? (
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/70 px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200">
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/70 px-2.5 py-1.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
                     Pending: {alerts.openChargeItems}
                   </div>
                 ) : (
-                  <div className="mt-2 text-[11px] text-rose-700/70">
+                  <div className="mt-2 text-xs text-rose-700/70">
                     No pending charge items
                   </div>
                 )}
               </div>
-              <div className="mt-3 text-[11px] font-medium text-rose-700 group-hover:text-rose-800">
+              <div className="mt-3 text-sm font-medium text-rose-700 group-hover:text-rose-800">
                 Open charges →
               </div>
             </Link>
@@ -311,7 +311,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-[11px] font-medium text-indigo-600 group-hover:text-indigo-700">
+              <div className="mt-3 text-sm font-medium text-indigo-600 group-hover:text-indigo-700">
                 Go to POS →
               </div>
             </Link>
@@ -340,7 +340,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-[11px] font-medium text-emerald-600 group-hover:text-emerald-700">
+              <div className="mt-3 text-sm font-medium text-emerald-600 group-hover:text-emerald-700">
                 Open AR list →
               </div>
             </Link>
@@ -368,7 +368,7 @@ export default function CashierDashboardPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="mt-3 text-[11px] font-medium text-sky-600 group-hover:text-sky-700">
+              <div className="mt-3 text-sm font-medium text-sky-600 group-hover:text-sky-700">
                 Open delivery remit console →
               </div>
             </Link>
@@ -384,7 +384,7 @@ export default function CashierDashboardPage() {
               </h2>
               <Link
                 to="/cashier/shift?next=/cashier"
-                className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
               >
                 Open →
               </Link>
@@ -410,7 +410,7 @@ export default function CashierDashboardPage() {
               </h2>
               <Link
                 to="/cashier/shift-history"
-                className="text-xs font-medium text-slate-600 hover:text-slate-800"
+                className="text-sm font-medium text-slate-600 hover:text-slate-800"
               >
                 View all →
               </Link>

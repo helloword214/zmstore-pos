@@ -54,6 +54,7 @@ Manager coverage (`UI_ROLE_SCOPE=manager` or `all`) resolves routes in this orde
 2. `UI_RUN_ID` templates (`/runs/<id>/rider-checkin`, `/runs/<id>/remit`)
 3. Existing context file: `test-results/automation/business-flow/context.latest.json`
 4. Auto setup (non-dry-run only): `npm run automation:flow:setup`
+5. Manager dashboard baseline route defaults to `/store` (optional override: `UI_ROUTE_MANAGER_DASHBOARD`)
 
 If manager routes remain unresolved after this chain, `ui:cycle` fails with `Failure stage: preflight`.
 
@@ -89,6 +90,7 @@ Use this once when manager golden-reference snapshots are missing:
 
 ```bash
 UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_MANAGER_DASHBOARD=/store \
 UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
 UI_ROUTE_REMIT=/runs/123/remit \
 npm run ui:test:update -- --project=manager-desktop --project=manager-mobile

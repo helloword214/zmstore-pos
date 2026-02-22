@@ -33,28 +33,31 @@ Primary docs to follow:
 4. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md` (runtime gate and evidence rules)
 
 Route scope:
-1. `app/routes/store.dispatch.tsx`
-2. `app/routes/runs.$id.dispatch.tsx`
-3. `app/routes/runs.$id.summary.tsx`
-4. `app/routes/runs.$id.rider-checkin.tsx`
-5. `app/routes/store.clearance.tsx`
-6. `app/routes/store.clearance_.$caseId.tsx`
-7. `app/routes/runs.$id.remit.tsx`
-8. `app/routes/cashier.delivery._index.tsx`
-9. `app/routes/cashier.delivery.$runId.tsx`
-10. `app/routes/delivery-remit.$id.tsx`
-11. `app/routes/ar._index.tsx`
-12. `app/routes/ar.customers.$id.tsx`
-13. `app/routes/cashier.shift.tsx`
-14. `app/routes/store.cashier-shifts.tsx`
-15. `app/routes/store.cashier-variances.tsx`
-16. `app/routes/cashier.charges.tsx`
-17. `app/routes/store.cashier-ar.tsx`
-18. `app/routes/store.payroll.tsx`
-19. `app/routes/store.rider-variances.tsx`
-20. `app/routes/rider.variances.tsx`
-21. `app/routes/rider.variance.$id.tsx`
-22. `app/routes/store.rider-charges.tsx`
+1. `app/routes/store._index.tsx`
+2. `app/routes/cashier._index.tsx`
+3. `app/routes/rider._index.tsx`
+4. `app/routes/store.dispatch.tsx`
+5. `app/routes/runs.$id.dispatch.tsx`
+6. `app/routes/runs.$id.summary.tsx`
+7. `app/routes/runs.$id.rider-checkin.tsx`
+8. `app/routes/store.clearance.tsx`
+9. `app/routes/store.clearance_.$caseId.tsx`
+10. `app/routes/runs.$id.remit.tsx`
+11. `app/routes/cashier.delivery._index.tsx`
+12. `app/routes/cashier.delivery.$runId.tsx`
+13. `app/routes/delivery-remit.$id.tsx`
+14. `app/routes/ar._index.tsx`
+15. `app/routes/ar.customers.$id.tsx`
+16. `app/routes/cashier.shift.tsx`
+17. `app/routes/store.cashier-shifts.tsx`
+18. `app/routes/store.cashier-variances.tsx`
+19. `app/routes/cashier.charges.tsx`
+20. `app/routes/store.cashier-ar.tsx`
+21. `app/routes/store.payroll.tsx`
+22. `app/routes/store.rider-variances.tsx`
+23. `app/routes/rider.variances.tsx`
+24. `app/routes/rider.variance.$id.tsx`
+25. `app/routes/store.rider-charges.tsx`
 
 UI contract:
 1. Root: `min-h-screen bg-[#f7f7fb]`
@@ -65,6 +68,7 @@ UI contract:
 6. Section title: `text-sm font-medium text-slate-800`
 7. Meta: `text-xs text-slate-500` or `text-xs text-slate-600`
 8. Monetary/IDs: `font-mono tabular-nums`
+9. Default interactive size: `rounded-xl px-3 py-2 text-sm font-medium`
 
 Status pills:
 1. Base: `inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]`
@@ -182,6 +186,7 @@ Run UI monitoring for manager-critical routes.
 Task:
 1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
 2. Allow built-in route auto-wiring:
+   - manager dashboard: `UI_ROUTE_MANAGER_DASHBOARD` (default `/store`)
    - explicit `UI_ROUTE_CHECKIN` / `UI_ROUTE_REMIT`
    - `UI_RUN_ID`
    - `test-results/automation/business-flow/context.latest.json`
@@ -232,6 +237,7 @@ Use this once when manager golden-reference snapshots are missing:
 
 ```bash
 UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_MANAGER_DASHBOARD=/store \
 UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
 UI_ROUTE_REMIT=/runs/123/remit \
 npm run ui:test:update -- --project=manager-desktop --project=manager-mobile

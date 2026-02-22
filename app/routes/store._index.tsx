@@ -53,7 +53,7 @@ type LoaderData = {
 function MiniBadge({ n }: { n: number }) {
   if (!n || n <= 0) return null;
   return (
-    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+    <span className="inline-flex min-w-[18px] items-center justify-center rounded-xl bg-slate-900 px-2 py-0.5 text-xs font-semibold leading-none text-white">
       {n}
     </span>
   );
@@ -326,7 +326,7 @@ export default function StoreManagerDashboard() {
           <div className="flex items-center gap-2">
             <Link
               to="/store/dispatch"
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
               title="Open Dispatch Queue"
             >
               Dispatch <MiniBadge n={dispatch.forDispatchOrders} />
@@ -334,7 +334,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/clearance"
-              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm hover:bg-amber-100/60"
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100/60"
               title="Commercial Clearance Inbox"
             >
               Clearance <MiniBadge n={exceptions.clearancePending} />
@@ -342,7 +342,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/runs"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               title="Open Runs"
             >
               Runs
@@ -350,7 +350,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/products"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               title="Open Products"
             >
               Products
@@ -358,7 +358,7 @@ export default function StoreManagerDashboard() {
 
             <Form method="post" action="/logout">
               <button
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                 title="Sign out"
               >
                 Logout
@@ -414,7 +414,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="mt-3 text-[11px] font-medium text-indigo-800 group-hover:text-indigo-900">
+              <div className="mt-3 text-sm font-medium text-indigo-800 group-hover:text-indigo-900">
                 Open dispatch queue →
               </div>
             </Link>
@@ -459,7 +459,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              <div className="mt-3 text-[11px] font-medium text-sky-800 group-hover:text-sky-900">
+              <div className="mt-3 text-sm font-medium text-sky-800 group-hover:text-sky-900">
                 Open runs →
               </div>
             </Link>
@@ -475,7 +475,7 @@ export default function StoreManagerDashboard() {
                     Employee Schedule (soon)
                   </div>
                 </div>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                <span className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
                   PLAN
                 </span>
               </div>
@@ -489,11 +489,11 @@ export default function StoreManagerDashboard() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   to="/employees"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   View employees →
                 </Link>
-                <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
                   Schedule board soon
                 </span>
               </div>
@@ -519,21 +519,21 @@ export default function StoreManagerDashboard() {
                   Drawer money + today cash signals
                 </div>
               </div>
-              <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+              <span className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800">
                 TODAY
               </span>
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl bg-white/70 px-3 py-2">
-                <div className="text-[11px] text-slate-600">Open shifts</div>
+                <div className="text-xs text-slate-600">Open shifts</div>
                 <div className="text-sm font-semibold text-slate-900">
                   {cash.openShifts}
                 </div>
               </div>
 
               <div className="rounded-xl bg-white/70 px-3 py-2">
-                <div className="text-[11px] text-slate-600">
+                <div className="text-xs text-slate-600">
                   Expected drawers
                 </div>
                 <div className="text-sm font-semibold text-slate-900">
@@ -542,7 +542,7 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="rounded-xl bg-white/70 px-3 py-2">
-                <div className="text-[11px] text-slate-600">
+                <div className="text-xs text-slate-600">
                   Cash sales today
                 </div>
                 <div className="text-sm font-semibold text-slate-900">
@@ -551,7 +551,7 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="rounded-xl bg-white/70 px-3 py-2">
-                <div className="text-[11px] text-slate-600">
+                <div className="text-xs text-slate-600">
                   Drawer movements
                 </div>
                 <div className="text-sm font-semibold text-slate-900">
@@ -560,22 +560,22 @@ export default function StoreManagerDashboard() {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               <Link
                 to="/store/cashier-shifts"
-                className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 font-medium text-emerald-800 hover:bg-emerald-100/40"
+                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100/40"
               >
                 Open/Close cashier shifts →
               </Link>
 
               <Link
                 to="/store/cashier-variances"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700 hover:bg-slate-50"
               >
                 Shift variances <MiniBadge n={cash.openShiftVariances} />
               </Link>
 
-              <span className="text-slate-600">
+              <span className="text-xs text-slate-600">
                 DROP = vault movement (cash out of drawer).
               </span>
             </div>
