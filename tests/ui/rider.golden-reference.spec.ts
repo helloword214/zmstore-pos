@@ -1,8 +1,25 @@
 import { expect, test } from "@playwright/test";
 import { resolveBaseURL } from "./helpers/session";
 
+const routeDashboard = process.env.UI_ROUTE_RIDER_DASHBOARD ?? "/rider";
 const routeList = process.env.UI_ROUTE_RIDER_LIST ?? "/rider/variances";
 const routeDetail = process.env.UI_ROUTE_RIDER_DETAIL ?? "";
+
+test("rider dashboard: shell + visual baseline", async ({ page }) => {
+  const url = new URL(routeDashboard, resolveBaseURL()).toString();
+  const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+  expect(response?.ok(), `Route unreachable: ${url}`).toBeTruthy();
+
+  const main = page.locator("main").first();
+  await expect(main).toBeVisible();
+
+  const mainClass = (await main.getAttribute("class")) ?? "";
+  expect(mainClass).toContain("min-h-screen");
+
+  await expect(page.getByText(/rider\s*&\s*seller console/i)).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page).toHaveScreenshot("rider-dashboard.png", { fullPage: true });
+});
 
 test("rider list: shell + visual baseline", async ({ page }) => {
   const url = new URL(routeList, resolveBaseURL()).toString();
@@ -31,4 +48,3 @@ test("rider detail: shell + visual baseline", async ({ page }) => {
   await expect(main).toBeVisible();
   await expect(page).toHaveScreenshot("rider-detail.png", { fullPage: true });
 });
-

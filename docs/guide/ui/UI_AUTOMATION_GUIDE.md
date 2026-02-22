@@ -213,16 +213,18 @@ Baseline screenshots should run at:
 Critical smoke pages:
 
 1. `store._index.tsx`
-2. `store.clearance.tsx`
-3. `store.clearance_.$caseId.tsx`
-4. `runs.$id.rider-checkin.tsx`
-5. `runs.$id.remit.tsx`
-6. `cashier.delivery.$runId.tsx`
-7. `delivery-remit.$id.tsx`
-8. `ar._index.tsx`
-9. `ar.customers.$id.tsx`
-10. `store.cashier-variances.tsx`
-11. `store.rider-variances.tsx`
+2. `cashier._index.tsx`
+3. `rider._index.tsx`
+4. `store.clearance.tsx`
+5. `store.clearance_.$caseId.tsx`
+6. `runs.$id.rider-checkin.tsx`
+7. `runs.$id.remit.tsx`
+8. `cashier.delivery.$runId.tsx`
+9. `delivery-remit.$id.tsx`
+10. `ar._index.tsx`
+11. `ar.customers.$id.tsx`
+12. `store.cashier-variances.tsx`
+13. `store.rider-variances.tsx`
 
 ### 9.3 PR merge gate
 

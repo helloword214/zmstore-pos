@@ -156,7 +156,7 @@ export default function CashierDashboardPage() {
               >
                 Charges
                 {alerts.openChargeItems > 0 ? (
-                  <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                  <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-xl bg-rose-600 px-2 py-0.5 text-xs font-semibold leading-none text-white">
                     {alerts.openChargeItems}
                   </span>
                 ) : null}
@@ -273,7 +273,7 @@ export default function CashierDashboardPage() {
                   then acknowledge & close.
                 </p>
                 {alerts.openChargeItems > 0 ? (
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/70 px-2.5 py-1.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200">
                     Pending: {alerts.openChargeItems}
                   </div>
                 ) : (

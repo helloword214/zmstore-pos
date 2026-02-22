@@ -113,6 +113,7 @@ After patch, run:
 Align this route to the UI/UX style of:
 1. `app/routes/runs.$id.rider-checkin.tsx`
 2. `app/routes/runs.$id.remit.tsx`
+3. `app/routes/store._index.tsx` (dashboard sizing baseline)
 
 Rules:
 1. UI-only changes, no logic changes.
@@ -204,9 +205,10 @@ Run UI monitoring for rider routes.
 
 Task:
 1. Execute `UI_ROLE_SCOPE=rider npm run ui:cycle`.
-2. Use `UI_ROUTE_RIDER_LIST` (default `/rider/variances`).
-3. Use `UI_ROUTE_RIDER_DETAIL` when available; if missing, run list-only and note it.
-4. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+2. Use `UI_ROUTE_RIDER_DASHBOARD` (default `/rider`).
+3. Use `UI_ROUTE_RIDER_LIST` (default `/rider/variances`).
+4. Use `UI_ROUTE_RIDER_DETAIL` when available; if missing, run dashboard+list and note missing detail route.
+5. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
 ```
 
 ### 5.3 Job C: Full Weekly Audit
@@ -217,12 +219,15 @@ Run full UI monitoring across manager, rider, and cashier scopes.
 Task:
 1. Execute `UI_ROLE_SCOPE=all npm run ui:cycle`.
 2. Let manager routes use built-in auto-wiring (env/UI_RUN_ID/context.latest/auto-setup).
-3. Report consolidated status:
+3. Let rider/cashier dashboards use defaults unless explicitly overridden:
+   - `UI_ROUTE_RIDER_DASHBOARD=/rider`
+   - `UI_ROUTE_CASHIER_DASHBOARD=/cashier`
+4. Report consolidated status:
    - manager
    - rider
    - cashier
-4. Include latest `docs/automation/runs/<timestamp>/summary.md`.
-5. If failed, include top failure samples and point to incident file under `docs/automation/incidents/`.
+5. Include latest `docs/automation/runs/<timestamp>/summary.md`.
+6. If failed, include top failure samples and point to incident file under `docs/automation/incidents/`.
 ```
 
 ### 5.4 Suggested Cadence

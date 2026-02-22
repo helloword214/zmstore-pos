@@ -113,12 +113,12 @@ export default function RiderDashboard() {
   const { user, hr, pendingVarianceCount } = useLoaderData<LoaderData>();
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-[#f7f7fb]">
       {/* Top bar */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
               Rider &amp; Seller Console
             </h1>
             <p className="text-xs text-slate-500">
@@ -148,7 +148,7 @@ export default function RiderDashboard() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-4 pb-8">
+      <div className="mx-auto max-w-6xl space-y-6 px-5 py-6">
         {/* Top: Seller & Rider tools */}
         <section className="grid gap-4 md:grid-cols-2">
           {/* SELLER TOOLS CARD */}

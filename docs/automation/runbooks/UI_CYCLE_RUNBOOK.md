@@ -62,7 +62,9 @@ Rider/cashier route defaults:
 
 1. Prefer context values from business-flow setup when available
 2. Fallback to:
+   - `UI_ROUTE_RIDER_DASHBOARD=/rider`
    - `UI_ROUTE_RIDER_LIST=/rider/variances`
+   - `UI_ROUTE_CASHIER_DASHBOARD=/cashier`
    - `UI_ROUTE_CASHIER_SHIFT=/cashier/shift`
 
 ## 4. Required Inputs
