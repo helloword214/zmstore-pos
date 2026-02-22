@@ -23,14 +23,15 @@ Start here for Order Pricing + Delivery + Clearance + Cashier + AR behavior:
 7. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
 8. `docs/guide/RunReceipt_Architecture.md`
 
-## 3) UI Automation Operations (Separated)
+## 3) Automation Operations (Separated)
 
 Use this automation operations stack first when the request mentions UI automation, UI monitoring, or flow smoke execution:
 
-1. `docs/ui-automation/README.md`
-2. `docs/ui-automation/INTENT_ROUTER.md`
-3. `docs/ui-automation/UI_CYCLE_RUNBOOK.md`
-4. `docs/ui-automation/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+1. `docs/automation/README.md`
+2. `docs/automation/runbooks/INTENT_ROUTER.md`
+3. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
+4. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 Boundary reminder:
 

@@ -15,11 +15,11 @@ This hub separates two different execution modes:
 
 ## 2. Document Map
 
-1. `docs/ui-automation/INTENT_ROUTER.md`
-2. `docs/ui-automation/UI_CYCLE_RUNBOOK.md`
-3. `docs/ui-automation/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+1. `docs/automation/runbooks/INTENT_ROUTER.md`
+2. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
+3. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 4. `docs/guide/UI_AUTOMATION_GUIDE.md` (visual contract authority)
-5. `docs/guide/UI_AUTOMATION_PROMPT_TEMPLATE.md` (prompt templates)
+5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md` (prompt templates)
 
 ## 3. Quick Routing
 

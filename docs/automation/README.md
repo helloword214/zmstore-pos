@@ -8,7 +8,7 @@ Last Reviewed: 2026-02-22
 
 This folder stores automation execution trails and generated evidence artifacts.
 
-Execution instructions are maintained in `docs/ui-automation/` to keep operational intent routing separate from artifact storage docs.
+Execution instructions are maintained in `docs/automation/runbooks/` to keep operational intent routing separate from artifact storage docs.
 
 Automation evidence is grouped into:
 
@@ -45,10 +45,12 @@ Business-flow smoke mode:
 
 Use these docs for all execution instructions and input requirements:
 
-1. `docs/ui-automation/README.md`
-2. `docs/ui-automation/INTENT_ROUTER.md`
-3. `docs/ui-automation/UI_CYCLE_RUNBOOK.md`
-4. `docs/ui-automation/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+1. `docs/automation/runbooks/README.md`
+2. `docs/automation/runbooks/INTENT_ROUTER.md`
+3. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
+4. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
+6. `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 
 ## 5. Artifact Interpretation
 
@@ -67,7 +69,7 @@ Business-flow smoke artifacts:
 
 ## 6. Minimal Evidence Cycle
 
-1. Resolve intent first using `docs/ui-automation/INTENT_ROUTER.md`.
+1. Resolve intent first using `docs/automation/runbooks/INTENT_ROUTER.md`.
 2. Execute the matching runbook command.
 3. Review latest summary/context artifacts.
 4. Classify as `PASS`, `FAIL`, or `BLOCKED`.
