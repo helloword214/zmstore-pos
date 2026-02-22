@@ -47,12 +47,22 @@ export async function loginByEmail(page: Page, email: string, password: string) 
 export async function loginByPin(page: Page, pin: string) {
   await openLogin(page);
 
-  const pinTab = page.getByRole("button", { name: /cashier pin/i });
-  if ((await pinTab.count()) > 0) {
-    await pinTab.first().click();
+  const pinInput = page.locator('input[name="pin"]');
+
+  // Some pages boot into email mode first. Ensure PIN mode is active
+  // before interacting with the PIN field to avoid flaky setup timeouts.
+  if (
+    (await pinInput.count()) === 0 ||
+    !(await pinInput.first().isVisible().catch(() => false))
+  ) {
+    const pinTab = page.getByRole("button", { name: /cashier pin/i }).first();
+    if ((await pinTab.count()) > 0) {
+      await pinTab.click({ force: true });
+    }
+    await expect(pinInput).toBeVisible({ timeout: 10_000 });
   }
 
-  await page.locator('input[name="pin"]').fill(pin);
+  await pinInput.fill(pin);
   await page
     .locator('form:has(input[name="mode"][value="PIN"]) button[type="submit"]')
     .click();
@@ -62,4 +72,3 @@ export async function loginByPin(page: Page, pin: string) {
   });
   expect(new URL(page.url()).pathname).not.toBe("/login");
 }
-
