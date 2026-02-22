@@ -94,16 +94,19 @@ Optional server inputs:
 
 Before every `ui:cycle` execution:
 
-1. Manager route inputs must be present:
+1. This preflight gate applies to manager coverage runs only:
+   - `UI_ROLE_SCOPE=manager`, or
+   - `UI_ROLE_SCOPE=all` (includes manager projects)
+2. Manager route inputs must be present:
    - set `UI_RUN_ID`, or
    - set both `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`
-2. If run summary shows either of these:
+3. If run summary shows either of these:
    - `Check-in route: not-set`
    - `Remit route: not-set`
    treat the run as `BLOCKED` even if process exit status is `PASS`.
-3. Rider detail is optional:
+4. Rider detail is optional:
    - if `UI_ROUTE_RIDER_DETAIL` is unset, rider detail check is skipped by design.
-4. Use an explicit manager run when no run-id is available:
+5. Use an explicit manager run when no run-id is available:
 
 ```bash
 UI_BASE_URL=http://127.0.0.1:4173 \
@@ -113,7 +116,7 @@ UI_ROLE_SCOPE=manager \
 npm run ui:cycle
 ```
 
-5. First-time manager baseline bootstrap (snapshot seed):
+6. First-time manager baseline bootstrap (snapshot seed):
 
 ```bash
 UI_BASE_URL=http://127.0.0.1:4173 \
@@ -121,6 +124,11 @@ UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
 UI_ROUTE_REMIT=/runs/123/remit \
 npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
 ```
+
+Business-flow smoke boundary:
+
+1. `npm run automation:flow:smoke` does not require `UI_RUN_ID`.
+2. The engine setup generates deterministic run IDs/routes and writes them to `FLOW_CONTEXT_FILE`.
 
 ## 6. Minimal Example
 

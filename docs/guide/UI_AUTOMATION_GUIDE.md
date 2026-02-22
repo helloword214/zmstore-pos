@@ -183,7 +183,8 @@ Interpretation rule:
 
 1. Section 9.2 list is the target critical coverage set.
 2. If a route in 9.2 is not yet represented by an active spec, treat it as planned coverage, not enforced coverage.
-3. Manager run is `BLOCKED` when run summary contains `Check-in route: not-set` or `Remit route: not-set`, even if run exit status is `PASS`.
+3. `not-set` route gate applies to `ui:cycle` manager monitoring only.
+4. Business-flow smoke (`automation:flow:smoke`) is context-driven and should not require `UI_RUN_ID`.
 
 ### 9.1 Static conformance check
 
@@ -222,7 +223,7 @@ Do not mark UI PR as ready to merge when:
 1. Static conformance check fails.
 2. Critical screenshot drift is unreviewed.
 3. `UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
-4. Manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
+4. `ui:cycle` manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
 
 ## 10. Rollout Order
 

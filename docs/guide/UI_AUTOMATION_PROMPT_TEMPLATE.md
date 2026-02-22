@@ -161,10 +161,11 @@ Task:
 1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
 2. If `UI_RUN_ID` is available, use it.
 3. If `UI_RUN_ID` is not available, require `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`.
-4. If required route inputs are missing, report `BLOCKED` and stop. Do not report `PASS`.
-5. After run, inspect latest `docs/automation/runs/<timestamp>/summary.md`.
-6. If summary contains `Check-in route: not-set` or `Remit route: not-set`, report `BLOCKED` even if run exit status is `PASS`.
-7. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+4. This `BLOCKED` rule is for `ui:cycle` manager monitoring only.
+5. If required route inputs are missing, report `BLOCKED` and stop. Do not report `PASS`.
+6. After run, inspect latest `docs/automation/runs/<timestamp>/summary.md`.
+7. If summary contains `Check-in route: not-set` or `Remit route: not-set`, report `BLOCKED` even if run exit status is `PASS`.
+8. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
 ```
 
 ### 4.2 Job B: Rider Monitor (Daily)
@@ -221,9 +222,10 @@ Run business-flow smoke automation using the deterministic engine.
 
 Task:
 1. Execute `npm run automation:flow:smoke`.
-2. Report whether setup, auth, smoke, and cleanup completed.
-3. Include latest context and summary artifacts:
+2. Do not require `UI_RUN_ID`; use generated context from setup (`FLOW_CONTEXT_FILE`).
+3. Report whether setup, auth, smoke, and cleanup completed.
+4. Include latest context and summary artifacts:
    - `test-results/automation/business-flow/context.latest.json`
    - `test-results/automation/business-flow/summary.latest.md`
-4. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
+5. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
 ```
