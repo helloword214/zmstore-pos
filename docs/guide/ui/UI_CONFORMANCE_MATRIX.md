@@ -2,7 +2,7 @@
 
 Status: BASELINE SNAPSHOT  
 Owner: POS Platform  
-Captured On: 2026-02-19  
+Captured On: 2026-02-22  
 Source: Active route scan + canonical flow mapping + golden reference comparison
 
 ## 1. Status Legend
@@ -20,6 +20,9 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 
 | Route | Flow Area | Baseline | Reference Fit | Main drift | UX gap summary | Priority |
 | --- | --- | --- | --- | --- | --- | --- |
+| `app/routes/store._index.tsx` | Manager dashboard | PARTIAL | REMIT | control size drift reduced but still mixed chip density | top-bar/dashboard action scale is aligned; continue token hardening for metric chips | P2 |
+| `app/routes/cashier._index.tsx` | Cashier dashboard | PARTIAL | REMIT | control sizing mostly aligned; hierarchy still mixed in card metadata | maintain one CTA emphasis level across all action cards | P2 |
+| `app/routes/rider._index.tsx` | Rider dashboard | PARTIAL | CHECKIN | control sizing mostly aligned; helper copy density still uneven | keep seller/rider panel emphasis balanced as cards evolve | P2 |
 | `app/routes/store.dispatch.tsx` | Dispatch queue | PARTIAL | REMIT | Title/pill usage not fully standardized | section hierarchy can be tighter | P2 |
 | `app/routes/runs.$id.dispatch.tsx` | Run staging | NEEDS_HARDENING | NONE | Legacy spacing/layout profile | weak scan hierarchy and mixed spacing | P1 |
 | `app/routes/runs.$id.summary.tsx` | Run summary | PARTIAL | REMIT | Typography and status labeling drift | summary cards need stronger status-first pattern | P2 |

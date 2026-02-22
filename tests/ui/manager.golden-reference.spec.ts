@@ -2,12 +2,18 @@ import { expect, test } from "@playwright/test";
 import { bootstrapSession, resolveBaseURL } from "./helpers/session";
 
 type RouteTarget = {
-  id: "rider-checkin" | "manager-remit";
-  explicitEnv: "UI_ROUTE_CHECKIN" | "UI_ROUTE_REMIT";
-  fromRunId: (runId: string) => string;
+  id: "manager-dashboard" | "rider-checkin" | "manager-remit";
+  explicitEnv: "UI_ROUTE_MANAGER_DASHBOARD" | "UI_ROUTE_CHECKIN" | "UI_ROUTE_REMIT";
+  fromRunId?: (runId: string) => string;
+  fallbackPath?: string;
 };
 
 const targets: RouteTarget[] = [
+  {
+    id: "manager-dashboard",
+    explicitEnv: "UI_ROUTE_MANAGER_DASHBOARD",
+    fallbackPath: "/store",
+  },
   {
     id: "rider-checkin",
     explicitEnv: "UI_ROUTE_CHECKIN",
@@ -25,7 +31,9 @@ function resolveRoutePath(target: RouteTarget) {
   if (explicit) return explicit;
 
   const runId = process.env.UI_RUN_ID;
-  if (runId) return target.fromRunId(runId);
+  if (runId && target.fromRunId) return target.fromRunId(runId);
+
+  if (target.fallbackPath) return target.fallbackPath;
 
   return null;
 }
@@ -59,4 +67,3 @@ for (const target of targets) {
     await expect(page).toHaveScreenshot(`${target.id}.png`, { fullPage: true });
   });
 }
-

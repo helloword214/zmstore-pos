@@ -1369,7 +1369,7 @@ export default function ShiftConsole() {
                                         [d.key]: safeQty(e.target.value),
                                       }))
                                     }
-                                    className="w-24 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-right tabular-nums"
+                                    className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums"
                                     aria-label={`Qty for ${d.label}`}
                                     disabled={drawerLocked}
                                   />

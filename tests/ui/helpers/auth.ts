@@ -47,20 +47,24 @@ export async function loginByEmail(page: Page, email: string, password: string) 
 export async function loginByPin(page: Page, pin: string) {
   await openLogin(page);
 
-  const pinInput = page.locator('input[name="pin"]');
+  const pinForm = page.locator('form:has(input[name="mode"][value="PIN"])');
+  const pinInput = pinForm.locator('input[name="pin"]');
+  const pinTab = page.getByRole("button", { name: /cashier pin/i }).first();
 
   // Some pages boot into email mode first. Ensure PIN mode is active
   // before interacting with the PIN field to avoid flaky setup timeouts.
-  if (
-    (await pinInput.count()) === 0 ||
-    !(await pinInput.first().isVisible().catch(() => false))
-  ) {
-    const pinTab = page.getByRole("button", { name: /cashier pin/i }).first();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const visible = await pinInput.first().isVisible().catch(() => false);
+    if (visible) break;
+
     if ((await pinTab.count()) > 0) {
       await pinTab.click({ force: true });
+      await page.waitForTimeout(150);
     }
-    await expect(pinInput).toBeVisible({ timeout: 10_000 });
   }
+
+  await expect(pinForm).toBeVisible({ timeout: 10_000 });
+  await expect(pinInput).toBeVisible({ timeout: 10_000 });
 
   await pinInput.fill(pin);
   await page

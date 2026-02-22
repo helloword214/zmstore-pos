@@ -1,7 +1,26 @@
 import { expect, test } from "@playwright/test";
 import { resolveBaseURL } from "./helpers/session";
 
+const routeDashboard = process.env.UI_ROUTE_CASHIER_DASHBOARD ?? "/cashier";
 const routeShift = process.env.UI_ROUTE_CASHIER_SHIFT ?? "/cashier/shift";
+
+test("cashier dashboard: shell + visual baseline", async ({ page }) => {
+  const url = new URL(routeDashboard, resolveBaseURL()).toString();
+  const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+  expect(response?.ok(), `Route unreachable: ${url}`).toBeTruthy();
+
+  const main = page.locator("main").first();
+  await expect(main).toBeVisible();
+
+  const mainClass = (await main.getAttribute("class")) ?? "";
+  expect(mainClass).toContain("min-h-screen");
+
+  await expect(page.getByText(/cashier dashboard/i)).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page).toHaveScreenshot("cashier-dashboard.png", {
+    fullPage: true,
+  });
+});
 
 test("cashier shift console: shell + visual baseline", async ({ page }) => {
   const url = new URL(routeShift, resolveBaseURL()).toString();
@@ -20,4 +39,3 @@ test("cashier shift console: shell + visual baseline", async ({ page }) => {
     fullPage: true,
   });
 });
-

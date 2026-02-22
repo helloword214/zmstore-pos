@@ -16,6 +16,7 @@ All active routes must visually and behaviorally align with this reference pair:
 
 1. `app/routes/runs.$id.rider-checkin.tsx`
 2. `app/routes/runs.$id.remit.tsx`
+3. `app/routes/store._index.tsx` (dashboard control sizing and card rhythm)
 
 Reference traits to replicate:
 
@@ -30,27 +31,30 @@ Reference traits to replicate:
 Active route coverage for this baseline:
 
 1. `app/routes/store.dispatch.tsx`
-2. `app/routes/runs.$id.dispatch.tsx`
-3. `app/routes/runs.$id.summary.tsx`
-4. `app/routes/runs.$id.rider-checkin.tsx`
-5. `app/routes/store.clearance.tsx`
-6. `app/routes/store.clearance_.$caseId.tsx`
-7. `app/routes/runs.$id.remit.tsx`
-8. `app/routes/cashier.delivery._index.tsx`
-9. `app/routes/cashier.delivery.$runId.tsx`
-10. `app/routes/delivery-remit.$id.tsx`
-11. `app/routes/ar._index.tsx`
-12. `app/routes/ar.customers.$id.tsx`
-13. `app/routes/cashier.shift.tsx`
-14. `app/routes/store.cashier-shifts.tsx`
-15. `app/routes/store.cashier-variances.tsx`
-16. `app/routes/cashier.charges.tsx`
-17. `app/routes/store.cashier-ar.tsx`
-18. `app/routes/store.payroll.tsx`
-19. `app/routes/store.rider-variances.tsx`
-20. `app/routes/rider.variances.tsx`
-21. `app/routes/rider.variance.$id.tsx`
-22. `app/routes/store.rider-charges.tsx`
+2. `app/routes/store._index.tsx`
+3. `app/routes/cashier._index.tsx`
+4. `app/routes/rider._index.tsx`
+5. `app/routes/runs.$id.dispatch.tsx`
+6. `app/routes/runs.$id.summary.tsx`
+7. `app/routes/runs.$id.rider-checkin.tsx`
+8. `app/routes/store.clearance.tsx`
+9. `app/routes/store.clearance_.$caseId.tsx`
+10. `app/routes/runs.$id.remit.tsx`
+11. `app/routes/cashier.delivery._index.tsx`
+12. `app/routes/cashier.delivery.$runId.tsx`
+13. `app/routes/delivery-remit.$id.tsx`
+14. `app/routes/ar._index.tsx`
+15. `app/routes/ar.customers.$id.tsx`
+16. `app/routes/cashier.shift.tsx`
+17. `app/routes/store.cashier-shifts.tsx`
+18. `app/routes/store.cashier-variances.tsx`
+19. `app/routes/cashier.charges.tsx`
+20. `app/routes/store.cashier-ar.tsx`
+21. `app/routes/store.payroll.tsx`
+22. `app/routes/store.rider-variances.tsx`
+23. `app/routes/rider.variances.tsx`
+24. `app/routes/rider.variance.$id.tsx`
+25. `app/routes/store.rider-charges.tsx`
 
 ## 4. Minimalist Rules (Non-Negotiable)
 
@@ -93,7 +97,8 @@ Active route coverage for this baseline:
 1. Primary: `bg-indigo-600 text-white hover:bg-indigo-700`
 2. Secondary: `bg-white border border-slate-300 text-slate-700 hover:bg-slate-50`
 3. Destructive: `bg-rose-600 text-white hover:bg-rose-700`
-4. Disabled must include: `disabled:opacity-50`
+4. Default control size: `rounded-xl px-3 py-2 text-sm font-medium`
+5. Disabled must include: `disabled:opacity-50`
 
 ### 5.5 Feedback banners
 
@@ -105,6 +110,7 @@ Active route coverage for this baseline:
 
 1. Use 2/3/4 scale: `gap-2`, `gap-3`, `p-3`, `p-4`
 2. Avoid mixed ad-hoc padding systems inside one page (example: mixing `px-4` and `px-5` without reason)
+3. Dashboard top bars should keep one control scale for links/buttons/chips in the same row.
 
 ## 6. UX Behavior Contract
 
@@ -206,16 +212,19 @@ Baseline screenshots should run at:
 
 Critical smoke pages:
 
-1. `store.clearance.tsx`
-2. `store.clearance_.$caseId.tsx`
-3. `runs.$id.rider-checkin.tsx`
-4. `runs.$id.remit.tsx`
-5. `cashier.delivery.$runId.tsx`
-6. `delivery-remit.$id.tsx`
-7. `ar._index.tsx`
-8. `ar.customers.$id.tsx`
-9. `store.cashier-variances.tsx`
-10. `store.rider-variances.tsx`
+1. `store._index.tsx`
+2. `cashier._index.tsx`
+3. `rider._index.tsx`
+4. `store.clearance.tsx`
+5. `store.clearance_.$caseId.tsx`
+6. `runs.$id.rider-checkin.tsx`
+7. `runs.$id.remit.tsx`
+8. `cashier.delivery.$runId.tsx`
+9. `delivery-remit.$id.tsx`
+10. `ar._index.tsx`
+11. `ar.customers.$id.tsx`
+12. `store.cashier-variances.tsx`
+13. `store.rider-variances.tsx`
 
 ### 9.3 PR merge gate
 

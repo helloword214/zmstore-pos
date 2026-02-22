@@ -1674,16 +1674,17 @@ export default function RunRemitPage() {
                                 Sold / OK
                               </span>
                             ) : (
-                              <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <input
                                   type="hidden"
                                   name={`verify_${r.productId}`}
                                   value={decision}
                                 />
-                                <label className="inline-flex items-center gap-1 text-xs text-slate-700 cursor-pointer">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                                   <input
                                     type="radio"
                                     name={`verify_ui_${r.productId}`}
+                                    className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-200"
                                     checked={decision === "present"}
                                     onChange={() =>
                                       setStockDecision((prev) => ({
@@ -1694,10 +1695,11 @@ export default function RunRemitPage() {
                                   />
                                   <span>Stocks Present</span>
                                 </label>
-                                <label className="inline-flex items-center gap-1 text-xs text-slate-700 cursor-pointer">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                                   <input
                                     type="radio"
                                     name={`verify_ui_${r.productId}`}
+                                    className="h-4 w-4 border-slate-300 text-rose-600 focus:ring-rose-200"
                                     checked={decision === "missing"}
                                     onChange={() =>
                                       setStockDecision((prev) => ({
@@ -2078,7 +2080,7 @@ export default function RunRemitPage() {
               type="submit"
               name="_intent"
               value="charge-remit"
-              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
               disabled={!canChargeMissing}
               onClick={(e) => {
                 if (
