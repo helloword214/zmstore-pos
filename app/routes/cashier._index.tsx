@@ -100,6 +100,11 @@ export default function CashierDashboardPage() {
   const openedAt = activeShift
     ? new Date(activeShift.openedAt).toLocaleString()
     : null;
+  const shiftStateLabel = !hasShift
+    ? "No active shift"
+    : shiftLocked
+      ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
+      : "Shift open";
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
@@ -250,11 +255,74 @@ export default function CashierDashboardPage() {
           </div>
         )}
 
-        {/* Primary actions */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Cashier Actions
+            Shift Snapshot
           </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Shift State
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {shiftStateLabel}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Writable shift is required for POS, AR, and remit tasks.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                Pending Charges
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {alerts.openChargeItems}
+              </div>
+              <p className="mt-2 text-xs text-rose-900/80">
+                Manager-tagged variance acknowledgements waiting action.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Active Shift ID
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {hasShift ? `#${activeShift?.id}` : "—"}
+              </div>
+              <p className="mt-2 text-xs text-emerald-900/80">
+                {openedAt ? `Opened ${openedAt}` : "Waiting for open shift."}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Access Route
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {hasShift && !shiftLocked ? "Direct task access" : "Guarded via Shift Console"}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Links auto-route to shift console when shift is missing/locked.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Primary actions */}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Operations
+            </h2>
+            <span className="text-xs text-slate-500">
+              Execute cashier tasks in this order: charges, POS, AR, delivery remit.
+            </span>
+          </div>
+          <h3 className="sr-only">
+            Cashier Actions
+          </h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Cashier Charges (manager-charged items) — no shift required */}
             <Link
@@ -290,7 +358,7 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/cashier/pos")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >
@@ -320,7 +388,7 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/ar")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >
@@ -348,7 +416,7 @@ export default function CashierDashboardPage() {
             <Link
               to={guardLink("/cashier/delivery")}
               className={
-                "group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md " +
+                "group flex h-full flex-col justify-between rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md " +
                 (!hasShift ? disabledCard : "")
               }
             >

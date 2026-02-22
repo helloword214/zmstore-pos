@@ -111,6 +111,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function RiderDashboard() {
   const { user, hr, pendingVarianceCount } = useLoaderData<LoaderData>();
+  const hasPendingVariance = pendingVarianceCount > 0;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -133,6 +134,17 @@ export default function RiderDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span
+              className={`inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium ${
+                hasPendingVariance
+                  ? "border border-rose-200 bg-rose-50 text-rose-700"
+                  : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              {hasPendingVariance
+                ? `${pendingVarianceCount} pending variance`
+                : "No pending variance"}
+            </span>
             <span className="inline-flex items-center rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
               On-duty
             </span>
@@ -149,8 +161,72 @@ export default function RiderDashboard() {
       </header>
 
       <div className="mx-auto max-w-6xl space-y-6 px-5 py-6">
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Operations Snapshot
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Pending Accept
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {pendingVarianceCount}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Items waiting your acceptance from manager variance decisions.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                Outstanding Charges
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                ₱{hr.outstandingCharges.toFixed(2)}
+              </div>
+              <p className="mt-2 text-xs text-rose-900/80">
+                Includes shortage or penalties currently assigned to your account.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Next Shift
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {hr.nextShiftLabel ?? "No schedule loaded"}
+              </div>
+              <p className="mt-2 text-xs text-emerald-900/80">
+                Check complete schedule for branch and shift-hour updates.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Payday
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {hr.paydayLabel ?? "Not set"}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Payroll and charge deductions are reflected during payout cycle.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* Top: Seller & Rider tools */}
-        <section className="grid gap-4 md:grid-cols-2">
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Operations
+            </h2>
+            <span className="text-xs text-slate-500">
+              Seller tasks and rider tasks are separated for faster scanning.
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
           {/* SELLER TOOLS CARD */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -255,10 +331,20 @@ export default function RiderDashboard() {
               </div>
             </div>
           </div>
+          </div>
         </section>
 
         {/* WORK & HR PANEL */}
-        <section className="grid gap-4 md:grid-cols-3">
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              People &amp; Payroll
+            </h2>
+            <span className="text-xs text-slate-500">
+              Attendance, payouts, and deductions in one panel.
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
           {/* Schedule */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
             <div className="flex items-center justify-between">
@@ -339,6 +425,7 @@ export default function RiderDashboard() {
                 💳 View charges
               </Link>
             </div>
+          </div>
           </div>
         </section>
       </div>
