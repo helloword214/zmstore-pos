@@ -2,7 +2,7 @@
 
 Status: ACTIVE (UI baseline, automation-first)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-22
 
 ## 1. Purpose
 
@@ -171,6 +171,20 @@ To keep screens quiet and operational:
 
 ## 9. Automation Gates (Target)
 
+### 9.0 Current Enforcement Boundary (Read This First)
+
+Current automated UI enforcement is limited to these active specs:
+
+1. `tests/ui/manager.golden-reference.spec.ts`
+2. `tests/ui/rider.golden-reference.spec.ts`
+3. `tests/ui/cashier.golden-reference.spec.ts`
+
+Interpretation rule:
+
+1. Section 9.2 list is the target critical coverage set.
+2. If a route in 9.2 is not yet represented by an active spec, treat it as planned coverage, not enforced coverage.
+3. Manager run is `BLOCKED` when run summary contains `Check-in route: not-set` or `Remit route: not-set`, even if run exit status is `PASS`.
+
 ### 9.1 Static conformance check
 
 Add a CI/static check that validates:
@@ -208,6 +222,7 @@ Do not mark UI PR as ready to merge when:
 1. Static conformance check fails.
 2. Critical screenshot drift is unreviewed.
 3. `UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
+4. Manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
 
 ## 10. Rollout Order
 

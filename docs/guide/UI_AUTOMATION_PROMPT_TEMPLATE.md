@@ -2,7 +2,7 @@
 
 Status: READY TO COPY  
 Owner: POS Platform  
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-22
 
 Scope note:
 
@@ -161,8 +161,10 @@ Task:
 1. Execute `UI_ROLE_SCOPE=manager npm run ui:cycle`.
 2. If `UI_RUN_ID` is available, use it.
 3. If `UI_RUN_ID` is not available, require `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`.
-4. If required route inputs are missing, report `BLOCKED` and stop.
-5. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
+4. If required route inputs are missing, report `BLOCKED` and stop. Do not report `PASS`.
+5. After run, inspect latest `docs/automation/runs/<timestamp>/summary.md`.
+6. If summary contains `Check-in route: not-set` or `Remit route: not-set`, report `BLOCKED` even if run exit status is `PASS`.
+7. Report pass/fail and include latest `docs/automation/runs/<timestamp>/summary.md`.
 ```
 
 ### 4.2 Job B: Rider Monitor (Daily)
@@ -198,6 +200,17 @@ Task:
 1. Job A (Manager): weekdays, morning
 2. Job B (Rider): daily, late afternoon
 3. Job C (Full): weekly (Friday evening)
+
+### 4.5 First-Run Baseline Bootstrap (Manager, Optional)
+
+Use this once when manager golden-reference snapshots are missing:
+
+```bash
+UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
+UI_ROUTE_REMIT=/runs/123/remit \
+npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
+```
 
 ## 5. Business-Flow Smoke Prompt (Separate Job)
 

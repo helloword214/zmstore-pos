@@ -2,7 +2,7 @@
 
 Status: ACTIVE  
 Owner: POS Platform  
-Last Reviewed: 2026-02-19
+Last Reviewed: 2026-02-22
 
 ## 1. Purpose
 
@@ -90,7 +90,39 @@ Optional server inputs:
 2. `UI_SKIP_DEV_SERVER=1` (skip auto-started local dev server)
 3. `UI_SKIP_AUTH_SETUP=1` (skip setup projects; use manual session fallback)
 
-## 5. Minimal Example
+## 5. UI Preflight (Required)
+
+Before every `ui:cycle` execution:
+
+1. Manager route inputs must be present:
+   - set `UI_RUN_ID`, or
+   - set both `UI_ROUTE_CHECKIN` and `UI_ROUTE_REMIT`
+2. If run summary shows either of these:
+   - `Check-in route: not-set`
+   - `Remit route: not-set`
+   treat the run as `BLOCKED` even if process exit status is `PASS`.
+3. Rider detail is optional:
+   - if `UI_ROUTE_RIDER_DETAIL` is unset, rider detail check is skipped by design.
+4. Use an explicit manager run when no run-id is available:
+
+```bash
+UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
+UI_ROUTE_REMIT=/runs/123/remit \
+UI_ROLE_SCOPE=manager \
+npm run ui:cycle
+```
+
+5. First-time manager baseline bootstrap (snapshot seed):
+
+```bash
+UI_BASE_URL=http://127.0.0.1:4173 \
+UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
+UI_ROUTE_REMIT=/runs/123/remit \
+npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
+```
+
+## 6. Minimal Example
 
 ```bash
 UI_RUN_ID=123 npm run ui:cycle
@@ -111,7 +143,7 @@ Run all roles:
 UI_RUN_ID=123 UI_ROLE_SCOPE=all npm run ui:cycle
 ```
 
-## 6. Operational Cycle
+## 7. Operational Cycle
 
 1. run `ui:cycle`
 2. check latest file under `docs/automation/runs/`
@@ -119,7 +151,7 @@ UI_RUN_ID=123 UI_ROLE_SCOPE=all npm run ui:cycle
 4. patch route UI
 5. rerun `ui:cycle`
 
-## 7. Recommended Job Split
+## 8. Recommended Job Split
 
 Use three recurring automations instead of one giant run.
 
@@ -139,7 +171,7 @@ Default commands per job:
 2. Rider: `UI_ROLE_SCOPE=rider npm run ui:cycle`
 3. Full: `UI_ROLE_SCOPE=all npm run ui:cycle`
 
-## 8. Business Flow Engine
+## 9. Business Flow Engine
 
 For deterministic delivery flow smoke checks (setup -> run -> cleanup), use:
 
