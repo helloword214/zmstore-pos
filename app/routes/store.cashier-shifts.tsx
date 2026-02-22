@@ -1025,12 +1025,12 @@ export default function StoreCashierShiftsPage() {
                             step="0.01"
                             min="0"
                             defaultValue={String(s.openingFloat ?? 0)}
-                            className="w-[140px] rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                            className="w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             title="Optional: adjust opening float before resend"
                           />
                           <button
                             type="submit"
-                            className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                             disabled={nav.state !== "idle"}
                             title="Set status back to PENDING_ACCEPT so cashier can verify again"
                           >
@@ -1082,7 +1082,7 @@ export default function StoreCashierShiftsPage() {
                             }
                             required
                             disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs tabular-nums disabled:bg-slate-100"
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums disabled:bg-slate-100"
                             title="Required: manager physical recount total"
                           />
                         </label>
@@ -1097,7 +1097,7 @@ export default function StoreCashierShiftsPage() {
                               setCloseField(s.id, "resolution", e.target.value)
                             }
                             disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
                           >
                             <option value="">No decision</option>
                             <option value="CHARGE_CASHIER">
@@ -1120,7 +1120,7 @@ export default function StoreCashierShiftsPage() {
                               setCloseField(s.id, "paperRefNo", e.target.value)
                             }
                             disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
                           />
                         </label>
                         <label className="block sm:col-span-2">
@@ -1136,7 +1136,7 @@ export default function StoreCashierShiftsPage() {
                               setCloseField(s.id, "managerNote", e.target.value)
                             }
                             disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:bg-slate-100"
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
                           />
                         </label>
                         {isShortDraft ? (
@@ -1147,7 +1147,7 @@ export default function StoreCashierShiftsPage() {
                         ) : null}
                         <button
                           type="button"
-                          className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:col-span-2"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:col-span-2"
                           disabled={String(s.status) !== "SUBMITTED"}
                           onClick={() => printVarianceForm(s)}
                           title="Print A4 variance recount form and auto-fill reference number"
@@ -1156,7 +1156,7 @@ export default function StoreCashierShiftsPage() {
                         </button>
                         <button
                           type="submit"
-                          className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50 sm:col-span-2"
+                          className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50 sm:col-span-2"
                           disabled={
                             nav.state !== "idle" ||
                             String(s.status) !== "SUBMITTED"
