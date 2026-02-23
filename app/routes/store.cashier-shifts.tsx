@@ -2,7 +2,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
+import {
+  Form,
+  Link,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+  useSearchParams,
+} from "@remix-run/react";
 import * as React from "react";
 
 import { db } from "~/utils/db.server";
@@ -113,6 +120,14 @@ type LoaderData = {
   me: { userId: number; role: string };
   cashiers: CashierOption[];
   openShifts: OpenShiftRow[];
+};
+
+type OpenActionResult = "created" | "exists";
+
+type ActionData = {
+  ok: false;
+  error: string;
+  action?: "open" | "close" | "resend";
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -525,11 +540,18 @@ export async function action({ request }: ActionFunctionArgs) {
   const deviceId = String(fd.get("deviceId") || "").trim() || null;
 
   if (!cashierId) {
-    return json({ ok: false, error: "Select a cashier." }, { status: 400 });
+    return json(
+      { ok: false, action: "open", error: "Select a cashier." },
+      { status: 400 },
+    );
   }
   if (!Number.isFinite(openingFloat) || openingFloat < 0) {
     return json(
-      { ok: false, error: "Opening float must be a valid number (>= 0)." },
+      {
+        ok: false,
+        action: "open",
+        error: "Opening float must be a valid number (>= 0).",
+      },
       { status: 400 },
     );
   }
@@ -541,50 +563,94 @@ export async function action({ request }: ActionFunctionArgs) {
     orderBy: { id: "asc" },
   });
   if (!branch?.id) {
-    throw new Response("No branch configured. Seed a branch first.", {
-      status: 500,
-    });
+    return json(
+      {
+        ok: false,
+        action: "open",
+        error: "No branch configured. Seed a branch first.",
+      },
+      { status: 500 },
+    );
   }
 
-  await db.$transaction(
-    async (tx) => {
-      // ✅ Validate cashierId belongs to an actual CASHIER user
-      const u = await tx.user.findUnique({
-        where: { id: cashierId },
-        select: { id: true, role: true },
-      });
-      if (!u || String(u.role) !== "CASHIER") {
-        throw new Response("Selected user is not a CASHIER.", { status: 400 });
-      }
+  let openOutcome: { result: OpenActionResult; shiftId: number };
+  try {
+    openOutcome = await db.$transaction(
+      async (tx) => {
+        // ✅ Validate cashierId belongs to an actual CASHIER user
+        const u = await tx.user.findUnique({
+          where: { id: cashierId },
+          select: { id: true, role: true },
+        });
+        if (!u || String(u.role) !== "CASHIER") {
+          throw new Error("Selected user is not a CASHIER.");
+        }
 
-      // ✅ Prevent multiple open shifts per cashier (race-safe)
-      const existing = await tx.cashierShift.findFirst({
-        where: { cashierId, closedAt: null },
-        select: { id: true },
-        orderBy: { openedAt: "desc" },
-      });
-      if (existing?.id) return; // idempotent
+        // ✅ Prevent multiple open shifts per cashier (race-safe)
+        const existing = await tx.cashierShift.findFirst({
+          where: { cashierId, closedAt: null },
+          select: { id: true },
+          orderBy: { openedAt: "desc" },
+        });
+        if (existing?.id) {
+          return { result: "exists" as const, shiftId: Number(existing.id) };
+        }
 
-      await tx.cashierShift.create({
-        data: {
-          cashierId,
-          branchId: branch.id,
-          openingFloat,
-          deviceId,
-          // status defaults to PENDING_ACCEPT (cashier must verify opening float)
-        },
-        select: { id: true },
-      });
-    },
-    { isolationLevel: "Serializable" as any },
-  );
+        const created = await tx.cashierShift.create({
+          data: {
+            cashierId,
+            branchId: branch.id,
+            openingFloat,
+            deviceId,
+            // status defaults to PENDING_ACCEPT (cashier must verify opening float)
+          },
+          select: { id: true },
+        });
+        return { result: "created" as const, shiftId: Number(created.id) };
+      },
+      { isolationLevel: "Serializable" as any },
+    );
+  } catch (e: any) {
+    const message = String(e?.message || "Failed to open shift.");
+    const status =
+      message === "Selected user is not a CASHIER." ? 400 : 500;
+    return json(
+      { ok: false, action: "open", error: message },
+      { status },
+    );
+  }
 
-  return redirect("/store/cashier-shifts");
+  const qs = new URLSearchParams({
+    openResult: openOutcome.result,
+    shiftId: String(openOutcome.shiftId),
+  });
+  return redirect(`/store/cashier-shifts?${qs.toString()}`);
 }
 
 export default function StoreCashierShiftsPage() {
   const { me, cashiers, openShifts } = useLoaderData<LoaderData>();
+  const actionData = useActionData<ActionData>();
+  const [searchParams] = useSearchParams();
   const nav = useNavigation();
+  const openResultRaw = String(searchParams.get("openResult") || "");
+  const openResult: OpenActionResult | null =
+    openResultRaw === "created" || openResultRaw === "exists"
+      ? openResultRaw
+      : null;
+  const selectedShiftIdRaw = Number(searchParams.get("shiftId") || 0);
+  const selectedShiftId =
+    Number.isInteger(selectedShiftIdRaw) && selectedShiftIdRaw > 0
+      ? selectedShiftIdRaw
+      : null;
+  const openActionError =
+    actionData && actionData.action === "open" ? actionData.error : null;
+
+  React.useEffect(() => {
+    if (!selectedShiftId) return;
+    const el = document.getElementById(`open-shift-${selectedShiftId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedShiftId]);
 
   const makeDefaultCloseForm = (
     shift?: OpenShiftRow,
@@ -795,6 +861,21 @@ export default function StoreCashierShiftsPage() {
           </Link>
         </div>
 
+        {openResult && selectedShiftId ? (
+          <div
+            className={
+              "rounded-xl border px-4 py-3 text-sm " +
+              (openResult === "created"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-amber-200 bg-amber-50 text-amber-900")
+            }
+          >
+            {openResult === "created"
+              ? `Shift #${selectedShiftId} opened successfully. Cashier can now verify opening float in Shift Console.`
+              : `Cashier already has an open shift (#${selectedShiftId}). No new shift was created.`}
+          </div>
+        ) : null}
+
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3">
             <div className="text-sm font-medium text-slate-800">
@@ -846,6 +927,12 @@ export default function StoreCashierShiftsPage() {
                 />
               </label>
 
+              {openActionError ? (
+                <div className="sm:col-span-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {openActionError}
+                </div>
+              ) : null}
+
               <div className="sm:col-span-3">
                 <button
                   type="submit"
@@ -887,10 +974,18 @@ export default function StoreCashierShiftsPage() {
                     const expectedNum = Number(s.expectedDrawer || 0);
                     const varianceNum = r2(managerCountedNum - expectedNum);
                     const isShortDraft = varianceNum < -EPS;
+                    const isSelectedShift =
+                      selectedShiftId != null && s.id === selectedShiftId;
                     return (
                   <div
                     key={s.id}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    id={`open-shift-${s.id}`}
+                    className={
+                      "rounded-xl border bg-white px-3 py-2 text-sm " +
+                      (isSelectedShift
+                        ? "border-emerald-300 ring-2 ring-emerald-100"
+                        : "border-slate-200")
+                    }
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0">
