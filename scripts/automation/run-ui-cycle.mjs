@@ -92,6 +92,200 @@ function parseCsv(raw) {
     .filter(Boolean);
 }
 
+function toPositiveInt(raw, fallback) {
+  const parsed = Number.parseInt(String(raw ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isTruthy(raw, fallback = false) {
+  if (raw == null) return fallback;
+  const normalized = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function parseDbTarget(databaseUrl) {
+  if (!nonEmpty(databaseUrl)) return null;
+  try {
+    const parsed = new URL(databaseUrl);
+    return {
+      host: parsed.hostname || "localhost",
+      port: Number(parsed.port || "5432"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function probeDbPort(databaseUrl) {
+  if (!nonEmpty(databaseUrl)) {
+    return {
+      ok: false,
+      detail: "DATABASE_URL is missing",
+    };
+  }
+
+  const js = `
+const net = require("node:net");
+const raw = process.argv[1];
+let parsed;
+try {
+  parsed = new URL(raw);
+} catch {
+  process.stderr.write("invalid DATABASE_URL");
+  process.exit(2);
+}
+const host = parsed.hostname || "localhost";
+const port = Number(parsed.port || "5432");
+const socket = net.connect({ host, port, timeout: 1200 });
+socket.once("connect", () => {
+  process.stdout.write(host + ":" + port);
+  socket.destroy();
+  process.exit(0);
+});
+socket.once("timeout", () => {
+  process.stderr.write("timeout to " + host + ":" + port);
+  socket.destroy();
+  process.exit(1);
+});
+socket.once("error", (err) => {
+  process.stderr.write(String(err && err.message ? err.message : err));
+  socket.destroy();
+  process.exit(1);
+});
+`;
+
+  const probe = spawnSync("node", ["-e", js, databaseUrl], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+  if ((probe.status ?? 1) === 0) {
+    const detail = String(probe.stdout || "").trim() || "tcp probe passed";
+    return { ok: true, detail };
+  }
+
+  const detail =
+    String(probe.stderr || "").trim() ||
+    String(probe.stdout || "").trim() ||
+    "tcp probe failed";
+  return { ok: false, detail };
+}
+
+function waitForDbReady() {
+  const attempts = toPositiveInt(process.env.UI_DB_PRECHECK_RETRIES, 15);
+  const delayMs = toPositiveInt(process.env.UI_DB_PRECHECK_DELAY_MS, 1000);
+  let lastDetail = "not checked";
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const probe = probeDbPort(process.env.DATABASE_URL);
+    lastDetail = probe.detail;
+    if (probe.ok) {
+      return {
+        ok: true,
+        attempts: attempt,
+        detail: probe.detail,
+      };
+    }
+    if (attempt < attempts) {
+      sleepMs(delayMs);
+    }
+  }
+
+  return {
+    ok: false,
+    attempts,
+    detail: lastDetail,
+  };
+}
+
+function commandExists(command) {
+  const check = spawnSync("which", [command], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  return (check.status ?? 1) === 0;
+}
+
+function runCommand(command, args) {
+  const run = spawnSync(command, args, {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  const stdout = String(run.stdout || "").trim();
+  const stderr = String(run.stderr || "").trim();
+  return {
+    ok: (run.status ?? 1) === 0,
+    status: run.status ?? 1,
+    detail: stderr || stdout || "no output",
+  };
+}
+
+function attemptLocalDbAutostart(databaseUrl) {
+  const target = parseDbTarget(databaseUrl);
+  if (!target) {
+    return {
+      attempted: false,
+      ok: false,
+      detail: "skipped: invalid DATABASE_URL",
+    };
+  }
+
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  if (!localHosts.has(target.host)) {
+    return {
+      attempted: false,
+      ok: false,
+      detail: `skipped: non-local host (${target.host})`,
+    };
+  }
+
+  const attempts = [];
+
+  if (process.platform === "darwin" && commandExists("open")) {
+    attempts.push({ command: "open", args: ["-a", "Postgres"] });
+  }
+
+  if (commandExists("brew")) {
+    attempts.push({ command: "brew", args: ["services", "start", "postgresql@15"] });
+    attempts.push({ command: "brew", args: ["services", "start", "postgresql"] });
+  }
+
+  if (attempts.length === 0) {
+    return {
+      attempted: false,
+      ok: false,
+      detail: "skipped: no autostart command available",
+    };
+  }
+
+  const notes = [];
+  for (const candidate of attempts) {
+    const label = `${candidate.command} ${candidate.args.join(" ")}`.trim();
+    const result = runCommand(candidate.command, candidate.args);
+    notes.push(`${label}: ${result.ok ? "ok" : `exit ${result.status}`}`);
+
+    if (result.ok) {
+      return {
+        attempted: true,
+        ok: true,
+        detail: notes.join(" | "),
+      };
+    }
+  }
+
+  return {
+    attempted: true,
+    ok: false,
+    detail: notes.join(" | "),
+  };
+}
+
 function resolveProjects() {
   const explicit = parseCsv(process.env.UI_PROJECTS);
   if (explicit.length > 0) return explicit;
@@ -148,6 +342,14 @@ const businessFlowContextFile = path.join(
 let businessFlowContext = readBusinessFlowContext(businessFlowContextFile);
 let businessFlowSetupAttempted = false;
 let businessFlowSetupExitCode = null;
+const dbAutostartEnabled = isTruthy(process.env.UI_DB_AUTOSTART, true);
+let dbPreflightAttempted = false;
+let dbPreflightReady = "n/a";
+let dbPreflightAttempts = "n/a";
+let dbPreflightDetail = "n/a";
+let dbAutostartAttempted = "n/a";
+let dbAutostartResult = "n/a";
+let dbAutostartDetail = "n/a";
 let preflightError = null;
 let failureStage = null;
 
@@ -217,10 +419,46 @@ if (businessFlowContext) {
   applyContextRoutes(businessFlowContext, "business-flow:context.latest");
 }
 
+if (!dryRun) {
+  dbPreflightAttempted = true;
+  let dbReady = waitForDbReady();
+  dbPreflightReady = dbReady.ok ? "yes" : "no";
+  dbPreflightAttempts = String(dbReady.attempts);
+  dbPreflightDetail = dbReady.detail;
+
+  if (!dbReady.ok && dbAutostartEnabled) {
+    const autostart = attemptLocalDbAutostart(process.env.DATABASE_URL);
+    dbAutostartAttempted = autostart.attempted ? "yes" : "no";
+    dbAutostartResult = autostart.ok ? "success" : "failed";
+    dbAutostartDetail = autostart.detail;
+
+    if (autostart.attempted && autostart.ok) {
+      sleepMs(1200);
+      dbReady = waitForDbReady();
+      dbPreflightReady = dbReady.ok ? "yes" : "no";
+      dbPreflightAttempts = String(dbReady.attempts);
+      dbPreflightDetail = dbReady.detail;
+    }
+  } else {
+    dbAutostartAttempted = "no";
+    dbAutostartResult = dbAutostartEnabled ? "skipped" : "disabled";
+    dbAutostartDetail = dbAutostartEnabled
+      ? "skipped: initial preflight passed"
+      : "disabled via UI_DB_AUTOSTART=0";
+  }
+
+  if (!dbReady.ok) {
+    preflightError =
+      dbAutostartEnabled && dbAutostartAttempted === "yes"
+        ? `DB_AUTOSTART_FAILED after ${dbReady.attempts} attempts (${dbReady.detail}). Autostart detail: ${dbAutostartDetail}`
+        : `DB_NOT_READY after ${dbReady.attempts} attempts (${dbReady.detail}). Start PostgreSQL and retry.`;
+  }
+}
+
 const managerRoutesMissing = () =>
   !routeHasValue(checkInRoute) || !routeHasValue(remitRoute);
 
-if (!dryRun && managerCoverageEnabled && managerRoutesMissing()) {
+if (!dryRun && !preflightError && managerCoverageEnabled && managerRoutesMissing()) {
   businessFlowSetupAttempted = true;
   const setupRun = spawnSync(
     "npm",
@@ -334,6 +572,14 @@ const summaryLines = [
   `- Business-flow context loaded: ${businessFlowContext ? "yes" : "no"}`,
   `- Business-flow setup attempted: ${businessFlowSetupAttempted ? "yes" : "no"}`,
   `- Business-flow setup exit code: ${businessFlowSetupExitCode ?? "n/a"}`,
+  `- DB preflight attempted: ${dbPreflightAttempted ? "yes" : "no"}`,
+  `- DB preflight ready: ${dbPreflightReady}`,
+  `- DB preflight attempts: ${dbPreflightAttempts}`,
+  `- DB preflight detail: ${dbPreflightDetail}`,
+  `- DB autostart enabled: ${dbAutostartEnabled ? "yes" : "no"}`,
+  `- DB autostart attempted: ${dbAutostartAttempted}`,
+  `- DB autostart result: ${dbAutostartResult}`,
+  `- DB autostart detail: ${dbAutostartDetail}`,
   `- Preflight note: ${preflightError ?? "none"}`,
   "",
   "## Stats",
