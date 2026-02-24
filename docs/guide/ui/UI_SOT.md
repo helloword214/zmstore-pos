@@ -42,8 +42,9 @@ Operational usage baseline:
 
 1. List/queue pages should prefer `SoTTable` for table shell, header cells, row cells, and empty-row fallback.
 2. Inline notices/banners should prefer `SoTAlert` over route-local alert class blocks.
-3. Role-based route groups should prefer `SoTRoleShellHeader` for identity, top nav, and logout action.
+3. Role-based route groups should prefer `SoTRoleShellHeader` for identity and logout action, with low-noise top navigation.
 4. Individual route titles/actions should prefer `SoTPageHeader` and avoid custom per-route header shells.
+5. Manager dashboard should be action-inbox-first: top cards must be pending decisions (clearance, remit/close review, variances) before monitor-only stats.
 
 Component gap rule:
 

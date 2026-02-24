@@ -297,6 +297,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function StoreManagerDashboard() {
   const { me, dispatch, runs, cash, exceptions } = useLoaderData<LoaderData>();
 
+  const clearanceDecisions = exceptions.clearancePending;
+  const remitDecisions = runs.needsManagerReview;
+  const varianceDecisions =
+    exceptions.riderVariancesOpen + exceptions.cashierShiftVariancesOpen;
+  const decisionInboxTotal =
+    clearanceDecisions + remitDecisions + varianceDecisions;
+
   const exceptionCount =
     exceptions.riderVariancesOpen +
     exceptions.cashierShiftVariancesOpen +
@@ -319,20 +326,6 @@ export default function StoreManagerDashboard() {
             <span>{me.email}</span>
           </>
         }
-        navItems={[
-          {
-            to: "/store/dispatch",
-            label: "Dispatch",
-            badge: dispatch.forDispatchOrders,
-          },
-          {
-            to: "/store/clearance",
-            label: "Clearance",
-            badge: exceptions.clearancePending,
-          },
-          { to: "/runs", label: "Runs" },
-          { to: "/products", label: "Products" },
-        ]}
         actions={
           <Form method="post" action="/logout">
             <button
@@ -346,6 +339,76 @@ export default function StoreManagerDashboard() {
       />
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Decision Inbox
+            </h2>
+            <span className="text-xs text-slate-500">
+              Pending decisions:{" "}
+              <span className="font-semibold text-slate-900">
+                {decisionInboxTotal}
+              </span>
+            </span>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <Link
+              to="/store/clearance"
+              className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  Clearance Decisions
+                </div>
+                <MiniBadge n={clearanceDecisions} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {clearanceDecisions}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Receipts waiting commercial clearance action.
+              </p>
+            </Link>
+
+            <Link
+              to="/runs?status=CHECKED_IN"
+              className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+                  Remit / Shift Close Review
+                </div>
+                <MiniBadge n={remitDecisions} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {remitDecisions}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Runs submitted and waiting manager remit/close decision.
+              </p>
+            </Link>
+
+            <Link
+              to="/store/rider-variances"
+              className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-rose-800">
+                  Variance Decisions
+                </div>
+                <MiniBadge n={varianceDecisions} />
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {varianceDecisions}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Rider and cashier variances needing manager action.
+              </p>
+            </Link>
+          </div>
+        </section>
+
         {/* BIG: what manager checks often */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
