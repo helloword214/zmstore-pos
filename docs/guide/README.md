@@ -48,16 +48,17 @@ Current route-level mapping coverage (canonical):
 ## B. Supporting (Context / Detailed Rationale)
 
 1. `ui/README.md`
-2. `ui/UI_AUTOMATION_GUIDE.md`
-3. `ui/UI_CONFORMANCE_MATRIX.md`
-4. `ui/UI_REPAIR_AUTOMATION_RUNBOOK.md`
-5. `ui/Clearance CSS Alignment Rules.md`
-6. `ui/Remit_Cleanup_Checklist.md`
-7. `../automation/runbooks/README.md`
-8. `../automation/runbooks/INTENT_ROUTER.md`
-9. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
-10. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
-11. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
+2. `ui/UI_SOT.md`
+3. `ui/UI_AUTOMATION_GUIDE.md`
+4. `ui/UI_CONFORMANCE_MATRIX.md`
+5. `ui/UI_REPAIR_AUTOMATION_RUNBOOK.md`
+6. `ui/Clearance CSS Alignment Rules.md`
+7. `ui/Remit_Cleanup_Checklist.md`
+8. `../automation/runbooks/README.md`
+9. `../automation/runbooks/INTENT_ROUTER.md`
+10. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
+11. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+12. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 These help implementation but must not override Canonical docs.
 
@@ -65,6 +66,7 @@ Monitor/repair split rule:
 
 1. `ui:cycle` is monitor-only (detect/classify/report).
 2. UI code edits belong to repair flow/runbook.
+3. Repeated route patterns should be extracted into SoT UI components first.
 
 ## C. Deprecated or Plan-Only (Do Not Use as Authority)
 

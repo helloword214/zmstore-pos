@@ -9,6 +9,7 @@ Last Reviewed: 2026-02-24
 Create one consistent, minimalist visual language across active operations routes so users can read state fast, avoid misclicks, and reduce audit mistakes.
 
 This guide is UI-only. It does not change business rules from canonical flow docs.
+For canonical UI component set and route priority queue, use `docs/guide/ui/UI_SOT.md`.
 
 ## 2. Golden UI/UX Reference
 
@@ -174,6 +175,7 @@ To keep screens quiet and operational:
 3. Avoid route-local custom pill shades when a standard tone exists.
 4. New route UI must conform to this guide before feature completion is tagged done.
 5. Reuse the check-in/remit section framing pattern before creating new wrappers.
+6. Use the shared SoT component set from `UI_SOT.md` before adding route-local variants.
 
 ## 9. Automation Gates (Target)
 
