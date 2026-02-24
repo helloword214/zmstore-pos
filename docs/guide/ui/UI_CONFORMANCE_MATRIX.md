@@ -2,7 +2,7 @@
 
 Status: BASELINE SNAPSHOT  
 Owner: POS Platform  
-Captured On: 2026-02-22  
+Captured On: 2026-02-24  
 Source: Active route scan + canonical flow mapping + golden reference comparison
 
 ## 1. Status Legend
@@ -81,3 +81,17 @@ When a covered route is edited:
 1. Re-evaluate its conformance status in this matrix.
 2. Record the new status in the same PR.
 3. Keep route entries in this file aligned with the active-route list in `docs/guide/ui/UI_AUTOMATION_GUIDE.md`.
+
+## 8. Automation Incident Handling Contract
+
+This matrix is consumed by monitor flow reports. Severity handling is standardized:
+
+1. `PRIMARY_MISMATCH`: Rider Dashboard or Cashier Dashboard visual drift.
+2. `SECONDARY_MISMATCH`: non-primary route visual drift.
+3. `INFRA_BLOCKED`: preflight/setup failures that prevent reliable UI comparison.
+
+Action expectations:
+
+1. `PRIMARY_MISMATCH`: fail-fast and escalate for same-day repair.
+2. `SECONDARY_MISMATCH`: keep monitor cadence active; assign to repair backlog.
+3. `INFRA_BLOCKED`: attempt auto-recovery first, then publish blocked incident with exact recovery step.
