@@ -28,11 +28,18 @@ Primary reusable components (minimum baseline):
 4. `app/components/ui/SoTSectionHeader.tsx`
 5. `app/components/ui/SoTStatusPill.tsx`
 6. `app/components/ui/SoTDropdown.tsx`
+7. `app/components/ui/SoTTable.tsx`
+8. `app/components/ui/SoTAlert.tsx`
 
 Rule:
 
 1. If repeated UI pattern appears in 2+ routes, extract shared SoT component first.
 2. Prefer shared component usage over route-local class duplication.
+
+Operational usage baseline:
+
+1. List/queue pages should prefer `SoTTable` for table shell, header cells, row cells, and empty-row fallback.
+2. Inline notices/banners should prefer `SoTAlert` over route-local alert class blocks.
 
 Component gap rule:
 

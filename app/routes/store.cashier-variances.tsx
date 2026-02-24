@@ -7,6 +7,15 @@ import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { Prisma } from "@prisma/client";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import {
+  SoTTd,
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+} from "~/components/ui/SoTTable";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -295,10 +304,10 @@ export default function StoreCashierVariancesPage() {
               <div className="text-sm font-medium text-slate-800">
                 {pageTitle}
               </div>
-              <div className="text-xs text-slate-500">
+              <SoTAlert tone="info">
                 Manager decision is captured during final close in{" "}
                 <code>/store/cashier-shifts</code>.
-              </div>
+              </SoTAlert>
               <div className="flex flex-wrap gap-2 text-xs">
                 <Link
                   to={tabLink("open")}
@@ -335,28 +344,24 @@ export default function StoreCashierVariancesPage() {
             <div className="text-xs text-slate-500">{rows.length} item(s)</div>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+          <SoTTable>
+            <SoTTableHead>
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Shift</th>
-                <th className="px-3 py-2 text-left font-medium">Cashier</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Expected</th>
-                <th className="px-3 py-2 text-right font-medium">Counted</th>
-                <th className="px-3 py-2 text-right font-medium">Diff</th>
-                <th className="px-3 py-2 text-left font-medium">Details</th>
+                <SoTTh>Shift</SoTTh>
+                <SoTTh>Cashier</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Expected</SoTTh>
+                <SoTTh align="right">Counted</SoTTh>
+                <SoTTh align="right">Diff</SoTTh>
+                <SoTTh>Details</SoTTh>
               </tr>
-            </thead>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-6 text-center text-slate-500"
-                  >
-                    No cashier shift variances.
-                  </td>
-                </tr>
+                <SoTTableEmptyRow
+                  colSpan={7}
+                  message="No cashier shift variances."
+                />
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
@@ -377,11 +382,8 @@ export default function StoreCashierVariancesPage() {
                     : "SHORT";
 
                   return (
-                    <tr
-                      key={v.id}
-                      className="border-t border-slate-100 align-top"
-                    >
-                      <td className="px-3 py-2">
+                    <SoTTableRow key={v.id}>
+                      <SoTTd>
                         <div className="text-slate-900">
                           {new Date(v.shift.openedAt).toLocaleString()}
                         </div>
@@ -408,18 +410,18 @@ export default function StoreCashierVariancesPage() {
                             shift not closed? (check data)
                           </div>
                         )}
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
+                      <SoTTd>
                         <div className="text-slate-900">
                           {v.shift.cashier.name}
                         </div>
                         <div className="text-[11px] text-slate-500">
                           {v.shift.cashier.email ?? "—"}
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
+                      <SoTTd>
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
                           {v.status}
                         </span>
@@ -429,15 +431,15 @@ export default function StoreCashierVariancesPage() {
                             <span className="font-medium">{v.resolution}</span>
                           </div>
                         ) : null}
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.expected)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.counted)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         <div className="flex items-center justify-end gap-2">
                           <span
                             className={[
@@ -454,9 +456,9 @@ export default function StoreCashierVariancesPage() {
                             {peso(v.variance)}
                           </span>
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
+                      <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
                             View denoms / notes
@@ -484,13 +486,13 @@ export default function StoreCashierVariancesPage() {
                             </div>
                           </div>
                         </details>
-                      </td>
-                    </tr>
+                      </SoTTd>
+                    </SoTTableRow>
                   );
                 })
               )}
             </tbody>
-          </table>
+          </SoTTable>
         </div>
       </div>
     </main>
