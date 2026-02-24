@@ -11,6 +11,8 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import * as React from "react";
+import { SoTDropdown } from "~/components/ui/SoTDropdown";
+import { SoTInput } from "~/components/ui/SoTInput";
 
 type ActionData =
   | { ok: true; redirectedTo: string }
@@ -263,6 +265,7 @@ export default function StoreDispatchQueuePage() {
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [runId, setRunId] = React.useState<string>("");
+  const [searchQuery, setSearchQuery] = React.useState<string>(q || "");
 
   // Auto-select/highlight when redirected back from /orders/:id/dispatch
   React.useEffect(() => {
@@ -342,41 +345,64 @@ export default function StoreDispatchQueuePage() {
           <Form
             method="get"
             className="grid gap-2 sm:grid-cols-12 sm:items-end"
+            autoComplete="off"
           >
+            <input type="hidden" name="q" value={searchQuery} />
+            <input
+              type="text"
+              name="__no_autofill"
+              autoComplete="username"
+              tabIndex={-1}
+              className="hidden"
+              aria-hidden="true"
+            />
             <div className="sm:col-span-6">
-              <div className="text-xs text-slate-600">Search</div>
-              <input
-                name="q"
-                defaultValue={q || ""}
+              <SoTInput
+                label="Search"
+                name="dispatchSearch"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.currentTarget.value)}
                 placeholder="Order code / customer / phone / rider…"
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                className="h-9"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                autoCapitalize="off"
+                inputMode="search"
+                aria-autocomplete="none"
+                readOnly
+                data-lpignore="true"
+                onFocus={(e) => {
+                  e.currentTarget.readOnly = false;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.readOnly = true;
+                }}
               />
             </div>
 
             <div className="sm:col-span-3">
-              <div className="text-xs text-slate-600">Sort</div>
-              <select
+              <SoTDropdown
+                label="Sort"
                 name="sort"
                 defaultValue={sort || "id"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="id">Newest</option>
                 <option value="printedAt">Printed time</option>
                 <option value="stagedAt">Staged time</option>
                 <option value="amount">Amount</option>
-              </select>
+              </SoTDropdown>
             </div>
 
             <div className="sm:col-span-2">
-              <div className="text-xs text-slate-600">Direction</div>
-              <select
+              <SoTDropdown
+                label="Direction"
                 name="dir"
                 defaultValue={dir || "desc"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="desc">Desc</option>
                 <option value="asc">Asc</option>
-              </select>
+              </SoTDropdown>
             </div>
 
             <div className="sm:col-span-1">
@@ -434,11 +460,11 @@ export default function StoreDispatchQueuePage() {
               <input type="hidden" name="orderIds" value={selectedCsv} />
 
               <div className="flex items-center gap-2">
-                <select
+                <SoTDropdown
                   name="runId"
                   value={runId}
                   onChange={(e) => setRunId(e.target.value)}
-                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm"
+                  className="w-auto min-w-[240px]"
                 >
                   <option value="">— Assign to PLANNED run —</option>
                   {runOptions.map((r: any) => (
@@ -446,7 +472,7 @@ export default function StoreDispatchQueuePage() {
                       {r.label}
                     </option>
                   ))}
-                </select>
+                </SoTDropdown>
 
                 <button
                   type="submit"

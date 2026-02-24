@@ -27,11 +27,36 @@ Primary reusable components (minimum baseline):
 3. `app/components/ui/SoTCard.tsx`
 4. `app/components/ui/SoTSectionHeader.tsx`
 5. `app/components/ui/SoTStatusPill.tsx`
+6. `app/components/ui/SoTDropdown.tsx`
 
 Rule:
 
 1. If repeated UI pattern appears in 2+ routes, extract shared SoT component first.
 2. Prefer shared component usage over route-local class duplication.
+
+Component gap rule:
+
+1. If required UI pattern has no SoT component yet, create SoT component first.
+2. Add usage sample in at least one real route in the same objective.
+3. Treat first implementation as review sample; operator may request revision before wider rollout.
+
+## 3.1 Typography Scale (Mandatory)
+
+1. Page title: `text-xl font-semibold tracking-tight text-slate-900`
+2. Section title: `text-xs font-semibold uppercase tracking-wide text-slate-500`
+3. Card title: `text-xs font-semibold uppercase tracking-wide text-slate-600`
+4. Primary value text: `text-sm font-semibold text-slate-900`
+5. Supporting meta text: `text-xs text-slate-500`
+6. Status/helper emphasis text: `text-xs font-medium`
+
+## 3.2 Spacing Scale (Mandatory)
+
+1. Page container rhythm: `space-y-5`
+2. Section block gap: `mb-3` header + `gap-3` grid
+3. Card padding: `p-4` default, `p-3` compact
+4. Control height: `h-9` for inputs/selects/buttons in dense operational rows
+5. Input/select/button corner radius: `rounded-xl`
+6. Primary card corner radius: `rounded-2xl`
 
 ## 4. Patch-First Rule
 
