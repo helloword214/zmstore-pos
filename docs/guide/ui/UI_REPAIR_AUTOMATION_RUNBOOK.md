@@ -8,7 +8,6 @@ Last Reviewed: 2026-02-24
 
 Define the repair flow that responds to monitor incidents from `ui:cycle`.
 This runbook covers fix execution. It does not replace monitor cadence.
-Default repair action is route/component UI refactor patching. Rerun-only is not considered a repair.
 
 ## 2. Trigger Conditions
 
@@ -26,31 +25,14 @@ Required input before patching:
    - patch route/component code, or
    - refresh baseline snapshots after design approval
 
-## 2.1 Failure-to-Route Mapping (Execution Input)
-
-Use this mapping to select route targets during repair:
-
-1. `tests/ui/rider.golden-reference.spec.ts` rider dashboard mismatch -> `app/routes/rider._index.tsx`
-2. `tests/ui/cashier.golden-reference.spec.ts` cashier dashboard mismatch -> `app/routes/cashier._index.tsx`
-3. `tests/ui/cashier.golden-reference.spec.ts` cashier shift console mismatch -> `app/routes/cashier.shift.tsx`
-4. `tests/ui/manager.golden-reference.spec.ts` manager dashboard mismatch -> `app/routes/store._index.tsx`
-5. `tests/ui/manager.golden-reference.spec.ts` rider-checkin mismatch -> `app/routes/runs.$id.rider-checkin.tsx`
-6. `tests/ui/manager.golden-reference.spec.ts` manager-remit mismatch -> `app/routes/runs.$id.remit.tsx`
-
 ## 3. Repair Flow Steps
 
 1. Read incident + summary and confirm failing targets.
 2. Reproduce with targeted spec command.
-3. Apply minimal route/component UI patch for mismatched target only.
-4. If repeated UI shells/patterns are duplicated across routes, extract shared UI component first, then reuse in touched targets.
-5. Re-run targeted specs for changed target.
-6. Re-run `npm run ui:cycle` for full regression check.
-7. Open PR from `codex/<task-name>` to `main` with trace sections.
-
-Forbidden as final outcome:
-
-1. rerun-only with zero route/component change while mismatch persists
-2. snapshot refresh without explicit source-of-truth approval note
+3. Apply minimal route/component patch for mismatched target only.
+4. Re-run targeted specs for changed target.
+5. Re-run `npm run ui:cycle` for full regression check.
+6. Open PR from `codex/<task-name>` to `main` with trace sections.
 
 ## 4. Safety Rules
 
@@ -59,7 +41,6 @@ Forbidden as final outcome:
 3. Never auto-refresh baselines without explicit design-source confirmation.
 4. Keep fix scope limited to reported targets first.
 5. Document residual failures if unrelated mismatches remain.
-6. Preserve business logic; UI/UX structure/token/component changes only.
 
 ## 5. Output Contract
 

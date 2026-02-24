@@ -6,7 +6,6 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { EmployeeRole, RiderChargeStatus } from "@prisma/client";
-import { SnapshotStatCard } from "~/components/ui/SnapshotStatCard";
 
 type LoaderData = {
   user: {
@@ -155,28 +154,65 @@ export default function RiderDashboard() {
             Operations Snapshot
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SnapshotStatCard
-              title="Pending Accept"
-              value={pendingVarianceCount}
-              description="Items waiting your acceptance from manager variance decisions."
-            />
-            <SnapshotStatCard
-              title="Outstanding Charges"
-              value={`₱${hr.outstandingCharges.toFixed(2)}`}
-              description="Includes shortage or penalties currently assigned to your account."
-              tone={hr.outstandingCharges > 0 ? "danger" : "default"}
-            />
-            <SnapshotStatCard
-              title="Next Shift"
-              value={hr.nextShiftLabel ?? "No schedule loaded"}
-              description="Check complete schedule for branch and shift-hour updates."
-              tone="success"
-            />
-            <SnapshotStatCard
-              title="Payday"
-              value={hr.paydayLabel ?? "Not set"}
-              description="Payroll and charge deductions are reflected during payout cycle."
-            />
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Pending Accept
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {pendingVarianceCount}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Items waiting your acceptance from manager variance decisions.
+              </p>
+            </div>
+
+            <div
+              className={
+                "rounded-2xl border p-4 shadow-sm " +
+                (hr.outstandingCharges > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Outstanding Charges
+              </div>
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (hr.outstandingCharges > 0 ? "text-rose-700" : "text-slate-900")
+                }
+              >
+                ₱{hr.outstandingCharges.toFixed(2)}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Includes shortage or penalties currently assigned to your account.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Next Shift
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {hr.nextShiftLabel ?? "No schedule loaded"}
+              </div>
+              <p className="mt-2 text-xs text-emerald-900/80">
+                Check complete schedule for branch and shift-hour updates.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Payday
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {hr.paydayLabel ?? "Not set"}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Payroll and charge deductions are reflected during payout cycle.
+              </p>
+            </div>
           </div>
         </section>
 

@@ -261,24 +261,6 @@ Expected monitor handling:
 2. `PRIMARY`: fail fast and escalate in incident summary.
 3. `SECONDARY`: record incident and continue scheduled cadence.
 
-### 9.6 Failure-to-Route Mapping (Repair Input Contract)
-
-Repair flow must map monitor failures to concrete route targets before patching:
-
-1. Rider dashboard mismatch -> `app/routes/rider._index.tsx`
-2. Cashier dashboard mismatch -> `app/routes/cashier._index.tsx`
-3. Cashier shift console mismatch -> `app/routes/cashier.shift.tsx`
-4. Manager dashboard mismatch -> `app/routes/store._index.tsx`
-5. Rider check-in mismatch -> `app/routes/runs.$id.rider-checkin.tsx`
-6. Manager remit mismatch -> `app/routes/runs.$id.remit.tsx`
-
-### 9.7 Repair Enforcement Rules
-
-1. Repair automation must execute route/component UI patching when mismatch persists.
-2. Rerun-only without route/component changes is not a valid repair completion state.
-3. Snapshot refresh is exception-only and requires explicit approved source-of-truth note in repair output.
-4. UI/UX refactor changes must preserve business logic behavior and data flow contracts.
-
 ## 10. Rollout Order
 
 1. Phase 1 (highest drift): `runs.$id.dispatch.tsx`, `store.cashier-variances.tsx`, `cashier.charges.tsx`, `store.cashier-ar.tsx`, rider-variance admin/rider pages.

@@ -11,7 +11,6 @@ import {
 } from "~/utils/auth.server";
 import { CashierChargeStatus } from "@prisma/client";
 import { db } from "~/utils/db.server";
-import { SnapshotStatCard } from "~/components/ui/SnapshotStatCard";
 
 type LoaderData = {
   me: SessionUser;
@@ -237,33 +236,89 @@ export default function CashierDashboardPage() {
             Operations Snapshot
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SnapshotStatCard
-              compact
-              title="Shift State"
-              value={shiftStateLabel}
-              description="Writable shift required for POS, AR, and remit tasks."
-            />
-            <SnapshotStatCard
-              compact
-              title="Next Shift"
-              value="Tomorrow, 8:00 AM – Asingan Branch"
-              description="Check complete schedule for branch and shift-hour updates."
-              tone="success"
-            />
-            <SnapshotStatCard
-              compact
-              title="Pending Charges"
-              value={alerts.openChargeItems}
-              description="Manager-tagged acknowledgements waiting action."
-              tone={alerts.openChargeItems > 0 ? "danger" : "default"}
-            />
-            <SnapshotStatCard
-              compact
-              title="Outstanding Charges"
-              value={`₱${finance.outstandingCharges.toFixed(2)}`}
-              description="Total remaining balance assigned to this cashier account."
-              tone={finance.outstandingCharges > 0 ? "danger" : "default"}
-            />
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Shift State
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-900">
+                {shiftStateLabel}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Writable shift required for POS, AR, and remit tasks.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Next Shift
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                Tomorrow, 8:00 AM – Asingan Branch
+              </div>
+              <p className="mt-1 text-xs text-emerald-900/80">
+                Check complete schedule for branch and shift-hour updates.
+              </p>
+            </div>
+
+            <div
+              className={
+                "rounded-2xl border p-3 shadow-sm " +
+                (alerts.openChargeItems > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
+              <div
+                className={
+                  "text-xs font-semibold uppercase tracking-wide " +
+                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-600")
+                }
+              >
+                Pending Charges
+              </div>
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-900")
+                }
+              >
+                {alerts.openChargeItems}
+              </div>
+              <p
+                className={
+                  "mt-1 text-xs " +
+                  (alerts.openChargeItems > 0 ? "text-rose-900/80" : "text-slate-500")
+                }
+              >
+                Manager-tagged acknowledgements waiting action.
+              </p>
+            </div>
+
+            <div
+              className={
+                "rounded-2xl border p-3 shadow-sm " +
+                (finance.outstandingCharges > 0
+                  ? "border-rose-200 bg-rose-50"
+                  : "border-slate-200 bg-white")
+              }
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Outstanding Charges
+              </div>
+              <div
+                className={
+                  "mt-1 text-sm font-semibold " +
+                  (finance.outstandingCharges > 0
+                    ? "text-rose-700"
+                    : "text-slate-900")
+                }
+              >
+                ₱{finance.outstandingCharges.toFixed(2)}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Total remaining balance assigned to this cashier account.
+              </p>
+            </div>
           </div>
         </section>
 

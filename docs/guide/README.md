@@ -65,7 +65,6 @@ Monitor/repair split rule:
 
 1. `ui:cycle` is monitor-only (detect/classify/report).
 2. UI code edits belong to repair flow/runbook.
-3. Repair completion requires route/component UI patch evidence when mismatch persists; rerun-only is insufficient.
 
 ## C. Deprecated or Plan-Only (Do Not Use as Authority)
 

@@ -95,26 +95,3 @@ Action expectations:
 1. `PRIMARY_MISMATCH`: fail-fast and escalate for same-day repair.
 2. `SECONDARY_MISMATCH`: keep monitor cadence active; assign to repair backlog.
 3. `INFRA_BLOCKED`: attempt auto-recovery first, then publish blocked incident with exact recovery step.
-
-## 9. Refactor Mandate (Draft-to-Target Upgrade)
-
-Routes tagged `NEEDS_HARDENING` are considered active refactor targets, not optional cleanup.
-
-Execution requirements:
-
-1. Prefer shared UI component extraction when repeated visual patterns exist across target routes.
-2. Keep logic untouched: loader/action/business-rule behavior must remain equivalent.
-3. Mark route as upgraded only after:
-4. route/component patch merged
-5. targeted specs rerun and recorded
-6. matrix status updated in the same PR
-
-Current priority execution set:
-
-1. `app/routes/store.cashier-variances.tsx`
-2. `app/routes/cashier.charges.tsx`
-3. `app/routes/store.cashier-ar.tsx`
-4. `app/routes/store.rider-variances.tsx`
-5. `app/routes/rider.variances.tsx`
-6. `app/routes/rider.variance.$id.tsx`
-7. `app/routes/store.rider-charges.tsx`
