@@ -7,6 +7,7 @@ import { Form, Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, toNum, peso } from "~/utils/money";
+import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 
 const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 
@@ -305,68 +306,44 @@ export default function StoreManagerDashboard() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Store Manager Dashboard
-            </h1>
-            <p className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">
-                {me.alias ? `${me.alias} (${me.name})` : me.name}
-              </span>
-              {" · "}
-              <span className="uppercase tracking-wide">{me.role}</span>
-              {" · "}
-              <span>{me.email}</span>
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              to="/store/dispatch"
-              className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100/60"
-              title="Open Dispatch Queue"
+      <SoTRoleShellHeader
+        title="Store Manager Dashboard"
+        identityLine={
+          <>
+            <span className="font-medium text-slate-700">
+              {me.alias ? `${me.alias} (${me.name})` : me.name}
+            </span>
+            {" · "}
+            <span className="uppercase tracking-wide">{me.role}</span>
+            {" · "}
+            <span>{me.email}</span>
+          </>
+        }
+        navItems={[
+          {
+            to: "/store/dispatch",
+            label: "Dispatch",
+            badge: dispatch.forDispatchOrders,
+          },
+          {
+            to: "/store/clearance",
+            label: "Clearance",
+            badge: exceptions.clearancePending,
+          },
+          { to: "/runs", label: "Runs" },
+          { to: "/products", label: "Products" },
+        ]}
+        actions={
+          <Form method="post" action="/logout">
+            <button
+              className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Sign out"
             >
-              Dispatch <MiniBadge n={dispatch.forDispatchOrders} />
-            </Link>
-
-            <Link
-              to="/store/clearance"
-              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100/60"
-              title="Commercial Clearance Inbox"
-            >
-              Clearance <MiniBadge n={exceptions.clearancePending} />
-            </Link>
-
-            <Link
-              to="/runs"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              title="Open Runs"
-            >
-              Runs
-            </Link>
-
-            <Link
-              to="/products"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              title="Open Products"
-            >
-              Products
-            </Link>
-
-            <Form method="post" action="/logout">
-              <button
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                title="Sign out"
-              >
-                Logout
-              </button>
-            </Form>
-          </div>
-        </div>
-      </div>
+              Logout
+            </button>
+          </Form>
+        }
+      />
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
         {/* BIG: what manager checks often */}

@@ -30,6 +30,8 @@ Primary reusable components (minimum baseline):
 6. `app/components/ui/SoTDropdown.tsx`
 7. `app/components/ui/SoTTable.tsx`
 8. `app/components/ui/SoTAlert.tsx`
+9. `app/components/ui/SoTRoleShellHeader.tsx`
+10. `app/components/ui/SoTPageHeader.tsx`
 
 Rule:
 
@@ -40,6 +42,8 @@ Operational usage baseline:
 
 1. List/queue pages should prefer `SoTTable` for table shell, header cells, row cells, and empty-row fallback.
 2. Inline notices/banners should prefer `SoTAlert` over route-local alert class blocks.
+3. Role-based route groups should prefer `SoTRoleShellHeader` for identity, top nav, and logout action.
+4. Individual route titles/actions should prefer `SoTPageHeader` and avoid custom per-route header shells.
 
 Component gap rule:
 
