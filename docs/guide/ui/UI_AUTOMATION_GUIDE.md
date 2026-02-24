@@ -2,7 +2,7 @@
 
 Status: ACTIVE (UI baseline, automation-first)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-22
+Last Reviewed: 2026-02-24
 
 ## 1. Purpose
 
@@ -193,7 +193,21 @@ Interpretation rule:
 4. Business-flow smoke (`automation:flow:smoke`) is context-driven and should not require `UI_RUN_ID`.
 5. Execution intent routing and runtime inputs are governed by `docs/automation/runbooks/INTENT_ROUTER.md`.
 
-### 9.1 Static conformance check
+### 9.1 Operating Model: Monitor vs Repair (Mandatory)
+
+UI automation uses two distinct flows. Do not combine them into one run intent.
+
+1. Monitor flow (`ui:cycle`):
+2. Goal: detect and classify UI drift, then publish run evidence.
+3. Allowed actions: environment preflight, DB recovery attempt, visual/spec checks, summary + incident outputs.
+4. Not allowed: route/component code edits, baseline updates, or git commits.
+
+1. Repair flow (manual or dedicated repair automation):
+2. Goal: fix a known incident from monitor evidence.
+3. Allowed actions: targeted UI patch, targeted test rerun, PR creation, optional baseline update when design approval exists.
+4. Required input: latest incident reference and explicit source-of-truth decision (patch code vs refresh baseline).
+
+### 9.2 Static conformance check
 
 Add a CI/static check that validates:
 
@@ -203,7 +217,7 @@ Add a CI/static check that validates:
 4. Repeated note markers above threshold are reported as warnings.
 5. Check-in/remit reference traits are met for changed routes.
 
-### 9.2 Visual smoke checks
+### 9.3 Visual smoke checks
 
 Baseline screenshots should run at:
 
@@ -226,7 +240,7 @@ Critical smoke pages:
 12. `store.cashier-variances.tsx`
 13. `store.rider-variances.tsx`
 
-### 9.3 PR merge gate
+### 9.4 PR merge gate
 
 Do not mark UI PR as ready to merge when:
 
@@ -234,6 +248,18 @@ Do not mark UI PR as ready to merge when:
 2. Critical screenshot drift is unreviewed.
 3. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` is not updated for touched active routes.
 4. `ui:cycle` manager monitoring evidence has `Check-in route: not-set` or `Remit route: not-set`.
+
+### 9.5 Incident Severity Policy
+
+1. `INFRA`: preflight/setup/runtime blocker (DB/env/runner) that prevents meaningful UI evaluation.
+2. `PRIMARY`: mismatch on Rider Dashboard or Cashier Dashboard.
+3. `SECONDARY`: mismatch outside primary routes (example: manager mobile dashboard, cashier shift console).
+
+Expected monitor handling:
+
+1. `INFRA`: retry/autorecover path first, then fail run with actionable incident note.
+2. `PRIMARY`: fail fast and escalate in incident summary.
+3. `SECONDARY`: record incident and continue scheduled cadence.
 
 ## 10. Rollout Order
 
