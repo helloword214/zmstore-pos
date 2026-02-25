@@ -7,15 +7,11 @@ import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { Prisma } from "@prisma/client";
-import { SoTAlert } from "~/components/ui/SoTAlert";
-import {
-  SoTTd,
-  SoTTable,
-  SoTTableEmptyRow,
-  SoTTableHead,
-  SoTTableRow,
-  SoTTh,
-} from "~/components/ui/SoTTable";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTDataRow } from "~/components/ui/SoTDataRow";
+import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -215,15 +211,9 @@ function DenomsTable({ denoms }: { denoms: Denoms | null }) {
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1">
-          <div className="text-slate-500">Bills</div>
-          <div className="font-medium text-slate-800">{peso(billsTotal)}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1">
-          <div className="text-slate-500">Coins</div>
-          <div className="font-medium text-slate-800">{peso(coinsTotal)}</div>
-        </div>
+      <div className="grid grid-cols-2 gap-2">
+        <SoTDataRow label="Bills" value={peso(billsTotal)} />
+        <SoTDataRow label="Coins" value={peso(coinsTotal)} />
       </div>
 
       <div className="text-[11px] text-slate-600">
@@ -277,91 +267,87 @@ export default function StoreCashierVariancesPage() {
   const pageTitle = isHistory ? "History (resolved)" : "Open (read-only queue)";
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Cashier Shift Variances
-            </h1>
-            <p className="text-xs text-slate-500">
-              Manager audit for shift close counts (cash drawer only).
-            </p>
-          </div>
-          <Link
-            to="/store"
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            ← Back
-          </Link>
-        </div>
-      </header>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Cashier Shift Variances"
+        subtitle="Manager audit for shift close counts (cash drawer only)."
+        backTo="/store"
+      />
 
-      <div className="mx-auto max-w-6xl px-4 py-4">
+      <div className="mx-auto max-w-6xl px-5 py-5">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium text-slate-800">
                 {pageTitle}
               </div>
-              <SoTAlert tone="info">
+              <div className="text-xs text-slate-500">
                 Manager decision is captured during final close in{" "}
                 <code>/store/cashier-shifts</code>.
-              </SoTAlert>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Link
-                  to={tabLink("open")}
-                  className={`inline-flex items-center rounded-full border px-2 py-1 ${
-                    tab === "open"
-                      ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  Open
-                  {counts.open > 0 ? (
-                    <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                      {counts.open}
-                    </span>
-                  ) : null}
-                </Link>
-                <Link
-                  to={tabLink("history")}
-                  className={`inline-flex items-center rounded-full border px-2 py-1 ${
-                    tab === "history"
-                      ? "border-slate-300 bg-slate-100 text-slate-800"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  History
-                  {counts.history > 0 ? (
-                    <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                      {counts.history}
-                    </span>
-                  ) : null}
-                </Link>
               </div>
+              <SoTActionBar
+                className="mb-0"
+                left={
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Link
+                      to={tabLink("open")}
+                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                        tab === "open"
+                          ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      Open
+                      {counts.open > 0 ? (
+                        <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                          {counts.open}
+                        </span>
+                      ) : null}
+                    </Link>
+                    <Link
+                      to={tabLink("history")}
+                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                        tab === "history"
+                          ? "border-slate-300 bg-slate-100 text-slate-800"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      History
+                      {counts.history > 0 ? (
+                        <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                          {counts.history}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </div>
+                }
+                right={<div className="text-xs text-slate-500">{rows.length} item(s)</div>}
+              />
             </div>
-            <div className="text-xs text-slate-500">{rows.length} item(s)</div>
           </div>
 
-          <SoTTable>
-            <SoTTableHead>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <SoTTh>Shift</SoTTh>
-                <SoTTh>Cashier</SoTTh>
-                <SoTTh>Status</SoTTh>
-                <SoTTh align="right">Expected</SoTTh>
-                <SoTTh align="right">Counted</SoTTh>
-                <SoTTh align="right">Diff</SoTTh>
-                <SoTTh>Details</SoTTh>
+                <th className="px-3 py-2 text-left font-medium">Shift</th>
+                <th className="px-3 py-2 text-left font-medium">Cashier</th>
+                <th className="px-3 py-2 text-left font-medium">Status</th>
+                <th className="px-3 py-2 text-right font-medium">Expected</th>
+                <th className="px-3 py-2 text-right font-medium">Counted</th>
+                <th className="px-3 py-2 text-right font-medium">Diff</th>
+                <th className="px-3 py-2 text-left font-medium">Details</th>
               </tr>
-            </SoTTableHead>
+            </thead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow
-                  colSpan={7}
-                  message="No cashier shift variances."
-                />
+                <tr>
+                  <td colSpan={7}>
+                    <SoTEmptyState
+                      title="No cashier shift variances."
+                      hint="Open or resolved variance records will appear here."
+                    />
+                  </td>
+                </tr>
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
@@ -382,8 +368,11 @@ export default function StoreCashierVariancesPage() {
                     : "SHORT";
 
                   return (
-                    <SoTTableRow key={v.id}>
-                      <SoTTd>
+                    <tr
+                      key={v.id}
+                      className="border-t border-slate-100 align-top"
+                    >
+                      <td className="px-3 py-2">
                         <div className="text-slate-900">
                           {new Date(v.shift.openedAt).toLocaleString()}
                         </div>
@@ -410,36 +399,36 @@ export default function StoreCashierVariancesPage() {
                             shift not closed? (check data)
                           </div>
                         )}
-                      </SoTTd>
+                      </td>
 
-                      <SoTTd>
+                      <td className="px-3 py-2">
                         <div className="text-slate-900">
                           {v.shift.cashier.name}
                         </div>
                         <div className="text-[11px] text-slate-500">
                           {v.shift.cashier.email ?? "—"}
                         </div>
-                      </SoTTd>
+                      </td>
 
-                      <SoTTd>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                      <td className="px-3 py-2">
+                        <SoTStatusBadge>
                           {v.status}
-                        </span>
+                        </SoTStatusBadge>
                         {v.resolution ? (
                           <div className="mt-1 text-[11px] text-slate-500">
                             resolution:{" "}
                             <span className="font-medium">{v.resolution}</span>
                           </div>
                         ) : null}
-                      </SoTTd>
+                      </td>
 
-                      <SoTTd align="right" className="tabular-nums">
+                      <td className="px-3 py-2 text-right tabular-nums">
                         {peso(v.expected)}
-                      </SoTTd>
-                      <SoTTd align="right" className="tabular-nums">
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
                         {peso(v.counted)}
-                      </SoTTd>
-                      <SoTTd align="right" className="tabular-nums">
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
                         <div className="flex items-center justify-end gap-2">
                           <span
                             className={[
@@ -456,9 +445,9 @@ export default function StoreCashierVariancesPage() {
                             {peso(v.variance)}
                           </span>
                         </div>
-                      </SoTTd>
+                      </td>
 
-                      <SoTTd>
+                      <td className="px-3 py-2">
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
                             View denoms / notes
@@ -486,13 +475,13 @@ export default function StoreCashierVariancesPage() {
                             </div>
                           </div>
                         </details>
-                      </SoTTd>
-                    </SoTTableRow>
+                      </td>
+                    </tr>
                   );
                 })
               )}
             </tbody>
-          </SoTTable>
+          </table>
         </div>
       </div>
     </main>

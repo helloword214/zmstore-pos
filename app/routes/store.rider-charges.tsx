@@ -7,6 +7,10 @@ import { Form, Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { RiderChargeStatus } from "@prisma/client";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 
 type LoaderData = {
   rows: Array<{
@@ -164,36 +168,24 @@ export default function StoreRiderChargesPage() {
   const { rows } = useLoaderData<LoaderData>();
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Rider Charges
-            </h1>
-            <p className="text-xs text-slate-500">
-              Tag rider shortages for payroll deduction (AR list). No payments
-              are recorded here.
-            </p>
-          </div>
-          <div className="flex gap-2">
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Rider Charges"
+        subtitle="Tag rider shortages for payroll deduction (AR list). No payments are recorded here."
+        backTo="/store"
+      />
+
+      <div className="mx-auto max-w-6xl px-5 py-5">
+        <SoTActionBar
+          right={
             <Link
               to="/store/rider-variances"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Variances →
             </Link>
-            <Link
-              to="/store"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              ← Back
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-4">
+          }
+        />
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-slate-800">
@@ -219,11 +211,11 @@ export default function StoreRiderChargesPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-6 text-center text-slate-500"
-                  >
-                    No open rider charges.
+                  <td colSpan={7}>
+                    <SoTEmptyState
+                      title="No open rider charges."
+                      hint="Open and partially settled rider charges will appear here."
+                    />
                   </td>
                 </tr>
               ) : (
@@ -256,9 +248,9 @@ export default function StoreRiderChargesPage() {
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                      <SoTStatusBadge>
                         {c.status}
-                      </span>
+                      </SoTStatusBadge>
                       {hasPlanTag(c.note) ? (
                         <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
                           Payroll deduction plan

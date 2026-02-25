@@ -7,7 +7,10 @@ import { Form, Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, toNum, peso } from "~/utils/money";
-import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
+import { SoTNotificationBell } from "~/components/ui/SoTNotificationBell";
+import { Button } from "~/components/ui/Button";
+import { sotCardClass } from "~/components/ui/SoTCard";
+import { SoTDataRow } from "~/components/ui/SoTDataRow";
 
 const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 
@@ -297,13 +300,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function StoreManagerDashboard() {
   const { me, dispatch, runs, cash, exceptions } = useLoaderData<LoaderData>();
 
-  const clearanceDecisions = exceptions.clearancePending;
-  const remitDecisions = runs.needsManagerReview;
-  const varianceDecisions =
-    exceptions.riderVariancesOpen + exceptions.cashierShiftVariancesOpen;
-  const decisionInboxTotal =
-    clearanceDecisions + remitDecisions + varianceDecisions;
-
   const exceptionCount =
     exceptions.riderVariancesOpen +
     exceptions.cashierShiftVariancesOpen +
@@ -313,102 +309,60 @@ export default function StoreManagerDashboard() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <SoTRoleShellHeader
-        title="Store Manager Dashboard"
-        identityLine={
-          <>
-            <span className="font-medium text-slate-700">
-              {me.alias ? `${me.alias} (${me.name})` : me.name}
-            </span>
-            {" · "}
-            <span className="uppercase tracking-wide">{me.role}</span>
-            {" · "}
-            <span>{me.email}</span>
-          </>
-        }
-        actions={
-          <Form method="post" action="/logout">
-            <button
-              className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              title="Sign out"
-            >
-              Logout
-            </button>
-          </Form>
-        }
-      />
+      {/* Header */}
+      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+              Store Manager Dashboard
+            </h1>
+            <p className="text-xs text-slate-500">
+              <span className="font-medium text-slate-700">
+                {me.alias ? `${me.alias} (${me.name})` : me.name}
+              </span>
+              {" · "}
+              <span className="uppercase tracking-wide">{me.role}</span>
+              {" · "}
+              <span>{me.email}</span>
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <SoTNotificationBell
+              items={[
+                {
+                  id: "clearance",
+                  label: "Clearance pending decisions",
+                  count: exceptions.clearancePending,
+                  to: "/store/clearance",
+                },
+                {
+                  id: "remit",
+                  label: "Remit / close reviews",
+                  count: runs.needsManagerReview,
+                  to: "/runs?status=CHECKED_IN",
+                },
+                {
+                  id: "variance",
+                  label: "Variance decisions",
+                  count:
+                    exceptions.riderVariancesOpen +
+                    exceptions.cashierShiftVariancesOpen,
+                  to: "/store/rider-variances",
+                },
+              ]}
+            />
+
+            <Form method="post" action="/logout">
+              <Button variant="tertiary" title="Sign out">
+                Logout
+              </Button>
+            </Form>
+          </div>
+        </div>
+      </div>
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Decision Inbox
-            </h2>
-            <span className="text-xs text-slate-500">
-              Pending decisions:{" "}
-              <span className="font-semibold text-slate-900">
-                {decisionInboxTotal}
-              </span>
-            </span>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-3">
-            <Link
-              to="/store/clearance"
-              className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-                  Clearance Decisions
-                </div>
-                <MiniBadge n={clearanceDecisions} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {clearanceDecisions}
-              </div>
-              <p className="mt-1 text-xs text-slate-600">
-                Receipts waiting commercial clearance action.
-              </p>
-            </Link>
-
-            <Link
-              to="/runs?status=CHECKED_IN"
-              className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
-                  Remit / Shift Close Review
-                </div>
-                <MiniBadge n={remitDecisions} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {remitDecisions}
-              </div>
-              <p className="mt-1 text-xs text-slate-600">
-                Runs submitted and waiting manager remit/close decision.
-              </p>
-            </Link>
-
-            <Link
-              to="/store/rider-variances"
-              className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-rose-800">
-                  Variance Decisions
-                </div>
-                <MiniBadge n={varianceDecisions} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {varianceDecisions}
-              </div>
-              <p className="mt-1 text-xs text-slate-600">
-                Rider and cashier variances needing manager action.
-              </p>
-            </Link>
-          </div>
-        </section>
-
         {/* BIG: what manager checks often */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -417,10 +371,7 @@ export default function StoreManagerDashboard() {
 
           <div className="grid gap-3 lg:grid-cols-3">
             {/* Dispatch (big) */}
-            <Link
-              to="/store/dispatch"
-              className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
+            <div className={sotCardClass({ interaction: "static", className: "group" })}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
@@ -438,35 +389,29 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="mt-3 grid gap-2">
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                  <span className="text-slate-700">
-                    Staged (not dispatched)
-                  </span>
-                  <span className="font-semibold text-slate-900">
-                    {dispatch.stagedOrders}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                  <span className="text-slate-700">Action</span>
-                  <span className="font-medium text-indigo-700">
-                    assign rider / vehicle →
-                  </span>
-                </div>
+                <SoTDataRow
+                  label="Staged (not dispatched)"
+                  value={dispatch.stagedOrders}
+                />
+                <SoTDataRow
+                  label="Next step"
+                  value={<span className="font-medium">Assign rider and vehicle</span>}
+                />
               </div>
 
-              <div className="mt-3 text-sm font-medium text-indigo-700">
+              <Link
+                to="/store/dispatch"
+                className="mt-3 inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              >
                 Open dispatch queue →
-              </div>
-            </Link>
+              </Link>
+            </div>
 
             {/* Runs (big) */}
-            <Link
-              to="/runs"
-              className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
+            <div className={sotCardClass({ interaction: "static", className: "group" })}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
                     Runs Monitor
                   </div>
                   <div className="mt-1 text-sm font-medium text-slate-900">
@@ -479,33 +424,24 @@ export default function StoreManagerDashboard() {
               </div>
 
               <div className="mt-3 grid gap-2">
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                  <span className="text-slate-700">PLANNED</span>
-                  <span className="font-semibold text-slate-900">
-                    {runs.planned}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                  <span className="text-slate-700">DISPATCHED</span>
-                  <span className="font-semibold text-slate-900">
-                    {runs.dispatched}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                  <span className="text-slate-700">CHECKED_IN (manager)</span>
-                  <span className="font-semibold text-slate-900">
-                    {runs.needsManagerReview}
-                  </span>
-                </div>
+                <SoTDataRow label="PLANNED" value={runs.planned} />
+                <SoTDataRow label="DISPATCHED" value={runs.dispatched} />
+                <SoTDataRow
+                  label="CHECKED_IN (manager)"
+                  value={runs.needsManagerReview}
+                />
               </div>
 
-              <div className="mt-3 text-sm font-medium text-sky-700">
+              <Link
+                to="/runs"
+                className="mt-3 inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              >
                 Open runs →
-              </div>
-            </Link>
+              </Link>
+            </div>
 
             {/* Schedule (big placeholder) */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className={sotCardClass({})}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -549,7 +485,7 @@ export default function StoreManagerDashboard() {
             </h2>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className={sotCardClass({})}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
@@ -639,7 +575,7 @@ export default function StoreManagerDashboard() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Link
               to="/store/rider-variances"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={sotCardClass({ interaction: "link" })}
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -657,7 +593,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/cashier-variances"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={sotCardClass({ interaction: "link" })}
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -675,7 +611,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/payroll"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={sotCardClass({ interaction: "link" })}
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -693,7 +629,7 @@ export default function StoreManagerDashboard() {
 
             <Link
               to="/store/payroll"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={sotCardClass({ interaction: "link" })}
             >
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -713,7 +649,7 @@ export default function StoreManagerDashboard() {
 
         {/* Payroll / attendance future note */}
         <section>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className={sotCardClass({})}>
             <div className="text-sm font-medium text-slate-900">
               Payroll (future)
             </div>
