@@ -6,6 +6,10 @@ import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { Prisma } from "@prisma/client";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -306,39 +310,27 @@ export default function CashierChargesPage() {
   const pageTitle = isHistory ? "History (closed)" : "Open (manager charged)";
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Cashier Charges
-            </h1>
-            <p className="text-xs text-slate-500">
-              Items charged to you from shift close variances (manager
-              decision).
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {canSeeAll ? (
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Cashier Charges"
+        subtitle="Items charged to you from shift close variances (manager decision)."
+        backTo="/cashier"
+      />
+
+      <div className="mx-auto max-w-6xl px-5 py-5">
+        {canSeeAll ? (
+          <SoTActionBar
+            right={
               <Link
                 to={`?tab=${tab}${showAll ? "" : "&all=1"}`}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50"
                 title="Admin only"
               >
                 {showAll ? "My scope" : "Show all"}
               </Link>
-            ) : null}
-            <Link
-              to="/cashier"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              ← Back
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-4">
+            }
+          />
+        ) : null}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="flex flex-col gap-2">
@@ -396,11 +388,11 @@ export default function CashierChargesPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-6 text-center text-slate-500"
-                  >
-                    No cashier charges.
+                  <td colSpan={7}>
+                    <SoTEmptyState
+                      title="No cashier charges."
+                      hint="New manager-approved charge items will appear here."
+                    />
                   </td>
                 </tr>
               ) : (
@@ -465,9 +457,9 @@ export default function CashierChargesPage() {
                       </td>
 
                       <td className="px-3 py-2">
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                        <SoTStatusBadge>
                           {v.status}
-                        </span>
+                        </SoTStatusBadge>
                         <div className="mt-1 text-[11px] text-slate-500">
                           resolution:{" "}
                           <span className="font-medium">{v.resolution}</span>

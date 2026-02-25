@@ -7,6 +7,8 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { EmployeeRole } from "@prisma/client";
+import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 
 type LoaderData = {
   user: { name: string; alias: string | null; email: string | null };
@@ -97,28 +99,14 @@ export default function RiderVariancesListPage() {
     }).format(n);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Pending Variances
-            </h1>
-            <p className="text-xs text-slate-500">
-              {user.alias ? `${user.alias} (${user.name})` : user.name}
-              {user.email ? ` · ${user.email}` : ""}
-            </p>
-          </div>
-          <Link
-            to="/rider"
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            ← Back
-          </Link>
-        </div>
-      </header>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Pending Variances"
+        subtitle={`${user.alias ? `${user.alias} (${user.name})` : user.name}${user.email ? ` · ${user.email}` : ""}`}
+        backTo="/rider"
+      />
 
-      <div className="mx-auto max-w-6xl px-4 py-4">
+      <div className="mx-auto max-w-6xl px-5 py-5">
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-slate-800">
@@ -141,11 +129,11 @@ export default function RiderVariancesListPage() {
             <tbody>
               {pending.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={4}
-                    className="px-3 py-6 text-center text-slate-500"
-                  >
-                    No pending acceptances.
+                  <td colSpan={4}>
+                    <SoTEmptyState
+                      title="No pending acceptances."
+                      hint="New charge acceptance requests will appear here."
+                    />
                   </td>
                 </tr>
               ) : (

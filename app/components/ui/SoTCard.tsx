@@ -1,41 +1,52 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
-type SoTCardTone = "default" | "success" | "danger";
-
-type SoTCardProps = {
-  title?: string;
-  meta?: ReactNode;
+type SoTCardProps = HTMLAttributes<HTMLDivElement> & {
   children: ReactNode;
-  tone?: SoTCardTone;
+  interaction?: "static" | "link" | "form";
+  interactive?: boolean;
   compact?: boolean;
-  className?: string;
 };
 
-function toneClass(tone: SoTCardTone) {
-  if (tone === "success") return "border-emerald-200 bg-emerald-50";
-  if (tone === "danger") return "border-rose-200 bg-rose-50";
-  return "border-slate-200 bg-white";
+export function sotCardClass({
+  interaction = "static",
+  interactive = false,
+  compact = false,
+  className = "",
+}: {
+  interaction?: "static" | "link" | "form";
+  interactive?: boolean;
+  compact?: boolean;
+  className?: string;
+}) {
+  const mode = interactive ? "link" : interaction;
+
+  return [
+    "rounded-2xl border border-slate-200 bg-white shadow-sm",
+    compact ? "p-3" : "p-4",
+    mode === "link"
+      ? "cursor-pointer transition-colors duration-150 hover:bg-slate-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+      : "",
+    mode === "form" ? "transition-colors duration-150" : "",
+    className,
+  ]
+    .join(" ")
+    .trim();
 }
 
 export function SoTCard({
-  title,
-  meta,
   children,
-  tone = "default",
+  interaction = "static",
+  interactive = false,
   compact = false,
   className = "",
+  ...props
 }: SoTCardProps) {
-  const pad = compact ? "p-3" : "p-4";
-
   return (
-    <section className={`rounded-2xl border shadow-sm ${toneClass(tone)} ${pad} ${className}`.trim()}>
-      {title ? (
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</h3>
-          {meta}
-        </div>
-      ) : null}
+    <div
+      className={sotCardClass({ interaction, interactive, compact, className })}
+      {...props}
+    >
       {children}
-    </section>
+    </div>
   );
 }

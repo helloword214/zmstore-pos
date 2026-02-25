@@ -26,8 +26,11 @@ export const theme = {
 
   buttons: {
     primary: "bg-indigo-600 text-white hover:bg-indigo-700",
-    accent: "bg-slate-900 text-white hover:bg-slate-800",
+    secondary: "bg-slate-700 text-white hover:bg-slate-800",
+    tertiary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50",
     danger: "bg-rose-600 text-white hover:bg-rose-700",
+    // compatibility aliases for older routes
+    accent: "bg-slate-700 text-white hover:bg-slate-800",
     ghost: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50",
   },
 

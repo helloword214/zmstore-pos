@@ -95,11 +95,27 @@ Active route coverage for this baseline:
 
 ### 5.4 Buttons
 
-1. Primary: `bg-indigo-600 text-white hover:bg-indigo-700`
-2. Secondary: `bg-white border border-slate-300 text-slate-700 hover:bg-slate-50`
-3. Destructive: `bg-rose-600 text-white hover:bg-rose-700`
-4. Default control size: `rounded-xl px-3 py-2 text-sm font-medium`
-5. Disabled must include: `disabled:opacity-50`
+1. `primary`: `bg-indigo-600 text-white hover:bg-indigo-700` (one dominant action per section).
+2. `secondary`: `bg-slate-700 text-white hover:bg-slate-800` (standard safe action).
+3. `tertiary`: `bg-white border border-slate-300 text-slate-700 hover:bg-slate-50` (utility/nav action).
+4. `danger`: `bg-rose-600 text-white hover:bg-rose-700` (destructive action only).
+5. Default control size: `h-9 px-3 text-sm font-medium rounded-xl`.
+6. Size scale: `sm=h-8`, `md=h-9`, `lg=h-10`.
+7. Disabled must include: `disabled:opacity-50`.
+
+Button hierarchy rules:
+
+1. Max one `primary` button in a visible section.
+2. Use `secondary` for confirm/apply actions that are not the single dominant CTA.
+3. Use `tertiary` for back/home/navigation utilities.
+4. `danger` must be isolated from primary placement and require clear label semantics.
+
+Minimal hover/focus motion:
+
+1. Use subtle shade shift only (no aggressive animation).
+2. Use `transition-colors duration-150` for button transitions.
+3. Keep press effect minimal (`active:translate-y-[0.5px]` or equivalent).
+4. Use `focus-visible` rings for keyboard clarity.
 
 ### 5.5 Feedback banners
 
@@ -112,6 +128,14 @@ Active route coverage for this baseline:
 1. Use 2/3/4 scale: `gap-2`, `gap-3`, `p-3`, `p-4`
 2. Avoid mixed ad-hoc padding systems inside one page (example: mixing `px-4` and `px-5` without reason)
 3. Dashboard top bars should keep one control scale for links/buttons/chips in the same row.
+
+### 5.7 Accent consistency
+
+1. Primary accent ramp is `indigo` only for active operational UI.
+2. Primary action/link text: `text-indigo-700` with hover `text-indigo-800`.
+3. Primary fill action: `bg-indigo-600` with hover `bg-indigo-700`.
+4. Subtle accent surfaces: `bg-indigo-50` / `bg-indigo-100` only.
+5. Avoid mixed blue families (`sky`, `blue`) in the same operational surface unless explicitly documented.
 
 ## 6. UX Behavior Contract
 
@@ -133,6 +157,7 @@ Active route coverage for this baseline:
 2. Required fields are marked once, not repeated in every helper line.
 3. Financial/qty columns use right alignment and tabular numbers.
 4. Empty states must say what is missing and what user can do next.
+5. Input and select focus states must use the same indigo focus ramp (`focus:border-indigo-300` + `focus:ring-indigo-200`).
 
 ### 6.4 Feedback timing and placement
 
@@ -168,6 +193,44 @@ To keep screens quiet and operational:
 4. If policy text is long, place it once near the page title, not inside every card.
 5. Prefer concise labels over sentence-length button text.
 
+### 7.1 Manager header rule
+
+For `app/routes/store._index.tsx`:
+
+1. Keep header low-noise: identity + notification bell + logout only.
+2. Do not duplicate dashboard route cards as header chips.
+3. Reminder entry point should use bell/panel pattern (event-style list), not a second dashboard block.
+
+### 7.2 Non-dashboard header rule
+
+For operational routes outside dashboards (example: `store.dispatch`, `store.cashier-variances`):
+
+1. Use a single header pattern via `SoTNonDashboardHeader`.
+2. Header is utility-only: left `← Dashboard` link and title/subtitle.
+3. Do not place primary action buttons in non-dashboard headers.
+4. Put page primary CTA in the first body action bar (above filters/tables).
+5. Keep one navigation utility action only in the header.
+
+### 7.3 Footer rule
+
+1. No global footer by default for operational routes.
+2. Add footer only for mandatory legal/version/support requirements.
+
+### 7.4 SoT interactive states
+
+1. SoT links/buttons/summary controls should use `transition-colors duration-150`.
+2. Use `focus-visible` ring pattern: `focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`.
+3. Keep active press subtle only: `active:translate-y-[0.5px]` (or none).
+4. Avoid large hover motion or scale animations in ops routes.
+
+### 7.5 SoT card interaction rule
+
+1. Use `SoTCard` for card shells in dashboard and operational summary panels.
+2. Only interactive cards (`Link` destination cards) may use hover + pointer.
+3. Static informational cards must have no pointer and no hover-lift behavior.
+4. Cards with form controls (`input/select/textarea`) must use `interaction="form"` (no card-level hover/pointer).
+5. Card interaction mode must be explicit: `interaction="link" | "form" | "static"`.
+
 ## 8. Reuse Rules
 
 1. Use shared status pills (`StatusPill`) wherever possible.
@@ -176,6 +239,18 @@ To keep screens quiet and operational:
 4. New route UI must conform to this guide before feature completion is tagged done.
 5. Reuse the check-in/remit section framing pattern before creating new wrappers.
 6. Use the shared SoT component set from `UI_SOT.md` before adding route-local variants.
+
+### 8.1 SoT primitives (required)
+
+1. `SoTFormField`: label/hint/error wrapper for input/select/textarea groups.
+2. `SoTDataRow`: compact label-value row for card metrics and next-step rows.
+3. `SoTStatusBadge`: canonical status badge tone mapping.
+4. `SoTEmptyState`: standard no-data block with optional hint/action.
+5. `SoTActionBar`: top-of-body action alignment (utility left, actions right).
+
+Usage rule:
+
+1. If the same UI pattern appears twice in focused routes, use the corresponding SoT primitive instead of route-local markup.
 
 ## 9. Automation Gates (Target)
 
