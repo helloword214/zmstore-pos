@@ -6,6 +6,10 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { EmployeeRole, RiderChargeStatus } from "@prisma/client";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
+import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
 
 type LoaderData = {
   user: {
@@ -133,16 +137,11 @@ export default function RiderDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-              On-duty
-            </span>
+            <SoTStatusPill tone="success">On-duty</SoTStatusPill>
             <form method="post" action="/logout">
-              <button
-                type="submit"
-                className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
+              <SoTButton type="submit" variant="secondary">
                 Logout
-              </button>
+              </SoTButton>
             </form>
           </div>
         </div>
@@ -150,69 +149,52 @@ export default function RiderDashboard() {
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
         <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Operations Snapshot
-          </h2>
+          <SoTSectionHeader title="Operations Snapshot" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Pending Accept
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
+            <SoTCard compact title="Pending Accept">
+              <div className="text-sm font-semibold text-slate-900">
                 {pendingVarianceCount}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 Items waiting your acceptance from manager variance decisions.
               </p>
-            </div>
+            </SoTCard>
 
-            <div
-              className={
-                "rounded-2xl border p-4 shadow-sm " +
-                (hr.outstandingCharges > 0
-                  ? "border-rose-200 bg-rose-50"
-                  : "border-slate-200 bg-white")
-              }
+            <SoTCard
+              compact
+              title="Outstanding Charges"
+              tone={hr.outstandingCharges > 0 ? "danger" : "default"}
             >
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Outstanding Charges
-              </div>
               <div
                 className={
-                  "mt-1 text-sm font-semibold " +
+                  "text-sm font-semibold " +
                   (hr.outstandingCharges > 0 ? "text-rose-700" : "text-slate-900")
                 }
               >
                 ₱{hr.outstandingCharges.toFixed(2)}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 Includes shortage or penalties currently assigned to your account.
               </p>
-            </div>
+            </SoTCard>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Next Shift
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-900">
+            <SoTCard compact title="Next Shift" tone="success">
+              <div className="text-sm font-medium text-slate-900">
                 {hr.nextShiftLabel ?? "No schedule loaded"}
               </div>
-              <p className="mt-2 text-xs text-emerald-900/80">
+              <p className="mt-1 text-xs text-emerald-900/80">
                 Check complete schedule for branch and shift-hour updates.
               </p>
-            </div>
+            </SoTCard>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Payday
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-900">
+            <SoTCard compact title="Payday">
+              <div className="text-sm font-medium text-slate-900">
                 {hr.paydayLabel ?? "Not set"}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 Payroll and charge deductions are reflected during payout cycle.
               </p>
-            </div>
+            </SoTCard>
           </div>
         </section>
 

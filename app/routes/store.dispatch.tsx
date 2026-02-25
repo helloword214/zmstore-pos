@@ -11,6 +11,10 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import * as React from "react";
+import { SoTDropdown } from "~/components/ui/SoTDropdown";
+import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
+import { SoTPageHeader } from "~/components/ui/SoTPageHeader";
 
 type ActionData =
   | { ok: true; redirectedTo: string }
@@ -49,7 +53,19 @@ function parseSortDir(raw: string | null): SortDir {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Store Manager (or Admin) lang ang pwede dito
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"] as any);
+  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"] as any);
+
+  const userRow = await db.user.findUnique({
+    where: { id: me.userId },
+    include: { employee: true },
+  });
+  if (!userRow) throw new Response("User not found", { status: 404 });
+  const emp = userRow.employee;
+  const fullName =
+    emp && (emp.firstName || emp.lastName)
+      ? `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim()
+      : userRow.email ?? "Unknown user";
+  const alias = emp?.alias ?? null;
 
   const url = new URL(request.url);
   const q = String(url.searchParams.get("q") || "").trim();
@@ -150,7 +166,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return { id: r.id, label };
   });
 
-  return json({ forDispatch, runOptions, q, sort, dir, take });
+  const [dispatchQueueCount, clearancePending] = await Promise.all([
+    db.order.count({
+      where: {
+        channel: "DELIVERY",
+        status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+        dispatchedAt: null,
+      },
+    }),
+    db.runReceipt.count({
+      where: {
+        run: { status: "CHECKED_IN" as any },
+        kind: { in: ["ROAD", "PARENT"] as any },
+        OR: [
+          { cashCollected: { lte: 0 as any } },
+          { note: { contains: '"isCredit":true' } },
+          { note: { contains: '"isCredit": true' } },
+        ],
+      },
+    }),
+  ]);
+
+  return json({
+    me: {
+      role: me.role,
+      name: fullName,
+      alias,
+      email: userRow.email ?? "",
+    },
+    counts: { dispatchQueue: dispatchQueueCount, clearancePending },
+    forDispatch,
+    runOptions,
+    q,
+    sort,
+    dir,
+    take,
+  });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -254,15 +305,15 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function StoreDispatchQueuePage() {
-  const { forDispatch, runOptions, q, sort, dir, take } = useLoaderData<
-    typeof loader
-  >() as any;
+  const { me, counts, forDispatch, runOptions, q, sort, dir, take } =
+    useLoaderData<typeof loader>() as any;
   const actionData = useActionData<ActionData>();
   const [sp] = useSearchParams();
   const needAssignOrderId = Number(sp.get("needAssignOrderId") || NaN);
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [runId, setRunId] = React.useState<string>("");
+  const [searchQuery, setSearchQuery] = React.useState<string>(q || "");
 
   // Auto-select/highlight when redirected back from /orders/:id/dispatch
   React.useEffect(() => {
@@ -300,37 +351,71 @@ export default function StoreDispatchQueuePage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Delivery Dispatch Queue
-            </h1>
-            <p className="text-xs text-slate-500">
-              Orders from pad-order marked as DELIVERY and not yet dispatched.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <SoTRoleShellHeader
+        sticky
+        maxWidthClassName="max-w-5xl"
+        title="Store Manager Dashboard"
+        identityLine={
+          <>
+            <span className="font-medium text-slate-700">
+              {me.alias ? `${me.alias} (${me.name})` : me.name}
+            </span>
+            {" · "}
+            <span className="uppercase tracking-wide">{me.role}</span>
+            {" · "}
+            <span>{me.email}</span>
+          </>
+        }
+        navItems={[
+          {
+            to: "/store/dispatch",
+            label: "Dispatch",
+            badge: counts.dispatchQueue,
+            active: true,
+          },
+          {
+            to: "/store/clearance",
+            label: "Clearance",
+            badge: counts.clearancePending,
+          },
+          { to: "/runs", label: "Runs" },
+          { to: "/products", label: "Products" },
+        ]}
+        actions={
+          <Form method="post" action="/logout">
+            <button
+              className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Sign out"
+            >
+              Logout
+            </button>
+          </Form>
+        }
+      />
+      <SoTPageHeader
+        maxWidthClassName="max-w-5xl"
+        title="Delivery Dispatch Queue"
+        subtitle="Orders from pad-order marked as DELIVERY and not yet dispatched."
+        actions={
+          <>
             <Link
               to="/runs/new"
-              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+              className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
             >
               + New Run
             </Link>
             <Link
               to="/store"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+              className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              ← Back to Store Dashboard
+              Back to Store Dashboard
             </Link>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Body */}
-      <div className="mx-auto max-w-5xl px-5 py-6">
+      <div className="mx-auto max-w-5xl px-5 pb-6">
         {actionData && !actionData.ok && (
           <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {actionData.error}
@@ -342,41 +427,64 @@ export default function StoreDispatchQueuePage() {
           <Form
             method="get"
             className="grid gap-2 sm:grid-cols-12 sm:items-end"
+            autoComplete="off"
           >
+            <input type="hidden" name="q" value={searchQuery} />
+            <input
+              type="text"
+              name="__no_autofill"
+              autoComplete="username"
+              tabIndex={-1}
+              className="hidden"
+              aria-hidden="true"
+            />
             <div className="sm:col-span-6">
-              <div className="text-xs text-slate-600">Search</div>
-              <input
-                name="q"
-                defaultValue={q || ""}
+              <SoTInput
+                label="Search"
+                name="dispatchSearch"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.currentTarget.value)}
                 placeholder="Order code / customer / phone / rider…"
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                className="h-9"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                autoCapitalize="off"
+                inputMode="search"
+                aria-autocomplete="none"
+                readOnly
+                data-lpignore="true"
+                onFocus={(e) => {
+                  e.currentTarget.readOnly = false;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.readOnly = true;
+                }}
               />
             </div>
 
             <div className="sm:col-span-3">
-              <div className="text-xs text-slate-600">Sort</div>
-              <select
+              <SoTDropdown
+                label="Sort"
                 name="sort"
                 defaultValue={sort || "id"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="id">Newest</option>
                 <option value="printedAt">Printed time</option>
                 <option value="stagedAt">Staged time</option>
                 <option value="amount">Amount</option>
-              </select>
+              </SoTDropdown>
             </div>
 
             <div className="sm:col-span-2">
-              <div className="text-xs text-slate-600">Direction</div>
-              <select
+              <SoTDropdown
+                label="Direction"
                 name="dir"
                 defaultValue={dir || "desc"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="desc">Desc</option>
                 <option value="asc">Asc</option>
-              </select>
+              </SoTDropdown>
             </div>
 
             <div className="sm:col-span-1">
@@ -434,11 +542,11 @@ export default function StoreDispatchQueuePage() {
               <input type="hidden" name="orderIds" value={selectedCsv} />
 
               <div className="flex items-center gap-2">
-                <select
+                <SoTDropdown
                   name="runId"
                   value={runId}
                   onChange={(e) => setRunId(e.target.value)}
-                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm"
+                  className="w-auto min-w-[240px]"
                 >
                   <option value="">— Assign to PLANNED run —</option>
                   {runOptions.map((r: any) => (
@@ -446,7 +554,7 @@ export default function StoreDispatchQueuePage() {
                       {r.label}
                     </option>
                   ))}
-                </select>
+                </SoTDropdown>
 
                 <button
                   type="submit"

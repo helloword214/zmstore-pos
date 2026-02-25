@@ -11,6 +11,10 @@ import {
 } from "~/utils/auth.server";
 import { CashierChargeStatus } from "@prisma/client";
 import { db } from "~/utils/db.server";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
+import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
 
 type LoaderData = {
   me: SessionUser;
@@ -178,29 +182,19 @@ export default function CashierDashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span
-              className={
-                "inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium " +
-                (!hasShift
-                  ? "border border-rose-200 bg-rose-50 text-rose-700"
-                  : shiftLocked
-                  ? "border border-amber-200 bg-amber-50 text-amber-800"
-                  : "border border-emerald-200 bg-emerald-50 text-emerald-700")
-              }
+            <SoTStatusPill
+              tone={!hasShift ? "danger" : shiftLocked ? "warning" : "success"}
             >
               {!hasShift
                 ? "No active shift"
                 : shiftLocked
                 ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
                 : "On-duty"}
-            </span>
+            </SoTStatusPill>
             <Form method="post" action="/logout">
-              <button
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                title="Sign out"
-              >
+              <SoTButton title="Sign out" variant="secondary">
                 Logout
-              </button>
+              </SoTButton>
             </Form>
           </div>
         </div>
@@ -232,50 +226,31 @@ export default function CashierDashboardPage() {
         )}
 
         <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Operations Snapshot
-          </h2>
+          <SoTSectionHeader title="Operations Snapshot" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Shift State
-              </div>
+            <SoTCard compact title="Shift State">
               <div className="mt-1 text-sm font-medium text-slate-900">
                 {shiftStateLabel}
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 Writable shift required for POS, AR, and remit tasks.
               </p>
-            </div>
+            </SoTCard>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Next Shift
-              </div>
+            <SoTCard compact title="Next Shift" tone="success">
               <div className="mt-1 text-sm font-semibold text-slate-900">
                 Tomorrow, 8:00 AM – Asingan Branch
               </div>
               <p className="mt-1 text-xs text-emerald-900/80">
                 Check complete schedule for branch and shift-hour updates.
               </p>
-            </div>
+            </SoTCard>
 
-            <div
-              className={
-                "rounded-2xl border p-3 shadow-sm " +
-                (alerts.openChargeItems > 0
-                  ? "border-rose-200 bg-rose-50"
-                  : "border-slate-200 bg-white")
-              }
+            <SoTCard
+              compact
+              title="Pending Charges"
+              tone={alerts.openChargeItems > 0 ? "danger" : "default"}
             >
-              <div
-                className={
-                  "text-xs font-semibold uppercase tracking-wide " +
-                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-600")
-                }
-              >
-                Pending Charges
-              </div>
               <div
                 className={
                   "mt-1 text-sm font-semibold " +
@@ -292,19 +267,13 @@ export default function CashierDashboardPage() {
               >
                 Manager-tagged acknowledgements waiting action.
               </p>
-            </div>
+            </SoTCard>
 
-            <div
-              className={
-                "rounded-2xl border p-3 shadow-sm " +
-                (finance.outstandingCharges > 0
-                  ? "border-rose-200 bg-rose-50"
-                  : "border-slate-200 bg-white")
-              }
+            <SoTCard
+              compact
+              title="Outstanding Charges"
+              tone={finance.outstandingCharges > 0 ? "danger" : "default"}
             >
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Outstanding Charges
-              </div>
               <div
                 className={
                   "mt-1 text-sm font-semibold " +
@@ -318,7 +287,7 @@ export default function CashierDashboardPage() {
               <p className="mt-1 text-xs text-slate-500">
                 Total remaining balance assigned to this cashier account.
               </p>
-            </div>
+            </SoTCard>
           </div>
         </section>
 

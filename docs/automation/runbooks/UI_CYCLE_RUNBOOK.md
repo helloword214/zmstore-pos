@@ -2,17 +2,26 @@
 
 Status: ACTIVE  
 Owner: POS Platform  
-Last Reviewed: 2026-02-22
+Last Reviewed: 2026-02-24
 
 ## 1. Purpose
 
 Run UI consistency monitoring for manager, rider, and cashier surfaces.
+This runbook is monitor-only. Repair execution is defined in `docs/guide/ui/UI_REPAIR_AUTOMATION_RUNBOOK.md`.
 
 Pipeline used:
 
 1. `npm run ui:test`
 2. `npm run ui:cycle`
 3. Optional snapshot update: `npm run ui:test:update`
+
+## 1.1 Single-Operator Mode (Current)
+
+When one operator owns UI automation:
+
+1. Keep monitor flow simple: run, classify, publish artifacts.
+2. Default repair decision is code patch (not snapshot refresh).
+3. Use snapshot refresh only with explicit approved source-of-truth note.
 
 ## 2. Commands
 
@@ -104,3 +113,15 @@ npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
 2. JSON report: `docs/automation/runs/<timestamp>/playwright-report.json`
 3. Incident on failure: `docs/automation/incidents/<timestamp>.md`
 4. Playwright output: `test-results/ui/artifacts/`
+
+## 8. Monitor Flow Diagram
+
+```mermaid
+flowchart TD
+  A["Run ui:cycle"] --> B["Classify Result (INFRA/PRIMARY/SECONDARY/PASS)"]
+  B -->|PASS| C["Publish summary"]
+  B -->|INFRA| D["Publish blocked incident"]
+  B -->|PRIMARY or SECONDARY| E["Publish regression incident"]
+  D --> F["Repair flow decides patch vs approved snapshot refresh"]
+  E --> F
+```
