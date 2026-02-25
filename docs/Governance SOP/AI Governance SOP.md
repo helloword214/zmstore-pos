@@ -168,4 +168,16 @@ It does not override them.
 
 ---
 
+## 9. Working Directory Governance Mirror
+
+### Rule
+
+- Canonical manual path: primary repo working copy (the VS Code-opened `zmstore-pos-2` folder)
+- `.codex/worktrees/...` paths are reserved for explicit automation/isolated runs.
+- Enforce preflight visibility with `pwd` and `git branch --show-current` before execution.
+
+### Rationale
+
+Using a single canonical path for manual work avoids branch/worktree confusion and keeps local validation and Git actions traceable.
+
 End of Document.

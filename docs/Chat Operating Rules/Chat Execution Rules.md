@@ -146,4 +146,22 @@ If you violate the gate (project mode), I may reply:
 
 ---
 
+## 12) Working Directory Rule (Manual vs Automation)
+
+### Canonical manual path
+
+- For manual prompting / normal coding tasks, run in:
+  - primary repo working copy (the VS Code-opened `zmstore-pos-2` folder)
+
+### Automation-only isolation path
+
+- Use `.codex/worktrees/...` only when the task is explicitly an automation/isolated run.
+
+### Mandatory preflight before execution
+
+- Before any command sequence, report:
+  - `pwd`
+  - `git branch --show-current`
+- If the path is not the expected path for the current task type, switch first, then continue.
+
 End.
