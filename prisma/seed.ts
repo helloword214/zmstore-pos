@@ -6,6 +6,7 @@ import {
   EmployeeRole,
   VehicleType,
   UserRole,
+  ManagerKind,
 } from "@prisma/client";
 import { generateSKU } from "~/utils/skuHelpers";
 import * as bcrypt from "bcryptjs";
@@ -1512,6 +1513,7 @@ async function seed() {
       email: "admin@local",
       passwordHash: hash("admin123"),
       role: UserRole.ADMIN,
+      managerKind: null,
       active: true,
       branches: { create: { branchId: mainBranchId } },
     },
@@ -1528,12 +1530,14 @@ async function seed() {
       update: {
         employeeId: emp.id,
         role: UserRole.CASHIER,
+        managerKind: null,
         active: true,
       },
       create: {
         email: `cashier${idx}@local`,
         pinHash: hash(pin),
         role: UserRole.CASHIER,
+        managerKind: null,
         active: true,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },
@@ -1550,12 +1554,14 @@ async function seed() {
       update: {
         employeeId: emp.id,
         role: UserRole.STORE_MANAGER,
+        managerKind: ManagerKind.STAFF,
         active: true,
       },
       create: {
         email: `manager${idx}@local`,
         passwordHash: hash(`manager${idx}123`),
         role: UserRole.STORE_MANAGER,
+        managerKind: ManagerKind.STAFF,
         active: true,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },
@@ -1577,12 +1583,14 @@ async function seed() {
       update: {
         employeeId: emp.id,
         role: UserRole.EMPLOYEE,
+        managerKind: null,
         active: true,
       },
       create: {
         email: `rider${idx}@local`,
         passwordHash: hash(`rider${idx}123`),
         role: UserRole.EMPLOYEE,
+        managerKind: null,
         active: true,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },

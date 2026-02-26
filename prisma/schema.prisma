@@ -539,7 +539,7 @@ model Employee {
   // Back-relations
   ordersAsRider  Order[]            @relation("OrderRider")
   runsAsRider    DeliveryRun[]      @relation("RunRider")
-  users          User[]
+  user           User?
   riderVariances RiderRunVariance[]
 
   createdAt   DateTime      @default(now())
@@ -1382,6 +1382,11 @@ enum UserRole {
   EMPLOYEE
 }
 
+enum ManagerKind {
+  OWNER
+  STAFF
+}
+
 enum CashDrawerTxnType {
   CASH_IN
   CASH_OUT
@@ -1408,9 +1413,11 @@ model User {
   passwordHash String? // for ADMIN/SELLER
   pinHash      String? // for CASHIER fast login (6-digit recommended)
   role         UserRole
+  managerKind  ManagerKind?
   active       Boolean  @default(true)
+  authVersion  Int      @default(1)
 
-  employeeId Int?
+  employeeId Int?      @unique
   employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   // Scoping & usage
@@ -1446,11 +1453,52 @@ model User {
   // ✅ NEW: cashier who verified opening float
   cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
+  // Role lifecycle and immutable audit
+  roleAssignments         UserRoleAssignment[] @relation("UserRoleAssignments")
+  roleAssignmentsAuthored UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
+  roleAuditEvents         UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
+  roleAuditEventsAuthored UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
+
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([role, active])
+}
+
+model UserRoleAssignment {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  role        UserRole
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  reason      String?
+  changedById Int?
+  createdAt   DateTime  @default(now())
+
+  user      User  @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  changedBy User? @relation("UserRoleAssignmentsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, startedAt])
+  @@index([role, endedAt])
+  @@index([changedById, createdAt])
+}
+
+model UserRoleAuditEvent {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  beforeRole  UserRole
+  afterRole   UserRole
+  reason      String?
+  changedById Int?
+  createdAt   DateTime @default(now())
+
+  user      User  @relation("UserRoleAuditEventsOnUser", fields: [userId], references: [id], onDelete: Cascade)
+  changedBy User? @relation("UserRoleAuditEventsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([changedById, createdAt])
+  @@index([afterRole, createdAt])
 }
 
 // (Removed) UserLocation — legacy mapping; replaced by UserBranch/Branch
