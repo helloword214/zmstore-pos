@@ -338,7 +338,7 @@ export default function StoreDispatchQueuePage() {
                 name="q"
                 defaultValue={q || ""}
                 placeholder="Order code / customer / phone / rider…"
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
@@ -346,7 +346,7 @@ export default function StoreDispatchQueuePage() {
               <select
                 name="sort"
                 defaultValue={sort || "id"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <option value="id">Newest</option>
                 <option value="printedAt">Printed time</option>
@@ -359,7 +359,7 @@ export default function StoreDispatchQueuePage() {
               <select
                 name="dir"
                 defaultValue={dir || "desc"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <option value="desc">Desc</option>
                 <option value="asc">Asc</option>
@@ -400,7 +400,7 @@ export default function StoreDispatchQueuePage() {
                 )}&dir=${encodeURIComponent(
                   dir || "desc"
                 )}&take=${encodeURIComponent(String(take || 50))}`}
-                className="rounded-full border border-slate-200 bg-white px-2 py-1 hover:bg-slate-50"
+                className="rounded-full border border-slate-200 bg-white px-2 py-1 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Clear search
               </Link>
@@ -426,7 +426,7 @@ export default function StoreDispatchQueuePage() {
                   name="runId"
                   value={runId}
                   onChange={(e) => setRunId(e.target.value)}
-                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   <option value="">— Assign to PLANNED run —</option>
                   {runOptions.map((r: any) => (
@@ -527,7 +527,7 @@ export default function StoreDispatchQueuePage() {
                     <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
-                        className="mt-1 h-4 w-4"
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         checked={selected.has(r.id)}
                         onChange={(e) => {
                           const on = e.currentTarget.checked;

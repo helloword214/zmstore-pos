@@ -5,7 +5,18 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
-import * as React from "react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -212,28 +223,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json<LoaderData>(data);
 }
 
-function Pill({
-  children,
-  tone = "slate",
-}: {
-  children: React.ReactNode;
-  tone?: "slate" | "amber" | "indigo";
-}) {
-  const cls =
-    tone === "amber"
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : tone === "indigo"
-      ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-      : "border-slate-200 bg-slate-50 text-slate-700";
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${cls}`}
-    >
-      {children}
-    </span>
-  );
-}
-
 export default function StoreClearanceInbox() {
   const { walkIn, delivery, counts } = useLoaderData<LoaderData>();
   const [sp, setSp] = useSearchParams();
@@ -241,49 +230,40 @@ export default function StoreClearanceInbox() {
 
   const showWalkIn = tab === "all" || tab === "walkin";
   const showDelivery = tab === "all" || tab === "delivery";
+  const tabButtonClass = (active: boolean) =>
+    `rounded-xl border px-3 py-1.5 text-xs font-medium shadow-sm ${
+      active
+        ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+    }`;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-6xl px-5 py-6 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-900">
-              Commercial Clearance — Inbox
-            </h1>
-            <p className="mt-1 text-xs text-slate-600">
-              Unified list ng{" "}
-              <span className="font-medium">
-                kulang bayad / utang / release with balance
-              </span>{" "}
-              (walk-in + delivery). Manager decision layer ito — walang posting
-              ng remit dito.
-            </p>
-          </div>
-          <Link to="/store" className="text-sm text-indigo-600 hover:underline">
-            ← Back to Dashboard
-          </Link>
-        </div>
+      <SoTNonDashboardHeader
+        title="Commercial Clearance — Inbox"
+        subtitle="Unified list of kulang bayad / utang / release with balance (walk-in + delivery)."
+        backTo="/store"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-6xl"
+      />
+
+      <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
+        <SoTAlert tone="info">
+          Manager decision layer ito; walang posting ng remit sa page na ito.
+        </SoTAlert>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setSp((p) => (p.set("tab", "all"), p))}
-            className={`rounded-xl px-3 py-1.5 text-xs font-medium shadow-sm border ${
-              tab === "all"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
+            className={tabButtonClass(tab === "all")}
           >
             All <span className="ml-1 font-semibold">{counts.total}</span>
           </button>
           <button
             type="button"
             onClick={() => setSp((p) => (p.set("tab", "walkin"), p))}
-            className={`rounded-xl px-3 py-1.5 text-xs font-medium shadow-sm border ${
-              tab === "walkin"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
+            className={tabButtonClass(tab === "walkin")}
           >
             Walk-in{" "}
             <span className="ml-1 font-semibold">{counts.walkInTotal}</span>
@@ -291,11 +271,7 @@ export default function StoreClearanceInbox() {
           <button
             type="button"
             onClick={() => setSp((p) => (p.set("tab", "delivery"), p))}
-            className={`rounded-xl px-3 py-1.5 text-xs font-medium shadow-sm border ${
-              tab === "delivery"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
+            className={tabButtonClass(tab === "delivery")}
           >
             Delivery{" "}
             <span className="ml-1 font-semibold">{counts.deliveryTotal}</span>
@@ -303,7 +279,7 @@ export default function StoreClearanceInbox() {
         </div>
 
         {showWalkIn ? (
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <SoTCard className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -317,62 +293,74 @@ export default function StoreClearanceInbox() {
                   .
                 </p>
               </div>
-              <Pill tone="indigo">
+              <SoTStatusBadge tone="info">
                 {walkIn.length} shown
                 {counts.walkInTotal > walkIn.length
                   ? ` / ${counts.walkInTotal}`
                   : ""}
-              </Pill>
+              </SoTStatusBadge>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {walkIn.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-500">
-                  No walk-in clearance items.
-                </div>
-              ) : (
-                walkIn.map((o) => (
-                  <div key={o.caseId} className="px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-slate-900">
-                          <span className="font-mono text-indigo-700">
-                            {o.orderCode}
-                          </span>{" "}
-                          <Pill tone="amber">balance {peso(o.balance)}</Pill>
+            <SoTTable>
+              <SoTTableHead>
+                <SoTTableRow className="border-t-0">
+                  <SoTTh>Order</SoTTh>
+                  <SoTTh>Customer</SoTTh>
+                  <SoTTh align="right">Frozen</SoTTh>
+                  <SoTTh align="right">Paid</SoTTh>
+                  <SoTTh align="right">Balance</SoTTh>
+                  <SoTTh align="right">Action</SoTTh>
+                </SoTTableRow>
+              </SoTTableHead>
+              <tbody>
+                {walkIn.length === 0 ? (
+                  <SoTTableEmptyRow
+                    colSpan={6}
+                    message="No walk-in clearance items."
+                  />
+                ) : (
+                  walkIn.map((o) => (
+                    <SoTTableRow key={o.caseId}>
+                      <SoTTd>
+                        <div className="font-mono text-sm font-semibold text-indigo-700">
+                          {o.orderCode}
                         </div>
-                        <div className="mt-0.5 text-xs text-slate-600">
-                          {o.customerLabel}
-                          {o.releasedApprovedBy ? (
-                            <span className="ml-2 text-slate-500">
-                              • releasedBy {o.releasedApprovedBy}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          Frozen {peso(o.frozenTotal)} • Paid{" "}
-                          {peso(o.paidSoFar)}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
+                      </SoTTd>
+                      <SoTTd>
+                        <div className="text-sm text-slate-800">{o.customerLabel}</div>
+                        {o.releasedApprovedBy ? (
+                          <div className="text-xs text-slate-500">
+                            releasedBy {o.releasedApprovedBy}
+                          </div>
+                        ) : null}
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {peso(o.frozenTotal)}
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {peso(o.paidSoFar)}
+                      </SoTTd>
+                      <SoTTd align="right">
+                        <SoTStatusBadge tone="warning">{peso(o.balance)}</SoTStatusBadge>
+                      </SoTTd>
+                      <SoTTd align="right">
                         <Link
                           to={`/store/clearance/${o.caseId}`}
-                          className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                          className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
-                          Open case →
+                          Open case
                         </Link>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+                      </SoTTd>
+                    </SoTTableRow>
+                  ))
+                )}
+              </tbody>
+            </SoTTable>
+          </SoTCard>
         ) : null}
 
         {showDelivery ? (
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <SoTCard className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -386,55 +374,74 @@ export default function StoreClearanceInbox() {
                   .
                 </p>
               </div>
-              <Pill tone="indigo">
+              <SoTStatusBadge tone="info">
                 {delivery.length} shown
                 {counts.deliveryTotal > delivery.length
                   ? ` / ${counts.deliveryTotal}`
                   : ""}
-              </Pill>
+              </SoTStatusBadge>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {delivery.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-500">
-                  No delivery clearance items.
-                </div>
-              ) : (
-                delivery.map((r) => (
-                  <div key={r.caseId} className="px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-slate-900">
-                          <span className="font-mono text-indigo-700">
-                            {r.runCode}
-                          </span>{" "}
-                          <Pill tone="slate">{r.kind}</Pill>{" "}
-                          <Pill tone="amber">balance {peso(r.balance)}</Pill>
+            <SoTTable>
+              <SoTTableHead>
+                <SoTTableRow className="border-t-0">
+                  <SoTTh>Run</SoTTh>
+                  <SoTTh>Receipt</SoTTh>
+                  <SoTTh>Customer</SoTTh>
+                  <SoTTh align="right">Frozen</SoTTh>
+                  <SoTTh align="right">Cash</SoTTh>
+                  <SoTTh align="right">Balance</SoTTh>
+                  <SoTTh align="right">Action</SoTTh>
+                </SoTTableRow>
+              </SoTTableHead>
+              <tbody>
+                {delivery.length === 0 ? (
+                  <SoTTableEmptyRow
+                    colSpan={7}
+                    message="No delivery clearance items."
+                  />
+                ) : (
+                  delivery.map((r) => (
+                    <SoTTableRow key={r.caseId}>
+                      <SoTTd>
+                        <div className="font-mono text-sm font-semibold text-indigo-700">
+                          {r.runCode}
                         </div>
-                        <div className="mt-0.5 text-xs text-slate-600">
-                          {r.customerLabel} •{" "}
-                          <span className="font-mono">{r.receiptKey}</span>
+                      </SoTTd>
+                      <SoTTd>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-slate-700">
+                            {r.receiptKey}
+                          </span>
+                          <SoTStatusBadge tone="neutral">{r.kind}</SoTStatusBadge>
                         </div>
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          Frozen {peso(r.frozenTotal)} • Cash{" "}
-                          {peso(r.cashCollected)}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
+                      </SoTTd>
+                      <SoTTd>
+                        <div className="text-sm text-slate-800">{r.customerLabel}</div>
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {peso(r.frozenTotal)}
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {peso(r.cashCollected)}
+                      </SoTTd>
+                      <SoTTd align="right">
+                        <SoTStatusBadge tone="warning">{peso(r.balance)}</SoTStatusBadge>
+                      </SoTTd>
+                      <SoTTd align="right">
                         <Link
                           to={`/store/clearance/${r.caseId}`}
-                          className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                          className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
-                          Open case →
+                          Open case
                         </Link>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+                      </SoTTd>
+                    </SoTTableRow>
+                  ))
+                )}
+              </tbody>
+            </SoTTable>
+          </SoTCard>
         ) : null}
       </div>
     </main>

@@ -4,6 +4,19 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 // NOTE: Customer settlement truth = (CASH + RIDER_SHORTAGE bridge) per Order. Cash drawer truth = Order.payments (CASH).
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
@@ -1356,109 +1369,85 @@ export default function CashierDeliveryRunRemitPage() {
     if (o.clearanceStatus === "NEEDS_CLEARANCE") {
       return {
         label: "Pending Clearance",
-        className: "border-amber-200 bg-amber-50 text-amber-800",
+        tone: "warning" as const,
       };
     }
     if (o.decisionKind === "REJECT") {
       return {
         label: "Rejected",
-        className: "border-rose-200 bg-rose-50 text-rose-700",
+        tone: "danger" as const,
       };
     }
     if (o.approvedBargainDiscount > EPS && o.approvedAr > EPS) {
       return {
         label: "Approved Hybrid",
-        className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+        tone: "info" as const,
       };
     }
     if (o.approvedBargainDiscount > EPS) {
       return {
         label: "Approved Discount",
-        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        tone: "success" as const,
       };
     }
     if (o.approvedAr > EPS) {
       return {
         label: "Approved Open Balance",
-        className: "border-amber-200 bg-amber-50 text-amber-800",
+        tone: "warning" as const,
       };
     }
     return {
       label: "Settled Cash",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      tone: "success" as const,
     };
   };
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Delivery Run Remit"
+        subtitle={`Run ${run.runCode} • Rider ${run.riderName || "—"} • ${run.status}`}
+        backTo="/cashier/delivery"
+        backLabel="Runs"
+        maxWidthClassName="max-w-6xl"
+      />
+
       <div className="mx-auto max-w-6xl px-5 py-6 space-y-4">
-        {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Delivery Run Remit
-            </h1>
-            <div className="mt-1 text-sm text-slate-500 space-y-0.5">
-              <div>
-                Run{" "}
-                <span className="font-mono font-medium text-indigo-700">
-                  {run.runCode}
-                </span>
-              </div>
+            <div className="text-sm text-slate-500 space-y-0.5">
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
-                  Rider:{" "}
-                  <span className="font-medium text-slate-700">
-                    {run.riderName}
-                  </span>
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
-                  Vehicle:{" "}
-                  <span className="font-medium text-slate-700">
-                    {run.vehicleName}
-                  </span>
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
-                  Status:{" "}
-                  <span className="font-medium text-emerald-700">
-                    {run.status}
-                  </span>
-                </span>
+                <SoTStatusBadge tone="neutral">
+                  Rider: <span className="font-medium text-slate-700">{run.riderName}</span>
+                </SoTStatusBadge>
+                <SoTStatusBadge tone="neutral">
+                  Vehicle: <span className="font-medium text-slate-700">{run.vehicleName}</span>
+                </SoTStatusBadge>
                 {run.closedAt && (
-                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
+                  <SoTStatusBadge tone="neutral">
                     Closed:{" "}
                     <span className="font-medium text-slate-700">
                       {new Date(run.closedAt).toLocaleString()}
                     </span>
-                  </span>
+                  </SoTStatusBadge>
                 )}
               </div>
-              {run.notes && (
-                <div className="mt-1 text-xs text-slate-500">
-                  Notes: {run.notes}
-                </div>
-              )}
+              {run.notes ? (
+                <div className="mt-1 text-xs text-slate-500">Notes: {run.notes}</div>
+              ) : null}
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            <Link
-              to="/cashier/delivery"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              ← Back to runs
-            </Link>
-            <div className="text-xs text-slate-500">
-              {summary.unsettledCount > 0
-                ? `${summary.unsettledCount} delivery order(s) to remit`
-                : "All delivery orders for this run are settled."}
-            </div>
+          <div className="text-xs text-slate-500">
+            {summary.unsettledCount > 0
+              ? `${summary.unsettledCount} delivery order(s) to remit`
+              : "All delivery orders for this run are settled."}
           </div>
         </div>
 
         {/* Summary cards */}
         <section className="grid gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <SoTCard compact>
             <div className="text-xs text-slate-500">Orders on this run</div>
             <div className="mt-1 text-xl font-semibold text-slate-900">
               {summary.totalOrders}
@@ -1466,9 +1455,9 @@ export default function CashierDeliveryRunRemitPage() {
             <div className="mt-0.5 text-[11px] text-slate-500">
               {summary.unsettledCount} to remit
             </div>
-          </div>
+          </SoTCard>
 
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <SoTCard compact>
             <div className="text-xs text-slate-500">
               Customer-paid cash (per receipts)
             </div>
@@ -1478,9 +1467,9 @@ export default function CashierDeliveryRunRemitPage() {
             <div className="mt-0.5 text-[11px] text-slate-500">
               {peso(summary.totalRemaining)} still to remit
             </div>
-          </div>
+          </SoTCard>
 
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <SoTCard compact>
             <div className="text-xs text-slate-500">
               Cashier received (this run)
             </div>
@@ -1490,9 +1479,9 @@ export default function CashierDeliveryRunRemitPage() {
             <div className="mt-0.5 text-[11px] text-slate-500">
               CASH payments recorded (capped per order to customer-paid cash)
             </div>
-          </div>
+          </SoTCard>
 
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <SoTCard compact>
             <div className="text-xs text-slate-500">
               Total A/R (credit from this run)
             </div>
@@ -1502,7 +1491,7 @@ export default function CashierDeliveryRunRemitPage() {
             <div className="mt-0.5 text-[11px] text-slate-500">
               To be managed in AR module
             </div>
-          </div>
+          </SoTCard>
         </section>
 
         {/* Short / over vs expected cash */}
@@ -1530,17 +1519,15 @@ export default function CashierDeliveryRunRemitPage() {
           {!isSettled && Math.abs(summary.cashShort) >= EPS && (
             <div className="space-y-2">
               {variance ? (
-                <div className="text-xs text-slate-600">
+                <SoTAlert tone="warning" className="text-xs text-slate-700">
                   Variance status:{" "}
-                  <span className="font-semibold text-slate-800">
-                    {variance.status}
-                  </span>{" "}
+                  <span className="font-semibold">{variance.status}</span>{" "}
                   (ref #{variance.id})
                   <div className="mt-1 text-[11px] text-slate-500">
                     Needs clearance:
                     <span className="ml-1">
                       <Link
-                        className="text-indigo-700 underline"
+                        className="text-indigo-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         to="/store/rider-variances"
                       >
                         Manager review
@@ -1550,7 +1537,7 @@ export default function CashierDeliveryRunRemitPage() {
                     String(variance.resolution ?? "") === "CHARGE_RIDER" ? (
                       <span className="ml-2">
                         <Link
-                          className="text-indigo-700 underline"
+                          className="text-indigo-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           to={`/rider/variance/${variance.id}`}
                         >
                           Rider acceptance
@@ -1558,11 +1545,11 @@ export default function CashierDeliveryRunRemitPage() {
                       </span>
                     ) : null}
                   </div>
-                </div>
+                </SoTAlert>
               ) : null}
 
               {riderCharge ? (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700 shadow-sm">
+                <SoTCard compact className="text-xs text-slate-700">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="font-semibold">Rider charge</span>{" "}
@@ -1570,9 +1557,9 @@ export default function CashierDeliveryRunRemitPage() {
                         (ref #{riderCharge.id})
                       </span>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px]">
+                    <SoTStatusBadge tone="neutral">
                       {riderCharge.status}
-                    </span>
+                    </SoTStatusBadge>
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-3">
                     <div>
@@ -1610,41 +1597,34 @@ export default function CashierDeliveryRunRemitPage() {
                   <div className="mt-2 text-[11px] text-slate-500">
                     Payments are recorded in{" "}
                     <Link
-                      className="text-indigo-700 underline"
+                      className="text-indigo-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       to="/store/rider-charges"
                     >
                       Rider Charges
                     </Link>
                     .
                   </div>
-                </div>
+                </SoTCard>
               ) : null}
             </div>
           )}
 
           {!isSettled && canFinalize ? (
             <Form method="post" className="mt-2">
-              <button
+              <SoTButton
                 type="submit"
                 name="_intent"
                 value="finalize-settlement"
-                className="inline-flex items-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                variant="primary"
+                className="text-xs"
               >
                 Finalize run settlement
-              </button>
+              </SoTButton>
             </Form>
           ) : null}
 
           {isSettled && (
-            <div
-              className={`rounded-2xl border px-4 py-3 text-xs shadow-sm ${
-                hasShort
-                  ? "border-rose-200 bg-rose-50 text-rose-800"
-                  : hasOver
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              }`}
-            >
+            <SoTAlert tone={hasShort ? "danger" : "success"} className="text-xs">
               {hasShort ? (
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1663,14 +1643,14 @@ export default function CashierDeliveryRunRemitPage() {
                       manually, depende sa policy.
                     </p>
                   </div>
-                  <button
+                  <SoTButton
                     type="button"
-                    className="mt-2 inline-flex items-center justify-center rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-700 shadow-sm hover:bg-rose-50 sm:mt-0"
+                    className="mt-2 text-[11px] sm:mt-0"
                     disabled
                     title="Coming soon: RiderCharge posting"
                   >
                     Record rider shortage (soon)
-                  </button>
+                  </SoTButton>
                 </div>
               ) : hasOver ? (
                 <>
@@ -1699,12 +1679,12 @@ export default function CashierDeliveryRunRemitPage() {
                   </p>
                 </>
               )}
-            </div>
+            </SoTAlert>
           )}
         </section>
 
         {/* Orders table */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-medium text-slate-800">
@@ -1725,104 +1705,88 @@ export default function CashierDeliveryRunRemitPage() {
             </span>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Order</th>
-                <th className="px-3 py-2 text-left font-medium">Customer</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Total (final)
-                </th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Customer paid
-                </th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Cashier received
-                </th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Bridge (shortage)
-                </th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Cash Short (Rider Accountability)
-                </th>
-                <th className="px-3 py-2 text-left font-medium">
-                  Commercial (CCS)
-                </th>
-                <th className="px-3 py-2 text-left font-medium">Lock</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Order</SoTTh>
+                <SoTTh>Customer</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Total (final)</SoTTh>
+                <SoTTh align="right">Customer paid</SoTTh>
+                <SoTTh align="right">Cashier received</SoTTh>
+                <SoTTh align="right">Bridge (shortage)</SoTTh>
+                <SoTTh align="right">Cash Short</SoTTh>
+                <SoTTh>Commercial (CCS)</SoTTh>
+                <SoTTh>Lock</SoTTh>
+                <SoTTh align="right">Action</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {orders.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="px-3 py-4 text-center text-slate-500"
-                  >
-                    No delivery orders attached to this run.
-                  </td>
-                </tr>
+                <SoTTableEmptyRow
+                  colSpan={11}
+                  message="No delivery orders attached to this run."
+                />
               ) : (
                 rowsToShow.map((o) => (
-                  <tr key={o.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2 font-mono">{o.orderCode}</td>
-                    <td className="px-3 py-2">
+                  <SoTTableRow key={o.id}>
+                    <SoTTd className="font-mono">{o.orderCode}</SoTTd>
+                    <SoTTd>
                       <div className="text-slate-800">{o.customerLabel}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-xs ${
+                    </SoTTd>
+                    <SoTTd>
+                      <SoTStatusBadge
+                        tone={
                           o.status === "UNPAID" || o.status === "PARTIALLY_PAID"
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        }`}
+                            ? "warning"
+                            : "success"
+                        }
                       >
                         {o.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTStatusBadge>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
                       {peso(o.totalFinal)}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums text-slate-700"
+                    </SoTTd>
+                    <SoTTd
+                      align="right"
+                      className="tabular-nums text-slate-700"
                       title="Customer payment truth (RunReceipt.cashCollected)"
                     >
                       {peso(o.riderCash)}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums text-emerald-700"
+                    </SoTTd>
+                    <SoTTd
+                      align="right"
+                      className="tabular-nums text-emerald-700"
                       title="Cashier drawer truth (Order.payments CASH), capped to customer-paid"
                     >
                       {peso(Math.min(o.alreadyPaid, o.riderCash))}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums text-indigo-700"
+                    </SoTTd>
+                    <SoTTd
+                      align="right"
+                      className="tabular-nums text-indigo-700"
                       title="Bridge settlement (INTERNAL_CREDIT) for rider shortage (does not affect cash drawer)"
                     >
                       {peso(
                         Math.min(
                           o.bridgePaid,
-                          Math.max(0, o.riderCash - o.alreadyPaid)
-                        )
+                          Math.max(0, o.riderCash - o.alreadyPaid),
+                        ),
                       )}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums text-rose-700"
+                    </SoTTd>
+                    <SoTTd
+                      align="right"
+                      className="tabular-nums text-rose-700"
                       title="Cash short (rider accountability) = customer-paid (receipt) - cashier received CASH (run-scope)"
                     >
                       {peso(o.remaining)}
-                    </td>
-                    <td className="px-3 py-2 text-xs">
+                    </SoTTd>
+                    <SoTTd className="text-xs">
                       {(() => {
                         const badge = getCommercialBadge(o);
                         return (
                           <div className="space-y-1">
-                            <span
-                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
+                            <SoTStatusBadge tone={badge.tone}>{badge.label}</SoTStatusBadge>
                             <div className="text-[11px] text-slate-600">
                               System disc:{" "}
                               <span className="font-semibold text-rose-700">
@@ -1849,27 +1813,21 @@ export default function CashierDeliveryRunRemitPage() {
                           </div>
                         );
                       })()}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-500">
+                    </SoTTd>
+                    <SoTTd className="text-xs text-slate-500">
                       {isSettled ? (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">
-                          Settled
-                        </span>
+                        <SoTStatusBadge tone="neutral">Settled</SoTStatusBadge>
                       ) : o.lockedByOther ? (
-                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5">
+                        <SoTStatusBadge tone="warning">
                           Locked by another cashier
-                        </span>
+                        </SoTStatusBadge>
                       ) : o.lockedByMe ? (
-                        <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5">
-                          Locked by you
-                        </span>
+                        <SoTStatusBadge tone="info">Locked by you</SoTStatusBadge>
                       ) : (
-                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">
-                          Available
-                        </span>
+                        <SoTStatusBadge tone="neutral">Available</SoTStatusBadge>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                    </SoTTd>
+                    <SoTTd align="right">
                       {isSettled ? (
                         <span className="inline-flex items-center rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">
                           Remit completed
@@ -1879,19 +1837,15 @@ export default function CashierDeliveryRunRemitPage() {
                           Full A/R (no cash to remit)
                         </span>
                       ) : o.lockedByOther ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500"
-                          disabled
-                        >
-                          In remit…
-                        </button>
+                        <SoTButton type="button" className="text-xs" disabled>
+                          In remit...
+                        </SoTButton>
                       ) : canOpenRemitForOrder(o) ? (
                         <Link
                           to={`/delivery-remit/${o.id}?fromRunId=${
                             run.id
                           }&expected=${o.riderCash.toFixed(2)}`}
-                          className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+                          className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
                           Open Remit
                         </Link>
@@ -1903,13 +1857,13 @@ export default function CashierDeliveryRunRemitPage() {
                           Read-only
                         </span>
                       )}
-                    </td>
-                  </tr>
+                    </SoTTd>
+                  </SoTTableRow>
                 ))
               )}
             </tbody>
-          </table>
-        </section>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

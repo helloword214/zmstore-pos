@@ -2,7 +2,7 @@
 
 Status: ACTIVE (UI baseline, automation-first)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-24
+Last Reviewed: 2026-02-26
 
 ## 1. Purpose
 
@@ -35,27 +35,31 @@ Active route coverage for this baseline:
 2. `app/routes/store._index.tsx`
 3. `app/routes/cashier._index.tsx`
 4. `app/routes/rider._index.tsx`
-5. `app/routes/runs.$id.dispatch.tsx`
-6. `app/routes/runs.$id.summary.tsx`
-7. `app/routes/runs.$id.rider-checkin.tsx`
-8. `app/routes/store.clearance.tsx`
-9. `app/routes/store.clearance_.$caseId.tsx`
-10. `app/routes/runs.$id.remit.tsx`
-11. `app/routes/cashier.delivery._index.tsx`
-12. `app/routes/cashier.delivery.$runId.tsx`
-13. `app/routes/delivery-remit.$id.tsx`
-14. `app/routes/ar._index.tsx`
-15. `app/routes/ar.customers.$id.tsx`
-16. `app/routes/cashier.shift.tsx`
-17. `app/routes/store.cashier-shifts.tsx`
-18. `app/routes/store.cashier-variances.tsx`
-19. `app/routes/cashier.charges.tsx`
-20. `app/routes/store.cashier-ar.tsx`
-21. `app/routes/store.payroll.tsx`
-22. `app/routes/store.rider-variances.tsx`
-23. `app/routes/rider.variances.tsx`
-24. `app/routes/rider.variance.$id.tsx`
-25. `app/routes/store.rider-charges.tsx`
+5. `app/routes/runs._index.tsx`
+6. `app/routes/runs.new.tsx`
+7. `app/routes/runs.$id.dispatch.tsx`
+8. `app/routes/runs.$id.summary.tsx`
+9. `app/routes/runs.$id.rider-checkin.tsx`
+10. `app/routes/store.clearance.tsx`
+11. `app/routes/store.clearance_.$caseId.tsx`
+12. `app/routes/runs.$id.remit.tsx`
+13. `app/routes/cashier.delivery._index.tsx`
+14. `app/routes/cashier.delivery.$runId.tsx`
+15. `app/routes/delivery-remit.$id.tsx`
+16. `app/routes/ar._index.tsx`
+17. `app/routes/ar.customers.$id.tsx`
+18. `app/routes/cashier.shift.tsx`
+19. `app/routes/store.cashier-shifts.tsx`
+20. `app/routes/store.cashier-variances.tsx`
+21. `app/routes/cashier.charges.tsx`
+22. `app/routes/store.cashier-ar.tsx`
+23. `app/routes/store.payroll.tsx`
+24. `app/routes/store.rider-variances.tsx`
+25. `app/routes/rider.variances.tsx`
+26. `app/routes/rider.variance.$id.tsx`
+27. `app/routes/store.rider-charges.tsx`
+28. `app/routes/cashier.pos._index.tsx`
+29. `app/routes/login.tsx`
 
 ## 4. Minimalist Rules (Non-Negotiable)
 
@@ -251,6 +255,34 @@ For operational routes outside dashboards (example: `store.dispatch`, `store.cas
 Usage rule:
 
 1. If the same UI pattern appears twice in focused routes, use the corresponding SoT primitive instead of route-local markup.
+
+### 8.2 SoT component catalog (authoritative)
+
+Use this catalog when deciding whether a route should use SoT primitives first:
+
+1. `SoTActionBar`
+2. `SoTAlert`
+3. `SoTButton`
+4. `SoTCard`
+5. `SoTDataRow`
+6. `SoTDropdown`
+7. `SoTEmptyState`
+8. `SoTFormField`
+9. `SoTInput`
+10. `SoTNonDashboardHeader`
+11. `SoTNotificationBell`
+12. `SoTPageHeader`
+13. `SoTRoleShellHeader`
+14. `SoTSectionHeader`
+15. `SoTStatusBadge`
+16. `SoTStatusPill`
+17. `SoTTable`
+18. `SoTBrandFooter`
+
+Catalog rule:
+
+1. If a matching SoT component exists in this list, use it before adding route-local duplicate structure.
+2. If no matching SoT component exists, add a new SoT component first, then adopt it in-route.
 
 ## 9. Automation Gates (Target)
 

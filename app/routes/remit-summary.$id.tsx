@@ -387,7 +387,7 @@ export default function RemitSummaryPage() {
           <div className="flex flex-wrap gap-2 justify-end">
             <Link
               to="/cashier"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               ← Back to Cashier
             </Link>
@@ -395,7 +395,7 @@ export default function RemitSummaryPage() {
               to={`/orders/${parent.id}/receipt?autoprint=1&autoback=1`}
               target="_blank"
               rel="noreferrer"
-              className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+              className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Reprint Parent
             </Link>
@@ -403,7 +403,7 @@ export default function RemitSummaryPage() {
               to={`/remit-receipt/${parent.id}`}
               target="_blank"
               rel="noreferrer"
-              className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+              className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Print Rider Consolidated
             </Link>
@@ -529,7 +529,7 @@ export default function RemitSummaryPage() {
                             href={`/orders/${c.id}/receipt?autoprint=1${
                               c.paymentId ? `&pid=${c.paymentId}` : ""
                             }&autoback=1`}
-                            className="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+                            className="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -607,7 +607,7 @@ export default function RemitSummaryPage() {
                         <td className="px-3 py-2 text-right">
                           <a
                             href={`/orders/${c.id}/ack?autoprint=1&autoback=1`}
-                            className="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+                            className="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -807,7 +807,7 @@ export default function RemitSummaryPage() {
       <div className="mt-6">
         <Link
           to="/receipts"
-          className="text-sm text-slate-600 underline hover:text-slate-800"
+          className="text-sm text-slate-600 underline hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         >
           Go to Receipts index
         </Link>

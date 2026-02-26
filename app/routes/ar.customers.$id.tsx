@@ -9,6 +9,21 @@ import {
   useNavigation,
   useSearchParams,
 } from "@remix-run/react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
@@ -661,229 +676,233 @@ export default function CustomerLedgerPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Customer A/R Ledger
-            </h1>
-            <div className="text-sm text-slate-600">
-              {customer.name}
-              {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"}
-            </div>
-            <div className="text-xs text-slate-500">
-              SoT: customerAr debits + customerArPayment credits
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              to="/ar"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              ← AR Index
-            </Link>
-            <Link
-              to={statementHref}
-              className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white shadow-sm hover:bg-indigo-700"
-            >
-              Statement
-            </Link>
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-right">
-              <div className="text-xs text-slate-500">Open Balance</div>
-              <div className="text-lg font-semibold text-slate-900 tabular-nums">
-                {peso(balance)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SoTNonDashboardHeader
+        title="Customer A/R Ledger"
+        subtitle={
+          <>
+            {customer.name}
+            {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"} •
+            {" "}SoT: customerAr debits + customerArPayment credits
+          </>
+        }
+        backTo="/ar"
+        backLabel="AR Index"
+        maxWidthClassName="max-w-5xl"
+      />
 
       {lastPayment ? (
         <div className="mx-auto max-w-5xl px-5 pt-4">
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <SoTAlert tone="success" className="text-sm">
             <div className="font-semibold">A/R payment posted successfully.</div>
-            <div className="mt-1 text-xs text-emerald-900/90">
-              Paid {peso(lastPayment.paid)} • Applied {peso(lastPayment.applied)}{" "}
-              • Change {peso(lastPayment.change)}
+            <div className="mt-1 text-xs">
+              Paid {peso(lastPayment.paid)} • Applied {peso(lastPayment.applied)} •
+              {" "}Change {peso(lastPayment.change)}
               {lastPayment.refNo ? ` • Ref ${lastPayment.refNo}` : ""}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
-                onClick={printReceipt}
-              >
+              <SoTButton type="button" variant="primary" className="text-xs" onClick={printReceipt}>
                 Print Receipt (58mm)
-              </button>
+              </SoTButton>
               <Link
                 to={clearSuccessHref}
-                className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100/60"
+                className="inline-flex items-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Clear
               </Link>
               {lastPayment.paymentIds.length ? (
-                <span className="text-[11px] text-emerald-900/80">
+                <span className="text-[11px]">
                   Payment IDs: {lastPayment.paymentIds.map((id) => `#${id}`).join(", ")}
                 </span>
               ) : null}
             </div>
-          </div>
+          </SoTAlert>
         </div>
       ) : legacyChange > 0 ? (
         <div className="mx-auto max-w-5xl px-5 pt-4">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <SoTAlert tone="warning">
             Excess cash not applied: <b>{peso(legacyChange)}</b>
-          </div>
+          </SoTAlert>
         </div>
       ) : null}
 
-      <div className="mx-auto max-w-5xl px-5 py-6 grid gap-6 lg:grid-cols-3">
-        <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="mx-auto grid max-w-5xl gap-6 px-5 py-6 lg:grid-cols-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 lg:col-span-3">
+          <Link
+            to={statementHref}
+            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+          >
+            Statement
+          </Link>
+          <SoTCard compact className="text-right">
+            <div className="text-xs text-slate-500">Open Balance</div>
+            <div className="text-lg font-semibold tabular-nums text-slate-900">
+              {peso(balance)}
+            </div>
+          </SoTCard>
+        </div>
+
+        <SoTCard className="overflow-hidden p-0 lg:col-span-2">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
             A/R Entries (Decision-backed)
           </div>
 
-          {entries.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-slate-600">No A/R entries.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {entries.map((e) => (
-                <div key={e.id} className="px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">
-                      A/R #{e.id}
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>A/R</SoTTh>
+                <SoTTh>Created</SoTTh>
+                <SoTTh>Decision</SoTTh>
+                <SoTTh align="right">Principal</SoTTh>
+                <SoTTh align="right">Paid</SoTTh>
+                <SoTTh align="right">Remaining</SoTTh>
+                <SoTTh>Status</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
+            <tbody>
+              {entries.length === 0 ? (
+                <SoTTableEmptyRow colSpan={7} message="No A/R entries." />
+              ) : (
+                entries.map((e) => (
+                  <SoTTableRow key={e.id}>
+                    <SoTTd>
+                      <div className="text-sm font-medium text-slate-900">A/R #{e.id}</div>
                       {e.orderCode ? (
-                        <span className="text-xs text-slate-500">
-                          {` • ${e.orderCode}${e.channel ? ` (${e.channel})` : ""}`}
-                        </span>
+                        <div className="text-xs text-slate-500">
+                          {`${e.orderCode}${e.channel ? ` (${e.channel})` : ""}`}
+                        </div>
                       ) : null}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {new Date(e.createdAt).toLocaleString()}
-                      {e.dueDate
-                        ? ` • due ${new Date(e.dueDate).toLocaleDateString()}`
-                        : ""}
-                      {e.decisionKind ? ` • ${e.decisionKind}` : ""}
-                    </div>
-                    <div className="text-xs text-slate-600 mt-1">
-                      Principal {peso(e.principal)} • Paid {peso(e.paid)}
-                      {e.receiptKey ? ` • ${e.receiptKey}` : ""}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-indigo-700 tabular-nums">
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="text-xs text-slate-600">
+                        {new Date(e.createdAt).toLocaleString()}
+                      </div>
+                      {e.dueDate ? (
+                        <div className="text-xs text-slate-500">
+                          due {new Date(e.dueDate).toLocaleDateString()}
+                        </div>
+                      ) : null}
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="text-xs text-slate-600">
+                        {e.decisionKind || "—"}
+                        {e.receiptKey ? ` • ${e.receiptKey}` : ""}
+                      </div>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      {peso(e.principal)}
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      {peso(e.paid)}
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums font-semibold text-indigo-700">
                       {peso(e.remaining)}
-                    </div>
-                    <div className="text-[11px] text-slate-500">{e.status}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                    </SoTTd>
+                    <SoTTd>
+                      <SoTStatusBadge
+                        tone={e.status === "SETTLED" ? "success" : "warning"}
+                      >
+                        {e.status}
+                      </SoTStatusBadge>
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
+        </SoTCard>
 
-        <aside className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
             Record A/R Payment (CASH)
           </div>
 
-          <Form method="post" className="p-4 space-y-3">
+          <Form method="post" className="space-y-3 p-4">
             <input type="hidden" name="_action" value="recordPayment" />
 
-            {actionError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-                {actionError}
-              </div>
-            ) : null}
+            {actionError ? <SoTAlert tone="danger">{actionError}</SoTAlert> : null}
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Amount</span>
-              <input
+            <SoTFormField label="Amount">
+              <SoTInput
                 name="amount"
                 type="number"
                 step="0.01"
                 min="0.01"
                 placeholder="0.00"
                 inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
               />
-            </label>
+            </SoTFormField>
 
-            <label className="block text-sm">
-              <span className="text-slate-700">A/R Entry ID (optional)</span>
-              <input
-                name="arId"
-                type="number"
-                placeholder="Blank = FIFO oldest"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              />
-            </label>
+            <SoTFormField label="A/R Entry ID (optional)">
+              <SoTInput name="arId" type="number" placeholder="Blank = FIFO oldest" />
+            </SoTFormField>
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Reference (optional)</span>
-              <input
-                name="refNo"
-                placeholder="OR / notes"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              />
-            </label>
+            <SoTFormField label="Reference (optional)">
+              <SoTInput name="refNo" placeholder="OR / notes" />
+            </SoTFormField>
 
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-              disabled={nav.state !== "idle"}
-            >
+            <SoTButton type="submit" variant="primary" className="w-full" disabled={nav.state !== "idle"}>
               {nav.state !== "idle" ? "Saving…" : "Save Payment"}
-            </button>
+            </SoTButton>
 
             <div className="text-xs text-slate-500">
               Payments are applied to approved customerAr balances only.
             </div>
           </Form>
-        </aside>
+        </SoTCard>
 
-        <section className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <SoTCard className="overflow-hidden p-0 lg:col-span-3">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
             Activity (A/R Charges + Payments)
           </div>
-          {rows.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-slate-600">No activity.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {rows.map((r, i) => (
-                <div key={`${r.kind}-${i}`} className="px-4 py-3 flex items-center justify-between">
-                  <div className="min-w-0">
-                    <div className="text-sm text-slate-900 truncate">
-                      {r.kind === "ar" ? "A/R Charge" : "Payment"} • {r.label}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {new Date(r.date).toLocaleString()}
-                      {r.kind === "ar" && r.due
-                        ? ` • due ${new Date(r.due).toLocaleDateString()}`
-                        : ""}
-                      {` • A/R #${r.arId}`}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div
-                      className={`text-sm font-semibold tabular-nums ${
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Type</SoTTh>
+                <SoTTh>Details</SoTTh>
+                <SoTTh align="right">Amount</SoTTh>
+                <SoTTh align="right">Running</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
+            <tbody>
+              {rows.length === 0 ? (
+                <SoTTableEmptyRow colSpan={4} message="No activity." />
+              ) : (
+                rows.map((r, i) => (
+                  <SoTTableRow key={`${r.kind}-${i}`}>
+                    <SoTTd>
+                      <SoTStatusBadge tone={r.kind === "ar" ? "neutral" : "success"}>
+                        {r.kind === "ar" ? "A/R Charge" : "Payment"}
+                      </SoTStatusBadge>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="truncate text-sm text-slate-900">{r.label}</div>
+                      <div className="text-xs text-slate-500">
+                        {new Date(r.date).toLocaleString()}
+                        {r.kind === "ar" && r.due
+                          ? ` • due ${new Date(r.due).toLocaleDateString()}`
+                          : ""}
+                        {` • A/R #${r.arId}`}
+                      </div>
+                    </SoTTd>
+                    <SoTTd
+                      align="right"
+                      className={`tabular-nums font-semibold ${
                         r.kind === "ar" ? "text-slate-900" : "text-emerald-700"
                       }`}
                     >
                       {r.kind === "ar"
                         ? `+ ${peso(r.debit)}`
                         : `− ${peso(r.creditApplied ?? r.credit)}`}
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      Running: {peso(r.runningAfter)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums text-xs text-slate-500">
+                      {peso(r.runningAfter)}
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
+        </SoTCard>
       </div>
 
     </main>

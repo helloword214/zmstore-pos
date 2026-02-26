@@ -398,13 +398,13 @@ export default function ShiftHistory() {
           <div className="flex items-center gap-2">
             <Link
               to="/cashier/shift"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Open Shift Console
             </Link>
             <Link
               to="/cashier"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               ← Back
             </Link>
@@ -420,7 +420,7 @@ export default function ShiftHistory() {
             <select
               name="status"
               defaultValue={filters.status}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               <option value="open">Open</option>
               <option value="closed">Closed</option>
@@ -433,7 +433,7 @@ export default function ShiftHistory() {
               type="date"
               name="from"
               defaultValue={filters.from ?? ""}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             />
           </label>
           <label className="text-sm">
@@ -442,7 +442,7 @@ export default function ShiftHistory() {
               type="date"
               name="to"
               defaultValue={filters.to ?? ""}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             />
           </label>
 
@@ -452,7 +452,7 @@ export default function ShiftHistory() {
               <select
                 name="cashierId"
                 defaultValue={filters.cashierId ?? ""}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <option value="">All</option>
                 {cashiers.map((c) => (
@@ -466,13 +466,13 @@ export default function ShiftHistory() {
             <div className="hidden md:block" />
           )}
           <div className="md:col-span-5">
-            <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">
+            <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
               Apply Filters
             </button>
             {params.toString() && (
               <Link
                 to="/cashier/shift-history"
-                className="ml-2 text-sm text-slate-600 hover:underline"
+                className="ml-2 text-sm text-slate-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Reset
               </Link>

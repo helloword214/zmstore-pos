@@ -5,11 +5,23 @@ import { json, redirect } from "@remix-run/node";
 import * as React from "react";
 import {
   Form,
-  Link,
   useActionData,
   useLoaderData,
   useNavigation,
 } from "@remix-run/react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { RiderChargeStatus, UnitKind, Prisma } from "@prisma/client";
 import { allocateReceiptNo } from "~/utils/receipt";
@@ -1405,37 +1417,36 @@ export default function RunRemitPage() {
     if (pendingClearance > MONEY_EPS) {
       return {
         label: "Pending Clearance",
-        className:
-          "border-amber-200 bg-amber-50 text-amber-800",
+        tone: "warning" as const,
       };
     }
     if (rejectedUnresolved > MONEY_EPS) {
       return {
         label: "Rejected (Unresolved)",
-        className: "border-rose-200 bg-rose-50 text-rose-700",
+        tone: "danger" as const,
       };
     }
     if (approvedDiscount > MONEY_EPS && ar > MONEY_EPS) {
       return {
         label: "Approved Hybrid",
-        className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+        tone: "info" as const,
       };
     }
     if (approvedDiscount > MONEY_EPS) {
       return {
         label: "Approved Discount",
-        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        tone: "success" as const,
       };
     }
     if (ar > MONEY_EPS) {
       return {
         label: "Approved Open Balance",
-        className: "border-amber-200 bg-amber-50 text-amber-800",
+        tone: "warning" as const,
       };
     }
     return {
       label: "Settled Cash",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      tone: "success" as const,
     };
   };
 
@@ -1493,24 +1504,19 @@ export default function RunRemitPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Run Remit — Manager Review"
+        subtitle={`Run ${run.runCode}${run.riderLabel ? ` • Rider ${run.riderLabel}` : ""}`}
+        backTo="/store"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-5xl"
+      />
+
       <div className="mx-auto max-w-5xl px-5 py-6">
-        {/* Back links */}
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <Link
-              to="/store"
-              className="text-sm text-indigo-600 hover:underline"
-            >
-              ← Back to Dashboard
-            </Link>
-          </div>
-        </div>
-        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <SoTCard className="mb-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-base font-semibold tracking-wide text-slate-800">
-                Run Remit — Manager Review
-              </h1>
+              <h2 className="text-sm font-semibold text-slate-800">Run Snapshot</h2>
               <div className="mt-1 text-sm text-slate-600">
                 Run{" "}
                 <span className="font-mono font-medium text-indigo-700">
@@ -1529,9 +1535,7 @@ export default function RunRemitPage() {
               const badgeText =
                 run.status === "CLOSED" ? "Closed" : posted ? "Posted" : null;
               return badgeText ? (
-                <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
-                  {badgeText}
-                </div>
+                <SoTStatusBadge tone="success">{badgeText}</SoTStatusBadge>
               ) : null;
             })()}
           </div>
@@ -1540,67 +1544,64 @@ export default function RunRemitPage() {
             rejectedUnresolvedTotal > MONEY_EPS) && (
             <div className="mt-3 grid gap-2 md:grid-cols-2">
               {pendingClearanceTotal > MONEY_EPS ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <SoTAlert tone="warning">
                   Pending clearance unresolved:{" "}
                   <span className="font-mono font-semibold">
                     {peso(pendingClearanceTotal)}
                   </span>
-                </div>
+                </SoTAlert>
               ) : null}
               {rejectedUnresolvedTotal > MONEY_EPS ? (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                <SoTAlert tone="danger">
                   Rejected unresolved amount:{" "}
                   <span className="font-mono font-semibold">
                     {peso(rejectedUnresolvedTotal)}
                   </span>
-                </div>
+                </SoTAlert>
               ) : null}
             </div>
           )}
 
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <SoTCard compact className="bg-slate-50">
               <div className="text-[11px] text-slate-500">Total Cash</div>
               <div className="mt-1 font-mono text-base font-semibold text-slate-900">
                 {peso(overallCashTotal)}
               </div>
-            </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+            </SoTCard>
+            <SoTCard compact className="border-amber-200 bg-amber-50">
               <div className="text-[11px] text-amber-800">Outstanding A/R</div>
               <div className="mt-1 font-mono text-base font-semibold text-amber-800">
                 {peso(overallArTotal)}
               </div>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            </SoTCard>
+            <SoTCard compact className="border-emerald-200 bg-emerald-50">
               <div className="text-[11px] text-emerald-700">
                 Approved Discount
               </div>
               <div className="mt-1 font-mono text-base font-semibold text-emerald-700">
                 {peso(overallApprovedDiscountTotal)}
               </div>
-            </div>
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+            </SoTCard>
+            <SoTCard compact className="border-indigo-200 bg-indigo-50">
               <div className="text-[11px] text-indigo-700">System Discount</div>
               <div className="mt-1 font-mono text-base font-semibold text-indigo-700">
                 {peso(overallSystemDiscountTotal)}
               </div>
-            </div>
+            </SoTCard>
           </div>
-        </section>
+        </SoTCard>
 
         <Form method="post" className="grid gap-4">
           {/* Errors from action */}
           {actionData && !actionData.ok ? (
-            <div
-              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 whitespace-pre-line"
-              aria-live="polite"
-            >
+            <SoTAlert tone="danger" className="whitespace-pre-line" aria-live="polite">
               {actionData.error}
-            </div>
+            </SoTAlert>
           ) : null}
 
           {/* Stock recap card */}
-          <section className="rounded-2xl border border-slate-200 bg-white">
+          <SoTCard className="overflow-hidden p-0">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -1617,109 +1618,92 @@ export default function RunRemitPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto px-4 py-3">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-right">Loaded</th>
-                    <th className="px-3 py-2 text-right">Sold</th>
-                    <th className="px-3 py-2 text-right">Unsold</th>
-                    <th className="px-3 py-2 text-center">Status</th>
-                    <th className="px-3 py-2 text-left">Manager Check</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockVerificationRows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-3 py-4 text-center text-slate-500"
-                      >
-                        No loadout snapshot or rider check-in data for this run.
-                      </td>
-                    </tr>
-                  ) : (
-                    stockVerificationRows.map((r) => {
-                      const soldOnly = r.unsold <= 0.0001;
-                      const decision = stockDecision[r.productId] ?? "present";
-                      return (
-                        <tr
-                          key={r.productId}
-                          className="border-t border-slate-100"
-                        >
-                          <td className="px-3 py-2">
-                            {r.name}{" "}
-                            <span className="text-[10px] text-slate-400">
-                              #{r.productId}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right">{r.loaded}</td>
-                          <td className="px-3 py-2 text-right">{r.sold}</td>
-                          <td className="px-3 py-2 text-right">{r.unsold}</td>
-                          <td className="px-3 py-2 text-center">
-                            <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
-                                soldOnly
-                                  ? "border border-slate-300 bg-slate-50 text-slate-700"
-                                  : "border border-slate-300 bg-white text-slate-700"
-                              }`}
-                            >
-                              {soldOnly ? "Sold" : "Unsold"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {soldOnly ? (
-                              <span className="text-xs text-slate-500">
-                                Sold / OK
-                              </span>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-2">
+            <SoTTable containerClassName="px-4 py-3">
+              <SoTTableHead>
+                <SoTTableRow className="border-t-0">
+                  <SoTTh>Product</SoTTh>
+                  <SoTTh align="right">Loaded</SoTTh>
+                  <SoTTh align="right">Sold</SoTTh>
+                  <SoTTh align="right">Unsold</SoTTh>
+                  <SoTTh align="center">Status</SoTTh>
+                  <SoTTh>Manager Check</SoTTh>
+                </SoTTableRow>
+              </SoTTableHead>
+              <tbody>
+                {stockVerificationRows.length === 0 ? (
+                  <SoTTableEmptyRow
+                    colSpan={6}
+                    message="No loadout snapshot or rider check-in data for this run."
+                  />
+                ) : (
+                  stockVerificationRows.map((r) => {
+                    const soldOnly = r.unsold <= 0.0001;
+                    const decision = stockDecision[r.productId] ?? "present";
+                    return (
+                      <SoTTableRow key={r.productId}>
+                        <SoTTd>
+                          {r.name}{" "}
+                          <span className="text-[10px] text-slate-400">
+                            #{r.productId}
+                          </span>
+                        </SoTTd>
+                        <SoTTd align="right">{r.loaded}</SoTTd>
+                        <SoTTd align="right">{r.sold}</SoTTd>
+                        <SoTTd align="right">{r.unsold}</SoTTd>
+                        <SoTTd align="center">
+                          <SoTStatusBadge tone={soldOnly ? "neutral" : "warning"}>
+                            {soldOnly ? "Sold" : "Unsold"}
+                          </SoTStatusBadge>
+                        </SoTTd>
+                        <SoTTd>
+                          {soldOnly ? (
+                            <span className="text-xs text-slate-500">Sold / OK</span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="hidden"
+                                name={`verify_${r.productId}`}
+                                value={decision}
+                              />
+                              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                                 <input
-                                  type="hidden"
-                                  name={`verify_${r.productId}`}
-                                  value={decision}
+                                  type="radio"
+                                  name={`verify_ui_${r.productId}`}
+                                  className="h-4 w-4 border-slate-300 text-indigo-600 focus-visible:ring-indigo-200"
+                                  checked={decision === "present"}
+                                  onChange={() =>
+                                    setStockDecision((prev) => ({
+                                      ...prev,
+                                      [r.productId]: "present",
+                                    }))
+                                  }
                                 />
-                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                  <input
-                                    type="radio"
-                                    name={`verify_ui_${r.productId}`}
-                                    className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-200"
-                                    checked={decision === "present"}
-                                    onChange={() =>
-                                      setStockDecision((prev) => ({
-                                        ...prev,
-                                        [r.productId]: "present",
-                                      }))
-                                    }
-                                  />
-                                  <span>Stocks Present</span>
-                                </label>
-                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                  <input
-                                    type="radio"
-                                    name={`verify_ui_${r.productId}`}
-                                    className="h-4 w-4 border-slate-300 text-rose-600 focus:ring-rose-200"
-                                    checked={decision === "missing"}
-                                    onChange={() =>
-                                      setStockDecision((prev) => ({
-                                        ...prev,
-                                        [r.productId]: "missing",
-                                      }))
-                                    }
-                                  />
-                                  <span>Mark Missing</span>
-                                </label>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                <span>Stocks Present</span>
+                              </label>
+                              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                <input
+                                  type="radio"
+                                  name={`verify_ui_${r.productId}`}
+                                  className="h-4 w-4 border-slate-300 text-rose-600 focus-visible:ring-rose-200"
+                                  checked={decision === "missing"}
+                                  onChange={() =>
+                                    setStockDecision((prev) => ({
+                                      ...prev,
+                                      [r.productId]: "missing",
+                                    }))
+                                  }
+                                />
+                                <span>Mark Missing</span>
+                              </label>
+                            </div>
+                          )}
+                        </SoTTd>
+                      </SoTTableRow>
+                    );
+                  })
+                )}
+              </tbody>
+            </SoTTable>
 
             <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
               <div className="font-semibold">
@@ -1747,11 +1731,11 @@ export default function RunRemitPage() {
                 </div>
               )}
             </div>
-          </section>
+          </SoTCard>
 
           {/* Parent POS orders (from Order Pad / Cashier) */}
           {parentOrders.length > 0 && (
-            <section className="rounded-2xl border border-slate-200 bg-white">
+            <SoTCard className="overflow-hidden p-0">
               <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-medium text-slate-800">
@@ -1780,25 +1764,18 @@ export default function RunRemitPage() {
                   );
 
                   return (
-                    <div
-                      key={`${o.orderId}-${idx}`}
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
-                    >
+                    <SoTCard key={`${o.orderId}-${idx}`} compact>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium text-slate-700">
                           Receipt • {o.customerLabel}
                         </div>
                         <div className="flex flex-wrap items-center gap-1">
                           {o.pricingMismatch ? (
-                            <div className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700">
-                              Totals mismatch
-                            </div>
+                            <SoTStatusBadge tone="danger">Totals mismatch</SoTStatusBadge>
                           ) : null}
-                          <div
-                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
-                          >
+                          <SoTStatusBadge tone={badge.tone}>
                             {badge.label}
-                          </div>
+                          </SoTStatusBadge>
                         </div>
                       </div>
 
@@ -1907,15 +1884,15 @@ export default function RunRemitPage() {
                           ) : null}
                         </div>
                       </div>
-                    </div>
+                    </SoTCard>
                   );
                 })}
               </div>
-            </section>
+            </SoTCard>
           )}
 
           {/* Quick sales overview */}
-          <section className="rounded-2xl border border-slate-200 bg-white">
+          <SoTCard className="overflow-hidden p-0">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
@@ -1935,9 +1912,9 @@ export default function RunRemitPage() {
 
             <div className="px-4 py-4 space-y-3">
               {(quickReceipts?.length ?? 0) === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-center text-sm text-slate-500">
+                <SoTAlert tone="info" className="text-center">
                   No roadside sales encoded in Rider Check-in.
-                </div>
+                </SoTAlert>
               ) : (
                 quickReceipts.map((rec) => {
                   const badge = getFinancialBadge({
@@ -1947,19 +1924,14 @@ export default function RunRemitPage() {
                     ar: rec.ar,
                   });
                   return (
-                    <div
-                      key={rec.key}
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
-                    >
+                    <SoTCard key={rec.key} compact>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium text-slate-700">
                           Receipt • {rec.customerLabel}
                         </div>
-                        <div
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
-                        >
+                        <SoTStatusBadge tone={badge.tone}>
                           {badge.label}
-                        </div>
+                        </SoTStatusBadge>
                       </div>
 
                       <div className="mt-2 space-y-2 text-xs text-slate-600">
@@ -2067,20 +2039,21 @@ export default function RunRemitPage() {
                           ) : null}
                         </div>
                       </div>
-                    </div>
+                    </SoTCard>
                   );
                 })
               )}
             </div>
-          </section>
+          </SoTCard>
 
           {/* Submit / Approve */}
           <div className="sticky bottom-4 flex flex-col gap-2">
-            <button
+            <SoTButton
               type="submit"
               name="_intent"
               value="charge-remit"
-              className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+              variant="danger"
+              className="w-full"
               disabled={!canChargeMissing}
               onClick={(e) => {
                 if (
@@ -2097,12 +2070,13 @@ export default function RunRemitPage() {
                 : nav.state !== "idle"
                   ? "Posting…"
                   : "Charge Rider (Missing Stocks) & Close Run"}
-            </button>
-            <button
+            </SoTButton>
+            <SoTButton
               type="submit"
               name="_intent"
               value="post-remit"
-              className="inline-flex w-full items-center justify-center rounded-xl bg-slate-800 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-900 disabled:opacity-50"
+              variant="primary"
+              className="w-full"
               disabled={!canApproveNormal}
             >
               {run.status === "CLOSED"
@@ -2112,7 +2086,7 @@ export default function RunRemitPage() {
                   : missingRowsPreview.length > 0
                     ? "Use charge action for missing stocks"
                     : "Approve Remit & Close Run"}
-            </button>
+            </SoTButton>
           </div>
         </Form>
       </div>

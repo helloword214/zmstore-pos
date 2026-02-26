@@ -267,7 +267,7 @@ export default function AreasPage() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             Settings — Areas
           </h1>
-          <Link to="/settings" className="text-sm underline">
+          <Link to="/settings" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -282,7 +282,7 @@ export default function AreasPage() {
               </label>
               <select
                 id={provSelId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={activeProvinceId ?? ""}
                 onChange={(e) => {
                   const val = e.target.value ? Number(e.target.value) : null;
@@ -303,7 +303,7 @@ export default function AreasPage() {
               </label>
               <select
                 id={munSelId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={activeMunicipalityId ?? ""}
                 onChange={(e) => {
                   const val = e.target.value ? Number(e.target.value) : null;
@@ -325,7 +325,7 @@ export default function AreasPage() {
               </label>
               <select
                 id={brgySelId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={activeBarangayId ?? ""}
                 onChange={(e) => {
                   const val = e.target.value ? Number(e.target.value) : null;
@@ -355,7 +355,7 @@ export default function AreasPage() {
                 >
                   <Link
                     to={qs({ pid: p.id, mid: null, bid: null })}
-                    className="hover:underline"
+                    className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
                     {p.name}
                   </Link>
@@ -363,7 +363,7 @@ export default function AreasPage() {
                     <input type="hidden" name="intent" value="toggleProvince" />
                     <input type="hidden" name="id" value={p.id} />
                     <button
-                      className="text-xs text-indigo-600 hover:underline"
+                      className="text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       type="submit"
                     >
                       {p.isActive ? "Disable" : "Enable"}
@@ -384,7 +384,7 @@ export default function AreasPage() {
                     value={munName}
                     onChange={(e) => setMunName(e.target.value)}
                     placeholder="Add municipality"
-                    className="flex-1 border rounded-md px-2 py-1"
+                    className="flex-1 border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   />
                   <f.Form method="post">
                     <input
@@ -400,7 +400,7 @@ export default function AreasPage() {
                     <button
                       type="submit"
                       onClick={() => setMunName(munName.trim())}
-                      className="border rounded-md px-3"
+                      className="border rounded-md px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       name="name"
                       value={munName}
                     >
@@ -416,7 +416,7 @@ export default function AreasPage() {
                     >
                       <Link
                         to={qs({ mid: m.id, bid: null })}
-                        className="hover:underline"
+                        className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       >
                         {m.name}
                       </Link>
@@ -429,7 +429,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={m.id} />
                           <button
-                            className="text-xs text-indigo-600 hover:underline"
+                            className="text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             {m.isActive ? "Disable" : "Enable"}
@@ -449,7 +449,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={m.id} />
                           <button
-                            className="text-xs text-rose-600 hover:underline"
+                            className="text-xs text-rose-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             Delete
@@ -480,7 +480,7 @@ export default function AreasPage() {
                     value={brgyName}
                     onChange={(e) => setBrgyName(e.target.value)}
                     placeholder="Add barangay"
-                    className="flex-1 border rounded-md px-2 py-1"
+                    className="flex-1 border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   />
                   <f.Form method="post">
                     <input type="hidden" name="intent" value="createBarangay" />
@@ -492,7 +492,7 @@ export default function AreasPage() {
                     <button
                       type="submit"
                       onClick={() => setBrgyName(brgyName.trim())}
-                      className="border rounded-md px-3"
+                      className="border rounded-md px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       name="name"
                       value={brgyName}
                     >
@@ -506,7 +506,7 @@ export default function AreasPage() {
                       key={b.id}
                       className="flex items-center justify-between px-2 py-1"
                     >
-                      <Link to={qs({ bid: b.id })} className="hover:underline">
+                      <Link to={qs({ bid: b.id })} className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
                         {b.name}
                       </Link>
                       <div className="flex items-center gap-2">
@@ -518,7 +518,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={b.id} />
                           <button
-                            className="text-xs text-indigo-600 hover:underline"
+                            className="text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             {b.isActive ? "Disable" : "Enable"}
@@ -538,7 +538,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={b.id} />
                           <button
-                            className="text-xs text-rose-600 hover:underline"
+                            className="text-xs text-rose-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             Delete
@@ -571,7 +571,7 @@ export default function AreasPage() {
                       value={zoneName}
                       onChange={(e) => setZoneName(e.target.value)}
                       placeholder="Add zone (e.g. Purok 4)"
-                      className="flex-1 border rounded-md px-2 py-1"
+                      className="flex-1 border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     />
                     <f.Form method="post">
                       <input type="hidden" name="intent" value="createZone" />
@@ -583,7 +583,7 @@ export default function AreasPage() {
                       <button
                         type="submit"
                         onClick={() => setZoneName(zoneName.trim())}
-                        className="border rounded-md px-3"
+                        className="border rounded-md px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         name="name"
                         value={zoneName}
                       >
@@ -612,7 +612,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={z.id} />
                           <button
-                            className="text-xs text-rose-600 hover:underline"
+                            className="text-xs text-rose-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             Delete
@@ -635,7 +635,7 @@ export default function AreasPage() {
                       value={lmName}
                       onChange={(e) => setLmName(e.target.value)}
                       placeholder="Add landmark (e.g. Public Market)"
-                      className="flex-1 border rounded-md px-2 py-1"
+                      className="flex-1 border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     />
                     <f.Form method="post">
                       <input
@@ -651,7 +651,7 @@ export default function AreasPage() {
                       <button
                         type="submit"
                         onClick={() => setLmName(lmName.trim())}
-                        className="border rounded-md px-3"
+                        className="border rounded-md px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         name="name"
                         value={lmName}
                       >
@@ -680,7 +680,7 @@ export default function AreasPage() {
                           />
                           <input type="hidden" name="id" value={l.id} />
                           <button
-                            className="text-xs text-rose-600 hover:underline"
+                            className="text-xs text-rose-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             type="submit"
                           >
                             Delete

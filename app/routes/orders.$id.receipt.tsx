@@ -730,7 +730,7 @@ export default function ReceiptPage() {
                 <input type="hidden" name="_action" value="void" />
                 <button
                   type="submit"
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-sm disabled:opacity-60"
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-sm disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   title="Void this sale (manager approval)"
                   disabled
                 >

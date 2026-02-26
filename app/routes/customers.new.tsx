@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, redirect } from "@remix-run/node";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
@@ -34,7 +34,7 @@ type LoaderData = {
   landmarks: Landmark[];
 };
 
-export async function loader(_args: LoaderFunctionArgs) {
+export async function loader() {
   const [provinces, municipalities, barangays, zones, landmarks] =
     await Promise.all([
       db.province.findMany({
@@ -324,7 +324,7 @@ export default function NewCustomerPage() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             New Customer
           </h1>
-          <Link to="/customers" className="text-sm underline">
+          <Link to="/customers" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -408,7 +408,7 @@ export default function NewCustomerPage() {
               <button
                 type="button"
                 onClick={addRow}
-                className="rounded-md border px-3 py-1 text-sm hover:bg-slate-50"
+                className="rounded-md border px-3 py-1 text-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 + Add address
               </button>
@@ -442,7 +442,7 @@ export default function NewCustomerPage() {
                         <button
                           type="button"
                           onClick={() => removeRow(idx)}
-                          className="text-xs text-rose-600 underline"
+                          className="text-xs text-rose-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
                           Remove
                         </button>
@@ -565,12 +565,12 @@ export default function NewCustomerPage() {
           </section>
 
           <div className="flex justify-end gap-2">
-            <Link to="/customers" className="text-sm underline px-2 py-2">
+            <Link to="/customers" className="text-sm underline px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
               Cancel
             </Link>
             <button
               type="submit"
-              className="rounded-md bg-indigo-600 text-white px-4 py-2 text-sm"
+              className="rounded-md bg-indigo-600 text-white px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Save Customer
             </button>
@@ -597,7 +597,7 @@ function Field(props: {
       </label>
       <input
         id={props.id}
-        className="mt-1 w-full border rounded-md px-2 py-1"
+        className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         required={props.required}
@@ -622,7 +622,7 @@ function SelectField(props: {
       </label>
       <select
         id={props.id}
-        className="mt-1 w-full border rounded-md px-2 py-1"
+        className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
       >

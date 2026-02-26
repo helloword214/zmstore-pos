@@ -81,13 +81,13 @@ export default function CustomerProfile() {
           <div className="flex shrink-0 gap-2">
             <Link
               to={`/customers/${customer.id}/edit`}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Edit
             </Link>
             <Link
               to={`/customers/${customer.id}/pricing`}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Pricing Rules
             </Link>
@@ -107,14 +107,14 @@ export default function CustomerProfile() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
               to={`/ar/customers/${customer.id}`}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               title="View AR Ledger"
             >
               AR Ledger
             </Link>
             <Link
               to={statementHref}
-              className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               title="Statement of Account"
             >
               Statement
@@ -136,7 +136,7 @@ export default function CustomerProfile() {
           </div>
           <Link
             to={`/customers/${customer.id}/pricing`}
-            className="mt-2 inline-block text-xs text-indigo-600 hover:underline"
+            className="mt-2 inline-block text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
             Manage rules →
           </Link>

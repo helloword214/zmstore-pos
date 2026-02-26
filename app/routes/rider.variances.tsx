@@ -7,8 +7,20 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { EmployeeRole } from "@prisma/client";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 type LoaderData = {
   user: { name: string; alias: string | null; email: string | null };
@@ -90,7 +102,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function RiderVariancesListPage() {
-  const { user, pending } = useLoaderData<LoaderData>();
+  const { pending } = useLoaderData<LoaderData>();
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -102,76 +114,76 @@ export default function RiderVariancesListPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Pending Variances"
-        subtitle={`${user.alias ? `${user.alias} (${user.name})` : user.name}${user.email ? ` · ${user.email}` : ""}`}
+        subtitle="Review and accept manager-tagged rider variances."
         backTo="/rider"
+        backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-            <div className="text-sm font-medium text-slate-800">
-              Needs your acceptance (Charge rider)
-            </div>
-            <div className="text-xs text-slate-500">
-              {pending.length} item(s)
-            </div>
+      <div className="mx-auto max-w-6xl px-5 py-6">
+        <SoTCard className="overflow-hidden p-0">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <SoTActionBar
+              className="mb-0"
+              left={
+                <div className="text-sm font-medium text-slate-800">
+                  Needs your acceptance (Charge rider)
+                </div>
+              }
+              right={
+                <div className="text-xs text-slate-500">
+                  {pending.length} item(s)
+                </div>
+              }
+            />
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Run</th>
-                <th className="px-3 py-2 text-right font-medium">Variance</th>
-                <th className="px-3 py-2 text-left font-medium">Note</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Run</SoTTh>
+                <SoTTh align="right">Variance</SoTTh>
+                <SoTTh>Note</SoTTh>
+                <SoTTh align="right">Action</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {pending.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>
+                <SoTTableEmptyRow
+                  colSpan={4}
+                  message={
                     <SoTEmptyState
                       title="No pending acceptances."
                       hint="New charge acceptance requests will appear here."
                     />
-                  </td>
-                </tr>
+                  }
+                />
               ) : (
                 pending.map((v) => (
-                  <tr key={v.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2">
-                      <div className="font-mono text-slate-800">
-                        {v.run.runCode}
+                  <SoTTableRow key={v.id}>
+                    <SoTTd>
+                      <div className="font-mono text-slate-800">{v.run.runCode}</div>
+                      <div className="text-[11px] text-slate-500">ref #{v.id}</div>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      <span className="text-rose-700">{peso(Math.abs(v.variance))}</span>
+                      <div className="mt-1 flex justify-end">
+                        <SoTStatusBadge tone="danger">SHORT</SoTStatusBadge>
                       </div>
-                      <div className="text-[11px] text-slate-500">
-                        ref #{v.id}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      <span className="text-rose-700">
-                        {peso(Math.abs(v.variance))}{" "}
-                        <span className="ml-1 text-[11px] text-rose-600">
-                          SHORT
-                        </span>
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">
-                      {v.note ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Link
-                        to={`/rider/variance/${v.id}`}
-                        className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                      >
-                        Open
+                    </SoTTd>
+                    <SoTTd className="text-xs text-slate-600">{v.note ?? "—"}</SoTTd>
+                    <SoTTd align="right">
+                      <Link to={`/rider/variance/${v.id}`}>
+                        <SoTButton variant="primary" className="text-sm">
+                          Open
+                        </SoTButton>
                       </Link>
-                    </td>
-                  </tr>
+                    </SoTTd>
+                  </SoTTableRow>
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

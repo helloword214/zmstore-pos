@@ -60,7 +60,7 @@ export function ErrorBoundary() {
             ? `${err.status} ${err.statusText}\n${JSON.stringify(err.data)}`
             : (err as Error)?.message ?? "Unknown error"}
         </pre>
-        <Link to="/settings" className="inline-block underline text-sm">
+        <Link to="/settings" className="inline-block underline text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
           ← Back to Settings
         </Link>
       </div>
@@ -204,7 +204,7 @@ export default function ProvincesSettingsPage() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             Settings — Provinces
           </h1>
-          <Link to="/settings" className="text-sm underline">
+          <Link to="/settings" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -305,7 +305,7 @@ export default function ProvincesSettingsPage() {
                             {p.name}
                           </div>
                           <button
-                            className="text-xs text-indigo-600 hover:underline"
+                            className="text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             onClick={() => {
                               setEditingId(p.id);
                               setEditName(p.name);
@@ -348,7 +348,7 @@ export default function ProvincesSettingsPage() {
                           <span className="text-slate-600">Code:</span>
                           <span className="font-mono">{p.code ?? "—"}</span>
                           <button
-                            className="text-xs text-indigo-600 hover:underline"
+                            className="text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             onClick={() => {
                               setEditCodeId(p.id);
                               setEditCode(p.code ?? "");

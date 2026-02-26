@@ -5,7 +5,7 @@ export default function CustomerLayout() {
   const { id } = useParams();
 
   const tabBase =
-    "rounded-xl px-3 py-2 text-sm transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200";
+    "rounded-xl px-3 py-2 text-sm transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200";
   const tabInactive =
     "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
   const tabActive = "bg-indigo-600 text-white border border-indigo-600";

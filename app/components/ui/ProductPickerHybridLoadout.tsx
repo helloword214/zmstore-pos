@@ -249,7 +249,7 @@ export function ProductPickerHybridLoadout({
 
         <button
           type="button"
-          className="shrink-0 h-11 rounded-xl border px-3 text-xs bg-white hover:bg-slate-50 disabled:opacity-50"
+          className="shrink-0 h-11 rounded-xl border px-3 text-xs bg-white hover:bg-slate-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           onClick={() => {
             setShowModal(true);
             setPage(1);
@@ -269,7 +269,7 @@ export function ProductPickerHybridLoadout({
               <button
                 key={p.id}
                 type="button"
-                className="flex w-full items-center justify-between px-3 py-2 hover:bg-slate-50"
+                className="flex w-full items-center justify-between px-3 py-2 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 onClick={() => {
                   setSelected(p);
                   setOpenList(false);
@@ -298,7 +298,7 @@ export function ProductPickerHybridLoadout({
           <button
             type="button"
             aria-label="Dismiss modal"
-            className="absolute inset-0 bg-black/30"
+            className="absolute inset-0 bg-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => setShowModal(false)}
           />
           <div
@@ -312,7 +312,7 @@ export function ProductPickerHybridLoadout({
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="font-semibold">Browse Products</div>
                 <button
-                  className="text-slate-500 hover:text-slate-700"
+                  className="text-slate-500 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   onClick={() => setShowModal(false)}
                   disabled={disabled}
                 >
@@ -321,7 +321,7 @@ export function ProductPickerHybridLoadout({
               </div>
               <div className="px-4 py-3 border-b flex gap-2">
                 <input
-                  className="w-full rounded border px-3 py-2"
+                  className="w-full rounded border px-3 py-2 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   placeholder="Search by ID or name…"
                   value={modalQ}
                   onChange={(e) => {
@@ -404,7 +404,7 @@ export function ProductPickerHybridLoadout({
                       <div role="cell" className="px-3 py-2 text-right">
                         <button
                           type="button"
-                          className="rounded-lg border px-2.5 py-1.5 text-xs hover:bg-slate-50"
+                          className="rounded-lg border px-2.5 py-1.5 text-xs hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           onClick={() => {
                             setSelected(p);
                             setShowModal(false);
@@ -438,7 +438,7 @@ export function ProductPickerHybridLoadout({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-50"
+                    className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={disabled || page <= 1}
                   >
@@ -446,7 +446,7 @@ export function ProductPickerHybridLoadout({
                   </button>
                   <button
                     type="button"
-                    className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-50"
+                    className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={disabled || page >= totalPages}
                   >

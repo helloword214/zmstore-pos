@@ -211,7 +211,7 @@ export default function EditCustomerRule() {
           </h1>
           <Link
             to={`/customers/${customerId}/pricing`}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
             Back
           </Link>
@@ -232,7 +232,7 @@ export default function EditCustomerRule() {
               <select
                 name="productId"
                 defaultValue={String(rule.productId)}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -262,7 +262,7 @@ export default function EditCustomerRule() {
                       name="unitKind"
                       value={k}
                       defaultChecked={rule.unitKind === k}
-                      className="h-4 w-4 accent-indigo-600"
+                      className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     />
                     <span>{k}</span>
                   </label>
@@ -275,7 +275,7 @@ export default function EditCustomerRule() {
               <select
                 name="mode"
                 defaultValue={rule.mode}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <option value="FIXED_PRICE">FIXED_PRICE (set new price)</option>
                 <option value="FIXED_DISCOUNT">FIXED_DISCOUNT (minus ₱)</option>
@@ -293,7 +293,7 @@ export default function EditCustomerRule() {
                 step="0.01"
                 min="0"
                 defaultValue={rule.value}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </label>
             {actionData &&
@@ -308,7 +308,7 @@ export default function EditCustomerRule() {
               <input
                 name="active"
                 type="checkbox"
-                className="h-4 w-4 accent-indigo-600"
+                className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 defaultChecked={rule.active}
               />
               <span>Active</span>
@@ -321,7 +321,7 @@ export default function EditCustomerRule() {
                   name="startsAt"
                   type="date"
                   defaultValue={rule.startsAt ?? ""}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </label>
               <label className="block text-sm">
@@ -330,7 +330,7 @@ export default function EditCustomerRule() {
                   name="endsAt"
                   type="date"
                   defaultValue={rule.endsAt ?? ""}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </label>
             </div>
@@ -339,7 +339,7 @@ export default function EditCustomerRule() {
               <button
                 name="_action"
                 value="save"
-                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 disabled={nav.state !== "idle"}
               >
                 {nav.state !== "idle" ? "Saving…" : "Save"}
@@ -348,7 +348,7 @@ export default function EditCustomerRule() {
               <button
                 name="_action"
                 value="delete"
-                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
+                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 onClick={(e) => {
                   if (!confirm("Delete this rule? This cannot be undone."))
                     e.preventDefault();

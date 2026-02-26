@@ -226,7 +226,7 @@ export default function RiderDashboard() {
               {/* New Walk-in / Pad-Order */}
               <Link
                 to="/pad-order"
-                className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100"
+                className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <span>New Walk-in / Pad-order</span>
                 <span className="text-xs font-normal text-indigo-700">
@@ -237,7 +237,7 @@ export default function RiderDashboard() {
               {/* My Orders – later pwede mo i-filter by createdBy = user.id */}
               <Link
                 to="/orders"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <span>My Orders</span>
                 <span className="text-xs text-slate-500">
@@ -248,7 +248,7 @@ export default function RiderDashboard() {
               {/* Customer search – adjust route kung iba actual path mo */}
               <Link
                 to="/customers"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100"
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <span>Customers</span>
                 <span className="text-xs text-slate-500">
@@ -275,7 +275,7 @@ export default function RiderDashboard() {
               {/* My Runs – filtered sa riderId (via /runs?mine=1) */}
               <Link
                 to="/runs?mine=1"
-                className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <span>My Delivery Runs (Check-in &amp; Summary)</span>
                 <span className="text-xs font-normal text-emerald-700">
@@ -289,7 +289,7 @@ export default function RiderDashboard() {
                   pendingVarianceCount > 0
                     ? "border-rose-200 bg-rose-50 font-medium text-rose-800"
                     : "border-slate-200 bg-slate-50 text-slate-800"
-                }`}
+                } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
               >
                 <span>Variances (Pending Accept)</span>
                 <span
@@ -344,7 +344,7 @@ export default function RiderDashboard() {
             </p>
             <Link
               to="/me/schedule"
-              className="mt-3 inline-flex items-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40"
+              className="mt-3 inline-flex items-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               View full schedule
             </Link>
@@ -366,7 +366,7 @@ export default function RiderDashboard() {
             </p>
             <Link
               to="/me/attendance"
-              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Attendance history
             </Link>
@@ -403,7 +403,7 @@ export default function RiderDashboard() {
             <div className="mt-3 flex gap-2">
               <Link
                 to="/me/payroll"
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Payslip / payroll
               </Link>

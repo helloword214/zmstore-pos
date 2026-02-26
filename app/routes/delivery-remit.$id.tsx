@@ -3,7 +3,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 // NOTE: Cashier remit is MONEY-ONLY for DELIVERY (no stock mutations, no sold-from-load).
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
 
 import { db } from "~/utils/db.server";
@@ -11,6 +11,7 @@ import { getRiderCashForDeliveryOrder } from "~/services/riderCash.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
 import { allocateReceiptNo } from "~/utils/receipt";
 import { CurrencyInput } from "~/components/ui/CurrencyInput";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { requireOpenShift } from "~/utils/auth.server";
 
 import { Prisma } from "@prisma/client";
@@ -1074,21 +1075,23 @@ export default function RemitOrderPage() {
   const missingLineTotals = Boolean(
     (discountView as any)?.hasMissingLineTotals,
   );
+  const backTo = fromRunId ? `/cashier/delivery/${fromRunId}` : "/cashier";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Delivery Payment Remit"
+        subtitle={`Order ${order.orderCode} • Customer ${customerLabel}`}
+        backTo={backTo}
+        backLabel={fromRunId ? "Run Remit" : "Dashboard"}
+        maxWidthClassName="max-w-5xl"
+      />
+
       <div className="mx-auto max-w-5xl px-5 py-6">
-        {/* Header */}
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-800">
-              Delivery Payment Remit
-            </h1>
-            <div className="mt-1 text-sm text-slate-500">
-              Order{" "}
-              <span className="font-mono font-medium text-indigo-700">
-                {order.orderCode}
-              </span>
+            <div className="text-sm text-slate-500">
+              Order <span className="font-mono font-medium text-indigo-700">{order.orderCode}</span>
             </div>
           </div>
 
@@ -1335,17 +1338,7 @@ export default function RemitOrderPage() {
 
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-                  <h2 className="text-sm font-medium text-slate-800">
-                    Payment
-                  </h2>
-                  <Link
-                    to={
-                      fromRunId ? `/cashier/delivery/${fromRunId}` : "/cashier"
-                    }
-                    className="text-xs text-indigo-600 hover:underline"
-                  >
-                    Back
-                  </Link>
+                  <h2 className="text-sm font-medium text-slate-800">Payment</h2>
                 </div>
 
                 <div className="px-4 py-4 space-y-3 text-sm">
@@ -1392,14 +1385,14 @@ export default function RemitOrderPage() {
                       type="checkbox"
                       name="printReceipt"
                       value="1"
-                      className="h-4 w-4 accent-indigo-600"
+                      className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       defaultChecked
                     />
                     <span>Go to summary & print after posting</span>
                   </label>
 
                   <button
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                     disabled={
                       nav.state !== "idle" ||
                       !hasFrozenTotal ||

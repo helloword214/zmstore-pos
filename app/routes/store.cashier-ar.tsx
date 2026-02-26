@@ -8,9 +8,20 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { CashierChargeStatus } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 type LoaderData = {
   rows: Array<{
@@ -54,6 +65,13 @@ const upsertPlanTag = (
   if (String(extra || "").trim()) parts.push(String(extra).trim());
   return parts.filter(Boolean).join(" · ").replace(/\s+/g, " ").trim();
 };
+
+function statusTone(status: string): "neutral" | "warning" | "success" | "info" {
+  if (status === "OPEN") return "warning";
+  if (status === "PARTIALLY_SETTLED") return "info";
+  if (status === "SETTLED") return "success";
+  return "neutral";
+}
 
 function nameOfUser(u: any) {
   const emp = u?.employee;
@@ -190,9 +208,10 @@ export default function StoreCashierARPage() {
         title="Cashier AR (Payroll Plan)"
         subtitle="AR list only. Tag items for payroll deduction. Actual salary deduction happens in payroll."
         backTo="/store"
+        backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5 space-y-3">
+      <div className="mx-auto max-w-6xl px-5 py-6 space-y-3">
         <SoTActionBar
           right={
             <Link
@@ -204,12 +223,12 @@ export default function StoreCashierARPage() {
           }
         />
         {showDone ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <SoTAlert tone="success" className="rounded-2xl px-4 py-3 text-sm">
             Tagged for payroll deduction.
-          </div>
+          </SoTAlert>
         ) : null}
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-slate-800">
               Open / Partially settled
@@ -217,37 +236,33 @@ export default function StoreCashierARPage() {
             <div className="text-xs text-slate-500">{rows.length} item(s)</div>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Cashier</th>
-                <th className="px-3 py-2 text-left font-medium">Shift</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-right font-medium">Paid</th>
-                <th className="px-3 py-2 text-right font-medium">Remaining</th>
-                <th className="px-3 py-2 text-left font-medium">
-                  Payroll plan
-                </th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Cashier</SoTTh>
+                <SoTTh>Shift</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Amount</SoTTh>
+                <SoTTh align="right">Paid</SoTTh>
+                <SoTTh align="right">Remaining</SoTTh>
+                <SoTTh>Payroll plan</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
+                <SoTTableEmptyRow
+                  colSpan={7}
+                  message={
                     <SoTEmptyState
                       title="No cashier AR."
                       hint="Open and partially settled cashier charges will appear here."
                     />
-                  </td>
-                </tr>
+                  }
+                />
               ) : (
                 rows.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="border-t border-slate-100 align-top"
-                  >
-                    <td className="px-3 py-2">
+                  <SoTTableRow key={c.id}>
+                    <SoTTd>
                       <div className="text-slate-800">{c.cashier.name}</div>
                       <div className="text-[11px] text-slate-500">
                         {c.cashier.email ?? "—"} · charge ref #{c.id}
@@ -260,9 +275,9 @@ export default function StoreCashierARPage() {
                           </span>
                         </div>
                       ) : null}
-                    </td>
+                    </SoTTd>
 
-                    <td className="px-3 py-2">
+                    <SoTTd>
                       {c.shift ? (
                         <span className="font-mono text-slate-800">
                           shift#{c.shift.id}
@@ -270,17 +285,17 @@ export default function StoreCashierARPage() {
                       ) : (
                         <span className="text-slate-500">—</span>
                       )}
-                    </td>
+                    </SoTTd>
 
-                    <td className="px-3 py-2">
-                      <SoTStatusBadge>
+                    <SoTTd>
+                      <SoTStatusBadge tone={statusTone(c.status)}>
                         {c.status}
                       </SoTStatusBadge>
 
                       {hasPlanTag(c.note) ? (
-                        <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                        <SoTStatusBadge tone="warning" className="ml-2">
                           Payroll deduction plan
-                        </span>
+                        </SoTStatusBadge>
                       ) : null}
 
                       {c.note ? (
@@ -288,56 +303,55 @@ export default function StoreCashierARPage() {
                           Note: {c.note}
                         </div>
                       ) : null}
-                    </td>
+                    </SoTTd>
 
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    <SoTTd align="right" className="tabular-nums">
                       {peso(c.amount)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-700">
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums text-emerald-700">
                       {peso(c.paid)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-rose-700">
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums text-rose-700">
                       {peso(c.remaining)}
-                    </td>
+                    </SoTTd>
 
-                    <td className="px-3 py-2">
+                    <SoTTd>
                       <Form method="post" className="grid gap-2">
                         <input type="hidden" name="chargeId" value={c.id} />
                         <input
                           name="note"
                           placeholder="Note (optional) e.g., cutoff/date/remark"
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         />
                         <input
                           type="hidden"
                           name="plan"
                           value="PAYROLL_DEDUCTION"
                         />
-                        <button
+                        <SoTButton
                           type="submit"
                           name="_intent"
                           value="set-collection-plan"
-                          className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+                          variant="secondary"
+                          className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 focus-visible:ring-amber-200"
                           disabled={hasPlanTag(c.note)}
                         >
                           {hasPlanTag(c.note)
                             ? "Already tagged for payroll"
                             : "Tag for payroll deduction (AR)"}
-                        </button>
+                        </SoTButton>
                         <div className="text-[11px] text-slate-500">
                           Remaining:{" "}
-                          <span className="font-medium">
-                            {peso(c.remaining)}
-                          </span>
+                          <span className="font-medium">{peso(c.remaining)}</span>
                         </div>
                       </Form>
-                    </td>
-                  </tr>
+                    </SoTTd>
+                  </SoTTableRow>
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

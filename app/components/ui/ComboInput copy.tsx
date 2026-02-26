@@ -95,7 +95,7 @@ export function ComboInput({
           "w-full p-2 border rounded shadow-sm",
           error
             ? "border-red-500 bg-red-50 text-gray-800"
-            : "border-gray-300 focus:border-blue-500"
+            : "border-gray-300 focus-visible:border-blue-500"
         )}
       />
       {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
@@ -116,7 +116,7 @@ export function ComboInput({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") handleSelect(opt);
                 }}
-                className="px-3 py-2 hover:bg-gray-100 cursor-pointer focus:outline-none focus:bg-gray-100"
+                className="px-3 py-2 hover:bg-gray-100 cursor-pointer focus-visible:outline-none focus-visible:bg-gray-100"
               >
                 {opt.label}
               </li>
@@ -130,7 +130,7 @@ export function ComboInput({
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") handleCreate();
               }}
-              className="px-3 py-2 text-blue-600 hover:bg-gray-100 cursor-pointer focus:outline-none focus:bg-gray-100"
+              className="px-3 py-2 text-blue-600 hover:bg-gray-100 cursor-pointer focus-visible:outline-none focus-visible:bg-gray-100"
             >
               Create “{inputValue}”
             </li>

@@ -238,7 +238,7 @@ function ModeAwareValue() {
         type="number"
         step={step}
         min={min}
-        className="mt-1 w-full rounded border px-3 py-2"
+        className="mt-1 w-full rounded border px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
       />
     </div>
   );
@@ -285,7 +285,7 @@ export default function CustomerPricingRules() {
           <div className="text-slate-700">Unit</div>
           <select
             name="unitKind"
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded border px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             defaultValue="RETAIL"
           >
             <option value="RETAIL">Retail</option>
@@ -296,7 +296,7 @@ export default function CustomerPricingRules() {
           <div className="text-slate-700">Mode</div>
           <select
             name="mode"
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded border px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             defaultValue="FIXED_PRICE"
           >
             <option value="FIXED_PRICE">Fixed price</option>
@@ -310,7 +310,7 @@ export default function CustomerPricingRules() {
           <input
             name="startsAt"
             type="datetime-local"
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded border px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
         </label>
         <label className="text-sm">
@@ -318,7 +318,7 @@ export default function CustomerPricingRules() {
           <input
             name="endsAt"
             type="datetime-local"
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded border px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
         </label>
         <label className="text-sm inline-flex items-center gap-2">
@@ -327,12 +327,12 @@ export default function CustomerPricingRules() {
             name="active"
             value="1"
             defaultChecked
-            className="h-4 w-4"
+            className="h-4 w-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
           <span>Active</span>
         </label>
         <div className="sm:col-span-2">
-          <button className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm">
+          <button className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             Add Rule
           </button>
         </div>
@@ -361,7 +361,7 @@ export default function CustomerPricingRules() {
               <div className="flex items-center gap-2">
                 <Link
                   to={String(r.id)}
-                  className="rounded-xl px-3 py-1.5 text-xs border bg-white hover:bg-slate-50"
+                  className="rounded-xl px-3 py-1.5 text-xs border bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Edit
                 </Link>
@@ -378,7 +378,7 @@ export default function CustomerPricingRules() {
                       r.active
                         ? "bg-amber-50 border-amber-200 text-amber-800"
                         : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                    }`}
+                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                   >
                     {r.active ? "Deactivate" : "Activate"}
                   </button>
@@ -391,7 +391,7 @@ export default function CustomerPricingRules() {
                 >
                   <input type="hidden" name="_action" value="delete" />
                   <input type="hidden" name="id" value={r.id} />
-                  <button className="rounded-xl px-3 py-1.5 text-xs border bg-red-50 border-red-200 text-red-700">
+                  <button className="rounded-xl px-3 py-1.5 text-xs border bg-red-50 border-red-200 text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
                     Delete
                   </button>
                 </Form>

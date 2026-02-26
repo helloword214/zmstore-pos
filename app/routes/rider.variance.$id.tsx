@@ -1,11 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData } from "@remix-run/react";
+import { Form, useLoaderData } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { EmployeeRole, RiderChargeStatus, Prisma } from "@prisma/client";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 
 // ------------------------------------------------------------
 // Payroll plan tagging (AR list)
@@ -49,6 +54,22 @@ type LoaderData = {
 
 const r2 = (n: number) =>
   Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+
+function statusTone(status: string): "neutral" | "success" | "warning" | "danger" {
+  if (status === "RIDER_ACCEPTED" || status === "CLOSED") return "success";
+  if (status === "MANAGER_APPROVED") return "warning";
+  if (status === "WAIVED") return "neutral";
+  return "neutral";
+}
+
+function resolutionTone(
+  resolution: string | null
+): "neutral" | "warning" | "danger" | "info" {
+  if (resolution === "CHARGE_RIDER") return "danger";
+  if (resolution === "WAIVE") return "neutral";
+  if (resolution === "INFO_ONLY") return "info";
+  return "warning";
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const me = await requireRole(request, ["EMPLOYEE"]);
@@ -257,31 +278,26 @@ export default function RiderVarianceDetailPage() {
     }).format(n);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Variance #{v.id}
-            </h1>
-            <p className="text-xs text-slate-500">
-              Run <span className="font-mono">{v.run.runCode}</span> · Status{" "}
-              <span className="font-medium">{v.status}</span>
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              to="/rider/variances"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              ← Back
-            </Link>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title={`Variance #${v.id}`}
+        subtitle={`Run ${v.run.runCode} · Status ${v.status}`}
+        backTo="/rider/variances"
+        backLabel="Variances"
+        maxWidthClassName="max-w-3xl"
+      />
 
-      <div className="mx-auto max-w-3xl px-4 py-4 space-y-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mx-auto max-w-3xl px-5 py-6 space-y-3">
+        <SoTCard>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <SoTStatusBadge tone={statusTone(v.status)}>{v.status}</SoTStatusBadge>
+            {v.resolution ? (
+              <SoTStatusBadge tone={resolutionTone(v.resolution)}>
+                {v.resolution}
+              </SoTStatusBadge>
+            ) : null}
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <div className="text-[11px] text-slate-500">Expected</div>
@@ -309,10 +325,6 @@ export default function RiderVarianceDetailPage() {
 
           <div className="mt-3 text-xs text-slate-600 space-y-1">
             <div>
-              Resolution:{" "}
-              <span className="font-medium">{v.resolution ?? "—"}</span>
-            </div>
-            <div>
               Manager approved at:{" "}
               <span className="font-medium">
                 {v.managerApprovedAt
@@ -334,30 +346,30 @@ export default function RiderVarianceDetailPage() {
           </div>
 
           {canAccept ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              <div className="font-semibold">Action required</div>
-              <p className="mt-1">
+            <SoTAlert tone="warning" className="mt-4">
+              <p className="font-semibold">Action required</p>
+              <p className="mt-1 text-xs">
                 Manager decided to{" "}
                 <span className="font-semibold">charge rider</span>. Please
                 accept to confirm you acknowledge this variance.
               </p>
               <Form method="post" className="mt-3">
-                <button
+                <SoTButton
                   type="submit"
                   name="_intent"
                   value="accept"
-                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                  variant="primary"
                 >
                   Accept variance
-                </button>
+                </SoTButton>
               </Form>
-            </div>
+            </SoTAlert>
           ) : (
-            <div className="mt-4 text-xs text-slate-500">
+            <SoTAlert tone="info" className="mt-4">
               No action required.
-            </div>
+            </SoTAlert>
           )}
-        </div>
+        </SoTCard>
       </div>
     </main>
   );

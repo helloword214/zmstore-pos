@@ -3,6 +3,16 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { loadRunReceiptCashMaps } from "~/services/runReceipts.server";
@@ -286,118 +296,97 @@ export default function CashierDeliveryIndexPage() {
       style: "currency",
       currency: "PHP",
     }).format(n);
+  const statusMeta = (r: RunRow) => {
+    if (r.lockedByOther) {
+      return {
+        tone: "warning" as const,
+        label: `Locked by ${r.lockOwnerLabel ?? "another cashier"}`,
+      };
+    }
+    if (r.lockedByMe) {
+      return { tone: "info" as const, label: "Your remit in progress" };
+    }
+    return { tone: "success" as const, label: "Ready for remit" };
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Delivery Remit — Closed Runs"
+        subtitle="Select a closed run to continue cashier turnover remit."
+        backTo="/cashier"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-5xl"
+      />
+
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-slate-900">
-            Delivery Remit — Closed Runs
-          </h1>
-
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-500">{rows.length} run(s)</span>
-
-            <a
-              href="/cashier"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              ← Cashier Dashboard
-            </a>
-          </div>
+        <div className="mb-3 text-xs text-slate-500">
+          {rows.length} run(s)
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <SoTTable>
+            <SoTTableHead>
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Run</th>
-                <th className="px-3 py-2 text-left font-medium">Rider</th>
-                <th className="px-3 py-2 text-right font-medium">
-                  # Delivery Orders
-                </th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Cash to remit
-                </th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2"></th>
+                <SoTTh>Run</SoTTh>
+                <SoTTh>Rider</SoTTh>
+                <SoTTh align="right"># Delivery Orders</SoTTh>
+                <SoTTh align="right">Cash to remit</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right"></SoTTh>
               </tr>
-            </thead>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-4 text-center text-slate-500"
-                  >
-                    No closed delivery runs to remit.
-                  </td>
-                </tr>
+                <SoTTableEmptyRow colSpan={6} message="No closed delivery runs to remit." />
               ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2">
-                      <div className="font-mono text-xs font-semibold text-slate-800">
-                        {r.runCode}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        Run #{r.id}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.riderLabel ?? (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {r.openOrderCount}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {peso(r.openOrderTotal)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${
-                          r.lockedByOther
-                            ? "border border-amber-200 bg-amber-50 text-amber-700"
-                            : r.lockedByMe
-                            ? "border border-indigo-200 bg-indigo-50 text-indigo-700"
-                            : "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                        }`}
-                      >
-                        {r.lockedByOther
-                          ? `Locked by ${r.lockOwnerLabel ?? "another cashier"}`
-                          : r.lockedByMe
-                          ? "Your remit in progress"
-                          : "Ready for remit"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {r.lockedByOther ? (
-                        <span className="inline-flex cursor-not-allowed items-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">
-                          Open Remit
-                        </span>
-                      ) : (
-                        <Link
-                          to={`/cashier/delivery/${r.id}`}
-                          onClick={(e) => {
-                            const msg = r.lockedByMe
-                              ? `Resume remit for run ${r.runCode}?\n\nThis run is already assigned to you and will remain locked while you are remitting.`
-                              : `Open remit for run ${r.runCode}?\n\nThis run will be locked to you as cashier while you are remitting.`;
-                            const ok = window.confirm(msg);
-                            if (!ok) e.preventDefault();
-                          }}
-                          className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
-                        >
-                          {r.lockedByMe ? "Resume Remit" : "Open Remit"}
-                        </Link>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                rows.map((r) => {
+                  const status = statusMeta(r);
+                  return (
+                    <SoTTableRow key={r.id}>
+                      <SoTTd>
+                        <div className="font-mono text-xs font-semibold text-slate-800">
+                          {r.runCode}
+                        </div>
+                        <div className="text-[11px] text-slate-500">Run #{r.id}</div>
+                      </SoTTd>
+                      <SoTTd>{r.riderLabel ?? <span className="text-slate-400">—</span>}</SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {r.openOrderCount}
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
+                        {peso(r.openOrderTotal)}
+                      </SoTTd>
+                      <SoTTd>
+                        <SoTStatusBadge tone={status.tone}>{status.label}</SoTStatusBadge>
+                      </SoTTd>
+                      <SoTTd align="right">
+                        {r.lockedByOther ? (
+                          <span className="inline-flex cursor-not-allowed items-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">
+                            Open Remit
+                          </span>
+                        ) : (
+                          <Link
+                            to={`/cashier/delivery/${r.id}`}
+                            onClick={(e) => {
+                              const msg = r.lockedByMe
+                                ? `Resume remit for run ${r.runCode}?\n\nThis run is already assigned to you and will remain locked while you are remitting.`
+                                : `Open remit for run ${r.runCode}?\n\nThis run will be locked to you as cashier while you are remitting.`;
+                              const ok = window.confirm(msg);
+                              if (!ok) e.preventDefault();
+                            }}
+                            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+                          >
+                            {r.lockedByMe ? "Resume Remit" : "Open Remit"}
+                          </Link>
+                        )}
+                      </SoTTd>
+                    </SoTTableRow>
+                  );
+                })
               )}
             </tbody>
-          </table>
+          </SoTTable>
         </div>
       </div>
     </main>

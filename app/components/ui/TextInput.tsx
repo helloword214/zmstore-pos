@@ -34,7 +34,7 @@ export function TextInput({ label, error, id, className, ...props }: Props) {
           "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
           "placeholder:text-slate-400",
           // focus/hover
-          "focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 hover:bg-slate-50/50",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:border-indigo-300 hover:bg-slate-50/50",
           // error state
           error ? "border-rose-300 bg-rose-50" : "border-slate-300",
           className

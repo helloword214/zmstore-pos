@@ -47,7 +47,7 @@ export default function DevSlipTest() {
       <Form method="post" action="/orders.new">
         <input type="hidden" name="items" value={payload} />
         <input type="hidden" name="terminalId" value="KIOSK-01" />
-        <button className="px-3 py-2 rounded bg-black text-white text-sm">
+        <button className="px-3 py-2 rounded bg-black text-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
           Create & Open Slip
         </button>
       </Form>

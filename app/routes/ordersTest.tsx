@@ -1080,7 +1080,7 @@ export default function DispatchStagingPage() {
       <div className="mb-3">
         <Link
           to={"/cashier?tab=dispatch"}
-          className="text-sm text-indigo-600 hover:underline"
+          className="text-sm text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         >
           ← Back to Cashier
         </Link>
@@ -1372,7 +1372,7 @@ export default function DispatchStagingPage() {
                           ];
                         });
                       }}
-                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
                       + {qa.label}
                     </button>
@@ -1394,7 +1394,7 @@ export default function DispatchStagingPage() {
                         },
                       ])
                     }
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
                     + Add row
                   </button>
@@ -1488,7 +1488,7 @@ export default function DispatchStagingPage() {
                                   : undefined
                               }
                               onClick={() => nudgeQty(L.key, -1)}
-                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
+                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Decrease"
                             >
                               −
@@ -1562,7 +1562,7 @@ export default function DispatchStagingPage() {
                               className={[
                                 "h-10 w-full max-w-[7rem]",
                                 "rounded-md border border-slate-300 bg-white px-3 text-sm text-right",
-                                "outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200",
+                                "outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200",
                                 "[appearance:textfield]",
                                 "[-moz-appearance:textfield]",
                                 "[&::-webkit-inner-spin-button]:appearance-none",
@@ -1591,7 +1591,7 @@ export default function DispatchStagingPage() {
                                   : undefined
                               }
                               onClick={() => nudgeQty(L.key, +1)}
-                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0"
+                              className="h-10 w-10 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Increase"
                             >
                               +
@@ -1626,7 +1626,7 @@ export default function DispatchStagingPage() {
                                 prev.filter((x) => x.key !== L.key)
                               )
                             }
-                            className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100"
+                            className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           >
                             ✕
                           </button>
@@ -1669,7 +1669,7 @@ export default function DispatchStagingPage() {
             <button
               name="intent"
               value="cancel"
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Cancel
             </button>
@@ -1678,14 +1678,14 @@ export default function DispatchStagingPage() {
                 <button
                   name="intent"
                   value="save"
-                  className="rounded-xl bg-white border border-indigo-200 px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50"
+                  className="rounded-xl bg-white border border-indigo-200 px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Save & Stay
                 </button>
                 <button
                   name="intent"
                   value="save-exit"
-                  className="rounded-xl bg-white border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl bg-white border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   title="Save and return to Cashier"
                 >
                   Save & Exit
@@ -1707,7 +1707,7 @@ export default function DispatchStagingPage() {
                       ? "One or more lines exceed available stock"
                       : "Ready to dispatch (server checks coming next)"
                   }
-                  className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Dispatch & Print
                 </button>
@@ -1715,7 +1715,7 @@ export default function DispatchStagingPage() {
             ) : (
               <a
                 href={`/orders/${order.id}/ticket?autoprint=1&autoback=1`}
-                className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm"
+                className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Reprint Ticket
               </a>

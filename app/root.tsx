@@ -6,6 +6,7 @@ import {
   ScrollRestoration,
 } from "@remix-run/react";
 import type { LinksFunction } from "@remix-run/node";
+import { SoTBrandFooter } from "~/components/ui/SoTBrandFooter";
 
 import "./tailwind.css";
 
@@ -33,6 +34,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <SoTBrandFooter ownerName="John Michael Benito" />
         <ScrollRestoration />
         <Scripts />
       </body>

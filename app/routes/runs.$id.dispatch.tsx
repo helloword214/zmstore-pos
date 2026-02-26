@@ -3,7 +3,6 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
-  Link,
   useActionData,
   useLoaderData,
   useNavigation,
@@ -15,6 +14,11 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { ProductPickerHybridLoadout } from "~/components/ui/ProductPickerHybridLoadout";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 
 // Simple built-in fallback capacities (kg) if DB profiles missing
 const VEHICLE_CAPACITY_KG: Record<string, number> = {
@@ -108,6 +112,21 @@ function aggregateLoadoutSnapshot(
     }
   }
   return Array.from(map.values()).sort((a, b) => a.productId - b.productId);
+}
+
+function runStatusTone(
+  status: LoaderData["run"]["status"]
+): "neutral" | "success" | "warning" | "info" {
+  if (status === "DISPATCHED" || status === "CHECKED_IN" || status === "CLOSED") {
+    return "success";
+  }
+  if (status === "CANCELLED") {
+    return "warning";
+  }
+  if (status === "PLANNED") {
+    return "info";
+  }
+  return "neutral";
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -1238,42 +1257,28 @@ export default function RunDispatchPage() {
   }, [aggregatedLoadout, stockMap]);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-6xl px-4 py-4">
-        <div className="mb-3">
-          <Link to="/runs" className="text-sm text-indigo-600 hover:underline">
-            ← Back to Runs
-          </Link>
-        </div>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Dispatch Staging"
+        subtitle={`Run ${run.runCode} · ${
+          readOnly
+            ? "Already dispatched (read-only)."
+            : "Assign rider, vehicle, and loadout before dispatch."
+        }`}
+        backTo="/runs"
+        backLabel="Runs"
+      />
 
-        <header className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900">
-              Dispatch Staging —{" "}
-              <span className="font-mono text-indigo-700">{run.runCode}</span>
-            </h1>
-            <p className="mt-1 text-xs text-slate-500">
-              {readOnly
-                ? "Already dispatched (read-only)."
-                : "Assign rider, vehicle, and loadout before dispatch."}
-            </p>
-          </div>
-          <div className="text-xs">
-            <span
-              className={`rounded-full border px-2 py-1 ${
-                run.status === "DISPATCHED"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 bg-white text-slate-700"
-              }`}
-            >
-              {run.status}
-            </span>
-          </div>
-        </header>
+      <div className="mx-auto max-w-6xl px-5 py-6">
+        <div className="mb-3 flex justify-end text-xs">
+          <SoTStatusBadge tone={runStatusTone(run.status)}>
+            {run.status}
+          </SoTStatusBadge>
+        </div>
 
         {/* Parent orders clarity box */}
         {parentOrdersSummary && (
-          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <SoTCard className="mb-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-medium text-slate-800">
                 Linked Parent Orders (PAD)
@@ -1303,24 +1308,24 @@ export default function RunDispatchPage() {
                 ))}
               </div>
             )}
-          </div>
+          </SoTCard>
         )}
 
-        {savedFlag && (
-          <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        {savedFlag ? (
+          <SoTAlert tone="success" className="mb-3 text-sm">
             Staging saved.
-          </div>
-        )}
+          </SoTAlert>
+        ) : null}
 
-        {actionData && !actionData.ok && (
-          <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        {actionData && !actionData.ok ? (
+          <SoTAlert tone="danger" className="mb-3 text-sm">
             {actionData.error}
-          </div>
-        )}
+          </SoTAlert>
+        ) : null}
 
         <div className="grid gap-4">
           {/* Rider */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <SoTCard>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-medium text-slate-800">
                 Driver <span className="text-rose-600">*</span>
@@ -1354,10 +1359,10 @@ export default function RunDispatchPage() {
                 />
               </div>
             )}
-          </div>
+          </SoTCard>
 
           {/* Vehicle + capacity */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <SoTCard>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-medium text-slate-800">
                 Vehicle <span className="text-slate-400">(optional)</span>
@@ -1382,10 +1387,10 @@ export default function RunDispatchPage() {
                 className={disableAll ? "opacity-70 pointer-events-none" : ""}
               />
             )}
-          </div>
+          </SoTCard>
 
           {/* Loadout */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <SoTCard className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div className="text-sm font-medium text-slate-800">Loadout</div>
               <div className="text-xs text-slate-600">
@@ -1406,20 +1411,20 @@ export default function RunDispatchPage() {
               </div>
             </div>
             <div className="space-y-3 px-4 py-4">
-              {overCapacity && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {overCapacity ? (
+                <SoTAlert tone="danger">
                   Capacity exceeded (kg). Adjust loadout or choose a different
                   vehicle.
-                </div>
-              )}
-              {overStock && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                </SoTAlert>
+              ) : null}
+              {overStock ? (
+                <SoTAlert tone="warning">
                   One or more lines exceed available stock.
-                </div>
-              )}
+                </SoTAlert>
+              ) : null}
 
               {!readOnly && (
-                <button
+                <SoTButton
                   type="button"
                   onClick={() =>
                     setLoadout((prev) => [
@@ -1429,14 +1434,14 @@ export default function RunDispatchPage() {
                         productId: null,
                         name: "",
                         qty: "1",
-                      },
-                    ])
+                        },
+                      ])
                   }
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  variant="secondary"
                   disabled={disableAll}
                 >
                   + Add row
-                </button>
+                </SoTButton>
               )}
 
               <div className="grid gap-2">
@@ -1574,7 +1579,7 @@ export default function RunDispatchPage() {
                                   }, [])
                                 );
                               }}
-                              className="h-10 w-full max-w-[7rem] rounded-xl border border-slate-200 bg-white px-3 text-sm text-right outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                              className="h-10 w-full max-w-[7rem] rounded-xl border border-slate-200 bg-white px-3 text-sm text-right outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                             />
                           )}
                           {isOver && (
@@ -1606,7 +1611,7 @@ export default function RunDispatchPage() {
                 )}
               </div>
             </div>
-          </div>
+          </SoTCard>
 
           {/* Actions */}
           <Form
@@ -1620,34 +1625,35 @@ export default function RunDispatchPage() {
             <input type="hidden" name="vehicleId" value={vehicleId ?? ""} />
             <input type="hidden" name="loadoutJson" value={serializedLoadout} />
 
-            <button
+            <SoTButton
               name="intent"
               value="cancel"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              variant="secondary"
               type="submit"
             >
               Cancel
-            </button>
+            </SoTButton>
 
             {!readOnly ? (
               <>
-                <button
+                <SoTButton
                   name="intent"
                   value="save"
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+                  variant="secondary"
+                  className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                 >
                   Save & Stay
-                </button>
-                <button
+                </SoTButton>
+                <SoTButton
                   name="intent"
                   value="save-exit"
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  variant="secondary"
                 >
                   Save & Exit
-                </button>
-                <button
+                </SoTButton>
+                <SoTButton
                   name="intent"
                   value="dispatch"
                   type="submit"
@@ -1665,20 +1671,22 @@ export default function RunDispatchPage() {
                       ? "Add extra loadout or link parent orders (PAD)"
                       : "Ready to dispatch"
                   }
-                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  variant="primary"
+                  className="disabled:cursor-not-allowed"
                 >
                   Dispatch
-                </button>
+                </SoTButton>
               </>
             ) : (
-              <button
+              <SoTButton
                 name="intent"
                 value="revert-planned"
                 type="submit"
-                className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                variant="secondary"
+                className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
               >
                 Revert to Planned
-              </button>
+              </SoTButton>
             )}
           </Form>
         </div>

@@ -64,7 +64,7 @@ export default function ReceiptsIndex() {
           name="q"
           defaultValue={q}
           placeholder="Search order code / receipt no / rider / customer…"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         />
       </Form>
 
@@ -109,7 +109,7 @@ export default function ReceiptsIndex() {
                   <td className="p-2 text-right">
                     <a
                       href={`/orders/${o.id}/receipt?autoprint=1&autoback=1`}
-                      className="text-indigo-600 hover:underline"
+                      className="text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       target="_blank"
                       rel="noreferrer"
                     >

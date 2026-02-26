@@ -247,7 +247,7 @@ export default function CustomerStatementPage() {
           <div className="flex items-center gap-2">
             <Link
               to={`/ar/customers/${customer.id}`}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Back
             </Link>
@@ -272,7 +272,7 @@ export default function CustomerStatementPage() {
               type="date"
               name="start"
               defaultValue={sp.get("start") ?? period.start}
-              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
           <label className="text-sm">
@@ -281,10 +281,10 @@ export default function CustomerStatementPage() {
               type="date"
               name="end"
               defaultValue={sp.get("end") ?? period.end}
-              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
-          <button className="h-[38px] rounded-xl bg-indigo-600 text-white px-3 text-sm hover:bg-indigo-700">
+          <button className="h-[38px] rounded-xl bg-indigo-600 text-white px-3 text-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             Apply
           </button>
         </Form>

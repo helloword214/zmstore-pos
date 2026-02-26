@@ -754,7 +754,7 @@ export default function KioskPage() {
   // ── UI helpers for nicer buttons ──────────────────────────
   // ✅ keep these names; only classes updated
   const btnBase =
-    "inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-sm transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200";
+    "inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-sm transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200";
 
   const btnOutline =
     "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:shadow-none";
@@ -930,7 +930,7 @@ export default function KioskPage() {
               onClick={() => {
                 resetOrderPadState();
               }}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               title="Start a fresh cart"
             >
               New Order
@@ -938,7 +938,7 @@ export default function KioskPage() {
             {/* Clear now only clears cart (keeps filters/search) */}
             <button
               onClick={clearCart}
-              className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700"
+              className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Clear
             </button>
@@ -946,7 +946,7 @@ export default function KioskPage() {
             <Form method="post" action="/logout">
               <button
                 type="submit"
-                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 title="Sign out"
               >
                 Logout
@@ -982,7 +982,7 @@ export default function KioskPage() {
                 activeCat === ""
                   ? "border-indigo-600 bg-indigo-600 text-white"
                   : "border-slate-200 bg-white text-slate-700"
-              }`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
             >
               <span>✨</span>
               <span className="font-medium">All</span>
@@ -997,7 +997,7 @@ export default function KioskPage() {
                     selected
                       ? "border-indigo-600 bg-indigo-600 text-white"
                       : "border-slate-200 bg-white text-slate-700"
-                  }`}
+                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                   title={c.name}
                 >
                   <span className="text-[14px] leading-none">
@@ -1019,12 +1019,12 @@ export default function KioskPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search products…"
-            className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+            className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
           />
           <button
             type="button"
             onClick={openScannerMobile}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             title="Scan barcode"
           >
             📷
@@ -1041,7 +1041,7 @@ export default function KioskPage() {
               activeCat === ""
                 ? "bg-indigo-600 text-white border-indigo-600"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
             onClick={() => setActiveCat("")}
           >
             All
@@ -1053,7 +1053,7 @@ export default function KioskPage() {
                 activeCat === c.id
                   ? "bg-indigo-600 text-white border-indigo-600"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
               onClick={() => setActiveCat(c.id)}
             >
               {c.name}
@@ -1073,7 +1073,7 @@ export default function KioskPage() {
               placeholder="🔍 Search products…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </div>
           <div className="w-56">
@@ -1273,7 +1273,7 @@ export default function KioskPage() {
                                     title={title}
                                     className={`${btnBase} ${
                                       disabled ? btnDisabled : btnOutline
-                                    }`}
+                                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                                   >
                                     <span>➕ {retailAddLabel(p)}</span>
                                     {Number(p.price) > 0 && (
@@ -1318,7 +1318,7 @@ export default function KioskPage() {
                                         onClick={() =>
                                           addWithQty(f as 0.25 | 0.5 | 0.75)
                                         }
-                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs hover:bg-slate-50"
+                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                         title={`Add ${f} kg`}
                                       >
                                         {f === 0.25
@@ -1352,7 +1352,7 @@ export default function KioskPage() {
                                     title={title}
                                     className={`${btnBase} ${
                                       disabled ? btnDisabled : btnOutline
-                                    }`}
+                                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                                   >
                                     <span>➕ {packAddLabel(p)}</span>
                                     {Number(p.srp) > 0 && (
@@ -1384,7 +1384,7 @@ export default function KioskPage() {
                                   title={title}
                                   className={`${btnBase} ${
                                     disabled ? btnDisabled : btnOutline
-                                  }`}
+                                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                                 >
                                   <span>➕ {packAddLabel(p)}</span>
                                   {Number(p.srp) > 0 && (
@@ -1408,7 +1408,7 @@ export default function KioskPage() {
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => dec(currentLine.key)}
-                                className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                                className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 aria-label="Decrease"
                               >
                                 −
@@ -1420,7 +1420,7 @@ export default function KioskPage() {
                               </div>
                               <button
                                 onClick={() => inc(currentLine.key)}
-                                className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                                className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 aria-label="Increase"
                               >
                                 +
@@ -1431,7 +1431,7 @@ export default function KioskPage() {
                               {retailAvailable && (
                                 <button
                                   onClick={() => add(p, "retail")}
-                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none"
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                   title={`Add by ${unit}`}
                                 >
                                   + {unit}
@@ -1440,7 +1440,7 @@ export default function KioskPage() {
                               {packAvailable && (
                                 <button
                                   onClick={() => add(p, "pack")}
-                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none"
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                   title={`Add ${packUnit}`}
                                 >
                                   + {packUnit}
@@ -1460,7 +1460,7 @@ export default function KioskPage() {
               <div className="hidden md:block pt-2">
                 <button
                   onClick={() => setShown((n) => Math.min(total, n + 50))}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Load more ({total - pageItems.length} left)
                 </button>
@@ -1487,7 +1487,7 @@ export default function KioskPage() {
             onClick={() => {
               clearCart();
             }}
-            className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             disabled={items.length === 0}
           >
             <span>Clear</span>
@@ -1550,7 +1550,7 @@ export default function KioskPage() {
                             <div className="flex items-center rounded-lg border border-slate-200 bg-white h-9">
                               <button
                                 onClick={() => dec(it.key)}
-                                className="px-2 h-9 hover:bg-slate-50"
+                                className="px-2 h-9 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 aria-label="Decrease 1 kg"
                               >
                                 −
@@ -1560,7 +1560,7 @@ export default function KioskPage() {
                               </div>
                               <button
                                 onClick={() => inc(it.key)}
-                                className="px-2 h-9 hover:bg-slate-50"
+                                className="px-2 h-9 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 aria-label="Increase 1 kg"
                               >
                                 +
@@ -1583,7 +1583,7 @@ export default function KioskPage() {
                                       },
                                     }))
                                   }
-                                  className="px-2 h-9 text-xs bg-white hover:bg-slate-50 border-l first:border-l-0 border-slate-200 inline-block"
+                                  className="px-2 h-9 text-xs bg-white hover:bg-slate-50 border-l first:border-l-0 border-slate-200 inline-block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                   title={`Set fraction to ${f} kg`}
                                 >
                                   {f === 0.25 ? "¼" : f === 0.5 ? "½" : "¾"}
@@ -1596,7 +1596,7 @@ export default function KioskPage() {
                             {/* Non-kg: keep compact number input + ± */}
                             <button
                               onClick={() => dec(it.key)}
-                              className="px-2 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                              className="px-2 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Decrease"
                             >
                               −
@@ -1613,11 +1613,11 @@ export default function KioskPage() {
                                 if (v === "" || v === "-" || v === ".") return;
                                 setQty(it.key, Number(v));
                               }}
-                              className="w-20 h-9 text-sm rounded-lg border border-slate-300 bg-white px-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                              className="w-20 h-9 text-sm rounded-lg border border-slate-300 bg-white px-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                             />
                             <button
                               onClick={() => inc(it.key)}
-                              className="px-2 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                              className="px-2 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Increase"
                             >
                               +
@@ -1632,7 +1632,7 @@ export default function KioskPage() {
                               return c;
                             })
                           }
-                          className="ml-1 px-2 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50"
+                          className="ml-1 px-2 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           aria-label="Remove line"
                         >
                           🗑
@@ -1689,7 +1689,7 @@ export default function KioskPage() {
                     }}
                     onFocus={() => custQ.trim() && setCustOpen(true)}
                     placeholder="09xx… / name / alias"
-                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2"
+                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   />
                   {selectedCustomer ? (
                     <button
@@ -1700,7 +1700,7 @@ export default function KioskPage() {
                         setDeliveryAddressId(null);
                         setCustQ("");
                       }}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
                       Clear
                     </button>
@@ -1741,7 +1741,7 @@ export default function KioskPage() {
                             setCustQ("");
                             setCustOpen(false);
                           }}
-                          className="w-full text-left px-2 py-2 hover:bg-slate-50"
+                          className="w-full text-left px-2 py-2 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
                           <div className="text-sm text-slate-900">
                             {h.firstName} {h.middleName || ""} {h.lastName}{" "}
@@ -1764,17 +1764,21 @@ export default function KioskPage() {
                 {channel === "DELIVERY" &&
                 selectedCustomer?.addresses?.length ? (
                   <div className="mt-2">
-                    <label className="block text-xs text-slate-600">
+                    <label
+                      htmlFor="delivery-address-id"
+                      className="block text-xs text-slate-600"
+                    >
                       Address
                     </label>
                     <select
+                      id="delivery-address-id"
                       value={deliveryAddressId ?? ""}
                       onChange={(e) =>
                         setDeliveryAddressId(
                           e.target.value ? Number(e.target.value) : null,
                         )
                       }
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
                       <option value="">— None / custom —</option>
                       {selectedCustomer.addresses.map((a) => (
@@ -1819,7 +1823,7 @@ export default function KioskPage() {
                     <input
                       value={deliverTo}
                       onChange={(e) => setDeliverTo(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       placeholder="Juan Dela Cruz — #123 Purok 1, Brgy. Sample, City"
                     />
                   </label>
@@ -1829,7 +1833,7 @@ export default function KioskPage() {
                       <input
                         value={deliverPhone}
                         onChange={(e) => setDeliverPhone(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         placeholder="09xx xxx xxxx"
                       />
                     </label>
@@ -1838,7 +1842,7 @@ export default function KioskPage() {
                       <input
                         value={deliverLandmark}
                         onChange={(e) => setDeliverLandmark(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         placeholder="Near barangay hall"
                       />
                     </label>
@@ -1849,7 +1853,7 @@ export default function KioskPage() {
                       <input
                         value={deliverGeoLat}
                         onChange={(e) => setDeliverGeoLat(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         placeholder="14.5995"
                         inputMode="decimal"
                       />
@@ -1859,7 +1863,7 @@ export default function KioskPage() {
                       <input
                         value={deliverGeoLng}
                         onChange={(e) => setDeliverGeoLng(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         placeholder="120.9842"
                         inputMode="decimal"
                       />
@@ -1870,7 +1874,7 @@ export default function KioskPage() {
                     <input
                       value={deliverPhotoUrl}
                       onChange={(e) => setDeliverPhotoUrl(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       placeholder="https://…"
                     />
                   </label>
@@ -1943,14 +1947,14 @@ export default function KioskPage() {
                 <label className="mb-2 inline-flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 accent-indigo-600"
+                    className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     checked={printSlip}
                     onChange={(e) => setPrintSlip(e.target.checked)}
                   />
                   <span>{printLabel}</span>
                 </label>
                 <button
-                  className="mt-2 w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  className="mt-2 w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   disabled={
                     items.length === 0 ||
                     createSlip.state !== "idle" ||
@@ -1990,7 +1994,7 @@ export default function KioskPage() {
           <button
             type="button"
             aria-label="Close"
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => setScanOpen(false)}
           />
           <div className="relative w-full max-w-md rounded-2xl overflow-hidden bg-black shadow-lg">
@@ -2006,7 +2010,7 @@ export default function KioskPage() {
             </div>
             <button
               onClick={() => setScanOpen(false)}
-              className="absolute top-2 right-2 rounded-xl bg-white/90 px-2 py-1 text-sm text-slate-800 shadow"
+              className="absolute top-2 right-2 rounded-xl bg-white/90 px-2 py-1 text-sm text-slate-800 shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Close
             </button>
@@ -2024,7 +2028,7 @@ export default function KioskPage() {
           <button
             type="button"
             aria-label="Close"
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => setJustCreated({ open: false })}
           />
           <div
@@ -2057,7 +2061,7 @@ export default function KioskPage() {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setJustCreated({ open: false })}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Done
               </button>
@@ -2077,7 +2081,7 @@ export default function KioskPage() {
           <button
             type="button"
             aria-label="Close modal"
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => setErrorOpen(false)}
           />
           <div
@@ -2103,7 +2107,7 @@ export default function KioskPage() {
             <div className="mt-3 flex justify-end">
               <button
                 onClick={() => setErrorOpen(false)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Close
               </button>
@@ -2123,7 +2127,7 @@ export default function KioskPage() {
           <button
             type="button"
             aria-label="Close cart"
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => setMobileCartOpen(false)}
           />
           {/* Sheet */}
@@ -2141,7 +2145,7 @@ export default function KioskPage() {
                 onClick={() => {
                   clearCart();
                 }}
-                className="text-xs px-2 py-1 rounded-lg border border-red-100 text-red-600 bg-white hover:bg-red-50"
+                className="text-xs px-2 py-1 rounded-lg border border-red-100 text-red-600 bg-white hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Clear
               </button>
@@ -2189,7 +2193,7 @@ export default function KioskPage() {
                           <div className="flex items-center rounded-lg border border-slate-200 bg-white h-9">
                             <button
                               onClick={() => dec(it.key)}
-                              className="px-3 h-9 hover:bg-slate-50"
+                              className="px-3 h-9 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Decrease 1 kg"
                             >
                               −
@@ -2199,7 +2203,7 @@ export default function KioskPage() {
                             </div>
                             <button
                               onClick={() => inc(it.key)}
-                              className="px-3 h-9 hover:bg-slate-50"
+                              className="px-3 h-9 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               aria-label="Increase 1 kg"
                             >
                               +
@@ -2221,7 +2225,7 @@ export default function KioskPage() {
                                     },
                                   }))
                                 }
-                                className="px-2 h-9 text-xs bg-white hover:bg-slate-50 border-l first:border-l-0 border-slate-200"
+                                className="px-2 h-9 text-xs bg-white hover:bg-slate-50 border-l first:border-l-0 border-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 title={`Set fraction ${f} kg`}
                               >
                                 {f === 0.25 ? "¼" : f === 0.5 ? "½" : "¾"}
@@ -2233,7 +2237,7 @@ export default function KioskPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => dec(it.key)}
-                            className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                            className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             aria-label="Decrease"
                           >
                             −
@@ -2250,11 +2254,11 @@ export default function KioskPage() {
                               if (v === "" || v === "-" || v === ".") return;
                               setQty(it.key, Number(v));
                             }}
-                            className="w-20 h-9 text-sm rounded-lg border border-slate-300 bg-white px-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                            className="w-20 h-9 text-sm rounded-lg border border-slate-300 bg-white px-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                           />
                           <button
                             onClick={() => inc(it.key)}
-                            className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                            className="px-3 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             aria-label="Increase"
                           >
                             +
@@ -2270,7 +2274,7 @@ export default function KioskPage() {
                             return c;
                           })
                         }
-                        className="ml-auto px-3 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50"
+                        className="ml-auto px-3 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         aria-label="Remove line"
                       >
                         🗑
@@ -2292,7 +2296,7 @@ export default function KioskPage() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setMobileCartOpen(false)}
-                  className="rounded-xl border border-slate-300 bg-white text-sm text-slate-800 px-3 py-2 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-300 bg-white text-sm text-slate-800 px-3 py-2 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Continue
                 </button>
@@ -2355,7 +2359,7 @@ export default function KioskPage() {
                     </>
                   )}
                   <button
-                    className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     disabled={
                       items.length === 0 ||
                       createSlip.state !== "idle" ||
@@ -2382,7 +2386,7 @@ export default function KioskPage() {
           <button
             type="button"
             onClick={() => setMobileCartOpen(true)}
-            className="flex-1 inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm active:shadow-none"
+            className="flex-1 inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             title="View cart"
           >
             <span className="font-medium">View Cart</span>
@@ -2443,7 +2447,7 @@ export default function KioskPage() {
               </>
             )}
             <button
-              className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               disabled={
                 items.length === 0 ||
                 createSlip.state !== "idle" ||

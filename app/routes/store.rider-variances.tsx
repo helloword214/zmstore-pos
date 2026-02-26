@@ -8,9 +8,19 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { Prisma, RiderChargeStatus } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 type LoaderData = {
   tab: "open" | "awaiting" | "history";
@@ -42,6 +52,13 @@ type LoaderData = {
 
 const r2 = (n: number) =>
   Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+
+function statusTone(status: string): "neutral" | "warning" | "success" | "info" {
+  if (status === "OPEN") return "warning";
+  if (status === "MANAGER_APPROVED") return "info";
+  if (status === "RIDER_ACCEPTED" || status === "CLOSED") return "success";
+  return "neutral";
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
@@ -309,10 +326,11 @@ export default function StoreRiderVariancesPage() {
         title="Rider Variances"
         subtitle="Review shortages/overages before cashier can finalize settlement."
         backTo="/store"
+        backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-6xl px-5 py-6">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium text-slate-800">
@@ -324,7 +342,7 @@ export default function StoreRiderVariancesPage() {
                   <div className="flex flex-wrap gap-2 text-xs">
                     <Link
                       to={tabLink("open")}
-                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                      className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                         tab === "open"
                           ? "border-indigo-200 bg-indigo-50 text-indigo-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -339,7 +357,7 @@ export default function StoreRiderVariancesPage() {
                     </Link>
                     <Link
                       to={tabLink("awaiting")}
-                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                      className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                         tab === "awaiting"
                           ? "border-amber-200 bg-amber-50 text-amber-900"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -354,7 +372,7 @@ export default function StoreRiderVariancesPage() {
                     </Link>
                     <Link
                       to={tabLink("history")}
-                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                      className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                         tab === "history"
                           ? "border-slate-300 bg-slate-100 text-slate-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -374,48 +392,40 @@ export default function StoreRiderVariancesPage() {
             </div>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Run</th>
-                <th className="px-3 py-2 text-left font-medium">Rider</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Expected</th>
-                <th className="px-3 py-2 text-right font-medium">Actual</th>
-                <th className="px-3 py-2 text-right font-medium">Variance</th>
-                <th className="px-3 py-2 text-left font-medium">
-                  {isHistory ? "Details" : "Decision"}
-                </th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Run</SoTTh>
+                <SoTTh>Rider</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Expected</SoTTh>
+                <SoTTh align="right">Actual</SoTTh>
+                <SoTTh align="right">Variance</SoTTh>
+                <SoTTh>{isHistory ? "Details" : "Decision"}</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
+                <SoTTableEmptyRow
+                  colSpan={7}
+                  message={
                     <SoTEmptyState
                       title="No variances to review."
                       hint="New rider variance items will appear here."
                     />
-                  </td>
-                </tr>
+                  }
+                />
               ) : (
                 rows.map((v) => (
-                  <tr
-                    key={v.id}
-                    className="border-t border-slate-100 align-top"
-                  >
-                    <td className="px-3 py-2">
-                      <div className="font-mono text-slate-800">
-                        {v.run.runCode}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        ref #{v.id}
-                      </div>
+                  <SoTTableRow key={v.id}>
+                    <SoTTd>
+                      <div className="font-mono text-slate-800">{v.run.runCode}</div>
+                      <div className="text-[11px] text-slate-500">ref #{v.id}</div>
                       {v.receipt ? (
                         <div className="mt-1 text-[11px] text-slate-500">
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">
+                          <SoTStatusBadge tone="info">
                             AUTO · {v.receipt.kind} · {v.receipt.receiptKey}
-                          </span>
+                          </SoTStatusBadge>
                         </div>
                       ) : (
                         <div className="mt-1 text-[11px] text-slate-400">
@@ -425,26 +435,25 @@ export default function StoreRiderVariancesPage() {
                       <div className="mt-1 text-[11px] text-slate-500">
                         {new Date(v.createdAt).toLocaleString()}
                       </div>
-                    </td>
-                    <td className="px-3 py-2">{v.rider.name}</td>
-                    <td className="px-3 py-2">
-                      <SoTStatusBadge>
+                    </SoTTd>
+                    <SoTTd>{v.rider.name}</SoTTd>
+                    <SoTTd>
+                      <SoTStatusBadge tone={statusTone(v.status)}>
                         {v.status}
                       </SoTStatusBadge>
                       {v.resolution ? (
                         <div className="mt-1 text-[11px] text-slate-500">
-                          resolution:{" "}
-                          <span className="font-medium">{v.resolution}</span>
+                          resolution: <span className="font-medium">{v.resolution}</span>
                         </div>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
                       {peso(v.expected)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
                       {peso(v.actual)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
                       <span
                         className={
                           v.variance < 0 ? "text-rose-700" : "text-emerald-700"
@@ -452,13 +461,12 @@ export default function StoreRiderVariancesPage() {
                       >
                         {peso(v.variance)}
                       </span>
-                    </td>
-                    <td className="px-3 py-2">
+                    </SoTTd>
+                    <SoTTd>
                       {isHistory ? (
                         <div className="space-y-1 text-[11px] text-slate-600">
                           <div>
-                            Note:{" "}
-                            <span className="font-medium">{v.note ?? "—"}</span>
+                            Note: <span className="font-medium">{v.note ?? "—"}</span>
                           </div>
                           <div>
                             Manager approved:{" "}
@@ -479,11 +487,11 @@ export default function StoreRiderVariancesPage() {
                         </div>
                       ) : tab === "awaiting" ? (
                         <div className="space-y-2">
-                          <div className="text-xs text-amber-700">
+                          <SoTStatusBadge tone="warning">
                             Waiting rider acceptance
-                          </div>
+                          </SoTStatusBadge>
                           <Link
-                            className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+                            className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-1"
                             to={`/rider/variance/${v.id}`}
                           >
                             View rider page →
@@ -493,49 +501,47 @@ export default function StoreRiderVariancesPage() {
                           </div>
                         </div>
                       ) : (
-                        <>
-                          <Form method="post" className="flex flex-col gap-2">
-                            <input type="hidden" name="id" value={v.id} />
-                            <select
-                              name="resolution"
-                              defaultValue={v.resolution ?? ""}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                            >
-                              <option value="" disabled>
-                                Select decision…
-                              </option>
-                              <option value="CHARGE_RIDER">
-                                Charge rider (needs rider accept)
-                              </option>
-                              <option value="INFO_ONLY">
-                                Info only (no rider accept)
-                              </option>
-                              <option value="WAIVE">Waive</option>
-                            </select>
-                            <input
-                              name="note"
-                              placeholder="Optional note"
-                              defaultValue={v.note ?? ""}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                            />
-                            <button
-                              type="submit"
-                              name="_intent"
-                              value="manager-decide"
-                              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                            >
-                              Save decision
-                            </button>
-                          </Form>
-                        </>
+                        <Form method="post" className="flex flex-col gap-2">
+                          <input type="hidden" name="id" value={v.id} />
+                          <select
+                            name="resolution"
+                            defaultValue={v.resolution ?? ""}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                          >
+                            <option value="" disabled>
+                              Select decision…
+                            </option>
+                            <option value="CHARGE_RIDER">
+                              Charge rider (needs rider accept)
+                            </option>
+                            <option value="INFO_ONLY">
+                              Info only (no rider accept)
+                            </option>
+                            <option value="WAIVE">Waive</option>
+                          </select>
+                          <input
+                            name="note"
+                            placeholder="Optional note"
+                            defaultValue={v.note ?? ""}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                          />
+                          <SoTButton
+                            type="submit"
+                            name="_intent"
+                            value="manager-decide"
+                            variant="primary"
+                          >
+                            Save decision
+                          </SoTButton>
+                        </Form>
                       )}
-                    </td>
-                  </tr>
+                    </SoTTd>
+                  </SoTTableRow>
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

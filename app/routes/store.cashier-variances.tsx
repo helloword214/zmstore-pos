@@ -8,10 +8,19 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { Prisma } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTDataRow } from "~/components/ui/SoTDataRow";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -54,6 +63,17 @@ function peso(n: number) {
 
 function safeTab(raw: string | null): LoaderData["tab"] {
   return raw === "history" ? "history" : "open";
+}
+
+function varianceTone(variance: number): "neutral" | "success" | "danger" {
+  if (Math.abs(variance) < 0.005) return "neutral";
+  return variance > 0 ? "success" : "danger";
+}
+
+function statusTone(status: string): "neutral" | "warning" | "success" {
+  if (status === "OPEN") return "warning";
+  if (status === "MANAGER_APPROVED" || status === "CLOSED") return "success";
+  return "neutral";
 }
 
 function nameOfUser(u: any) {
@@ -272,10 +292,11 @@ export default function StoreCashierVariancesPage() {
         title="Cashier Shift Variances"
         subtitle="Manager audit for shift close counts (cash drawer only)."
         backTo="/store"
+        backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-6xl px-5 py-6">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium text-slate-800">
@@ -291,7 +312,7 @@ export default function StoreCashierVariancesPage() {
                   <div className="flex flex-wrap gap-2 text-xs">
                     <Link
                       to={tabLink("open")}
-                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                      className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                         tab === "open"
                           ? "border-indigo-200 bg-indigo-50 text-indigo-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -306,7 +327,7 @@ export default function StoreCashierVariancesPage() {
                     </Link>
                     <Link
                       to={tabLink("history")}
-                      className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                      className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                         tab === "history"
                           ? "border-slate-300 bg-slate-100 text-slate-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -326,53 +347,46 @@ export default function StoreCashierVariancesPage() {
             </div>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Shift</th>
-                <th className="px-3 py-2 text-left font-medium">Cashier</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Expected</th>
-                <th className="px-3 py-2 text-right font-medium">Counted</th>
-                <th className="px-3 py-2 text-right font-medium">Diff</th>
-                <th className="px-3 py-2 text-left font-medium">Details</th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Shift</SoTTh>
+                <SoTTh>Cashier</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Expected</SoTTh>
+                <SoTTh align="right">Counted</SoTTh>
+                <SoTTh align="right">Diff</SoTTh>
+                <SoTTh>Details</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
+                <SoTTableEmptyRow
+                  colSpan={7}
+                  message={
                     <SoTEmptyState
                       title="No cashier shift variances."
                       hint="Open or resolved variance records will appear here."
                     />
-                  </td>
-                </tr>
+                  }
+                />
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
                   const diffClass = isZero
                     ? "text-slate-600"
                     : v.variance > 0
-                    ? "text-emerald-700"
-                    : "text-rose-700";
-                  const badgeClass = isZero
-                    ? "bg-slate-100 text-slate-700 ring-slate-200"
-                    : v.variance > 0
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                    : "bg-rose-50 text-rose-700 ring-rose-200";
+                      ? "text-emerald-700"
+                      : "text-rose-700";
                   const badgeLabel = isZero
                     ? "MATCH"
                     : v.variance > 0
-                    ? "OVER"
-                    : "SHORT";
+                      ? "OVER"
+                      : "SHORT";
 
                   return (
-                    <tr
-                      key={v.id}
-                      className="border-t border-slate-100 align-top"
-                    >
-                      <td className="px-3 py-2">
+                    <SoTTableRow key={v.id}>
+                      <SoTTd>
                         <div className="text-slate-900">
                           {new Date(v.shift.openedAt).toLocaleString()}
                         </div>
@@ -383,35 +397,30 @@ export default function StoreCashierVariancesPage() {
                             <>
                               {" "}
                               •{" "}
-                              <span className="font-mono">
-                                {v.shift.deviceId}
-                              </span>
+                              <span className="font-mono">{v.shift.deviceId}</span>
                             </>
                           ) : null}
                         </div>
                         {v.shift.closedAt ? (
                           <div className="mt-1 text-[11px] text-slate-500">
-                            closed:{" "}
-                            {new Date(v.shift.closedAt).toLocaleString()}
+                            closed: {new Date(v.shift.closedAt).toLocaleString()}
                           </div>
                         ) : (
                           <div className="mt-1 text-[11px] text-amber-700">
                             shift not closed? (check data)
                           </div>
                         )}
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
-                        <div className="text-slate-900">
-                          {v.shift.cashier.name}
-                        </div>
+                      <SoTTd>
+                        <div className="text-slate-900">{v.shift.cashier.name}</div>
                         <div className="text-[11px] text-slate-500">
                           {v.shift.cashier.email ?? "—"}
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
-                        <SoTStatusBadge>
+                      <SoTTd>
+                        <SoTStatusBadge tone={statusTone(v.status)}>
                           {v.status}
                         </SoTStatusBadge>
                         {v.resolution ? (
@@ -420,34 +429,27 @@ export default function StoreCashierVariancesPage() {
                             <span className="font-medium">{v.resolution}</span>
                           </div>
                         ) : null}
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.expected)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.counted)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         <div className="flex items-center justify-end gap-2">
-                          <span
-                            className={[
-                              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ring-1",
-                              badgeClass,
-                            ].join(" ")}
-                          >
+                          <SoTStatusBadge tone={varianceTone(v.variance)}>
                             {badgeLabel}
-                          </span>
-                          <span
-                            className={["font-medium", diffClass].join(" ")}
-                          >
+                          </SoTStatusBadge>
+                          <span className={["font-medium", diffClass].join(" ")}>
                             {v.variance >= 0 ? "+" : ""}
                             {peso(v.variance)}
                           </span>
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
+                      <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
                             View denoms / notes
@@ -457,32 +459,28 @@ export default function StoreCashierVariancesPage() {
 
                             <div className="text-[11px] text-slate-600">
                               Cashier note:{" "}
-                              <span className="font-medium">
-                                {v.note ?? "—"}
-                              </span>
+                              <span className="font-medium">{v.note ?? "—"}</span>
                             </div>
                             <div className="space-y-1 text-[11px] text-slate-600">
                               <div>
                                 Manager approved:{" "}
                                 <span className="font-medium">
                                   {v.managerApprovedAt
-                                    ? new Date(
-                                        v.managerApprovedAt,
-                                      ).toLocaleString()
+                                    ? new Date(v.managerApprovedAt).toLocaleString()
                                     : "—"}
                                 </span>
                               </div>
                             </div>
                           </div>
                         </details>
-                      </td>
-                    </tr>
+                      </SoTTd>
+                    </SoTTableRow>
                   );
                 })
               )}
             </tbody>
-          </table>
-        </div>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

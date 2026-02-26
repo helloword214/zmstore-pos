@@ -1302,7 +1302,7 @@ export default function CashierOrder() {
               <Form method="post">
                 <input type="hidden" name="_action" value="claimLock" />
                 <button
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-50"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   disabled={!canClaim || nav.state !== "idle"}
                   title={
                     !canClaim
@@ -1315,13 +1315,13 @@ export default function CashierOrder() {
               </Form>
               <Form method="post">
                 <input type="hidden" name="_action" value="reprint" />
-                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
+                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
                   Reprint
                 </button>
               </Form>
               <Form method="post">
                 <input type="hidden" name="_action" value="release" />
-                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none">
+                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
                   Release
                 </button>
               </Form>
@@ -1492,7 +1492,7 @@ export default function CashierOrder() {
                       waitingManagerDecision || hasClearanceCase
                         ? "pointer-events-none text-slate-400"
                         : "text-indigo-600 hover:underline"
-                    }`}
+                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                     title={
                       hasClearanceCase
                         ? "Disabled while this order is under clearance flow."
@@ -1579,7 +1579,7 @@ export default function CashierOrder() {
                       <select
                         name="clearanceIntent"
                         defaultValue={hasCustomer ? "OPEN_BALANCE" : "PRICE_BARGAIN"}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         disabled={!canSendForClearance}
                       >
                         <option value="OPEN_BALANCE">Open balance (utang)</option>
@@ -1588,7 +1588,7 @@ export default function CashierOrder() {
                       <textarea
                         name="clearanceReason"
                         rows={2}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         placeholder="Reason"
                         required
                         disabled={!canSendForClearance}
@@ -1600,7 +1600,7 @@ export default function CashierOrder() {
                       </div>
                       <button
                         type="submit"
-                        className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                        className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         disabled={!canSendForClearance}
                       >
                         Send
@@ -1692,7 +1692,7 @@ export default function CashierOrder() {
                       min="0"
                       value={cashGiven}
                       onChange={(e) => setCashGiven(e.target.value)}
-                      className={`mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200 ${
+                      className={`mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 ${
                         hasClearanceCase
                           ? "border-slate-200 bg-slate-100 text-slate-500"
                           : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
@@ -1709,7 +1709,7 @@ export default function CashierOrder() {
                       value="1"
                       checked={printReceipt}
                       onChange={(e) => setPrintReceipt(e.target.checked)}
-                      className="h-4 w-4 accent-indigo-600"
+                      className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       disabled={waitingManagerDecision}
                     />
                     <span>Print receipt</span>
@@ -1753,7 +1753,7 @@ export default function CashierOrder() {
                         type="checkbox"
                         name="releaseWithBalance"
                         value="1"
-                        className="h-4 w-4 accent-indigo-600"
+                        className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         disabled={waitingManagerDecision}
                       />
                       <span>Release goods now (with balance)</span>
@@ -1763,7 +1763,7 @@ export default function CashierOrder() {
                       <input
                         name="releaseApprovedBy"
                         type="text"
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         placeholder="e.g. 1234 or MGR-ANA"
                         disabled={waitingManagerDecision}
                       />
@@ -1774,7 +1774,7 @@ export default function CashierOrder() {
                 {/* Primary submit */}
                 <button
                   type="submit"
-                  className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+                  className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
                   disabled={submitDisabled}
                   title={
                     submitBlockedByLock
@@ -1818,7 +1818,7 @@ export default function CashierOrder() {
           <button
             type="submit"
             form="settle-form"
-            className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             disabled={submitDisabled}
             title={
               submitBlockedByLock
@@ -1932,7 +1932,7 @@ export function ErrorBoundary() {
             <div className="pt-2">
               <a
                 href="/cashier"
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 ← Back to Cashier
               </a>
