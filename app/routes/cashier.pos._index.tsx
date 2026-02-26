@@ -10,6 +10,20 @@ import {
   useRevalidator,
 } from "@remix-run/react";
 import React from "react";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
@@ -229,58 +243,47 @@ export default function CashierQueue() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Cashier Queue
-            </h1>
-            <div className="flex items-center gap-2">
-              <Link
-                to="/cashier"
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                ← Dashboard
-              </Link>
-              <Link
-                to="/pad-order"
-                className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
-              >
-                Add to cart (Order Pad)
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SoTNonDashboardHeader
+        title="Cashier Queue"
+        subtitle="Walk-in / PICKUP tickets only."
+        backTo="/cashier"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-4xl"
+      />
 
       <div className="mx-auto max-w-4xl px-5 py-6">
+        <SoTActionBar
+          right={
+            <Link to="/pad-order">
+              <SoTButton variant="primary">Add to cart (Order Pad)</SoTButton>
+            </Link>
+          }
+        />
+
         {/* Open by code (PICKUP only) */}
-        <Form method="post" className="mb-5">
-          <div className="flex items-center gap-2">
-            <input
-              name="code"
-              placeholder="Scan or type Order Code (PICKUP)"
-              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-              autoFocus
-            />
+        <Form method="post" className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-2">
+            <SoTFormField label="Order Code (PICKUP only)" className="min-w-[260px] flex-1">
+              <input
+                name="code"
+                placeholder="Scan or type Order Code (PICKUP)"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+              />
+            </SoTFormField>
             <input type="hidden" name="_action" value="openByCode" />
-            <button
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-60"
-              disabled={nav.state !== "idle"}
-            >
+            <SoTButton type="submit" disabled={nav.state !== "idle"}>
               Open
-            </button>
+            </SoTButton>
           </div>
         </Form>
 
         {actionData && "error" in actionData && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <SoTAlert tone="danger" className="mb-4 text-sm">
             {actionData.error}
-          </div>
+          </SoTAlert>
         )}
-        {/* Lists */}
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-medium tracking-wide text-slate-700">
               Pickup tickets
@@ -290,130 +293,124 @@ export default function CashierQueue() {
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100">
-            {pickups.map((r) => {
-              return (
-                <div key={r.id} className="px-4 py-3 hover:bg-slate-50/60">
-                  <div className="flex items-start justify-between gap-2">
-                    {/* Open */}
-                    <Form method="post" className="flex-1">
-                      <input type="hidden" name="_action" value="openById" />
-                      <input type="hidden" name="id" value={r.id} />
+          <SoTTable>
+            <SoTTableHead>
+              <tr>
+                <SoTTh>Ticket</SoTTh>
+                <SoTTh>Printed</SoTTh>
+                <SoTTh>Lock</SoTTh>
+                <SoTTh align="right">Actions</SoTTh>
+              </tr>
+            </SoTTableHead>
+            <tbody>
+              {pickups.length === 0 ? (
+                <SoTTableEmptyRow colSpan={4} message="No pickup tickets." />
+              ) : (
+                pickups.map((r) => {
+                  const isMineLock = r.isLocked && String(r.lockedBy) === MY_ID;
+                  const lockedByOther = r.isLocked && !isMineLock;
+                  const lockTone = lockedByOther
+                    ? "warning"
+                    : isMineLock
+                      ? "info"
+                      : "success";
+                  const lockLabel = lockedByOther
+                    ? `LOCKED · ${r.lockRemainingSec}s`
+                    : isMineLock
+                      ? `LOCKED (you) · ${r.lockRemainingSec}s`
+                      : "OPEN";
 
-                      <button
-                        type="submit"
-                        className="w-full text-left disabled:opacity-60"
-                        disabled={r.isLocked && String(r.lockedBy) !== MY_ID}
-                        title={
-                          r.isLocked
-                            ? String(r.lockedBy) === MY_ID
-                              ? "Locked by YOU (re-open allowed)"
-                              : `Locked by ${r.lockedBy ?? "someone"}`
-                            : "Open at cashier"
-                        }
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="font-mono text-slate-700">
-                            {r.orderCode}
-                          </div>
-                          <div className="text-sm">
-                            {r.isLocked ? (
-                              <span
-                                className="mr-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200"
-                                title={
-                                  String(r.lockedBy) === MY_ID
-                                    ? "You are holding this lock"
-                                    : "Held by another cashier"
-                                }
-                              >
-                                {String(r.lockedBy) === MY_ID
-                                  ? "LOCKED (you)"
-                                  : "LOCKED"}{" "}
-                                · {r.lockRemainingSec}s
-                              </span>
-                            ) : null}
-                            <span className="text-slate-600">
+                  return (
+                    <SoTTableRow key={r.id}>
+                      <SoTTd>
+                        <Form method="post">
+                          <input type="hidden" name="_action" value="openById" />
+                          <input type="hidden" name="id" value={r.id} />
+                          <button
+                            type="submit"
+                            className="text-left disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                            disabled={lockedByOther}
+                            title={
+                              r.isLocked
+                                ? isMineLock
+                                  ? "Locked by YOU (re-open allowed)"
+                                  : `Locked by ${r.lockedBy ?? "someone"}`
+                                : "Open at cashier"
+                            }
+                          >
+                            <div className="font-mono text-slate-700">{r.orderCode}</div>
+                            <div className="text-[11px] text-slate-500">
                               Ticket #{r.printCount}
-                            </span>
-                          </div>
+                            </div>
+                          </button>
+                        </Form>
+                      </SoTTd>
+                      <SoTTd className="text-xs text-slate-500">
+                        {new Date(r.printedAt).toLocaleString()}
+                      </SoTTd>
+                      <SoTTd>
+                        <SoTStatusBadge tone={lockTone}>{lockLabel}</SoTStatusBadge>
+                      </SoTTd>
+                      <SoTTd align="right">
+                        <div className="flex justify-end gap-2">
+                          <Form
+                            method="post"
+                            onSubmit={(e) => {
+                              const reason = prompt("Reason for cancelling this ticket?");
+                              if (!reason) {
+                                e.preventDefault();
+                                return;
+                              }
+                              const input = document.createElement("input");
+                              input.type = "hidden";
+                              input.name = "cancelReason";
+                              input.value = reason;
+                              e.currentTarget.appendChild(input);
+                            }}
+                          >
+                            <input type="hidden" name="_action" value="cancelSlip" />
+                            <input type="hidden" name="id" value={r.id} />
+                            <SoTButton
+                              type="submit"
+                              disabled={lockedByOther}
+                              className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                              title="Cancel this ticket (moves to CANCELLED; auto-purges later)"
+                            >
+                              Cancel
+                            </SoTButton>
+                          </Form>
+
+                          <Form
+                            method="post"
+                            onSubmit={(e) => {
+                              if (
+                                !confirm(
+                                  `Delete ticket ${r.orderCode}? This cannot be undone.`,
+                                )
+                              ) {
+                                e.preventDefault();
+                              }
+                            }}
+                          >
+                            <input type="hidden" name="_action" value="deleteSlip" />
+                            <input type="hidden" name="id" value={r.id} />
+                            <SoTButton
+                              type="submit"
+                              variant="danger"
+                              disabled={lockedByOther}
+                              title="Permanently delete this UNPAID ticket"
+                            >
+                              Delete
+                            </SoTButton>
+                          </Form>
                         </div>
-                        <div className="text-xs text-slate-500">
-                          Printed {new Date(r.printedAt).toLocaleString()}
-                        </div>
-                      </button>
-                    </Form>
-
-                    {/* Actions: Cancel / Delete */}
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Form
-                        method="post"
-                        onSubmit={(e) => {
-                          const reason = prompt(
-                            "Reason for cancelling this ticket?",
-                          );
-                          if (!reason) {
-                            e.preventDefault();
-                            return;
-                          }
-                          const input = document.createElement("input");
-                          input.type = "hidden";
-                          input.name = "cancelReason";
-                          input.value = reason;
-                          e.currentTarget.appendChild(input);
-                        }}
-                      >
-                        <input
-                          type="hidden"
-                          name="_action"
-                          value="cancelSlip"
-                        />
-                        <input type="hidden" name="id" value={r.id} />
-                        <button
-                          type="submit"
-                          className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                          // Optional: allow cancel if YOU hold the lock
-                          disabled={r.isLocked && String(r.lockedBy) !== MY_ID}
-                          title="Cancel this ticket (moves to CANCELLED; auto-purges later)"
-                        >
-                          Cancel
-                        </button>
-                      </Form>
-
-                      <Form
-                        method="post"
-                        onSubmit={(e) => {
-                          if (
-                            !confirm(
-                              `Delete ticket ${r.orderCode}? This cannot be undone.`,
-                            )
-                          ) {
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        <input
-                          type="hidden"
-                          name="_action"
-                          value="deleteSlip"
-                        />
-                        <input type="hidden" name="id" value={r.id} />
-
-                        <button
-                          type="submit"
-                          className="inline-flex items-center rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-                          // Optional: allow delete if YOU hold the lock
-                          disabled={r.isLocked && String(r.lockedBy) !== MY_ID}
-                          title="Permanently delete this UNPAID ticket"
-                        >
-                          Delete
-                        </button>
-                      </Form>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      </SoTTd>
+                    </SoTTableRow>
+                  );
+                })
+              )}
+            </tbody>
+          </SoTTable>
         </div>
       </div>
     </main>

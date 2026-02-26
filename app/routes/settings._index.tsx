@@ -93,7 +93,7 @@ export default function SettingsIndex() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             Settings · Master Data
           </h1>
-          <Link to="/" className="text-sm underline">
+          <Link to="/" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -200,7 +200,7 @@ export default function SettingsIndex() {
               </label>
               <select
                 id={catSelectId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={activeCategoryId ?? ""}
                 onChange={(e) => setCat(Number(e.target.value))}
               >
@@ -308,7 +308,7 @@ function NavLink({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50"
+      className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
     >
       {label}
     </Link>
@@ -332,7 +332,7 @@ function Adder(props: { placeholder: string; onAdd: (name: string) => void }) {
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder={props.placeholder}
-        className="flex-1 border rounded-md px-2 py-1"
+        className="flex-1 border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
       />
       <button
         type="button"
@@ -342,7 +342,7 @@ function Adder(props: { placeholder: string; onAdd: (name: string) => void }) {
           props.onAdd(n);
           setName("");
         }}
-        className="border rounded-md px-3"
+        className="border rounded-md px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
       >
         Add
       </button>
@@ -359,7 +359,7 @@ function List(props: { rows: SimpleRow[]; onDelete: (id: number) => void }) {
           <button
             type="button"
             onClick={() => props.onDelete(r.id)}
-            className="text-red-600 text-sm"
+            className="text-red-600 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             aria-label={`Delete ${r.name}`}
             title="Delete"
           >

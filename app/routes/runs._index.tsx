@@ -2,6 +2,18 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 
@@ -105,6 +117,17 @@ export default function RunsIndexPage() {
   const { rows, mine, role } = useLoaderData<LoaderData>();
 
   const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
+  const backLabel = "Dashboard";
+  const pageTitle = mine && role === "EMPLOYEE" ? "My Delivery Runs" : "Runs";
+  const statusTone = (
+    status: Row["status"],
+  ): "neutral" | "info" | "success" | "warning" | "danger" => {
+    if (status === "CLOSED") return "success";
+    if (status === "CHECKED_IN") return "info";
+    if (status === "DISPATCHED" || status === "PLANNED") return "warning";
+    if (status === "CANCELLED") return "danger";
+    return "neutral";
+  };
 
   const nextHref = (r: Row) => {
     // Rider view: /runs?mine=1 and role = EMPLOYEE
@@ -129,83 +152,70 @@ export default function RunsIndexPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title={pageTitle}
+        subtitle="Track run status and continue to dispatch, summary, check-in, or remit."
+        backTo={backHref}
+        backLabel={backLabel}
+        maxWidthClassName="max-w-5xl"
+      />
+
       <div className="mx-auto max-w-5xl p-5">
-        <div className="mb-3">
-          <Link
-            to={backHref}
-            className="text-sm text-slate-600 hover:underline"
-          >
-            ← Back to Dashboard
-          </Link>
-        </div>
-        <div className="mb-4 flex items-center justify-between"></div>
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-slate-900">
-            {mine && role === "EMPLOYEE" ? "My Delivery Runs" : "Runs"}
-          </h1>
-          {/* Riders (mine=1) should NOT create runs */}
-          {!mine && role !== "EMPLOYEE" && (
-            <Link
-              to="/runs/new"
-              className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm"
-            >
-              + New Run
-            </Link>
-          )}
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+        <SoTActionBar
+          left={<h2 className="text-sm font-medium text-slate-800">{pageTitle}</h2>}
+          right={
+            !mine && role !== "EMPLOYEE" ? (
+              <Link to="/runs/new">
+                <SoTButton variant="primary">+ New Run</SoTButton>
+              </Link>
+            ) : null
+          }
+        />
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <SoTTable>
+            <SoTTableHead>
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Run</th>
-                <th className="px-3 py-2 text-left font-medium">Rider</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-left font-medium">Created</th>
-                <th className="px-3 py-2 text-left font-medium">Dispatched</th>
-                <th className="px-3 py-2"></th>
+                <SoTTh>Run</SoTTh>
+                <SoTTh>Rider</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh>Created</SoTTh>
+                <SoTTh>Dispatched</SoTTh>
+                <SoTTh align="right"></SoTTh>
               </tr>
-            </thead>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-4 text-center text-slate-500"
-                  >
-                    No runs yet.
-                  </td>
-                </tr>
+                <SoTTableEmptyRow colSpan={6} message="No runs yet." />
               ) : (
                 rows.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2 font-mono">{r.runCode}</td>
-                    <td className="px-3 py-2">{r.riderLabel ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs">
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">
+                  <SoTTableRow key={r.id}>
+                    <SoTTd className="font-mono">{r.runCode}</SoTTd>
+                    <SoTTd>{r.riderLabel ?? "—"}</SoTTd>
+                    <SoTTd>
+                      <SoTStatusBadge tone={statusTone(r.status)}>{r.status}</SoTStatusBadge>
+                    </SoTTd>
+                    <SoTTd className="text-slate-500">
                       {new Date(r.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">
+                    </SoTTd>
+                    <SoTTd className="text-slate-500">
                       {r.dispatchedAt
                         ? new Date(r.dispatchedAt).toLocaleString()
                         : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                    </SoTTd>
+                    <SoTTd align="right">
                       <Link
                         to={nextHref(r)}
-                        className="text-indigo-600 hover:underline"
+                        className="text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       >
                         Open
                       </Link>
-                    </td>
-                  </tr>
+                    </SoTTd>
+                  </SoTTableRow>
                 ))
               )}
             </tbody>
-          </table>
+          </SoTTable>
         </div>
       </div>
     </main>

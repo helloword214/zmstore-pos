@@ -4,7 +4,6 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
-  Link,
   useActionData,
   useLoaderData,
   useNavigation,
@@ -14,6 +13,7 @@ import {
 import * as React from "react";
 import { CollapsibleReceipt } from "~/components/rider-checkin/CollapsibleReceipt";
 import { StatusPill } from "~/components/rider-checkin/StatusPill";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -2423,21 +2423,15 @@ export default function RiderCheckinPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title={`Rider Check-in — ${run.runCode}`}
+        subtitle={`Rider: ${run.riderLabel || "—"} • ${run.status}`}
+        backTo={`/runs/${run.id}/summary`}
+        backLabel="Run Summary"
+        maxWidthClassName="max-w-5xl"
+      />
+
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <Link
-          to={`/runs/${run.id}/summary`}
-          className="text-sm text-indigo-600 hover:underline"
-        >
-          ← Back
-        </Link>
-
-        <h1 className="mt-4 text-base font-semibold tracking-wide text-slate-800">
-          Rider Check-in — {run.runCode}
-        </h1>
-        <p className="text-sm text-slate-600">
-          Rider: {run.riderLabel || "—"} • {run.status}
-        </p>
-
         {run.status === "CHECKED_IN" && run.riderCheckinAt ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             Check-in submitted at{" "}
@@ -2725,7 +2719,7 @@ export default function RiderCheckinPage() {
                                   rec.orderTotal || 0,
                                 ).toFixed(2)}
                                 disabled={recLocked}
-                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm"
+                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 value={
                                   rec.cashInput ??
                                   (rec.cashCollected != null
@@ -2927,7 +2921,7 @@ export default function RiderCheckinPage() {
                                           ),
                                         );
                                       }}
-                                      className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                      className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                     >
                                       Collect Full Payment
                                     </button>
@@ -2944,7 +2938,7 @@ export default function RiderCheckinPage() {
                                           reason: reason.trim().slice(0, 200),
                                         });
                                       }}
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                     >
                                       Mark as VOIDED
                                     </button>
@@ -3010,7 +3004,7 @@ export default function RiderCheckinPage() {
                 }}
                 aria-disabled={addQuickBlockedReason ? "true" : "false"}
                 title={addQuickBlockedReason ?? undefined}
-                className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                className={`rounded-xl border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 transition ${
                   addQuickBlockedReason
                     ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400 opacity-50"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -3220,7 +3214,7 @@ export default function RiderCheckinPage() {
                               <div className="col-span-6 relative">
                                 <button
                                   type="button"
-                                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm ${
+                                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                                     isOutOfStock
                                       ? "bg-amber-50 border-amber-300 text-amber-800"
                                       : "bg-white border-slate-200 text-slate-900"
@@ -3286,7 +3280,7 @@ export default function RiderCheckinPage() {
                                         <button
                                           key={p.productId}
                                           type="button"
-                                          className="w-full px-3 py-2 text-left hover:bg-indigo-50"
+                                          className="w-full px-3 py-2 text-left hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                           disabled={recLocked}
                                           onClick={() => {
                                             if (recLocked) return;
@@ -3354,7 +3348,7 @@ export default function RiderCheckinPage() {
 
                               {/* Qty with guard: loaded - (baseSold + other quick) */}
                               <input
-                                className="col-span-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm"
+                                className="col-span-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 type="number"
                                 min={0}
                                 disabled={recLocked}
@@ -3443,7 +3437,7 @@ export default function RiderCheckinPage() {
                               <div className="col-span-4">
                                 <div className="flex items-center gap-2">
                                   <input
-                                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm"
+                                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                     type="number"
                                     readOnly
                                     value={effectiveUnitPrice.toFixed(2)}
@@ -3453,7 +3447,7 @@ export default function RiderCheckinPage() {
                                     type="button"
                                     title="Remove item"
                                     disabled={recLocked}
-                                    className="shrink-0 text-slate-400 hover:text-rose-600"
+                                    className="shrink-0 rounded-md text-slate-400 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                     onClick={() =>
                                       setReceipts((prev) =>
                                         prev
@@ -3490,7 +3484,7 @@ export default function RiderCheckinPage() {
 
                         <button
                           type="button"
-                          className={`mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${
+                          className={`mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                             !hasAnyAvailableStock
                               ? "cursor-not-allowed opacity-50"
                               : "bg-white hover:bg-slate-50"
@@ -3553,7 +3547,7 @@ export default function RiderCheckinPage() {
                                 type="text"
                                 inputMode="decimal"
                                 disabled={recLocked}
-                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm"
+                                className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 placeholder={receiptTotal.toFixed(2)}
                                 value={rec.cashInput ?? receiptTotal.toFixed(2)}
                                 onChange={(e) => {
@@ -3723,7 +3717,7 @@ export default function RiderCheckinPage() {
                                         ),
                                       );
                                     }}
-                                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                   >
                                     Collect Full Payment
                                   </button>
@@ -3740,7 +3734,7 @@ export default function RiderCheckinPage() {
                                         reason: reason.trim().slice(0, 200),
                                       });
                                     }}
-                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                   >
                                     Mark as VOIDED
                                   </button>
@@ -3839,7 +3833,7 @@ export default function RiderCheckinPage() {
               name="intent"
               value="save-draft"
               disabled={busy || locked}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save Draft"}
             </button>
@@ -3856,7 +3850,7 @@ export default function RiderCheckinPage() {
                   : "false"
               }
               title={submitDisabledReason ?? undefined}
-              className={`inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-medium shadow-sm transition ${
+              className={`inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 transition ${
                 busy || locked || hasSubmitBlock || hasUnsentClearance
                   ? "bg-indigo-300 text-white cursor-not-allowed"
                   : "bg-indigo-600 text-white hover:bg-indigo-700"

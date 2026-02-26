@@ -2356,7 +2356,7 @@ export default function ProductsPage() {
         <button
           type="button"
           onClick={handleOpenModal}
-          className="group inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 py-2 text-white shadow-sm transition hover:bg-indigo-700 active:translate-y-px focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          className="group inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 py-2 text-white shadow-sm transition hover:bg-indigo-700 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           aria-label="Add Product"
         >
           <svg
@@ -2386,7 +2386,7 @@ export default function ProductsPage() {
               placeholder="🔍 Search product name, description, brand..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </div>
 
@@ -2547,7 +2547,7 @@ export default function ProductsPage() {
               🎯 Target Filter{" "}
               <button
                 type="button"
-                className="ml-4 text-xs text-slate-500 underline hover:text-slate-700"
+                className="ml-4 text-xs text-slate-500 underline hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 onClick={() => setShowManageTarget(true)}
               >
                 ⚙️ Manage
@@ -2604,7 +2604,7 @@ export default function ProductsPage() {
               <button
                 type="button"
                 onClick={() => setShowManageIndication(true)}
-                className="ml-4 text-xs text-gray-500 hover:text-gray-700 underline"
+                className="ml-4 text-xs text-gray-500 hover:text-gray-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 title="Manage Indications"
               >
                 ⚙️Manage
@@ -2685,7 +2685,7 @@ export default function ProductsPage() {
           <div className="relative w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl p-4 sm:p-6 flex flex-col">
             <button
               onClick={handleCloseModal}
-              className="absolute top-3.5 right-3.5 text-xl sm:text-lg text-slate-500 hover:text-slate-700 transition"
+              className="absolute top-3.5 right-3.5 text-xl sm:text-lg text-slate-500 hover:text-slate-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               ×
             </button>
@@ -2824,7 +2824,7 @@ export default function ProductsPage() {
                           allowPackSale: e.target.checked ? "true" : "false",
                         }))
                       }
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus-visible:ring-indigo-200"
                     />
                     <span className="text-sm text-slate-700">
                       Sell per kilo (e.g. bigas/feeds/pet-food)
@@ -3037,7 +3037,7 @@ export default function ProductsPage() {
                             type="button"
                             onClick={recomputeRetailPrice}
                             disabled={!canRecomputeRetailPrice}
-                            className="text-gray-700 text-xs border px-1 py-0.5 rounded disabled:opacity-50"
+                            className="text-gray-700 text-xs border px-1 py-0.5 rounded disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             title="Recompute = Whole Unit Price ÷ Packing Size"
                           >
                             ↻ Recompute Retail Price
@@ -3087,7 +3087,7 @@ export default function ProductsPage() {
                         </span>
                         <button
                           type="button"
-                          className="text-[11px] text-blue-600 hover:underline"
+                          className="text-[11px] text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           title="Generate in-store EAN-13"
                           onClick={() => {
                             const code = makeLocalEan13(storeCode);
@@ -3328,7 +3328,7 @@ export default function ProductsPage() {
                         name="imageFile"
                         accept="image/*"
                         capture="environment"
-                        className="mt-3 block w-full text-sm"
+                        className="mt-3 block w-full text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         aria-describedby="imageHelp"
                         onChange={(e) => {
                           const file = e.target.files?.[0];

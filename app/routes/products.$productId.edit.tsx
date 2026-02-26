@@ -61,7 +61,7 @@ export default function EditProductPage() {
             name="name"
             defaultValue={product.name}
             required
-            className="w-full p-2 border rounded"
+            className="w-full p-2 border rounded focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
         </div>
         <div>
@@ -75,7 +75,7 @@ export default function EditProductPage() {
             step="0.01"
             defaultValue={product.price}
             required
-            className="w-full p-2 border rounded"
+            className="w-full p-2 border rounded focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
         </div>
         <div>
@@ -87,12 +87,12 @@ export default function EditProductPage() {
             name="unit"
             defaultValue={product.unit}
             required
-            className="w-full p-2 border rounded"
+            className="w-full p-2 border rounded focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           />
         </div>
         <button
           type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          className="bg-blue-600 text-white px-4 py-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         >
           Save Changes
         </button>

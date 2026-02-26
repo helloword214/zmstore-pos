@@ -217,7 +217,7 @@ export default function CashierDashboardPage() {
                 to={`/cashier/shift?next=${encodeURIComponent(
                   "/cashier",
                 )}`}
-                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800"
+                className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Go to Shift Console
               </Link>
@@ -374,7 +374,7 @@ export default function CashierDashboardPage() {
                 </div>
                 <Link
                   to="/cashier/shift?next=/cashier"
-                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Open →
                 </Link>
@@ -400,7 +400,7 @@ export default function CashierDashboardPage() {
                 <span>Shift history</span>
                 <Link
                   to="/cashier/shift-history"
-                  className="font-medium text-slate-700 hover:text-slate-900"
+                  className="font-medium text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   View all →
                 </Link>
@@ -432,7 +432,7 @@ export default function CashierDashboardPage() {
               <div className="mt-3 grid gap-2">
                 <Link
                   to="/cashier/shift?next=/cashier"
-                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40"
+                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   View full schedule
                 </Link>
@@ -454,7 +454,7 @@ export default function CashierDashboardPage() {
               </p>
               <Link
                 to="/cashier/shift-history"
-                className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Attendance history
               </Link>
@@ -488,7 +488,7 @@ export default function CashierDashboardPage() {
               <div className="mt-3 flex gap-2">
                 <Link
                   to="/cashier/shift-history"
-                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Payslip / payroll
                 </Link>

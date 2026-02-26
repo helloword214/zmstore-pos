@@ -250,9 +250,7 @@ export default function CreditOrderPage() {
 
               {/* Customer Picker */}
               <div>
-                <label className="mb-1 block text-sm text-slate-700">
-                  Customer
-                </label>
+                <div className="mb-1 block text-sm text-slate-700">Customer</div>
                 <CustomerPicker value={customer} onChange={setCustomer} />
                 {!customer && (
                   <div className="mt-1 text-xs text-red-700">
@@ -267,7 +265,7 @@ export default function CreditOrderPage() {
                   <input
                     name="dueDate"
                     type="date"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                   />
                 </label>
 
@@ -277,7 +275,7 @@ export default function CreditOrderPage() {
                       type="checkbox"
                       name="releaseWithBalance"
                       value="1"
-                      className="h-4 w-4 accent-indigo-600"
+                      className="h-4 w-4 accent-indigo-600 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     />
                     <span>Release goods now</span>
                   </label>
@@ -289,7 +287,7 @@ export default function CreditOrderPage() {
                 <input
                   name="releaseApprovedBy"
                   type="text"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                   placeholder="e.g. 1234 or MGR-ANA"
                 />
               </label>
@@ -297,7 +295,7 @@ export default function CreditOrderPage() {
               <div className="flex flex-col sm:flex-row gap-2 pt-2">
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   disabled={!customer}
                   title={!customer ? "Select a customer first" : "Save & print"}
                 >

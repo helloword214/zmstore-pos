@@ -3,6 +3,20 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -549,8 +563,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function StorePayrollPage() {
-  const { me, employees, selected, charges, totals } =
-    useLoaderData<LoaderData>();
+  const { employees, selected, charges, totals } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
 
   const kindRaw = String(sp.get("kind") || "").toUpperCase();
@@ -569,54 +582,36 @@ export default function StorePayrollPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Payroll
-            </h1>
-            <p className="text-xs text-slate-500">
-              Logged in as{" "}
-              <span className="font-medium text-slate-700">
-                {me.alias ? `${me.alias} (${me.name})` : me.name}
-              </span>
-              {" · "}
-              <span className="uppercase tracking-wide">{me.role}</span>
-              {" · "}
-              <span>{me.email}</span>
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <Link
-              to="/store/rider-ar"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              title="Tag AR items for payroll"
-            >
-              Rider AR →
-            </Link>
-            <Link
-              to="/store/cashier-ar"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              title="Tag cashier AR items for payroll"
-            >
-              Cashier AR →
-            </Link>
-            <Link
-              to="/store"
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              ← Back
-            </Link>
-          </div>
-        </div>
-      </div>
+      <SoTNonDashboardHeader
+        title="Payroll"
+        subtitle="Settle payroll-tagged A/R balances for riders and cashiers."
+        backTo="/store"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-6xl"
+      />
 
       <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/store/rider-ar"
+            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            title="Tag AR items for payroll"
+          >
+            Rider AR →
+          </Link>
+          <Link
+            to="/store/cashier-ar"
+            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            title="Tag cashier AR items for payroll"
+          >
+            Cashier AR →
+          </Link>
+        </div>
+
         {didDeduct ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <SoTAlert tone="success" className="rounded-2xl px-4 py-3 text-sm">
             Payroll deduction recorded.
-          </div>
+          </SoTAlert>
         ) : null}
 
         <div className="grid gap-3 lg:grid-cols-2">
@@ -631,65 +626,60 @@ export default function StorePayrollPage() {
               </div>
             </div>
 
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
+            <SoTTable>
+              <SoTTableHead>
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Employee</th>
-                  <th className="px-3 py-2 text-right font-medium">Items</th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    Remaining
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">Action</th>
+                  <SoTTh>Employee</SoTTh>
+                  <SoTTh align="right">Items</SoTTh>
+                  <SoTTh align="right">Remaining</SoTTh>
+                  <SoTTh align="right">Action</SoTTh>
                 </tr>
-              </thead>
+              </SoTTableHead>
               <tbody>
                 {employees.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="px-3 py-6 text-center text-slate-500"
-                    >
-                      No payroll-tagged AR yet. Use{" "}
-                      <span className="font-medium">Rider AR</span> /{" "}
-                      <span className="font-medium">Cashier AR</span> to tag
-                      items.
-                    </td>
-                  </tr>
+                  <SoTTableEmptyRow
+                    colSpan={4}
+                    message={
+                      <>
+                        No payroll-tagged AR yet. Use{" "}
+                        <span className="font-medium">Rider AR</span> /{" "}
+                        <span className="font-medium">Cashier AR</span> to tag items.
+                      </>
+                    }
+                  />
                 ) : (
                   employees.map((e) => {
                     const active = selectedKey === e.key;
                     return (
-                      <tr key={e.key} className="border-t border-slate-100">
-                        <td className="px-3 py-2">
+                      <SoTTableRow key={e.key}>
+                        <SoTTd>
                           <div className="text-slate-900">{e.name}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {e.kind}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
+                          <div className="text-[11px] text-slate-500">{e.kind}</div>
+                        </SoTTd>
+                        <SoTTd align="right" className="tabular-nums">
                           {e.openItems}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-rose-700">
+                        </SoTTd>
+                        <SoTTd align="right" className="tabular-nums text-rose-700">
                           {peso(e.totalRemaining)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
+                        </SoTTd>
+                        <SoTTd align="right">
                           <Link
                             to={`/store/payroll?kind=${e.kind}&id=${e.id}`}
                             className={`inline-flex items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-medium hover:bg-slate-50 ${
                               active
                                 ? "border-indigo-200 bg-indigo-50 text-indigo-800"
                                 : "border-slate-200 bg-white text-slate-700"
-                            }`}
+                            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                           >
                             {active ? "Selected" : "Open"}
                           </Link>
-                        </td>
-                      </tr>
+                        </SoTTd>
+                      </SoTTableRow>
                     );
                   })
                 )}
               </tbody>
-            </table>
+            </SoTTable>
           </div>
 
           {/* Right: selected employee details */}
@@ -718,11 +708,11 @@ export default function StorePayrollPage() {
               </div>
             ) : (
               <div className="p-4 space-y-3">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <SoTAlert tone="warning" className="p-3">
                   This records{" "}
                   <span className="font-semibold">PAYROLL_DEDUCTION</span>{" "}
                   payments (FIFO), and updates charge/variance statuses.
-                </div>
+                </SoTAlert>
 
                 <Form
                   method="post"
@@ -730,27 +720,30 @@ export default function StorePayrollPage() {
                 >
                   <input type="hidden" name="kind" value={selected.kind} />
                   <input type="hidden" name="employeeId" value={selected.id} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      name="amount"
-                      inputMode="decimal"
-                      placeholder="Deduct amount"
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                    />
-                    <input
-                      name="note"
-                      placeholder="Cutoff/date (required)"
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                    />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <SoTFormField label="Deduct amount">
+                      <SoTInput
+                        name="amount"
+                        inputMode="decimal"
+                        placeholder="Deduct amount"
+                      />
+                    </SoTFormField>
+                    <SoTFormField label="Cutoff/date (required)">
+                      <SoTInput
+                        name="note"
+                        placeholder="Cutoff/date (required)"
+                      />
+                    </SoTFormField>
                   </div>
-                  <button
+                  <SoTButton
                     type="submit"
                     name="_intent"
                     value="record-deduction"
-                    className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-700"
+                    variant="primary"
+                    className="w-full sm:w-auto"
                   >
                     Record payroll deduction
-                  </button>
+                  </SoTButton>
                   <div className="text-[11px] text-slate-500">
                     Tip: kung gusto mo exact, set amount = remaining{" "}
                     {peso(totals.remaining)}.
@@ -758,39 +751,24 @@ export default function StorePayrollPage() {
                 </Form>
 
                 <div className="overflow-hidden rounded-xl border border-slate-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
+                  <SoTTable>
+                    <SoTTableHead>
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium">Ref</th>
-                        <th className="px-3 py-2 text-left font-medium">
-                          Link
-                        </th>
-                        <th className="px-3 py-2 text-left font-medium">
-                          Status
-                        </th>
-                        <th className="px-3 py-2 text-right font-medium">
-                          Remaining
-                        </th>
+                        <SoTTh>Ref</SoTTh>
+                        <SoTTh>Link</SoTTh>
+                        <SoTTh>Status</SoTTh>
+                        <SoTTh align="right">Remaining</SoTTh>
                       </tr>
-                    </thead>
+                    </SoTTableHead>
                     <tbody>
                       {charges.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="px-3 py-6 text-center text-slate-500"
-                          >
-                            No open items.
-                          </td>
-                        </tr>
+                        <SoTTableEmptyRow colSpan={4} message="No open items." />
                       ) : (
                         charges.map((c) => (
-                          <tr key={c.id} className="border-t border-slate-100">
-                            <td className="px-3 py-2">
+                          <SoTTableRow key={c.id}>
+                            <SoTTd>
                               <div className="text-slate-900">#{c.id}</div>
-                              <div className="text-[11px] text-slate-500">
-                                {c.kind}
-                              </div>
+                              <div className="text-[11px] text-slate-500">{c.kind}</div>
                               <div className="text-[11px] text-slate-500">
                                 {new Date(c.createdAt).toLocaleString()}
                               </div>
@@ -802,8 +780,8 @@ export default function StorePayrollPage() {
                                   </span>
                                 </div>
                               ) : null}
-                            </td>
-                            <td className="px-3 py-2">
+                            </SoTTd>
+                            <SoTTd>
                               {c.kind === "RIDER" ? (
                                 c.run ? (
                                   <span className="font-mono text-slate-800">
@@ -819,30 +797,28 @@ export default function StorePayrollPage() {
                               ) : (
                                 <span className="text-slate-500">—</span>
                               )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-                                {c.status}
-                              </span>
+                            </SoTTd>
+                            <SoTTd>
+                              <SoTStatusBadge>{c.status}</SoTStatusBadge>
                               {hasPlanTag(c.note) ? (
-                                <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                                <SoTStatusBadge tone="warning" className="ml-2">
                                   Payroll-tagged
-                                </span>
+                                </SoTStatusBadge>
                               ) : null}
                               {c.note ? (
                                 <div className="mt-1 text-[11px] text-slate-500">
                                   Note: {c.note}
                                 </div>
                               ) : null}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-rose-700">
+                            </SoTTd>
+                            <SoTTd align="right" className="tabular-nums text-rose-700">
                               {peso(c.remaining)}
-                            </td>
-                          </tr>
+                            </SoTTd>
+                          </SoTTableRow>
                         ))
                       )}
                     </tbody>
-                  </table>
+                  </SoTTable>
                 </div>
 
                 <div className="text-[11px] text-slate-500">

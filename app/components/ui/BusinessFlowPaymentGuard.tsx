@@ -96,7 +96,7 @@ export function BusinessFlowPaymentGuard(props: BusinessFlowPaymentGuardProps) {
 
           <button
             type="button"
-            className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-emerald-800 font-medium"
+            className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-emerald-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={() => {
               onSetFullCash();
               onClose();
@@ -107,7 +107,7 @@ export function BusinessFlowPaymentGuard(props: BusinessFlowPaymentGuardProps) {
 
           <button
             type="button"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             onClick={onClose}
           >
             Balikan ko muna (keep current value)

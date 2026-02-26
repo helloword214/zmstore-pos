@@ -94,7 +94,7 @@ export default function EditCustomer() {
           </h1>
           <Link
             to={`/customers/${customer.id}`}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
             Back
           </Link>
@@ -118,7 +118,7 @@ export default function EditCustomer() {
             <input
               name="firstName"
               defaultValue={customer.firstName ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
             {actionData && (actionData as any).errors?.firstName ? (
               <div className="text-xs text-red-700 mt-1">
@@ -132,7 +132,7 @@ export default function EditCustomer() {
             <input
               name="middleName"
               defaultValue={customer.middleName ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
 
@@ -141,7 +141,7 @@ export default function EditCustomer() {
             <input
               name="lastName"
               defaultValue={customer.lastName ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
             {actionData && (actionData as any).errors?.lastName ? (
               <div className="text-xs text-red-700 mt-1">
@@ -155,7 +155,7 @@ export default function EditCustomer() {
             <input
               name="alias"
               defaultValue={customer.alias ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
 
@@ -164,7 +164,7 @@ export default function EditCustomer() {
             <input
               name="phone"
               defaultValue={customer.phone ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
 
@@ -176,7 +176,7 @@ export default function EditCustomer() {
               step="0.01"
               min="0"
               defaultValue={customer.creditLimit ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
             {actionData && (actionData as any).errors?.creditLimit ? (
               <div className="text-xs text-red-700 mt-1">
@@ -191,20 +191,20 @@ export default function EditCustomer() {
               name="notes"
               rows={4}
               defaultValue={customer.notes ?? ""}
-              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </label>
 
           <div className="sm:col-span-2 flex gap-2">
             <button
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               disabled={nav.state !== "idle"}
             >
               {nav.state !== "idle" ? "Saving…" : "Save Changes"}
             </button>
             <Link
               to={`/customers/${customer.id}`}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Cancel
             </Link>

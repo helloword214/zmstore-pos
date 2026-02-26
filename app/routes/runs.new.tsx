@@ -9,6 +9,11 @@ import {
   useNavigation,
 } from "@remix-run/react";
 import * as React from "react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
@@ -91,7 +96,7 @@ export async function action({ request }: ActionFunctionArgs) {
         select: { id: true },
       });
       return redirect(`/runs/${run.id}/dispatch`);
-    } catch (e: any) {
+    } catch {
       // unique violation → retry a different code
       runCode = makeRunCode();
     }
@@ -115,86 +120,89 @@ export default function NewRunPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-xl p-5">
-        <h1 className="text-lg font-semibold text-slate-900">
-          New Delivery Run
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Create a free delivery run (no parent order).
-        </p>
+      <SoTNonDashboardHeader
+        title="New Delivery Run"
+        subtitle="Create a free delivery run (no parent order)."
+        backTo="/runs"
+        backLabel="Runs"
+        maxWidthClassName="max-w-xl"
+      />
 
+      <div className="mx-auto max-w-xl p-5">
         {actionData && !actionData.ok && (
-          <div
-            className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-            role="alert"
-            aria-live="polite"
-          >
+          <SoTAlert tone="danger" className="mb-3 text-sm" role="alert" aria-live="polite">
             {actionData.error}
-          </div>
+          </SoTAlert>
         )}
 
-        <Form
-          method="post"
-          className={`mt-4 grid gap-3 ${
-            busy ? "opacity-60 pointer-events-none" : ""
-          }`}
-        >
-          <div className="grid gap-1">
-            {/* NOTE: Huwag gumamit ng <label> dito dahil custom component (SelectInput) at hindi siya recognized ng a11y rule */}
-            <div className="text-sm text-slate-700">
-              Rider <span className="text-rose-600">*</span>
-            </div>
-            <SelectInput
-              options={[
-                { value: "", label: "— Select rider —" },
-                ...riders.map((r) => ({ value: String(r.id), label: r.label })),
-              ]}
-              value={riderId}
-              onChange={(v) => setRiderId(String(v))}
-              className="rounded-md border px-3 py-2 text-sm w-full"
-            />
-            <input type="hidden" name="riderId" value={riderId} />
-          </div>
-          <div className="grid gap-1">
-            {/* Same reason: plain text header + SelectInput, walang <label> */}
-            <div className="text-sm text-slate-700">
-              Vehicle <span className="text-slate-400">(optional)</span>
-            </div>
-            <SelectInput
-              options={[
-                { value: "", label: "— Select vehicle —" },
-                ...vehicles.map((v) => ({
-                  value: String(v.id),
-                  label: v.name,
-                })),
-              ]}
-              value={vehicleId}
-              onChange={(v) => setVehicleId(String(v))}
-              className="rounded-md border px-3 py-2 text-sm w-full"
-            />
-            <input type="hidden" name="vehicleId" value={vehicleId} />
-          </div>
-
-          <div className="grid gap-1">
-            <label htmlFor="notes" className="text-sm text-slate-700">
-              Notes <span className="text-slate-400">(optional)</span>
-            </label>
-            <textarea
-              id="notes"
-              name="notes"
-              rows={3}
-              className="rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-            />
-          </div>
-          <div className="pt-2">
-            <button
-              className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50"
-              disabled={busy}
+        <SoTCard>
+          <Form
+            method="post"
+            className={`grid gap-3 ${busy ? "opacity-60 pointer-events-none" : ""}`}
+          >
+            <SoTFormField
+              label={
+                <>
+                  Rider <span className="text-rose-600">*</span>
+                </>
+              }
             >
-              {busy ? "Creating…" : "Create & Continue"}
-            </button>
-          </div>
-        </Form>
+              <SelectInput
+                options={[
+                  { value: "", label: "— Select rider —" },
+                  ...riders.map((r) => ({ value: String(r.id), label: r.label })),
+                ]}
+                value={riderId}
+                onChange={(v) => setRiderId(String(v))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input type="hidden" name="riderId" value={riderId} />
+            </SoTFormField>
+
+            <SoTFormField
+              label={
+                <>
+                  Vehicle <span className="text-slate-400">(optional)</span>
+                </>
+              }
+            >
+              <SelectInput
+                options={[
+                  { value: "", label: "— Select vehicle —" },
+                  ...vehicles.map((v) => ({
+                    value: String(v.id),
+                    label: v.name,
+                  })),
+                ]}
+                value={vehicleId}
+                onChange={(v) => setVehicleId(String(v))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input type="hidden" name="vehicleId" value={vehicleId} />
+            </SoTFormField>
+
+            <SoTFormField
+              label={
+                <>
+                  Notes <span className="text-slate-400">(optional)</span>
+                </>
+              }
+            >
+              <textarea
+                id="notes"
+                name="notes"
+                rows={3}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+              />
+            </SoTFormField>
+
+            <div className="pt-2">
+              <SoTButton variant="primary" disabled={busy}>
+                {busy ? "Creating…" : "Create & Continue"}
+              </SoTButton>
+            </div>
+          </Form>
+        </SoTCard>
       </div>
     </main>
   );

@@ -465,7 +465,7 @@ export default function StoreManagerDashboard() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   to="/employees"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   View employees →
                 </Link>
@@ -539,14 +539,14 @@ export default function StoreManagerDashboard() {
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               <Link
                 to="/store/cashier-shifts"
-                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100/40"
+                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Open/Close cashier shifts →
               </Link>
 
               <Link
                 to="/store/cashier-variances"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Shift variances <MiniBadge n={cash.openShiftVariances} />
               </Link>

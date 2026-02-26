@@ -104,7 +104,9 @@ export default function OrderSlipPage() {
     try {
       await navigator.clipboard.writeText(order.orderCode);
       // optional: toast
-    } catch {}
+    } catch {
+      return;
+    }
   }, [order.orderCode]);
 
   const peso = (n: number) =>
@@ -226,7 +228,7 @@ export default function OrderSlipPage() {
 
         <button
           onClick={copyCode}
-          className="px-3 py-1 rounded border border-gray-300 text-sm text-gray-700"
+          className="px-3 py-1 rounded border border-gray-300 text-sm text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         >
           Copy code
         </button>
@@ -236,13 +238,13 @@ export default function OrderSlipPage() {
           <input type="hidden" name="_action" value="reprint" />
           <button
             type="submit"
-            className="px-3 py-1 rounded bg-black text-white hover:opacity-90 text-sm"
+            className="px-3 py-1 rounded bg-black text-white hover:opacity-90 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
             Reprint & increment
           </button>
         </Form>
 
-        <a href="/pad-order" className="px-3 py-1 rounded border text-sm">
+        <a href="/pad-order" className="px-3 py-1 rounded border text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
           Back to Kiosk
         </a>
       </div>

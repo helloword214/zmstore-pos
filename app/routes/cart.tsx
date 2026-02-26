@@ -179,7 +179,7 @@ export default function CartPage() {
                       type="submit"
                       name="action"
                       value="add"
-                      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm"
+                      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
                       Add
                     </button>
@@ -232,13 +232,13 @@ export default function CartPage() {
                             min="0"
                             name="discount"
                             defaultValue={item.discount || ""}
-                            className="w-20 text-xs border px-1 py-0.5 rounded mt-1"
+                            className="w-20 text-xs border px-1 py-0.5 rounded mt-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           />
                           <button
                             type="submit"
                             name="action"
                             value="set-discount"
-                            className="mt-1 text-blue-600 text-xs hover:underline"
+                            className="mt-1 text-blue-600 text-xs hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           >
                             Set
                           </button>
@@ -260,7 +260,7 @@ export default function CartPage() {
                                 type="submit"
                                 name="action"
                                 value="decrement"
-                                className="px-2 bg-gray-300 hover:bg-gray-400 rounded text-sm"
+                                className="px-2 bg-gray-300 hover:bg-gray-400 rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 disabled={item.quantity <= 0.25}
                               >
                                 -
@@ -276,7 +276,7 @@ export default function CartPage() {
                                 type="submit"
                                 name="action"
                                 value="increment"
-                                className="px-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                className="px-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 disabled={item.quantity >= maxQuantity}
                               >
                                 +
@@ -292,7 +292,7 @@ export default function CartPage() {
                                 type="submit"
                                 name="action"
                                 value="remove"
-                                className="px-2 text-red-600 hover:text-red-800 text-sm"
+                                className="px-2 text-red-600 hover:text-red-800 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               >
                                 🗑
                               </button>
@@ -324,7 +324,7 @@ export default function CartPage() {
                                       item.quantity === newQty
                                         ? "bg-blue-600 text-white"
                                         : "bg-gray-100 hover:bg-gray-200"
-                                    }`}
+                                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                                   >
                                     {f === 0 ? "0" : `+${f}`}
                                   </button>
@@ -349,7 +349,7 @@ export default function CartPage() {
                 type="submit"
                 name="action"
                 value="checkout"
-                className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
+                className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 🛒 Checkout
               </button>

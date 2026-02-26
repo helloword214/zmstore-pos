@@ -24,7 +24,7 @@ export function SoTNonDashboardHeader({
             to={backTo}
             className="inline-flex items-center text-sm font-medium text-slate-700 transition-colors duration-150 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
-            {"\u2190"} {backLabel}
+            {"<-"} {backLabel}
           </Link>
         </div>
 

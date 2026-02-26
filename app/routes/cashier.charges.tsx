@@ -7,9 +7,19 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { Prisma } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 type Denoms = {
   bills?: Record<string, number>;
@@ -55,6 +65,17 @@ function peso(n: number) {
 
 function safeTab(raw: string | null): LoaderData["tab"] {
   return raw === "history" ? "history" : "open";
+}
+
+function varianceTone(variance: number): "neutral" | "success" | "danger" {
+  if (Math.abs(variance) < 0.005) return "neutral";
+  return variance > 0 ? "success" : "danger";
+}
+
+function statusTone(status: string): "neutral" | "warning" | "success" {
+  if (status === "MANAGER_APPROVED") return "warning";
+  if (status === "CLOSED") return "success";
+  return "neutral";
 }
 
 function normalizeDenoms(raw: any): Denoms | null {
@@ -315,15 +336,16 @@ export default function CashierChargesPage() {
         title="Cashier Charges"
         subtitle="Items charged to you from shift close variances (manager decision)."
         backTo="/cashier"
+        backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5">
+      <div className="mx-auto max-w-6xl px-5 py-6">
         {canSeeAll ? (
           <SoTActionBar
             right={
               <Link
                 to={`?tab=${tab}${showAll ? "" : "&all=1"}`}
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 title="Admin only"
               >
                 {showAll ? "My scope" : "Show all"}
@@ -331,7 +353,7 @@ export default function CashierChargesPage() {
             }
           />
         ) : null}
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium text-slate-800">
@@ -340,7 +362,7 @@ export default function CashierChargesPage() {
               <div className="flex flex-wrap gap-2 text-xs">
                 <Link
                   to={tabLink("open")}
-                  className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                  className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                     tab === "open"
                       ? "border-rose-200 bg-rose-50 text-rose-800"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -355,7 +377,7 @@ export default function CashierChargesPage() {
                 </Link>
                 <Link
                   to={tabLink("history")}
-                  className={`inline-flex items-center rounded-full border px-2 py-1 ${
+                  className={`inline-flex items-center rounded-full border px-2 py-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 ${
                     tab === "history"
                       ? "border-slate-300 bg-slate-100 text-slate-800"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -373,53 +395,46 @@ export default function CashierChargesPage() {
             <div className="text-xs text-slate-500">{rows.length} item(s)</div>
           </div>
 
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Shift</th>
-                <th className="px-3 py-2 text-left font-medium">Branch</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Expected</th>
-                <th className="px-3 py-2 text-right font-medium">Counted</th>
-                <th className="px-3 py-2 text-right font-medium">Diff</th>
-                <th className="px-3 py-2 text-left font-medium">Details</th>
-              </tr>
-            </thead>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Shift</SoTTh>
+                <SoTTh>Branch</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Expected</SoTTh>
+                <SoTTh align="right">Counted</SoTTh>
+                <SoTTh align="right">Diff</SoTTh>
+                <SoTTh>Details</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
+                <SoTTableEmptyRow
+                  colSpan={7}
+                  message={
                     <SoTEmptyState
                       title="No cashier charges."
                       hint="New manager-approved charge items will appear here."
                     />
-                  </td>
-                </tr>
+                  }
+                />
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
                   const diffClass = isZero
                     ? "text-slate-600"
                     : v.variance > 0
-                    ? "text-emerald-700"
-                    : "text-rose-700";
-                  const badgeClass = isZero
-                    ? "bg-slate-100 text-slate-700 ring-slate-200"
-                    : v.variance > 0
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                    : "bg-rose-50 text-rose-700 ring-rose-200";
+                      ? "text-emerald-700"
+                      : "text-rose-700";
                   const badgeLabel = isZero
                     ? "MATCH"
                     : v.variance > 0
-                    ? "OVER"
-                    : "SHORT";
+                      ? "OVER"
+                      : "SHORT";
 
                   return (
-                    <tr
-                      key={v.id}
-                      className="border-t border-slate-100 align-top"
-                    >
-                      <td className="px-3 py-2">
+                    <SoTTableRow key={v.id}>
+                      <SoTTd>
                         <div className="text-slate-900">
                           {new Date(v.shift.openedAt).toLocaleString()}
                         </div>
@@ -430,39 +445,31 @@ export default function CashierChargesPage() {
                             <>
                               {" "}
                               •{" "}
-                              <span className="font-mono">
-                                {v.shift.deviceId}
-                              </span>
+                              <span className="font-mono">{v.shift.deviceId}</span>
                             </>
                           ) : null}
                         </div>
                         {v.shift.closedAt ? (
                           <div className="mt-1 text-[11px] text-slate-500">
-                            closed:{" "}
-                            {new Date(v.shift.closedAt).toLocaleString()}
+                            closed: {new Date(v.shift.closedAt).toLocaleString()}
                           </div>
                         ) : null}
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
-                        <div className="text-slate-900">
-                          {v.shift.branch?.name ?? "—"}
-                        </div>
+                      <SoTTd>
+                        <div className="text-slate-900">{v.shift.branch?.name ?? "—"}</div>
                         <div className="text-[11px] text-slate-500">
                           branch{" "}
-                          <span className="font-mono">
-                            #{v.shift.branch?.id ?? "—"}
-                          </span>
+                          <span className="font-mono">#{v.shift.branch?.id ?? "—"}</span>
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
-                        <SoTStatusBadge>
+                      <SoTTd>
+                        <SoTStatusBadge tone={statusTone(v.status)}>
                           {v.status}
                         </SoTStatusBadge>
                         <div className="mt-1 text-[11px] text-slate-500">
-                          resolution:{" "}
-                          <span className="font-medium">{v.resolution}</span>
+                          resolution: <span className="font-medium">{v.resolution}</span>
                         </div>
                         <div className="mt-1 text-[11px] text-slate-500">
                           manager:{" "}
@@ -472,34 +479,27 @@ export default function CashierChargesPage() {
                               : "—"}
                           </span>
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.expected)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         {peso(v.counted)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums">
                         <div className="flex items-center justify-end gap-2">
-                          <span
-                            className={[
-                              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ring-1",
-                              badgeClass,
-                            ].join(" ")}
-                          >
+                          <SoTStatusBadge tone={varianceTone(v.variance)}>
                             {badgeLabel}
-                          </span>
-                          <span
-                            className={["font-medium", diffClass].join(" ")}
-                          >
+                          </SoTStatusBadge>
+                          <span className={["font-medium", diffClass].join(" ")}>
                             {v.variance >= 0 ? "+" : ""}
                             {peso(v.variance)}
                           </span>
                         </div>
-                      </td>
+                      </SoTTd>
 
-                      <td className="px-3 py-2">
+                      <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
                             View denoms / notes
@@ -507,34 +507,27 @@ export default function CashierChargesPage() {
                           <div className="mt-3 space-y-3">
                             <DenomsTable denoms={v.shift.closingDenoms} />
                             <div className="text-[11px] text-slate-600">
-                              Note:{" "}
-                              <span className="font-medium">
-                                {v.note ?? "—"}
-                              </span>
+                              Note: <span className="font-medium">{v.note ?? "—"}</span>
                             </div>
 
                             <Form method="post" className="grid gap-2">
                               <input type="hidden" name="id" value={v.id} />
                               <input type="hidden" name="tab" value={tab} />
-                              <input
-                                type="hidden"
-                                name="all"
-                                value={showAll ? "1" : ""}
-                              />
+                              <input type="hidden" name="all" value={showAll ? "1" : ""} />
                               <input
                                 name="note"
                                 placeholder="Add/update note"
                                 defaultValue={v.note ?? ""}
-                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                               />
-                              <button
+                              <SoTButton
                                 type="submit"
                                 name="_intent"
                                 value="cashier-note"
-                                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                variant="secondary"
                               >
                                 Save note
-                              </button>
+                              </SoTButton>
                             </Form>
 
                             {!isHistory ? (
@@ -542,46 +535,38 @@ export default function CashierChargesPage() {
                                 method="post"
                                 className="grid gap-2"
                                 onSubmit={(e) => {
-                                  if (
-                                    !confirm(
-                                      "Acknowledge and close this charge?",
-                                    )
-                                  )
+                                  if (!confirm("Acknowledge and close this charge?"))
                                     e.preventDefault();
                                 }}
                               >
                                 <input type="hidden" name="id" value={v.id} />
                                 <input type="hidden" name="tab" value={tab} />
-                                <input
-                                  type="hidden"
-                                  name="all"
-                                  value={showAll ? "1" : ""}
-                                />
+                                <input type="hidden" name="all" value={showAll ? "1" : ""} />
                                 <input
                                   name="ackNote"
                                   placeholder="Optional acknowledgement note"
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 />
-                                <button
+                                <SoTButton
                                   type="submit"
                                   name="_intent"
                                   value="cashier-ack"
-                                  className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
+                                  variant="danger"
                                 >
                                   Acknowledge & Close
-                                </button>
+                                </SoTButton>
                               </Form>
                             ) : null}
                           </div>
                         </details>
-                      </td>
-                    </tr>
+                      </SoTTd>
+                    </SoTTableRow>
                   );
                 })
               )}
             </tbody>
-          </table>
-        </div>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

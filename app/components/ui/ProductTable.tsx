@@ -86,7 +86,13 @@ export function ProductTable({
     if (actionFetcher.state !== "idle") return;
 
     // If your action returns JSON like { toggledId, newIsActive, error }
-    const data = actionFetcher.data as any;
+    const data = actionFetcher.data as
+      | {
+          toggledId?: number;
+          newIsActive?: boolean;
+          error?: string;
+        }
+      | undefined;
 
     if (pendingToggle) {
       if (data?.error) {
@@ -416,8 +422,8 @@ export function ProductTable({
                           onClick={() => setQuickView(product)}
                           className="px-2 py-0.5 text-[11px] font-medium text-gray-700
                        border border-gray-300 rounded-md
-                       hover:bg-gray-50 focus:outline-none
-                       focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                       hover:bg-gray-50 focus-visible:outline-none
+                       focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                           aria-label={`View details for ${product.name}`}
                         >
                           View
@@ -563,7 +569,7 @@ export function ProductTable({
                     </div>
                   </div>
                   <button
-                    className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                    className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     onClick={() => setQuickView(null)}
                     aria-label="Close"
                   >

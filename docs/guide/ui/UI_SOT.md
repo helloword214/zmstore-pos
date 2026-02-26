@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-02-24
+Last Reviewed: 2026-02-26
 
 ## 1. Purpose
 
@@ -20,7 +20,7 @@ Use these routes as visual interaction anchors:
 
 ## 3. SoT Component Set
 
-Primary reusable components (minimum baseline):
+SoT reusable components (catalog + minimum baseline):
 
 1. `app/components/ui/SoTButton.tsx`
 2. `app/components/ui/SoTInput.tsx`
@@ -32,6 +32,14 @@ Primary reusable components (minimum baseline):
 8. `app/components/ui/SoTAlert.tsx`
 9. `app/components/ui/SoTRoleShellHeader.tsx`
 10. `app/components/ui/SoTPageHeader.tsx`
+11. `app/components/ui/SoTNonDashboardHeader.tsx`
+12. `app/components/ui/SoTActionBar.tsx`
+13. `app/components/ui/SoTDataRow.tsx`
+14. `app/components/ui/SoTEmptyState.tsx`
+15. `app/components/ui/SoTFormField.tsx`
+16. `app/components/ui/SoTNotificationBell.tsx`
+17. `app/components/ui/SoTStatusBadge.tsx`
+18. `app/components/ui/SoTBrandFooter.tsx`
 
 Rule:
 
@@ -43,8 +51,10 @@ Operational usage baseline:
 1. List/queue pages should prefer `SoTTable` for table shell, header cells, row cells, and empty-row fallback.
 2. Inline notices/banners should prefer `SoTAlert` over route-local alert class blocks.
 3. Role-based route groups should prefer `SoTRoleShellHeader` for identity and logout action, with low-noise top navigation.
-4. Individual route titles/actions should prefer `SoTPageHeader` and avoid custom per-route header shells.
-5. Manager dashboard should be action-inbox-first: top cards must be pending decisions (clearance, remit/close review, variances) before monitor-only stats.
+4. Operational non-dashboard routes should prefer `SoTNonDashboardHeader` for back-link + title/subtitle structure.
+5. Individual route titles/actions should prefer `SoTPageHeader` and avoid custom per-route header shells.
+6. Manager dashboard should be action-inbox-first: top cards must be pending decisions (clearance, remit/close review, variances) before monitor-only stats.
+7. Global endorsement/footer line should use `SoTBrandFooter` and remain subtle/non-blocking.
 
 Component gap rule:
 

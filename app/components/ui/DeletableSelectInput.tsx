@@ -116,8 +116,8 @@ export function DeletableSelectInput({
           "w-full px-3 py-2.5 border rounded-xl shadow-sm flex justify-between items-center text-left",
           error
             ? "border-rose-300 bg-rose-50 text-slate-900"
-            : "border-slate-300 text-slate-900 hover:bg-slate-50/50 focus:border-indigo-300",
-          "bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200",
+            : "border-slate-300 text-slate-900 hover:bg-slate-50/50 focus-visible:border-indigo-300",
+          "bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200",
           className
         )}
         onClick={() => setShowDropdown((prev) => !prev)}
@@ -198,7 +198,7 @@ export function DeletableSelectInput({
                 onDeleteOption && (
                   <button
                     type="button"
-                    className="ml-2 text-rose-600 hover:text-rose-700 text-xs rounded px-1 py-0.5 hover:bg-rose-50"
+                    className="ml-2 text-rose-600 hover:text-rose-700 text-xs rounded px-1 py-0.5 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();

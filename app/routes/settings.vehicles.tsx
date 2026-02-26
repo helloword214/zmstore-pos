@@ -135,7 +135,7 @@ export default function VehiclesPage() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             Settings — Vehicles
           </h1>
-          <Link to="/settings" className="text-sm underline">
+          <Link to="/settings" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -151,7 +151,7 @@ export default function VehiclesPage() {
               </label>
               <input
                 id={nameId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -162,7 +162,7 @@ export default function VehiclesPage() {
               </label>
               <select
                 id={typeId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value })}
               >
@@ -180,7 +180,7 @@ export default function VehiclesPage() {
               <input
                 id={capId}
                 type="number"
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={form.capacityUnits}
                 onChange={(e) =>
                   setForm({ ...form, capacityUnits: Number(e.target.value) })
@@ -196,7 +196,7 @@ export default function VehiclesPage() {
               </label>
               <input
                 id={notesId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
@@ -212,7 +212,7 @@ export default function VehiclesPage() {
                   value={String(form.capacityUnits)}
                 />
                 <input type="hidden" name="notes" value={form.notes} />
-                <button className="rounded-md bg-indigo-600 text-white px-3 py-2 text-sm">
+                <button className="rounded-md bg-indigo-600 text-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
                   Add
                 </button>
               </f.Form>
@@ -270,7 +270,7 @@ function VehicleRow({ v }: { v: any }) {
             </label>
             <input
               id={rowNameId}
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -279,7 +279,7 @@ function VehicleRow({ v }: { v: any }) {
             </label>
             <select
               id={rowTypeId}
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
             >
@@ -306,7 +306,7 @@ function VehicleRow({ v }: { v: any }) {
             <input
               id={rowCapId}
               type="number"
-              className="w-full border rounded-md px-2 py-1"
+              className="w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.capacityUnits}
               onChange={(e) =>
                 setForm({ ...form, capacityUnits: Number(e.target.value) })
@@ -332,7 +332,7 @@ function VehicleRow({ v }: { v: any }) {
             </label>
             <input
               id={rowNotesId}
-              className="w-full border rounded-md px-2 py-1"
+              className="w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
             />
@@ -357,14 +357,14 @@ function VehicleRow({ v }: { v: any }) {
               />
               <input type="hidden" name="notes" value={form.notes} />
               <button
-                className="rounded-md bg-indigo-600 text-white px-3 py-1 text-sm"
+                className="rounded-md bg-indigo-600 text-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 type="submit"
               >
                 Save
               </button>
             </f.Form>
             <button
-              className="text-sm underline"
+              className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               onClick={() => setEdit(false)}
             >
               Cancel
@@ -372,14 +372,14 @@ function VehicleRow({ v }: { v: any }) {
           </>
         ) : (
           <>
-            <button className="text-sm underline" onClick={() => setEdit(true)}>
+            <button className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1" onClick={() => setEdit(true)}>
               Edit
             </button>
             <f.Form method="post">
               <input type="hidden" name="intent" value="toggle" />
               <input type="hidden" name="id" value={v.id} />
               <button
-                className="rounded-md border px-3 py-1 text-sm"
+                className="rounded-md border px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 type="submit"
               >
                 {v.active ? "Disable" : "Enable"}
@@ -393,7 +393,7 @@ function VehicleRow({ v }: { v: any }) {
             >
               <input type="hidden" name="intent" value="delete" />
               <input type="hidden" name="id" value={v.id} />
-              <button className="text-sm text-rose-600 underline" type="submit">
+              <button className="text-sm text-rose-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1" type="submit">
                 Delete
               </button>
             </f.Form>

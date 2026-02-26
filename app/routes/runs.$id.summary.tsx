@@ -2,7 +2,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -556,22 +568,22 @@ function MetricCard({
             : "text-slate-900";
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <SoTCard compact>
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums ${toneClass}`}>
         {value}
       </div>
       {hint ? <div className="mt-0.5 text-[11px] text-slate-500">{hint}</div> : null}
-    </div>
+    </SoTCard>
   );
 }
 
 function SmallCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+    <SoTCard compact className="rounded-xl px-3 py-2">
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className="mt-1 font-semibold tabular-nums text-slate-900">{value}</div>
-    </div>
+    </SoTCard>
   );
 }
 
@@ -580,49 +592,49 @@ export default function RunSummaryPage() {
   const [sp] = useSearchParams();
   const justPosted = sp.get("posted") === "1";
   const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
+  const backLabel = "Dashboard";
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",
       currency: "PHP",
     }).format(n);
 
-  const stageTone =
-    run.status === "CLOSED" || run.status === "SETTLED"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : run.status === "CHECKED_IN"
-        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-        : run.status === "DISPATCHED"
-          ? "border-amber-200 bg-amber-50 text-amber-800"
-          : run.status === "CANCELLED"
-            ? "border-rose-200 bg-rose-50 text-rose-700"
-            : "border-slate-200 bg-slate-50 text-slate-700";
+  const stageTone = (
+    status: RunStatus,
+  ): "neutral" | "info" | "success" | "warning" | "danger" =>
+    status === "CLOSED" || status === "SETTLED"
+      ? "success"
+      : status === "CHECKED_IN"
+        ? "info"
+        : status === "DISPATCHED" || status === "PLANNED"
+          ? "warning"
+          : status === "CANCELLED"
+            ? "danger"
+            : "neutral";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-6xl px-5 py-6">
-        <div className="mb-3">
-          <Link to="/runs" className="text-sm text-indigo-600 hover:underline">
-            ← Back to Runs
-          </Link>
-          <Link to={backHref} className="ml-3 text-sm text-slate-600 hover:underline">
-            Back to Dashboard
-          </Link>
-        </div>
+      <SoTNonDashboardHeader
+        title="Run Summary Report"
+        subtitle={`Run ${run.runCode}${run.riderLabel ? ` • Rider ${run.riderLabel}` : ""} • ${run.status}`}
+        backTo={backHref}
+        backLabel={backLabel}
+        maxWidthClassName="max-w-6xl"
+      />
 
+      <div className="mx-auto max-w-6xl px-5 py-6">
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-base font-semibold tracking-wide text-slate-800">Run Summary Report</h1>
+              <h2 className="text-sm font-semibold text-slate-800">Run Snapshot</h2>
               <div className="mt-1 text-sm text-slate-600">
                 Run <span className="font-mono font-medium text-indigo-700">{run.runCode}</span>
                 {run.riderLabel ? <span className="ml-2">• Rider: {run.riderLabel}</span> : null}
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span className={`rounded-full border px-2 py-1 ${stageTone}`}>{run.status}</span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
-                {ui.stageLabel}
-              </span>
+              <SoTStatusBadge tone={stageTone(run.status)}>{run.status}</SoTStatusBadge>
+              <SoTStatusBadge>{ui.stageLabel}</SoTStatusBadge>
             </div>
           </div>
           <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
@@ -631,13 +643,9 @@ export default function RunSummaryPage() {
         </section>
 
         {justPosted ? (
-          <div
-            className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
-            role="status"
-            aria-live="polite"
-          >
+          <SoTAlert tone="success" className="mt-3 text-sm" role="status" aria-live="polite">
             Run remit posted. This run is now closed and read-only.
-          </div>
+          </SoTAlert>
         ) : null}
 
         <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -677,9 +685,9 @@ export default function RunSummaryPage() {
             <SmallCard label="Pending Amount" value={peso(amounts.pendingClearance)} />
           </div>
           {amounts.rejectedUnresolved > MONEY_EPS ? (
-            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <SoTAlert tone="danger" className="mt-3 text-sm">
               Rejected unresolved amount: <span className="font-mono">{peso(amounts.rejectedUnresolved)}</span>
-            </div>
+            </SoTAlert>
           ) : null}
           {!ui.isFinalized ? (
             <div className="mt-3 text-[11px] text-slate-500">
@@ -696,62 +704,63 @@ export default function RunSummaryPage() {
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
             <h2 className="text-sm font-medium text-slate-800">Stock Movement</h2>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-white text-slate-600">
+          <SoTTable>
+            <SoTTableHead className="bg-white">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Product</th>
-                <th className="px-3 py-2 text-right font-medium">Loaded</th>
-                <th className="px-3 py-2 text-right font-medium">Sold</th>
-                <th className="px-3 py-2 text-right font-medium">Returned</th>
-                <th className="px-3 py-2 text-right font-medium">Δ</th>
+                <SoTTh>Product</SoTTh>
+                <SoTTh align="right">Loaded</SoTTh>
+                <SoTTh align="right">Sold</SoTTh>
+                <SoTTh align="right">Returned</SoTTh>
+                <SoTTh align="right">Δ</SoTTh>
               </tr>
-            </thead>
+            </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
-                    {run.status === "DISPATCHED"
+                <SoTTableEmptyRow
+                  colSpan={5}
+                  message={
+                    run.status === "DISPATCHED"
                       ? "No loadout rows found yet. Confirm dispatch loadout snapshot."
-                      : "No data."}
-                  </td>
-                </tr>
+                      : "No data."
+                  }
+                />
               ) : (
                 rows.map((r) => {
                   const delta = r.loaded - (r.sold + r.returned);
                   return (
-                    <tr key={r.productId} className="border-t border-slate-100">
-                      <td className="px-3 py-2">{r.name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.loaded}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.sold}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.returned}</td>
-                      <td
-                        className={`px-3 py-2 text-right tabular-nums ${
-                          delta === 0 ? "text-slate-500" : "text-rose-600"
-                        }`}
+                    <SoTTableRow key={r.productId}>
+                      <SoTTd>{r.name}</SoTTd>
+                      <SoTTd align="right" className="tabular-nums">{r.loaded}</SoTTd>
+                      <SoTTd align="right" className="tabular-nums">{r.sold}</SoTTd>
+                      <SoTTd align="right" className="tabular-nums">{r.returned}</SoTTd>
+                      <SoTTd
+                        align="right"
+                        className={`tabular-nums ${delta === 0 ? "text-slate-500" : "text-rose-600"}`}
                       >
                         {delta}
-                      </td>
-                    </tr>
+                      </SoTTd>
+                    </SoTTableRow>
                   );
                 })
               )}
             </tbody>
             <tfoot className="bg-slate-50">
               <tr className="border-t border-slate-200">
-                <td className="px-3 py-2 font-medium">Totals</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.loaded}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.sold}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{totals.returned}</td>
-                <td
-                  className={`px-3 py-2 text-right font-semibold tabular-nums ${
+                <SoTTd className="font-medium">Totals</SoTTd>
+                <SoTTd align="right" className="font-semibold tabular-nums">{totals.loaded}</SoTTd>
+                <SoTTd align="right" className="font-semibold tabular-nums">{totals.sold}</SoTTd>
+                <SoTTd align="right" className="font-semibold tabular-nums">{totals.returned}</SoTTd>
+                <SoTTd
+                  align="right"
+                  className={`font-semibold tabular-nums ${
                     totals.delta === 0 ? "text-slate-600" : "text-rose-600"
                   }`}
                 >
                   {totals.delta}
-                </td>
+                </SoTTd>
               </tr>
             </tfoot>
-          </table>
+          </SoTTable>
         </section>
       </div>
     </main>

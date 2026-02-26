@@ -15,6 +15,7 @@ import {
 } from "@remix-run/react";
 import * as React from "react";
 import { Prisma } from "@prisma/client";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -500,40 +501,34 @@ export default function StoreClearanceCasePage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-4xl px-5 py-6 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-base font-semibold tracking-wide text-slate-900">
-              Clearance Case <span className="font-mono">#{c.id}</span>
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Pill tone="indigo">{c.status}</Pill>
-              {c.origin ? <Pill tone="slate">{c.origin}</Pill> : null}
-              {c.latestClaimType ? (
-                <Pill tone={c.latestClaimType === "PRICE_BARGAIN" ? "amber" : "indigo"}>
-                  REQUEST: {c.latestClaimType}
-                </Pill>
-              ) : null}
-              {c.balance > 0.009 ? (
-                <Pill tone="amber">balance {peso(c.balance)}</Pill>
-              ) : (
-                <Pill tone="slate">no balance</Pill>
-              )}
-            </div>
-            {c.flaggedAt ? (
-              <p className="mt-1 text-xs text-slate-500">
-                Flagged at: <span className="font-mono">{c.flaggedAt}</span>
-              </p>
-            ) : null}
-          </div>
+      <SoTNonDashboardHeader
+        title={`Clearance Case #${c.id}`}
+        subtitle={`Status ${c.status}${c.origin ? ` • ${c.origin}` : ""}`}
+        backTo="/store/clearance"
+        backLabel="Clearance Inbox"
+        maxWidthClassName="max-w-4xl"
+      />
 
-          <Link
-            to="/store/clearance"
-            className="text-sm text-indigo-600 hover:underline"
-          >
-            ← Back to Inbox
-          </Link>
+      <div className="mx-auto max-w-4xl px-5 py-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone="indigo">{c.status}</Pill>
+          {c.origin ? <Pill tone="slate">{c.origin}</Pill> : null}
+          {c.latestClaimType ? (
+            <Pill tone={c.latestClaimType === "PRICE_BARGAIN" ? "amber" : "indigo"}>
+              REQUEST: {c.latestClaimType}
+            </Pill>
+          ) : null}
+          {c.balance > 0.009 ? (
+            <Pill tone="amber">balance {peso(c.balance)}</Pill>
+          ) : (
+            <Pill tone="slate">no balance</Pill>
+          )}
         </div>
+        {c.flaggedAt ? (
+          <p className="text-xs text-slate-500">
+            Flagged at: <span className="font-mono">{c.flaggedAt}</span>
+          </p>
+        ) : null}
 
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
           <h2 className="text-sm font-medium text-slate-800">Snapshot</h2>
@@ -599,7 +594,7 @@ export default function StoreClearanceCasePage() {
               <div className="flex items-center gap-2">
                 <Link
                   to={`/cashier/${c.order.id}`}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Open order →
                 </Link>
@@ -689,7 +684,7 @@ export default function StoreClearanceCasePage() {
                   rows={3}
                   required
                   maxLength={500}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   placeholder="Explain decision context..."
                 />
               </div>
@@ -708,7 +703,7 @@ export default function StoreClearanceCasePage() {
                   inputMode="decimal"
                   value={approvedDiscountInput}
                   onChange={(e) => setApprovedDiscountInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   placeholder="0.00"
                 />
               </div>
@@ -741,7 +736,7 @@ export default function StoreClearanceCasePage() {
                   id="due-date"
                   type="date"
                   name="dueDate"
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </div>
 
@@ -767,7 +762,7 @@ export default function StoreClearanceCasePage() {
                   name="decisionKind"
                   value="APPROVE"
                   disabled={approveDisabled}
-                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                 >
                   Approve (auto-classify)
                 </button>
@@ -776,7 +771,7 @@ export default function StoreClearanceCasePage() {
                   name="decisionKind"
                   value="REJECT"
                   disabled={busy}
-                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800 disabled:opacity-50"
+                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                 >
                   Reject
                 </button>
@@ -800,7 +795,10 @@ export function ErrorBoundary() {
           <div className="font-semibold">Error {err.status}</div>
           <div className="mt-1">{err.data || err.statusText}</div>
           <div className="mt-3">
-            <Link to="/store/clearance" className="text-indigo-700 underline">
+            <Link
+              to="/store/clearance"
+              className="text-indigo-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            >
               Back to Inbox
             </Link>
           </div>

@@ -3,6 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole, setShiftId, type SessionUser } from "~/utils/auth.server";
 import { CashDrawerTxnType } from "@prisma/client";
@@ -689,7 +690,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function ShiftConsole() {
-  const { me, activeShift, totals, drawer, paymentsRecent, next } =
+  const { activeShift, totals, drawer, paymentsRecent, next } =
     useLoaderData<LoaderData>();
   const nav = useNavigation();
 
@@ -761,39 +762,31 @@ export default function ShiftConsole() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Shift Console"
+        subtitle={
+          activeShift
+            ? `Active shift #${activeShift.id} • ${activeShift.branchName}`
+            : "Waiting for manager to open your shift."
+        }
+        backTo="/cashier"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-6xl"
+      />
+
       <div className="mx-auto max-w-6xl px-5 py-6">
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Shift Console
-            </h1>
-            <p className="text-sm text-slate-600">
-              {activeShift
-                ? `Active shift #${activeShift.id} • ${activeShift.branchName}`
-                : "Waiting for manager to open your shift."}
-              <span className="text-slate-400"> • </span>
-              <span className="text-slate-500">User #{me.userId}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/cashier/shift-history"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              Shift History
-            </Link>
-            <Link
-              to="/cashier"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              ← Cashier Dashboard
-            </Link>
-            {drawer && expectedRaw < -0.005 ? (
-              <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
-                LEDGER ERROR
-              </span>
-            ) : null}
-          </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <Link
+            to="/cashier/shift-history"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+          >
+            Shift History
+          </Link>
+          {drawer && expectedRaw < -0.005 ? (
+            <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
+              LEDGER ERROR
+            </span>
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -802,17 +795,9 @@ export default function ShiftConsole() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 No active shift. Manager must open the cashier shift first.
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  to="/cashier"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-                >
-                  ← Back to Cashier Dashboard
-                </Link>
-                <span className="text-xs text-slate-500">
-                  If manager already opened it, reload this page.
-                </span>
-              </div>
+              <span className="text-xs text-slate-500">
+                If manager already opened it, reload this page.
+              </span>
             </div>
           ) : (
             <div className="px-4 py-4 space-y-4">
@@ -974,17 +959,17 @@ export default function ShiftConsole() {
                                 step="0.01"
                                 min="0.01"
                                 required
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:w-36"
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
                                 placeholder="0.00"
                               />
                               <input
                                 name="note"
                                 type="text"
-                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 placeholder="Note (optional)"
                               />
                               <button
-                                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                 disabled={nav.state !== "idle" || drawerLocked}
                                 title={
                                   drawerLocked
@@ -1021,17 +1006,17 @@ export default function ShiftConsole() {
                                 step="0.01"
                                 min="0.01"
                                 required
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:w-36"
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
                                 placeholder="0.00"
                               />
                               <input
                                 name="note"
                                 type="text"
-                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 placeholder="Note (optional)"
                               />
                               <button
-                                className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                                className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                 disabled={nav.state !== "idle" || drawerLocked}
                                 title={
                                   drawerLocked
@@ -1138,7 +1123,7 @@ export default function ShiftConsole() {
                           step="0.01"
                           min="0"
                           required
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         />
                       </label>
 
@@ -1171,7 +1156,7 @@ export default function ShiftConsole() {
                           />
                           <button
                             type="submit"
-                            className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                            className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                             disabled={nav.state !== "idle"}
                           >
                             {nav.state !== "idle" ? "Saving…" : "Accept & Open"}
@@ -1208,13 +1193,13 @@ export default function ShiftConsole() {
                           <input
                             name="openingDisputeNote"
                             placeholder="Dispute note (required)"
-                            className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                            className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             required
                           />
 
                           <button
                             type="submit"
-                            className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+                            className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                             disabled={nav.state !== "idle"}
                           >
                             {nav.state !== "idle" ? "Sending…" : "Dispute"}
@@ -1345,7 +1330,7 @@ export default function ShiftConsole() {
                                         [d.key]: safeQty(e.target.value),
                                       }))
                                     }
-                                    className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums"
+                                    className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                     aria-label={`Qty for ${d.label}`}
                                     disabled={drawerLocked}
                                   />
@@ -1374,7 +1359,7 @@ export default function ShiftConsole() {
                             step="0.01"
                             min="0"
                             required
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums"
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             readOnly={useDenoms}
                             disabled={drawerLocked}
                           />
@@ -1383,13 +1368,13 @@ export default function ShiftConsole() {
                         <input
                           name="notes"
                           placeholder="Notes (optional)"
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           disabled={drawerLocked}
                         />
 
                         <button
                           type="submit"
-                          className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+                          className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                           disabled={
                             nav.state !== "idle" || activeShift.status !== "OPEN"
                           }

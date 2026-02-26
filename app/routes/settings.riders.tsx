@@ -154,7 +154,7 @@ export default function RidersPage() {
           <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
             Settings — Riders
           </h1>
-          <Link to="/settings" className="text-sm underline">
+          <Link to="/settings" className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
             ← Back
           </Link>
         </header>
@@ -198,7 +198,7 @@ export default function RidersPage() {
               </label>
               <select
                 id={vehicleSelectId}
-                className="mt-1 w-full border rounded-md px-2 py-1"
+                className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 value={form.defaultVehicleId}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -228,7 +228,7 @@ export default function RidersPage() {
                   />
                 ))}
                 <button
-                  className="rounded-md bg-indigo-600 text-white px-3 py-2 text-sm"
+                  className="rounded-md bg-indigo-600 text-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   type="submit"
                 >
                   Add
@@ -272,7 +272,7 @@ function Input(props: {
         {props.label}
       </label>
       <input
-        className="mt-1 w-full border rounded-md px-2 py-1"
+        className="mt-1 w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         aria-label={props.label}
@@ -307,13 +307,13 @@ function RiderRow({
         {edit ? (
           <div className="grid grid-cols-2 gap-2">
             <input
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.firstName}
               onChange={(e) => setForm({ ...form, firstName: e.target.value })}
               aria-label="First name"
             />
             <input
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.lastName}
               onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               aria-label="Last name"
@@ -332,21 +332,21 @@ function RiderRow({
         {edit ? (
           <div className="grid grid-cols-3 gap-2">
             <input
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               placeholder="Alias"
               value={form.alias}
               onChange={(e) => setForm({ ...form, alias: e.target.value })}
               aria-label="Alias"
             />
             <input
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               placeholder="Phone"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               aria-label="Phone"
             />
             <input
-              className="border rounded-md px-2 py-1"
+              className="border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               placeholder="Email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -367,7 +367,7 @@ function RiderRow({
             </label>
             <select
               id={dvSelectId}
-              className="w-full border rounded-md px-2 py-1"
+              className="w-full border rounded-md px-2 py-1 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               value={form.defaultVehicleId}
               onChange={(e) =>
                 setForm({
@@ -403,14 +403,14 @@ function RiderRow({
                 <input key={k} type="hidden" name={k} value={String(v ?? "")} />
               ))}
               <button
-                className="rounded-md bg-indigo-600 text-white px-3 py-1 text-sm"
+                className="rounded-md bg-indigo-600 text-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 type="submit"
               >
                 Save
               </button>
             </f.Form>
             <button
-              className="text-sm underline"
+              className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               onClick={() => setEdit(false)}
             >
               Cancel
@@ -418,14 +418,14 @@ function RiderRow({
           </>
         ) : (
           <>
-            <button className="text-sm underline" onClick={() => setEdit(true)}>
+            <button className="text-sm underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1" onClick={() => setEdit(true)}>
               Edit
             </button>
             <f.Form method="post">
               <input type="hidden" name="intent" value="toggle" />
               <input type="hidden" name="id" value={r.id} />
               <button
-                className="rounded-md border px-3 py-1 text-sm"
+                className="rounded-md border px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 type="submit"
               >
                 {r.active ? "Disable" : "Enable"}
@@ -440,7 +440,7 @@ function RiderRow({
             >
               <input type="hidden" name="intent" value="delete" />
               <input type="hidden" name="id" value={r.id} />
-              <button className="text-sm text-rose-600 underline" type="submit">
+              <button className="text-sm text-rose-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1" type="submit">
                 Delete
               </button>
             </f.Form>

@@ -90,7 +90,7 @@ export default function CustomersIndex() {
       lastName: string;
       alias: string | null;
       phone: string | null;
-      addresses?: any[];
+      addresses?: unknown[];
     }>;
   }>();
   const [query, setQuery] = React.useState(q);
@@ -105,7 +105,7 @@ export default function CustomersIndex() {
       if (
         t.tagName === "INPUT" ||
         t.tagName === "TEXTAREA" ||
-        (t as any).isContentEditable
+        t.isContentEditable
       )
         return;
       e.preventDefault();
@@ -146,7 +146,7 @@ export default function CustomersIndex() {
           </h1>
           <Link
             to="/customers/new"
-            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             New Customer
           </Link>
@@ -187,7 +187,7 @@ export default function CustomersIndex() {
               setDebounceId(id);
             }}
             placeholder="Search name / alias / phone…  (tip: press “/” to focus)"
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200 shadow-sm"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 shadow-sm"
           />
         </Form>
 
@@ -229,14 +229,14 @@ export default function CustomersIndex() {
                       <div className="flex shrink-0 gap-2">
                         <Link
                           to={`/customers/${c.id}`}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
                           title="Profile"
                         >
                           Profile
                         </Link>
                         <Link
                           to={`/ar/customers/${c.id}`}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
                           title="AR / Ledger"
                         >
                           AR / Ledger

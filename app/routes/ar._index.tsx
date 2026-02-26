@@ -2,6 +2,17 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 
@@ -118,82 +129,79 @@ export default function ARIndexPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Accounts Receivable
-            </h1>
-            <div className="text-xs text-slate-500">
-              SoT: customerAr open balances only
-            </div>
-          </div>
-
-          <Form method="get" className="flex items-center gap-2">
-            <Link
-              to="/cashier"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              ← Cashier
-            </Link>
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name / alias / phone…"
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200"
-            />
-            <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
-              Search
-            </button>
-          </Form>
-        </div>
-      </div>
+      <SoTNonDashboardHeader
+        title="Accounts Receivable"
+        subtitle="SoT: customerAr open balances only"
+        backTo="/cashier"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-5xl"
+      />
 
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <Form method="get" className="flex flex-wrap items-center gap-2">
+            <SoTFormField label="Search" className="min-w-[260px] flex-1">
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Search name / alias / phone..."
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+              />
+            </SoTFormField>
+            <div className="pt-4">
+              <SoTButton variant="primary" type="submit">
+                Search
+              </SoTButton>
+            </div>
+          </Form>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
             Customers with Open Approved Balance
           </div>
 
-          {rows.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-slate-600">No open balances.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {rows.map((r) => (
-                <div
-                  key={r.customerId}
-                  className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/70"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-900 truncate">
-                      {r.name}
-                      {r.alias ? (
-                        <span className="text-slate-500"> ({r.alias})</span>
-                      ) : null}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {r.phone ?? "—"} • {r.openEntries} open A/R entr{r.openEntries === 1 ? "y" : "ies"}
+          <SoTTable>
+            <SoTTableHead>
+              <tr>
+                <SoTTh>Customer</SoTTh>
+                <SoTTh>Meta</SoTTh>
+                <SoTTh align="right">Balance</SoTTh>
+                <SoTTh align="right"></SoTTh>
+              </tr>
+            </SoTTableHead>
+            <tbody>
+              {rows.length === 0 ? (
+                <SoTTableEmptyRow colSpan={4} message="No open balances." />
+              ) : (
+                rows.map((r) => (
+                  <SoTTableRow key={r.customerId}>
+                    <SoTTd>
+                      <div className="font-medium text-slate-900">
+                        {r.name}
+                        {r.alias ? <span className="text-slate-500"> ({r.alias})</span> : null}
+                      </div>
+                    </SoTTd>
+                    <SoTTd className="text-xs text-slate-500">
+                      {r.phone ?? "—"} • {r.openEntries} open A/R entr
+                      {r.openEntries === 1 ? "y" : "ies"}
                       {r.nextDue
                         ? ` • due ${new Date(r.nextDue).toLocaleDateString()}`
                         : ""}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                    </SoTTd>
+                    <SoTTd align="right" className="font-semibold tabular-nums text-slate-900">
                       {peso(r.balance)}
-                    </div>
-                    <Link
-                      to={`/ar/customers/${r.customerId}`}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
-                    >
-                      Open Ledger
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                    </SoTTd>
+                    <SoTTd align="right">
+                      <Link to={`/ar/customers/${r.customerId}`}>
+                        <SoTButton>Open Ledger</SoTButton>
+                      </Link>
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
         </div>
       </div>
     </main>

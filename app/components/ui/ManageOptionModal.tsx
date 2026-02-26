@@ -43,7 +43,7 @@ export function ManageOptionModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
+            className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           >
             Close
           </button>

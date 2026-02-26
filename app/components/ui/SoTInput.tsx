@@ -22,7 +22,7 @@ export function SoTInput({ label, error, id, className = "", ...props }: SoTInpu
         {...props}
         className={
           `w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ` +
-          `placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200 ` +
+          `placeholder:text-slate-400 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 ` +
           `${error ? "border-rose-300 bg-rose-50" : "border-slate-300"} ${className}`
         }
         aria-invalid={Boolean(error)}
