@@ -26,10 +26,10 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "indigo",
   },
   {
-    to: "/creation/riders",
-    title: "Create Rider",
-    description: "Add rider account details and assign default vehicle.",
-    eyebrow: "Fleet Setup",
+    to: "/creation/employees",
+    title: "Create Employee",
+    description: "Create cashier, rider, or staff-manager accounts with linked profile and login.",
+    eyebrow: "Workforce",
     tone: "emerald",
   },
   {
@@ -74,6 +74,12 @@ const supportCreationShortcuts: AdminShortcut[] = [
     title: "Product Option Library",
     description:
       "Admin-only options for product encoding: category choices, units, packing units, locations, brands, indications, and targets.",
+    tone: "emerald",
+  },
+  {
+    to: "/creation/riders",
+    title: "Rider Directory",
+    description: "Manage rider profile details and default vehicle assignments.",
     tone: "emerald",
   },
   {

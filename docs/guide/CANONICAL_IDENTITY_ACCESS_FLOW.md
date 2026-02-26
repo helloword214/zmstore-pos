@@ -40,16 +40,17 @@ Representative routes:
 
 1. `app/routes/_index.tsx`
 2. `app/routes/creation._index.tsx`
-3. `app/routes/creation.riders.tsx`
-4. `app/routes/creation.vehicles.tsx`
-5. `app/routes/creation.areas.tsx`
-6. `app/routes/creation.provinces.tsx`
-7. `app/routes/customers._index.tsx`
-8. `app/routes/customers.new.tsx`
-9. `app/routes/customers.$id.tsx`
-10. `app/routes/customers.$id_.edit.tsx`
-11. `app/routes/customers.$id_.pricing.tsx`
-12. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
+3. `app/routes/creation.employees.tsx`
+4. `app/routes/creation.riders.tsx`
+5. `app/routes/creation.vehicles.tsx`
+6. `app/routes/creation.areas.tsx`
+7. `app/routes/creation.provinces.tsx`
+8. `app/routes/customers._index.tsx`
+9. `app/routes/customers.new.tsx`
+10. `app/routes/customers.$id.tsx`
+11. `app/routes/customers.$id_.edit.tsx`
+12. `app/routes/customers.$id_.pricing.tsx`
+13. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
 
 ### B) Manager Operational/Commercial Routes
 

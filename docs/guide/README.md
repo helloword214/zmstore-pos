@@ -47,16 +47,17 @@ Current route-level mapping coverage (canonical):
 22. `store.payroll.tsx`
 23. `_index.tsx`
 24. `creation._index.tsx`
-25. `creation.riders.tsx`
-26. `creation.vehicles.tsx`
-27. `creation.areas.tsx`
-28. `creation.provinces.tsx`
-29. `customers._index.tsx`
-30. `customers.new.tsx`
-31. `customers.$id.tsx`
-32. `customers.$id_.edit.tsx`
-33. `customers.$id_.pricing.tsx`
-34. `customers.$id_.pricing_.$ruleId.tsx`
+25. `creation.employees.tsx`
+26. `creation.riders.tsx`
+27. `creation.vehicles.tsx`
+28. `creation.areas.tsx`
+29. `creation.provinces.tsx`
+30. `customers._index.tsx`
+31. `customers.new.tsx`
+32. `customers.$id.tsx`
+33. `customers.$id_.edit.tsx`
+34. `customers.$id_.pricing.tsx`
+35. `customers.$id_.pricing_.$ruleId.tsx`
 
 ## B. Supporting (Context / Detailed Rationale)
 
