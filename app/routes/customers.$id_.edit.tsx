@@ -19,8 +19,7 @@ import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
+  const ctx = "admin";
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -43,8 +42,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
   const id = Number(params.id);
   if (!Number.isFinite(id))
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });
@@ -80,16 +77,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     data: { firstName, middleName, lastName, alias, phone, creditLimit, notes },
   });
 
-  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
-  return redirect(`/customers/${id}${ctxSuffix}`);
+  return redirect(`/customers/${id}?ctx=admin`);
 }
 
 export default function EditCustomer() {
-  const { customer, ctx } = useLoaderData<typeof loader>();
+  const { customer } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const actionData = useActionData<typeof action>();
-  const backHref =
-    ctx === "admin" ? `/customers/${customer.id}?ctx=admin` : `/customers/${customer.id}`;
+  const backHref = `/customers/${customer.id}?ctx=admin`;
   const fieldErrors = actionData && "errors" in actionData ? actionData.errors : undefined;
   const formError = actionData && "error" in actionData ? actionData.error : undefined;
 

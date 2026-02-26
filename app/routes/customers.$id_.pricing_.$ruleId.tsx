@@ -21,7 +21,7 @@ import { requireRole } from "~/utils/auth.server";
 type LoaderData = {
   customerId: number;
   customerName: string;
-  ctx: "admin" | null;
+  ctx: "admin";
   rule: {
     id: number;
     productId: number;
@@ -38,8 +38,7 @@ type LoaderData = {
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
+  const ctx = "admin";
   const customerId = Number(params.id);
   const ruleId = Number(params.ruleId);
   if (!Number.isFinite(customerId) || !Number.isFinite(ruleId)) {
@@ -100,9 +99,7 @@ type ActionData =
 
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
-  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
+  const ctxSuffix = "?ctx=admin";
   const customerId = Number(params.id);
   const ruleId = Number(params.ruleId);
   if (!Number.isFinite(customerId) || !Number.isFinite(ruleId)) {
@@ -213,11 +210,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function EditCustomerRule() {
-  const { customerId, customerName, products, rule, ctx } =
+  const { customerId, customerName, products, rule } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
-  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
+  const ctxSuffix = "?ctx=admin";
   const fieldErrors =
     actionData && "fieldErrors" in actionData ? actionData.fieldErrors : undefined;
   const formError =

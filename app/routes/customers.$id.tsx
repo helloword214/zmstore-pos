@@ -11,8 +11,7 @@ import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
-  const url = new URL(request.url);
-  const isAdminCtx = url.searchParams.get("ctx") === "admin";
+  const isAdminCtx = true;
   if (!params.id) throw new Response("Missing ID", { status: 400 });
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
@@ -50,10 +49,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export default function CustomerProfile() {
-  const { customer, name, arBalance, rulesCount, isAdminCtx } =
+  const { customer, name, arBalance, rulesCount } =
     useLoaderData<typeof loader>();
-  const ctxSuffix = isAdminCtx ? "?ctx=admin" : "";
-  const backHref = isAdminCtx ? "/customers?ctx=admin" : "/customers";
+  const ctxSuffix = "?ctx=admin";
+  const backHref = "/customers?ctx=admin";
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {

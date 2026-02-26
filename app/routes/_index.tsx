@@ -26,7 +26,7 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "indigo",
   },
   {
-    to: "/settings/riders",
+    to: "/creation/riders",
     title: "Create Rider",
     description: "Add rider account details and assign default vehicle.",
     eyebrow: "Fleet Setup",
@@ -47,14 +47,14 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "sky",
   },
   {
-    to: "/settings/vehicles",
+    to: "/creation/vehicles",
     title: "Create Vehicle",
     description: "Add delivery vehicles and fleet unit details.",
     eyebrow: "Fleet Setup",
     tone: "rose",
   },
   {
-    to: "/settings/areas",
+    to: "/creation/areas",
     title: "Create Area",
     description: "Maintain municipality, barangay, zone, and landmark coverage.",
     eyebrow: "Geo Master",
@@ -62,23 +62,24 @@ const creationShortcuts: AdminShortcut[] = [
   },
 ];
 
-const setupShortcuts: AdminShortcut[] = [
+const supportCreationShortcuts: AdminShortcut[] = [
   {
-    to: "/settings/provinces",
-    title: "Province Setup",
+    to: "/creation/provinces",
+    title: "Create Province",
     description: "Create and maintain province records used in addresses.",
     tone: "sky",
   },
   {
-    to: "/settings",
-    title: "Master Data Center",
-    description: "Open complete settings for units, locations, and per-category masters.",
+    to: "/creation",
+    title: "Product Option Library",
+    description:
+      "Admin-only options for product encoding: category choices, units, packing units, locations, brands, indications, and targets.",
     tone: "emerald",
   },
   {
     to: "/customers?ctx=admin",
     title: "Customer List",
-    description: "Manage existing customers and open pricing-rule setup per customer.",
+    description: "Manage existing customers and open pricing-rule creation per customer.",
     tone: "amber",
   },
   {
@@ -94,7 +95,7 @@ export default function AdminDashboardIndex() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#e0ecff_0%,_#f4f8ff_35%,_#f8fafc_100%)] text-slate-900">
       <SoTRoleShellHeader
         title="Admin Dashboard"
-        identityLine="Creation-only hub for customer, rider, pricing, and setup records."
+        identityLine="Creation-only hub for customer, rider, pricing, and product-option records."
         sticky
         actions={
           <Form method="post" action="/logout">
@@ -115,13 +116,13 @@ export default function AdminDashboardIndex() {
             Admin Creation Hub
           </h2>
           <p className="mt-1 text-sm text-indigo-50/95">
-            This dashboard is for creation and setup tasks only. Manager operations are handled in the Manager Dashboard.
+            This dashboard is for creation tasks only. Manager operations are handled in the Manager Dashboard.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Badge text="Customer Setup" />
-            <Badge text="Rider Setup" />
+            <Badge text="Customer Creation" />
+            <Badge text="Rider Creation" />
             <Badge text="Pricing Rules" />
-            <Badge text="Catalog Setup" />
+            <Badge text="Product Options" />
           </div>
         </section>
 
@@ -144,14 +145,14 @@ export default function AdminDashboardIndex() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Master Data Setup
+              Creation Support
             </h2>
             <span className="text-xs text-slate-500">
-              Supporting setup and maintenance entry points.
+              Admin libraries and maintenance entry points.
             </span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {setupShortcuts.map((item) => (
+            {supportCreationShortcuts.map((item) => (
               <ShortcutCard key={item.title} item={item} />
             ))}
           </div>

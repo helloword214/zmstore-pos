@@ -17,8 +17,7 @@ import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
+  const ctx = "admin";
   const customerId = Number(params.id);
   const [customer, rawRules] = await Promise.all([
     db.customer.findUnique({
@@ -53,9 +52,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
-  const url = new URL(request.url);
-  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
-  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
+  const ctxSuffix = "?ctx=admin";
   const customerId = Number(params.id);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
@@ -267,12 +264,12 @@ function formatRuleValue(
 }
 
 export default function CustomerPricingRules() {
-  const { customer, rules, ctx } = useLoaderData<typeof loader>();
+  const { customer, rules } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const name = [customer.firstName, customer.lastName]
     .filter(Boolean)
     .join(" ");
-  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
+  const ctxSuffix = "?ctx=admin";
   const subtitle = `${name}${customer.alias ? ` (${customer.alias})` : ""}`;
 
   return (

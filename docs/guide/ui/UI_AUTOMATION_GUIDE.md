@@ -67,6 +67,11 @@ Active route coverage for this baseline:
 34. `app/routes/customers.$id_.edit.tsx`
 35. `app/routes/customers.$id_.pricing.tsx`
 36. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
+37. `app/routes/creation._index.tsx`
+38. `app/routes/creation.riders.tsx`
+39. `app/routes/creation.vehicles.tsx`
+40. `app/routes/creation.provinces.tsx`
+41. `app/routes/creation.areas.tsx`
 
 ## 4. Minimalist Rules (Non-Negotiable)
 
