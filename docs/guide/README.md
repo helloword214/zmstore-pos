@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-24
+Last Reviewed: 2026-02-26
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -12,13 +12,14 @@ Use the sections below to avoid outdated references.
 Use these as source of truth for implementation and review:
 
 1. `Commercial Clearance System V2`
-2. `CANONICAL_ORDER_PRICING_SOT.md`
-3. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-4. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-5. `DIAGRAMS_DELIVERY_CSS_AR.md`
-6. `Accounts Receivable — Canonical Source of Truth (SoT)`
-7. `RIDER_SHORTAGE_WORKFLOW.md`
-8. `RunReceipt_Architecture.md`
+2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
+3. `CANONICAL_ORDER_PRICING_SOT.md`
+4. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+5. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+6. `DIAGRAMS_DELIVERY_CSS_AR.md`
+7. `Accounts Receivable — Canonical Source of Truth (SoT)`
+8. `RIDER_SHORTAGE_WORKFLOW.md`
+9. `RunReceipt_Architecture.md`
 
 Current route-level mapping coverage (canonical):
 
@@ -44,6 +45,18 @@ Current route-level mapping coverage (canonical):
 20. `cashier.charges.tsx`
 21. `store.cashier-ar.tsx`
 22. `store.payroll.tsx`
+23. `_index.tsx`
+24. `creation._index.tsx`
+25. `creation.riders.tsx`
+26. `creation.vehicles.tsx`
+27. `creation.areas.tsx`
+28. `creation.provinces.tsx`
+29. `customers._index.tsx`
+30. `customers.new.tsx`
+31. `customers.$id.tsx`
+32. `customers.$id_.edit.tsx`
+33. `customers.$id_.pricing.tsx`
+34. `customers.$id_.pricing_.$ruleId.tsx`
 
 ## B. Supporting (Context / Detailed Rationale)
 
@@ -78,19 +91,21 @@ Archived guide files now live under `../archive/guide/`.
 When two guide docs conflict, apply this order:
 
 1. `Commercial Clearance System V2`
-2. `CANONICAL_ORDER_PRICING_SOT.md`
-3. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-4. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-5. `DIAGRAMS_DELIVERY_CSS_AR.md`
-6. `Accounts Receivable — Canonical Source of Truth (SoT)`
-7. `RIDER_SHORTAGE_WORKFLOW.md`
-8. all other guide docs
+2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
+3. `CANONICAL_ORDER_PRICING_SOT.md`
+4. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+5. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+6. `DIAGRAMS_DELIVERY_CSS_AR.md`
+7. `Accounts Receivable — Canonical Source of Truth (SoT)`
+8. `RIDER_SHORTAGE_WORKFLOW.md`
+9. all other guide docs
 
 ## E. Flow Change Sync Rule (Mandatory)
 
 1. If code changes flow behavior, update the corresponding canonical guide docs in the same objective/PR.
 2. Minimum required docs for flow-affecting updates:
    - `CANONICAL_ORDER_PRICING_SOT.md` when order-create pricing/freeze behavior changes
+   - `CANONICAL_IDENTITY_ACCESS_FLOW.md` when role/access authority boundaries change
    - relevant `CANONICAL_*.md` flow guide
    - `DIAGRAMS_DELIVERY_CSS_AR.md` when flow nodes/handoffs/decision gates changed
 3. Manager/cashier flow changes must not be considered complete until both behavior doc and diagram doc are aligned.
