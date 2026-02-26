@@ -59,6 +59,11 @@ Current route-level mapping coverage (canonical):
 34. `customers.$id_.pricing.tsx`
 35. `customers.$id_.pricing_.$ruleId.tsx`
 
+Identity operations note:
+
+1. `creation.employees.tsx` is the canonical admin surface for employee account creation and normal `CASHIER <-> RIDER` role switching.
+2. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
+
 ## B. Supporting (Context / Detailed Rationale)
 
 1. `ui/README.md`

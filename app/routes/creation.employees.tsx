@@ -1,10 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   EmployeeRole,
   ManagerKind,
   Prisma,
+  RiderVarianceStatus,
+  RunStatus,
   UserRole,
 } from "@prisma/client";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
@@ -28,6 +29,7 @@ import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
 type Lane = "RIDER" | "CASHIER" | "STORE_MANAGER";
+type SwitchLane = "RIDER" | "CASHIER";
 
 type EmployeeAccountRow = {
   employeeId: number;
@@ -50,6 +52,10 @@ function isLane(value: string): value is Lane {
   return value === "RIDER" || value === "CASHIER" || value === "STORE_MANAGER";
 }
 
+function isSwitchLane(value: string): value is SwitchLane {
+  return value === "RIDER" || value === "CASHIER";
+}
+
 function toEmployeeRole(lane: Lane): EmployeeRole {
   if (lane === "RIDER") return EmployeeRole.RIDER;
   if (lane === "STORE_MANAGER") return EmployeeRole.MANAGER;
@@ -67,6 +73,20 @@ function prettyLane(row: EmployeeAccountRow) {
     return row.managerKind ? `STORE_MANAGER (${row.managerKind})` : "STORE_MANAGER";
   }
   return row.lane;
+}
+
+function nextSwitchLane(lane: Lane): SwitchLane | null {
+  if (lane === "RIDER") return "CASHIER";
+  if (lane === "CASHIER") return "RIDER";
+  return null;
+}
+
+function toSwitchUserRole(lane: SwitchLane): UserRole {
+  return lane === "CASHIER" ? UserRole.CASHIER : UserRole.EMPLOYEE;
+}
+
+function toSwitchEmployeeRole(lane: SwitchLane): EmployeeRole {
+  return lane === "CASHIER" ? EmployeeRole.STAFF : EmployeeRole.RIDER;
 }
 
 function fullName(firstName: string, lastName: string) {
@@ -247,17 +267,221 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       return json<ActionData>({ ok: true, message: "Employee account created." });
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
         return json<ActionData>(
           { ok: false, message: "Duplicate value detected (email or phone already exists)." },
           { status: 400 },
         );
       }
+      const message = e instanceof Error ? e.message : "Employee creation failed.";
       return json<ActionData>(
-        { ok: false, message: e?.message ?? "Employee creation failed." },
+        { ok: false, message },
         { status: 500 },
       );
+    }
+  }
+
+  if (intent === "switch-role") {
+    const userId = Number(fd.get("userId"));
+    const targetLaneRaw = String(fd.get("targetLane") || "").trim();
+    const reason = String(fd.get("reason") || "").trim();
+    const password = String(fd.get("password") || "");
+    const pin = String(fd.get("pin") || "").trim();
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return json<ActionData>(
+        { ok: false, message: "Invalid user id." },
+        { status: 400 },
+      );
+    }
+    if (!isSwitchLane(targetLaneRaw)) {
+      return json<ActionData>(
+        { ok: false, message: "Invalid target lane." },
+        { status: 400 },
+      );
+    }
+    if (!reason) {
+      return json<ActionData>(
+        { ok: false, message: "Reason is required for audit logging." },
+        { status: 400 },
+      );
+    }
+
+    const targetLane = targetLaneRaw as SwitchLane;
+    const targetRole = toSwitchUserRole(targetLane);
+
+    const authError =
+      targetLane === "CASHIER"
+        ? !/^\d{6}$/.test(pin)
+          ? "Cashier PIN must be exactly 6 digits for role switch."
+          : null
+        : password.length < 8
+          ? "Password must be at least 8 characters for role switch."
+          : null;
+    if (authError) {
+      return json<ActionData>({ ok: false, message: authError }, { status: 400 });
+    }
+
+    const current = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        active: true,
+        employeeId: true,
+      },
+    });
+    if (!current) {
+      return json<ActionData>({ ok: false, message: "User not found." }, { status: 404 });
+    }
+    if (!current.active) {
+      return json<ActionData>(
+        { ok: false, message: "Inactive accounts cannot be switched." },
+        { status: 400 },
+      );
+    }
+    if (!current.employeeId) {
+      return json<ActionData>(
+        { ok: false, message: "Target user has no linked employee profile." },
+        { status: 400 },
+      );
+    }
+    if (current.role === UserRole.STORE_MANAGER || targetRole === UserRole.STORE_MANAGER) {
+      return json<ActionData>(
+        { ok: false, message: "Store manager role is protected and cannot be switched here." },
+        { status: 400 },
+      );
+    }
+    if (current.role !== UserRole.CASHIER && current.role !== UserRole.EMPLOYEE) {
+      return json<ActionData>(
+        { ok: false, message: "Only cashier/rider lanes are switchable." },
+        { status: 400 },
+      );
+    }
+    if (current.role === targetRole) {
+      return json<ActionData>(
+        { ok: false, message: "Target lane is already active." },
+        { status: 400 },
+      );
+    }
+
+    const employee = await db.employee.findUnique({
+      where: { id: current.employeeId },
+      select: { id: true, active: true },
+    });
+    if (!employee || !employee.active) {
+      return json<ActionData>(
+        { ok: false, message: "Linked employee profile must be active before role switch." },
+        { status: 400 },
+      );
+    }
+
+    if (current.role === UserRole.CASHIER) {
+      const openShift = await db.cashierShift.findFirst({
+        where: { cashierId: current.id, closedAt: null },
+        select: { id: true },
+      });
+      if (openShift) {
+        return json<ActionData>(
+          { ok: false, message: "Close the cashier shift first before switching to rider." },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (current.role === UserRole.EMPLOYEE) {
+      const activeRun = await db.deliveryRun.findFirst({
+        where: {
+          riderId: current.employeeId,
+          status: {
+            in: [RunStatus.PLANNED, RunStatus.DISPATCHED, RunStatus.CHECKED_IN],
+          },
+        },
+        select: { id: true, status: true },
+      });
+      if (activeRun) {
+        return json<ActionData>(
+          { ok: false, message: "Rider has active run obligations. Reassign runs first." },
+          { status: 400 },
+        );
+      }
+
+      const pendingVariance = await db.riderRunVariance.findFirst({
+        where: {
+          riderId: current.employeeId,
+          status: {
+            in: [RiderVarianceStatus.OPEN, RiderVarianceStatus.MANAGER_APPROVED],
+          },
+        },
+        select: { id: true },
+      });
+      if (pendingVariance) {
+        return json<ActionData>(
+          { ok: false, message: "Rider has pending variance tasks. Resolve them first." },
+          { status: 400 },
+        );
+      }
+    }
+
+    try {
+      const now = new Date();
+      await db.$transaction(async (tx) => {
+        await tx.userRoleAssignment.updateMany({
+          where: { userId: current.id, endedAt: null },
+          data: { endedAt: now },
+        });
+
+        await tx.user.update({
+          where: { id: current.id },
+          data: {
+            role: targetRole,
+            managerKind: null,
+            authVersion: { increment: 1 },
+            passwordHash: targetRole === UserRole.CASHIER ? null : await hash(password, 12),
+            pinHash: targetRole === UserRole.CASHIER ? await hash(pin, 12) : null,
+          },
+        });
+
+        await tx.employee.update({
+          where: { id: current.employeeId },
+          data: { role: toSwitchEmployeeRole(targetLane) },
+        });
+
+        await tx.userRoleAssignment.create({
+          data: {
+            userId: current.id,
+            role: targetRole,
+            startedAt: now,
+            reason,
+            changedById: me.userId,
+          },
+        });
+
+        await tx.userRoleAuditEvent.create({
+          data: {
+            userId: current.id,
+            beforeRole: current.role,
+            afterRole: targetRole,
+            reason,
+            changedById: me.userId,
+          },
+        });
+      });
+
+      return json<ActionData>({
+        ok: true,
+        message: `Role switched to ${targetLane}. User must re-login with new credentials.`,
+      });
+    } catch (e: unknown) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return json<ActionData>(
+          { ok: false, message: "Duplicate value detected during role switch." },
+          { status: 400 },
+        );
+      }
+      const message = e instanceof Error ? e.message : "Role switch failed.";
+      return json<ActionData>({ ok: false, message }, { status: 500 });
     }
   }
 
@@ -315,7 +539,7 @@ export default function EmployeeCreationPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Employees"
-        subtitle="Create employee accounts with linked login and initial role assignment."
+        subtitle="Create employee accounts and perform admin-only immediate cashier/rider role switches."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -370,7 +594,7 @@ export default function EmployeeCreationPage() {
                   className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 >
                   <option value="">None</option>
-                  {vehicles.map((v: any) => (
+                  {vehicles.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.name} ({v.type})
                     </option>
@@ -419,12 +643,13 @@ export default function EmployeeCreationPage() {
                 <SoTTh>Lane</SoTTh>
                 <SoTTh>Login</SoTTh>
                 <SoTTh>Status</SoTTh>
-                <SoTTh align="right">Action</SoTTh>
+                <SoTTh>Role Switch</SoTTh>
+                <SoTTh align="right">Account</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow colSpan={5} message="No employee accounts yet." />
+                <SoTTableEmptyRow colSpan={6} message="No employee accounts yet." />
               ) : (
                 rows.map((row: EmployeeAccountRow) => (
                   <SoTTableRow key={row.userId}>
@@ -451,11 +676,62 @@ export default function EmployeeCreationPage() {
                         {row.active ? "ACTIVE" : "INACTIVE"}
                       </span>
                     </SoTTd>
+                    <SoTTd>
+                      {nextSwitchLane(row.lane) ? (
+                        <Form method="post" className="space-y-2">
+                          <input type="hidden" name="intent" value="switch-role" />
+                          <input type="hidden" name="userId" value={row.userId} />
+                          <input
+                            type="hidden"
+                            name="targetLane"
+                            value={nextSwitchLane(row.lane) ?? ""}
+                          />
+
+                          {row.lane === "CASHIER" ? (
+                            <input
+                              name="password"
+                              type="password"
+                              required
+                              minLength={8}
+                              placeholder="New rider password"
+                              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                            />
+                          ) : (
+                            <input
+                              name="pin"
+                              required
+                              pattern="\\d{6}"
+                              maxLength={6}
+                              inputMode="numeric"
+                              placeholder="New cashier PIN"
+                              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                            />
+                          )}
+
+                          <input
+                            name="reason"
+                            required
+                            placeholder="Switch reason"
+                            className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                          />
+
+                          <SoTButton type="submit" variant="secondary" disabled={busy}>
+                            {row.lane === "CASHIER"
+                              ? "Switch to RIDER"
+                              : "Switch to CASHIER"}
+                          </SoTButton>
+                        </Form>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Protected lane. Manager switch is blocked here.
+                        </p>
+                      )}
+                    </SoTTd>
                     <SoTTd align="right">
                       <Form method="post">
                         <input type="hidden" name="intent" value="toggle-active" />
                         <input type="hidden" name="userId" value={row.userId} />
-                        <SoTButton type="submit" variant="secondary">
+                        <SoTButton type="submit" variant="secondary" disabled={busy}>
                           {row.active ? "Deactivate" : "Activate"}
                         </SoTButton>
                       </Form>

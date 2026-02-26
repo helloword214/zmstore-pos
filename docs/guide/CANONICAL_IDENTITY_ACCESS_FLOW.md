@@ -174,6 +174,23 @@ flowchart TD
     E --> F["User re-login with new role lane"]
 ```
 
+## Runtime Status (2026-02-26)
+
+Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
+
+1. Admin-only role switch endpoint.
+2. Allowed lane transitions: `CASHIER <-> RIDER` only.
+3. Protected manager role rejection (`STORE_MANAGER` not switchable in normal flow).
+4. Immediate blocker checks before switch:
+   - open cashier shift (cashier -> rider)
+   - active rider runs (rider -> cashier)
+   - pending rider variances (rider -> cashier)
+5. Single transaction writes:
+   - close active `UserRoleAssignment`
+   - update `User.role` and linked `Employee.role`
+   - append `UserRoleAssignment` and `UserRoleAuditEvent`
+   - increment `authVersion`
+
 ## Cross-Doc Contract
 
 1. This role-boundary SoT must be read together with:
@@ -201,10 +218,9 @@ Access drift examples:
 
 Role lifecycle drift:
 
-1. Normalized role-assignment history flow and immediate switch contract are not yet fully implemented in runtime code.
+1. Global session invalidation using `authVersion` is not yet enforced across all route guards (runtime currently bumps `authVersion` during switch).
 
 Follow-up code patch must:
 
 1. Remove `ADMIN` from manager-route guards listed above.
-2. Implement canonical immediate role switch flow (`CASHIER <-> RIDER` only, admin-only actor).
-3. Enforce protected manager role handling outside normal switch flow.
+2. Enforce `authVersion` session freshness globally to force immediate re-login after role switch.
