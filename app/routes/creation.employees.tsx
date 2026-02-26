@@ -180,7 +180,6 @@ export async function action({ request }: ActionFunctionArgs) {
       .trim()
       .toLowerCase();
     const password = String(fd.get("password") || "");
-    const pin = String(fd.get("pin") || "").trim();
     const defaultVehicleRaw = String(fd.get("defaultVehicleId") || "").trim();
     const defaultVehicleId = defaultVehicleRaw ? Number(defaultVehicleRaw) : null;
 
@@ -198,13 +197,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const authError =
-      lane === "CASHIER"
-        ? !/^\d{6}$/.test(pin)
-          ? "Cashier PIN must be exactly 6 digits."
-          : null
-        : password.length < 8
-          ? "Password must be at least 8 characters."
-          : null;
+      password.length < 8 ? "Password must be at least 8 characters." : null;
     if (authError) {
       return json<ActionData>({ ok: false, message: authError }, { status: 400 });
     }
@@ -237,8 +230,8 @@ export async function action({ request }: ActionFunctionArgs) {
             managerKind: lane === "STORE_MANAGER" ? ManagerKind.STAFF : null,
             employeeId: employee.id,
             active: true,
-            passwordHash: lane === "CASHIER" ? null : await hash(password, 12),
-            pinHash: lane === "CASHIER" ? await hash(pin, 12) : null,
+            passwordHash: await hash(password, 12),
+            pinHash: null,
             branches: defaultBranch
               ? { create: { branchId: defaultBranch.id } }
               : undefined,
@@ -287,7 +280,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const targetLaneRaw = String(fd.get("targetLane") || "").trim();
     const reason = String(fd.get("reason") || "").trim();
     const password = String(fd.get("password") || "");
-    const pin = String(fd.get("pin") || "").trim();
 
     if (!Number.isFinite(userId) || userId <= 0) {
       return json<ActionData>(
@@ -312,13 +304,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const targetRole = toSwitchUserRole(targetLane);
 
     const authError =
-      targetLane === "CASHIER"
-        ? !/^\d{6}$/.test(pin)
-          ? "Cashier PIN must be exactly 6 digits for role switch."
-          : null
-        : password.length < 8
-          ? "Password must be at least 8 characters for role switch."
-          : null;
+      password.length < 8
+        ? "Password must be at least 8 characters for role switch."
+        : null;
     if (authError) {
       return json<ActionData>({ ok: false, message: authError }, { status: 400 });
     }
@@ -438,8 +426,8 @@ export async function action({ request }: ActionFunctionArgs) {
             role: targetRole,
             managerKind: null,
             authVersion: { increment: 1 },
-            passwordHash: targetRole === UserRole.CASHIER ? null : await hash(password, 12),
-            pinHash: targetRole === UserRole.CASHIER ? await hash(pin, 12) : null,
+            passwordHash: await hash(password, 12),
+            pinHash: null,
           },
         });
 
@@ -605,19 +593,9 @@ export default function EmployeeCreationPage() {
               <SoTInput
                 name="password"
                 type="password"
-                label="Password (manager/rider)"
+                label="Password"
                 placeholder="At least 8 characters"
-                required={lane !== "CASHIER"}
-              />
-
-              <SoTInput
-                name="pin"
-                label="Cashier PIN"
-                inputMode="numeric"
-                pattern="\\d{6}"
-                maxLength={6}
-                placeholder="6 digits"
-                required={lane === "CASHIER"}
+                required
               />
             </div>
 
@@ -662,7 +640,7 @@ export default function EmployeeCreationPage() {
                     </SoTTd>
                     <SoTTd>{prettyLane(row)}</SoTTd>
                     <SoTTd>
-                      {row.lane === "CASHIER" ? "PIN login" : "Email/Password"}
+                      Email/Password
                       <div className="text-xs text-slate-500">{row.email ?? "No email"}</div>
                     </SoTTd>
                     <SoTTd>
@@ -698,12 +676,11 @@ export default function EmployeeCreationPage() {
                             />
                           ) : (
                             <input
-                              name="pin"
+                              name="password"
+                              type="password"
                               required
-                              pattern="\\d{6}"
-                              maxLength={6}
-                              inputMode="numeric"
-                              placeholder="New cashier PIN"
+                              minLength={8}
+                              placeholder="New cashier password"
                               className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                             />
                           )}

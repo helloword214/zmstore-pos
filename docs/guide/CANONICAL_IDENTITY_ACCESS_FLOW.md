@@ -17,9 +17,10 @@ This document is the binding authority for role boundaries.
 ## Core Identity Model
 
 1. `Employee` is the person/profile record used by operations (rider assignment, names, staffing metadata).
-2. `User` is the authentication/access record (`email`/`password` or `pin`, role, active flag).
+2. `User` is the authentication/access record (`email`/`password`, role, active flag).
 3. Canonical target mapping is one person to one account (`Employee` to `User` is 1:1 for active accounts).
 4. `ADMIN` may exist without linked `Employee` because it is a control-plane role.
+5. `CASHIER` uses the same email/password login contract as other roles.
 
 ## Canonical Role Authority Matrix
 
@@ -100,6 +101,19 @@ Representative routes:
 4. `app/routes/runs.$id.rider-checkin.tsx`
 5. `app/routes/runs.$id.summary.tsx` (`mine` rider scope)
 
+### E) Authentication + Recovery Routes
+
+Allowed audience:
+
+1. `login`: unauthenticated users.
+2. `forgot-password` and `reset-password`: unauthenticated users with valid account email/token.
+
+Representative routes:
+
+1. `app/routes/login.tsx`
+2. `app/routes/forgot-password.tsx`
+3. `app/routes/reset-password.$token.tsx`
+
 ## Employee Role Lifecycle (Binding)
 
 1. Role switching is immediate once approved and validated.
@@ -110,6 +124,16 @@ Representative routes:
    - `RIDER -> CASHIER`
 5. Any switch involving `STORE_MANAGER` is blocked in normal role switch flow.
 6. Manager role assignment/revocation is a protected governance action and must use a separate secured flow.
+
+## Password Recovery (Binding)
+
+1. Forgot-password is self-service for all active roles with valid account email.
+2. Reset flow uses single-use, expiring token links delivered through configured SMTP.
+3. Successful password reset must:
+   - update `passwordHash`
+   - clear legacy `pinHash`
+   - increment `authVersion`
+4. Reset responses must avoid account enumeration leaks.
 
 ## Manager Identity Model (Binding)
 
@@ -190,6 +214,11 @@ Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
    - update `User.role` and linked `Employee.role`
    - append `UserRoleAssignment` and `UserRoleAuditEvent`
    - increment `authVersion`
+
+Implemented in auth routes:
+
+1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
+2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
 
 ## Cross-Doc Contract
 

@@ -1519,11 +1519,9 @@ async function seed() {
     },
   });
 
-  // CASHIER USERS (linked sa cashierEmployees + PIN login)
-  const cashierPins = ["111111", "222222"];
+  // CASHIER USERS (linked sa cashierEmployees + password login)
   for (let i = 0; i < cashierEmployees.length; i++) {
     const emp = cashierEmployees[i];
-    const pin = cashierPins[i] ?? "999999";
     const idx = i + 1;
     await db.user.upsert({
       where: { email: `cashier${idx}@local` },
@@ -1532,10 +1530,13 @@ async function seed() {
         role: UserRole.CASHIER,
         managerKind: null,
         active: true,
+        passwordHash: hash(`cashier${idx}123`),
+        pinHash: null,
       },
       create: {
         email: `cashier${idx}@local`,
-        pinHash: hash(pin),
+        passwordHash: hash(`cashier${idx}123`),
+        pinHash: null,
         role: UserRole.CASHIER,
         managerKind: null,
         active: true,

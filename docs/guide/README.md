@@ -58,11 +58,16 @@ Current route-level mapping coverage (canonical):
 33. `customers.$id_.edit.tsx`
 34. `customers.$id_.pricing.tsx`
 35. `customers.$id_.pricing_.$ruleId.tsx`
+36. `login.tsx`
+37. `forgot-password.tsx`
+38. `reset-password.$token.tsx`
 
 Identity operations note:
 
 1. `creation.employees.tsx` is the canonical admin surface for employee account creation and normal `CASHIER <-> RIDER` role switching.
 2. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
+3. `login.tsx` is email/password-only for all roles (including cashier).
+4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
 
 ## B. Supporting (Context / Detailed Rationale)
 

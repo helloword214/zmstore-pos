@@ -1410,8 +1410,8 @@ enum CashierShiftStatus {
 model User {
   id           Int      @id @default(autoincrement())
   email        String?  @unique
-  passwordHash String? // for ADMIN/SELLER
-  pinHash      String? // for CASHIER fast login (6-digit recommended)
+  passwordHash String? // password login for all roles
+  pinHash      String? // legacy field; no longer used for login
   role         UserRole
   managerKind  ManagerKind?
   active       Boolean  @default(true)
@@ -1458,6 +1458,7 @@ model User {
   roleAssignmentsAuthored UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
   roleAuditEvents         UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
   roleAuditEventsAuthored UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
+  passwordResetTokens     PasswordResetToken[]
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
@@ -1499,6 +1500,25 @@ model UserRoleAuditEvent {
   @@index([userId, createdAt])
   @@index([changedById, createdAt])
   @@index([afterRole, createdAt])
+}
+
+model PasswordResetToken {
+  id                 Int       @id @default(autoincrement())
+  userId             Int
+  tokenHash          String    @unique
+  expiresAt          DateTime
+  usedAt             DateTime?
+  createdAt          DateTime  @default(now())
+  requestedIp        String?   @db.VarChar(64)
+  requestedUserAgent String?   @db.VarChar(300)
+  consumedIp         String?   @db.VarChar(64)
+  consumedUserAgent  String?   @db.VarChar(300)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 // (Removed) UserLocation — legacy mapping; replaced by UserBranch/Branch
