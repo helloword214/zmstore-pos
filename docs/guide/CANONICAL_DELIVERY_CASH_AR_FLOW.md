@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-21
+Last Reviewed: 2026-02-26
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -20,6 +20,7 @@ Defines one end-to-end behavior for:
 
 Visual map reference:
 
+- `docs/guide/CANONICAL_IDENTITY_ACCESS_FLOW.md`
 - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
@@ -32,9 +33,15 @@ Visual map reference:
 4. Rider shortage is rider-accountability flow; it must not create customer AR by itself.
 5. Parent order pricing authority is frozen `OrderItem` snapshot created at `/orders/new`; settlement override discount is a separate CSS decision artifact.
 
+## Role Authority Boundary (Binding)
+
+1. `STORE_MANAGER` is the only role allowed to perform manager-stage actions in this flow.
+2. `ADMIN` is creation/control-plane only and is not allowed in manager operational/commercial routes in this flow, including read-only access.
+3. `CASHIER` and `EMPLOYEE` are execution lanes only (cash posting/encoding/acknowledgement), never commercial decision authority.
+
 ## Authoritative Route Map
 
-This map is the primary route-level reference for the current implementation.
+This map is the primary route-level reference for canonical target behavior.
 
 | Stage | Role | Route file | Primary responsibility | SoT focus |
 | --- | --- | --- | --- | --- |
@@ -58,6 +65,10 @@ This map is the primary route-level reference for the current implementation.
 | Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync |
 | AR customer list | Cashier | `app/routes/ar._index.tsx` | List customers with open approved balances | `customerAr` authority (target behavior) |
 | AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments, show post-submit feedback, print receipt proof | `customerAr` ledger/payment application |
+
+Role label interpretation rule:
+
+1. `Manager` in this table means `STORE_MANAGER` only (not `ADMIN`).
 
 ## Route SoT Guardrails
 
@@ -172,3 +183,14 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 7. Shift close submission and manager final close are traceable per shift.
 8. Short variance close has manager decision + paper reference trace.
 9. Cashier charge records exist only for short variance with manager `CHARGE_CASHIER`.
+
+## Known Implementation Drift (2026-02-26)
+
+Canonical authority in this document is `STORE_MANAGER`-only for manager stages.
+Current code still allows `ADMIN` access in some manager routes; this must be removed in follow-up code patch:
+
+1. `app/routes/store.dispatch.tsx`
+2. `app/routes/runs.$id.dispatch.tsx`
+3. `app/routes/store.clearance.tsx`
+4. `app/routes/store.clearance_.$caseId.tsx`
+5. `app/routes/runs.$id.remit.tsx`

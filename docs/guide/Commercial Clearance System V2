@@ -1,6 +1,6 @@
 # Commercial Clearance System (CCS)
 
-**Version:** 2.8  
+**Version:** 2.9
 **Status:** LOCKED – Field-Enforced Governance  
 **Scope:** All sales involving payment shortage, bargain requests, or delayed settlement  
 **Applies To:** PARENT (POS Orders), ROAD (Quick Sales), Delivery Runs
@@ -61,6 +61,19 @@ Only the Store Manager may:
 
 No other role may create or absorb commercial liability.
 
+### 3.1 Admin Boundary (Binding)
+
+`ADMIN` is creation/control-plane only and has no CCS operational authority.
+
+Admin may NOT:
+
+- open clearance inbox for decision work
+- issue clearance decisions
+- authorize goods release under shortage
+- perform manager remit decisions tied to CCS outcomes
+
+Admin has zero commercial-decision access, including read-only manager decision lanes.
+
 ---
 
 ### 4. Role Isolation (Hard Rule)
@@ -78,6 +91,14 @@ They may NOT:
 - Create A/R
 - Waive balances
 - Leave shortage unresolved in the field
+
+Admin may:
+
+- maintain setup/master data outside CCS commercial decisions
+
+Admin may NOT:
+
+- participate in CCS decision workflow at any step
 
 ---
 

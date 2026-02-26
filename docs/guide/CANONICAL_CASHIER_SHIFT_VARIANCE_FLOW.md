@@ -2,11 +2,15 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-21
+Last Reviewed: 2026-02-26
 
 ## Purpose
 
 Defines one route-level source of truth for cashier shift lifecycle, shift close counting, manager recount, manager final-close authority, and cashier variance-to-charge handling.
+
+Role boundary reference:
+
+1. `docs/guide/CANONICAL_IDENTITY_ACCESS_FLOW.md`
 
 ## Scope
 
@@ -53,14 +57,19 @@ Current transition map (as implemented):
 | Route file | Role | Responsibility |
 | --- | --- | --- |
 | `app/routes/cashier.shift.tsx` | Cashier | Opening verification, drawer txns, denomination-based count submit (`SUBMITTED`) |
-| `app/routes/store.cashier-shifts.tsx` | Store Manager/Admin | Open shift, resend opening verification, manager recount + final close, decision capture, variance upsert, optional charge creation |
+| `app/routes/store.cashier-shifts.tsx` | Store Manager | Open shift, resend opening verification, manager recount + final close, decision capture, variance upsert, optional charge creation |
 | `app/routes/cashier.$id.tsx` | Cashier | Walk-in collection posting |
 | `app/routes/delivery-remit.$id.tsx` | Cashier | Delivery remit cash posting and rider-shortage bridge posting |
 | `app/routes/ar.customers.$id.tsx` | Cashier | A/R payment posting against `customerAr` balances |
-| `app/routes/store.cashier-variances.tsx` | Store Manager/Admin | Read-only variance queue/history (decision is not written here) |
-| `app/routes/cashier.charges.tsx` | Cashier/Admin | View/acknowledge manager-charged cashier variance items |
-| `app/routes/store.cashier-ar.tsx` | Store Manager/Admin | Cashier charge list and payroll-plan tagging |
-| `app/routes/store.payroll.tsx` | Store Manager/Admin | Payroll deduction posting and charge/variance status sync |
+| `app/routes/store.cashier-variances.tsx` | Store Manager | Read-only variance queue/history (decision is not written here) |
+| `app/routes/cashier.charges.tsx` | Cashier | View/acknowledge manager-charged cashier variance items |
+| `app/routes/store.cashier-ar.tsx` | Store Manager | Cashier charge list and payroll-plan tagging |
+| `app/routes/store.payroll.tsx` | Store Manager | Payroll deduction posting and charge/variance status sync |
+
+Role label interpretation rule:
+
+1. `Store Manager` in this flow means `STORE_MANAGER` only (not `ADMIN`).
+2. `ADMIN` has no access to these operational routes, including read-only views.
 
 ## Cash Drawer and Posting SoT
 
@@ -128,3 +137,14 @@ Where:
 3. Final recount authority is manager-side at close time; no post-close back-and-forth path in shift routes.
 4. Variance authority is manager-authored and auditable from final close note trail.
 5. Cashier charge creation is limited to short variance with explicit `CHARGE_CASHIER` decision and is idempotent by `varianceId`.
+
+## Known Implementation Drift (2026-02-26)
+
+Canonical authority in this doc is `STORE_MANAGER`-only for manager routes.
+Current code still allows `ADMIN` in some routes and must be aligned in follow-up patch:
+
+1. `app/routes/store.cashier-shifts.tsx`
+2. `app/routes/store.cashier-variances.tsx`
+3. `app/routes/store.cashier-ar.tsx`
+4. `app/routes/store.payroll.tsx`
+5. `app/routes/cashier.charges.tsx`

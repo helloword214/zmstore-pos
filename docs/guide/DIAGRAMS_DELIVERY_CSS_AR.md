@@ -2,13 +2,14 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-21
-Diagram Version: v1.3
+Last Reviewed: 2026-02-26
+Diagram Version: v2.0
 
 ## Purpose
 
 Visual map for the canonical flow described in:
 
+- `docs/guide/CANONICAL_IDENTITY_ACCESS_FLOW.md`
 - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
@@ -95,6 +96,12 @@ flowchart LR
 
 ```mermaid
 flowchart LR
+    subgraph Admin["Admin Creation Routes (creation/setup only)"]
+        AD0["_index.tsx"]
+        AD1["creation.*"]
+        AD2["customers.* admin context"]
+    end
+
     subgraph POS["Order Pricing Routes"]
         P0["pad-order._index.tsx"]
         P1["orders.new.tsx"]
@@ -131,6 +138,8 @@ flowchart LR
         A2["ar.customers.$id.tsx"]
     end
 
+    AD0 --> AD1
+    AD0 --> AD2
     P0 --> P1 --> M0
     P2 --> P1
     M0 --> M1 --> R1 --> M2
@@ -140,6 +149,12 @@ flowchart LR
     M6 --> M7
     M4 --> A1 --> A2
 ```
+
+Authority note:
+
+1. `Admin` lane is creation/setup only.
+2. `Manager` lane represents `STORE_MANAGER`-only operational/commercial authority.
+3. `ADMIN` must not enter `Manager` lane routes, including read-only access.
 
 ## 5) Route-to-SoT Matrix (Condensed)
 
@@ -193,7 +208,23 @@ As-implemented control note:
 1. Minor (`v1.x`) for additive nodes/links without rule changes.
 2. Major (`v2.0`) when business rules or SoT authority changes.
 3. Any major update must also update:
+   - `docs/guide/CANONICAL_IDENTITY_ACCESS_FLOW.md`
    - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
    - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
    - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
    - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+
+## Known Implementation Drift (2026-02-26)
+
+Canonical diagram `v2.0` enforces admin separation from manager lanes.
+Current code still allows `ADMIN` in some manager routes and requires follow-up alignment:
+
+1. `app/routes/store.dispatch.tsx`
+2. `app/routes/runs.$id.dispatch.tsx`
+3. `app/routes/store.clearance.tsx`
+4. `app/routes/store.clearance_.$caseId.tsx`
+5. `app/routes/runs.$id.remit.tsx`
+6. `app/routes/store.cashier-shifts.tsx`
+7. `app/routes/store.cashier-variances.tsx`
+8. `app/routes/store.cashier-ar.tsx`
+9. `app/routes/store.payroll.tsx`
