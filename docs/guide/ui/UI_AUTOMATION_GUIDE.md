@@ -61,6 +61,12 @@ Active route coverage for this baseline:
 28. `app/routes/store.rider-charges.tsx`
 29. `app/routes/cashier.pos._index.tsx`
 30. `app/routes/login.tsx`
+31. `app/routes/customers._index.tsx`
+32. `app/routes/customers.new.tsx`
+33. `app/routes/customers.$id.tsx`
+34. `app/routes/customers.$id_.edit.tsx`
+35. `app/routes/customers.$id_.pricing.tsx`
+36. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
 
 ## 4. Minimalist Rules (Non-Negotiable)
 

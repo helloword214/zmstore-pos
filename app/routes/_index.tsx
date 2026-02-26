@@ -19,7 +19,7 @@ type AdminShortcut = {
 
 const creationShortcuts: AdminShortcut[] = [
   {
-    to: "/customers/new",
+    to: "/customers/new?ctx=admin",
     title: "Create Customer",
     description: "Register a new customer profile for credit, dispatch, and pricing.",
     eyebrow: "Master Record",
@@ -33,7 +33,7 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "emerald",
   },
   {
-    to: "/customers",
+    to: "/customers?ctx=admin",
     title: "Create Discount Rule",
     description: "Open customer list, then go to Pricing Rules and add discount logic.",
     eyebrow: "Pricing",
@@ -76,7 +76,7 @@ const setupShortcuts: AdminShortcut[] = [
     tone: "emerald",
   },
   {
-    to: "/customers",
+    to: "/customers?ctx=admin",
     title: "Customer List",
     description: "Manage existing customers and open pricing-rule setup per customer.",
     tone: "amber",
@@ -168,7 +168,7 @@ export default function AdminDashboardIndex() {
               </p>
             </div>
             <Link
-              to="/customers"
+              to="/customers?ctx=admin"
               className="inline-flex h-9 items-center rounded-xl bg-amber-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
               Open Customers

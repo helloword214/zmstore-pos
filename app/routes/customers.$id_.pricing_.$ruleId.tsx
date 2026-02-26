@@ -1,4 +1,4 @@
-// app/routes/customers.$id.pricing.$ruleId.tsx
+// app/routes/customers.$id_.pricing_.$ruleId.tsx
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -9,11 +9,19 @@ import {
   useNavigation,
 } from "@remix-run/react";
 import { PriceMode, UnitKind } from "@prisma/client";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
 type LoaderData = {
   customerId: number;
   customerName: string;
+  ctx: "admin" | null;
   rule: {
     id: number;
     productId: number;
@@ -28,7 +36,10 @@ type LoaderData = {
   products: Array<{ id: number; name: string }>;
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
+  const url = new URL(request.url);
+  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
   const customerId = Number(params.id);
   const ruleId = Number(params.ruleId);
   if (!Number.isFinite(customerId) || !Number.isFinite(ruleId)) {
@@ -68,6 +79,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     customerId,
     customerName: name,
     products,
+    ctx,
     rule: {
       id: rule.id,
       productId: rule.productId,
@@ -87,6 +99,10 @@ type ActionData =
   | { ok: false; fieldErrors?: Record<string, string>; formError?: string };
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
+  const url = new URL(request.url);
+  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
+  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
   const customerId = Number(params.id);
   const ruleId = Number(params.ruleId);
   if (!Number.isFinite(customerId) || !Number.isFinite(ruleId)) {
@@ -98,7 +114,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (act === "delete") {
     await db.customerItemPrice.delete({ where: { id: ruleId } });
-    return redirect(`/customers/${customerId}/pricing`);
+    return redirect(`/customers/${customerId}/pricing${ctxSuffix}`);
   }
 
   if (act === "save") {
@@ -187,7 +203,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       },
     });
 
-    return redirect(`/customers/${customerId}/pricing`);
+    return redirect(`/customers/${customerId}/pricing${ctxSuffix}`);
   }
 
   return json<ActionData>(
@@ -197,42 +213,36 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function EditCustomerRule() {
-  const { customerId, customerName, products, rule } =
+  const { customerId, customerName, products, rule, ctx } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
+  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
+  const fieldErrors =
+    actionData && "fieldErrors" in actionData ? actionData.fieldErrors : undefined;
+  const formError =
+    actionData && "formError" in actionData ? actionData.formError : undefined;
 
   return (
-    <section className="px-4 md:px-0 pb-6">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-3xl px-5 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Edit Rule — <span className="text-indigo-700">{customerName}</span>
-          </h1>
-          <Link
-            to={`/customers/${customerId}/pricing`}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-          >
-            Back
-          </Link>
-        </div>
-      </div>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <SoTNonDashboardHeader
+        title="Edit Pricing Rule"
+        subtitle={customerName}
+        backTo={`/customers/${customerId}/pricing${ctxSuffix}`}
+        backLabel="Pricing Rules"
+        maxWidthClassName="max-w-3xl"
+      />
 
       <div className="mx-auto max-w-3xl px-5 py-6">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+        <SoTCard interaction="form">
           <Form method="post" className="space-y-3">
-            {actionData && "formError" in actionData && actionData.formError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {actionData.formError}
-              </div>
-            ) : null}
+            {formError ? <SoTAlert tone="danger">{formError}</SoTAlert> : null}
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Product</span>
+            <SoTFormField label="Product" error={fieldErrors?.productId}>
               <select
                 name="productId"
                 defaultValue={String(rule.productId)}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -240,23 +250,12 @@ export default function EditCustomerRule() {
                   </option>
                 ))}
               </select>
-            </label>
-            {actionData &&
-            "fieldErrors" in actionData &&
-            actionData.fieldErrors?.productId ? (
-              <div className="text-xs text-red-700">
-                {actionData.fieldErrors.productId}
-              </div>
-            ) : null}
+            </SoTFormField>
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Unit Kind</span>
+            <SoTFormField label="Unit Kind" error={fieldErrors?.unitKind}>
               <div className="mt-1 flex gap-3">
                 {(["RETAIL", "PACK"] as const).map((k) => (
-                  <label
-                    key={k}
-                    className="inline-flex items-center gap-2 text-sm"
-                  >
+                  <label key={k} className="inline-flex items-center gap-2 text-sm">
                     <input
                       type="radio"
                       name="unitKind"
@@ -268,43 +267,32 @@ export default function EditCustomerRule() {
                   </label>
                 ))}
               </div>
-            </label>
+            </SoTFormField>
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Mode</span>
+            <SoTFormField label="Mode" error={fieldErrors?.mode}>
               <select
                 name="mode"
                 defaultValue={rule.mode}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 <option value="FIXED_PRICE">FIXED_PRICE (set new price)</option>
-                <option value="FIXED_DISCOUNT">FIXED_DISCOUNT (minus ₱)</option>
-                <option value="PERCENT_DISCOUNT">
-                  PERCENT_DISCOUNT (minus %)
-                </option>
+                <option value="FIXED_DISCOUNT">FIXED_DISCOUNT (minus PHP)</option>
+                <option value="PERCENT_DISCOUNT">PERCENT_DISCOUNT (minus %)</option>
               </select>
-            </label>
+            </SoTFormField>
 
-            <label className="block text-sm">
-              <span className="text-slate-700">Value</span>
+            <SoTFormField label="Value" error={fieldErrors?.value}>
               <input
                 name="value"
                 type="number"
                 step="0.01"
                 min="0"
                 defaultValue={rule.value}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
-            </label>
-            {actionData &&
-            "fieldErrors" in actionData &&
-            actionData.fieldErrors?.value ? (
-              <div className="text-xs text-red-700">
-                {actionData.fieldErrors.value}
-              </div>
-            ) : null}
+            </SoTFormField>
 
-            <label className="inline-flex items-center gap-2 text-sm">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
               <input
                 name="active"
                 type="checkbox"
@@ -315,51 +303,64 @@ export default function EditCustomerRule() {
             </label>
 
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="text-slate-700">Starts At (optional)</span>
+              <SoTFormField label="Starts At (optional)" error={fieldErrors?.startsAt}>
                 <input
                   name="startsAt"
                   type="date"
                   defaultValue={rule.startsAt ?? ""}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
-              </label>
-              <label className="block text-sm">
-                <span className="text-slate-700">Ends At (optional)</span>
+              </SoTFormField>
+              <SoTFormField label="Ends At (optional)" error={fieldErrors?.endsAt}>
                 <input
                   name="endsAt"
                   type="date"
                   defaultValue={rule.endsAt ?? ""}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
-              </label>
+              </SoTFormField>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                name="_action"
-                value="save"
-                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                disabled={nav.state !== "idle"}
-              >
-                {nav.state !== "idle" ? "Saving…" : "Save"}
-              </button>
+            <SoTActionBar
+              className="mb-0"
+              right={
+                <>
+                  <SoTButton
+                    type="submit"
+                    name="_action"
+                    value="save"
+                    variant="primary"
+                    disabled={nav.state !== "idle"}
+                  >
+                    {nav.state !== "idle" ? "Saving..." : "Save"}
+                  </SoTButton>
 
-              <button
-                name="_action"
-                value="delete"
-                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                onClick={(e) => {
-                  if (!confirm("Delete this rule? This cannot be undone."))
-                    e.preventDefault();
-                }}
-              >
-                Delete
-              </button>
-            </div>
+                  <SoTButton
+                    type="submit"
+                    name="_action"
+                    value="delete"
+                    variant="danger"
+                    onClick={(e) => {
+                      if (!confirm("Delete this rule? This cannot be undone.")) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    Delete
+                  </SoTButton>
+
+                  <Link
+                    to={`/customers/${customerId}/pricing${ctxSuffix}`}
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Cancel
+                  </Link>
+                </>
+              }
+            />
           </Form>
-        </div>
+        </SoTCard>
       </div>
-    </section>
+    </main>
   );
 }

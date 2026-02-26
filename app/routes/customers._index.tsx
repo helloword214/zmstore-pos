@@ -10,6 +10,9 @@ import {
   useFetcher,
 } from "@remix-run/react";
 import type { Prisma } from "@prisma/client";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 
@@ -24,12 +27,14 @@ type LoaderData = {
     phone: string | null;
   }>;
   q: string;
+  ctx: "admin" | null;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
+  const ctx = url.searchParams.get("ctx") === "admin" ? "admin" : null;
 
   let where: Prisma.CustomerWhereInput | undefined;
 
@@ -74,11 +79,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 100,
   });
 
-  return json<LoaderData>({ rows, q });
+  return json<LoaderData>({ rows, q, ctx });
 }
 
 export default function CustomersIndex() {
-  const { rows, q } = useLoaderData<LoaderData>();
+  const { rows, q, ctx } = useLoaderData<LoaderData>();
   const searchRef = React.useRef<HTMLInputElement | null>(null);
   const formRef = React.useRef<HTMLFormElement | null>(null);
   const submit = useSubmit();
@@ -95,6 +100,7 @@ export default function CustomersIndex() {
   }>();
   const [query, setQuery] = React.useState(q);
   const [debounceId, setDebounceId] = React.useState<number | null>(null);
+  const ctxSuffix = ctx === "admin" ? "?ctx=admin" : "";
 
   // "/" focuses search (doesn't steal focus from inputs)
   React.useEffect(() => {
@@ -138,61 +144,64 @@ export default function CustomersIndex() {
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Sticky header to match kiosk/cashier */}
-      <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/85 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4 flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Customers
-          </h1>
-          <Link
-            to="/customers/new"
-            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
-          >
-            New Customer
-          </Link>
-        </div>
-      </header>
+      <SoTNonDashboardHeader
+        title="Customers"
+        subtitle="Browse and manage customer profiles for pricing and operations."
+        backTo={ctx === "admin" ? "/" : "/store"}
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-4xl"
+      />
 
       <div className="mx-auto max-w-4xl px-5 py-6">
-        {/* Search (uses API + keeps URL in sync) */}
-        <Form
-          method="get"
-          className="mb-4"
-          ref={formRef}
-          onSubmit={(e) => {
-            // prevent full reload; let useSubmit keep URL updated
-            e.preventDefault();
-            submit(formRef.current!, { method: "get", replace: true });
-          }}
-        >
-          <input
-            ref={searchRef}
-            name="q"
-            type="search"
-            value={query}
-            onChange={(e) => {
-              const v = e.target.value;
-              setQuery(v);
-              // keep URL in sync (so refresh/back/forward preserve query)
-              // debounce the API call a bit for nicer UX
-              if (debounceId) window.clearTimeout(debounceId);
-              const id = window.setTimeout(() => {
-                submit(formRef.current!, { method: "get", replace: true });
-                if (v.trim()) {
-                  searchFx.load(
-                    `/api/customers/search?q=${encodeURIComponent(v.trim())}`
-                  );
-                }
-              }, 250);
-              setDebounceId(id);
-            }}
-            placeholder="Search name / alias / phone…  (tip: press “/” to focus)"
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 shadow-sm"
-          />
-        </Form>
+        <SoTActionBar
+          right={
+            <Link
+              to={`/customers/new${ctxSuffix}`}
+              className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            >
+              New Customer
+            </Link>
+          }
+        />
 
-        {/* Results card */}
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <SoTCard interaction="form" className="mb-4">
+          <Form
+            method="get"
+            ref={formRef}
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit(formRef.current!, { method: "get", replace: true });
+            }}
+          >
+            {ctx === "admin" ? (
+              <input type="hidden" name="ctx" value="admin" />
+            ) : null}
+            <input
+              ref={searchRef}
+              name="q"
+              type="search"
+              value={query}
+              onChange={(e) => {
+                const v = e.target.value;
+                setQuery(v);
+                if (debounceId) window.clearTimeout(debounceId);
+                const id = window.setTimeout(() => {
+                  submit(formRef.current!, { method: "get", replace: true });
+                  if (v.trim()) {
+                    searchFx.load(
+                      `/api/customers/search?q=${encodeURIComponent(v.trim())}`
+                    );
+                  }
+                }, 250);
+                setDebounceId(id);
+              }}
+              placeholder="Search name / alias / phone… (tip: press “/” to focus)"
+              className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            />
+          </Form>
+        </SoTCard>
+
+        <SoTCard className="overflow-hidden p-0">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <div className="text-sm font-medium text-slate-700">
               {q ? <>Results for “{q}”</> : "All customers"}
@@ -228,18 +237,11 @@ export default function CustomersIndex() {
                       </div>
                       <div className="flex shrink-0 gap-2">
                         <Link
-                          to={`/customers/${c.id}`}
+                          to={`/customers/${c.id}${ctxSuffix}`}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
                           title="Profile"
                         >
                           Profile
-                        </Link>
-                        <Link
-                          to={`/ar/customers/${c.id}`}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
-                          title="AR / Ledger"
-                        >
-                          AR / Ledger
                         </Link>
                       </div>
                     </div>
@@ -248,9 +250,8 @@ export default function CustomersIndex() {
               })}
             </ul>
           )}
-        </div>
+        </SoTCard>
 
-        {/* Footer tip line like other pages */}
         <div className="mt-3 text-[11px] text-slate-500">
           Tips: press <kbd className="rounded border px-1">/</kbd> to focus
           search • use name, alias, or phone
