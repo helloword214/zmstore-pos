@@ -24,8 +24,8 @@ Current route-level mapping coverage (canonical):
 
 1. `pad-order._index.tsx`
 2. `orders.new.tsx`
-3. `customers.$id.pricing._index.tsx`
-4. `customers.$id.pricing.$ruleId.tsx`
+3. `customers.$id_.pricing.tsx`
+4. `customers.$id_.pricing_.$ruleId.tsx`
 5. `store.dispatch.tsx`
 6. `runs.$id.dispatch.tsx`
 7. `runs.$id.summary.tsx`

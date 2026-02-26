@@ -22,8 +22,8 @@ In scope:
 - `app/routes/pad-order._index.tsx` (UI payload + preflight only)
 - `app/routes/orders.new.tsx` (authoritative server create + freeze point)
 - `app/services/pricing.ts` (canonical discount engine + rule mapping)
-- `app/routes/customers.$id.pricing._index.tsx`
-- `app/routes/customers.$id.pricing.$ruleId.tsx`
+- `app/routes/customers.$id_.pricing.tsx`
+- `app/routes/customers.$id_.pricing_.$ruleId.tsx`
 - `CustomerItemPrice` rule model
 - `Order` and `OrderItem` frozen pricing fields
 
