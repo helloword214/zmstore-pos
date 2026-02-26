@@ -31,35 +31,36 @@ Reference traits to replicate:
 
 Active route coverage for this baseline:
 
-1. `app/routes/store.dispatch.tsx`
-2. `app/routes/store._index.tsx`
-3. `app/routes/cashier._index.tsx`
-4. `app/routes/rider._index.tsx`
-5. `app/routes/runs._index.tsx`
-6. `app/routes/runs.new.tsx`
-7. `app/routes/runs.$id.dispatch.tsx`
-8. `app/routes/runs.$id.summary.tsx`
-9. `app/routes/runs.$id.rider-checkin.tsx`
-10. `app/routes/store.clearance.tsx`
-11. `app/routes/store.clearance_.$caseId.tsx`
-12. `app/routes/runs.$id.remit.tsx`
-13. `app/routes/cashier.delivery._index.tsx`
-14. `app/routes/cashier.delivery.$runId.tsx`
-15. `app/routes/delivery-remit.$id.tsx`
-16. `app/routes/ar._index.tsx`
-17. `app/routes/ar.customers.$id.tsx`
-18. `app/routes/cashier.shift.tsx`
-19. `app/routes/store.cashier-shifts.tsx`
-20. `app/routes/store.cashier-variances.tsx`
-21. `app/routes/cashier.charges.tsx`
-22. `app/routes/store.cashier-ar.tsx`
-23. `app/routes/store.payroll.tsx`
-24. `app/routes/store.rider-variances.tsx`
-25. `app/routes/rider.variances.tsx`
-26. `app/routes/rider.variance.$id.tsx`
-27. `app/routes/store.rider-charges.tsx`
-28. `app/routes/cashier.pos._index.tsx`
-29. `app/routes/login.tsx`
+1. `app/routes/_index.tsx`
+2. `app/routes/store.dispatch.tsx`
+3. `app/routes/store._index.tsx`
+4. `app/routes/cashier._index.tsx`
+5. `app/routes/rider._index.tsx`
+6. `app/routes/runs._index.tsx`
+7. `app/routes/runs.new.tsx`
+8. `app/routes/runs.$id.dispatch.tsx`
+9. `app/routes/runs.$id.summary.tsx`
+10. `app/routes/runs.$id.rider-checkin.tsx`
+11. `app/routes/store.clearance.tsx`
+12. `app/routes/store.clearance_.$caseId.tsx`
+13. `app/routes/runs.$id.remit.tsx`
+14. `app/routes/cashier.delivery._index.tsx`
+15. `app/routes/cashier.delivery.$runId.tsx`
+16. `app/routes/delivery-remit.$id.tsx`
+17. `app/routes/ar._index.tsx`
+18. `app/routes/ar.customers.$id.tsx`
+19. `app/routes/cashier.shift.tsx`
+20. `app/routes/store.cashier-shifts.tsx`
+21. `app/routes/store.cashier-variances.tsx`
+22. `app/routes/cashier.charges.tsx`
+23. `app/routes/store.cashier-ar.tsx`
+24. `app/routes/store.payroll.tsx`
+25. `app/routes/store.rider-variances.tsx`
+26. `app/routes/rider.variances.tsx`
+27. `app/routes/rider.variance.$id.tsx`
+28. `app/routes/store.rider-charges.tsx`
+29. `app/routes/cashier.pos._index.tsx`
+30. `app/routes/login.tsx`
 
 ## 4. Minimalist Rules (Non-Negotiable)
 

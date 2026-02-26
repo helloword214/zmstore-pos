@@ -20,7 +20,8 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 
 | Route | Flow Area | Baseline | Reference Fit | Main drift | UX gap summary | Priority |
 | --- | --- | --- | --- | --- | --- | --- |
-| `app/routes/store._index.tsx` | Manager dashboard | PARTIAL | REMIT | control size drift reduced but still mixed chip density | top-bar/dashboard action scale is aligned; continue token hardening for metric chips | P2 |
+| `app/routes/store._index.tsx` | Manager dashboard | ALIGNED | REMIT | compact inbox panel uses subtle color accents and simple row actions | decision queues remain first with lower visual noise; monitor cards are toned down as secondary context | P2 |
+| `app/routes/_index.tsx` | Admin dashboard | ALIGNED | REMIT | creation-only colorful shell and setup shortcuts are aligned to SoT card/button/focus patterns | admin lane is now scoped to creation/setup only, with manager operations intentionally excluded | P2 |
 | `app/routes/cashier._index.tsx` | Cashier dashboard | PARTIAL | REMIT | control sizing mostly aligned; hierarchy still mixed in card metadata | maintain one CTA emphasis level across all action cards | P2 |
 | `app/routes/login.tsx` | Public auth entry | PARTIAL | N/A | SoT card/form/alert/button + focus-visible controls are applied; page intentionally has no non-dashboard header | keep dev-credentials helper scoped to local/dev environments | P3 |
 | `app/routes/cashier.pos._index.tsx` | Cashier queue (walk-in) | PARTIAL | REMIT | SoT header + action bar + alert + table/status are applied; row action controls still use route-local confirmation flows | keep action/control rhythm consistent with cashier remit list views | P2 |

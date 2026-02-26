@@ -11,6 +11,7 @@ import { SoTNotificationBell } from "~/components/ui/SoTNotificationBell";
 import { Button } from "~/components/ui/Button";
 import { sotCardClass } from "~/components/ui/SoTCard";
 import { SoTDataRow } from "~/components/ui/SoTDataRow";
+import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 
 const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 
@@ -300,34 +301,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function StoreManagerDashboard() {
   const { me, dispatch, runs, cash, exceptions } = useLoaderData<LoaderData>();
 
+  const identityLabel = me.alias ? `${me.alias} (${me.name})` : me.name;
+  const varianceDecisionCount =
+    exceptions.riderVariancesOpen + exceptions.cashierShiftVariancesOpen;
+  const payrollTaggedCount =
+    exceptions.payrollRiderAR + exceptions.payrollCashierAR;
   const exceptionCount =
-    exceptions.riderVariancesOpen +
-    exceptions.cashierShiftVariancesOpen +
-    exceptions.payrollRiderAR +
-    exceptions.payrollCashierAR +
-    exceptions.clearancePending;
+    varianceDecisionCount + payrollTaggedCount + exceptions.clearancePending;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Store Manager Dashboard
-            </h1>
-            <p className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">
-                {me.alias ? `${me.alias} (${me.name})` : me.name}
-              </span>
-              {" · "}
-              <span className="uppercase tracking-wide">{me.role}</span>
-              {" · "}
-              <span>{me.email}</span>
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <SoTRoleShellHeader
+        title="Manager Dashboard"
+        identityLine={`${identityLabel} · ${me.role} · ${me.email}`}
+        sticky
+        actions={
+          <>
             <SoTNotificationBell
               items={[
                 {
@@ -345,322 +334,193 @@ export default function StoreManagerDashboard() {
                 {
                   id: "variance",
                   label: "Variance decisions",
-                  count:
-                    exceptions.riderVariancesOpen +
-                    exceptions.cashierShiftVariancesOpen,
+                  count: varianceDecisionCount,
                   to: "/store/rider-variances",
                 },
               ]}
             />
-
             <Form method="post" action="/logout">
               <Button variant="tertiary" title="Sign out">
                 Logout
               </Button>
             </Form>
-          </div>
+          </>
+        }
+      />
+
+      <div className="mx-auto max-w-6xl px-5 py-5">
+        <div className="grid gap-4 xl:grid-cols-12 xl:items-stretch">
+          <section className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm xl:col-span-4 xl:h-full">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                Manager Decision Inbox
+              </h2>
+              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                {exceptionCount} pending
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <ManagerInboxRow
+                to="/store/clearance"
+                label="Clearance pending decisions"
+                count={exceptions.clearancePending}
+              />
+              <ManagerInboxRow
+                to="/store/rider-variances"
+                label="Variance decisions"
+                count={varianceDecisionCount}
+              />
+              <ManagerInboxRow
+                to="/store/payroll"
+                label="Payroll deduction tags"
+                count={payrollTaggedCount}
+              />
+            </div>
+          </section>
+
+          <section className="xl:col-span-8">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Operations Monitor
+              </h2>
+              <span className="text-xs text-slate-500">Secondary metrics.</span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className={sotCardClass({ className: "border-sky-200 bg-sky-50/40" })}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-800">
+                      Dispatch Queue
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      Orders waiting dispatch
+                    </div>
+                  </div>
+                  <div className="text-xl font-semibold text-sky-900">
+                    {dispatch.forDispatchOrders}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <SoTDataRow label="For dispatch" value={dispatch.forDispatchOrders} />
+                  <SoTDataRow
+                    label="Staged, not dispatched"
+                    value={dispatch.stagedOrders}
+                  />
+                </div>
+                <Link
+                  to="/store/dispatch"
+                  className="mt-3 inline-flex items-center text-sm font-medium text-sky-800 transition-colors duration-150 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  Open dispatch board →
+                </Link>
+              </div>
+
+              <div className={sotCardClass({ className: "border-indigo-200 bg-indigo-50/40" })}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+                      Runs Pipeline
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      Planned, active, checked-in
+                    </div>
+                  </div>
+                  <div className="text-xl font-semibold text-indigo-900">
+                    {runs.planned + runs.dispatched + runs.checkedIn}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <SoTDataRow label="Planned" value={runs.planned} />
+                  <SoTDataRow label="Dispatched" value={runs.dispatched} />
+                  <SoTDataRow label="Checked-in" value={runs.checkedIn} />
+                </div>
+                <Link
+                  to="/runs"
+                  className="mt-3 inline-flex items-center text-sm font-medium text-indigo-800 transition-colors duration-150 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  Open runs board →
+                </Link>
+              </div>
+
+              <div
+                className={sotCardClass({
+                  className: "border-emerald-200 bg-emerald-50/40 md:col-span-2",
+                })}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                      Cash Position
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      Drawer totals and cash movement
+                    </div>
+                  </div>
+                  <span className="rounded-xl border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                    TODAY
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <SoTDataRow label="Open shifts" value={cash.openShifts} />
+                  <SoTDataRow
+                    label="Expected drawers"
+                    value={peso(cash.expectedDrawerTotal)}
+                  />
+                  <SoTDataRow
+                    label="Cash sales today"
+                    value={peso(cash.cashSalesToday)}
+                  />
+                  <SoTDataRow
+                    label="Drawer movements"
+                    value={peso(cash.drawerTxnsToday)}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Link
+                    to="/store/cashier-shifts"
+                    className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Cashier shifts →
+                  </Link>
+                  <Link
+                    to="/store/cashier-variances"
+                    className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Shift variances <MiniBadge n={cash.openShiftVariances} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
-
-      <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
-        {/* BIG: what manager checks often */}
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Operations
-          </h2>
-
-          <div className="grid gap-3 lg:grid-cols-3">
-            {/* Dispatch (big) */}
-            <div className={sotCardClass({ interaction: "static", className: "group" })}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                    Dispatch Queue
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-slate-900">
-                    For Dispatch Orders
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-2">
-                  <span className="text-lg font-semibold text-slate-900">
-                    {dispatch.forDispatchOrders}
-                  </span>
-                </span>
-              </div>
-
-              <div className="mt-3 grid gap-2">
-                <SoTDataRow
-                  label="Staged (not dispatched)"
-                  value={dispatch.stagedOrders}
-                />
-                <SoTDataRow
-                  label="Next step"
-                  value={<span className="font-medium">Assign rider and vehicle</span>}
-                />
-              </div>
-
-              <Link
-                to="/store/dispatch"
-                className="mt-3 inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Open dispatch queue →
-              </Link>
-            </div>
-
-            {/* Runs (big) */}
-            <div className={sotCardClass({ interaction: "static", className: "group" })}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                    Runs Monitor
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-slate-900">
-                    Track & Close Runs
-                  </div>
-                </div>
-                <span className="text-lg font-semibold text-slate-900">
-                  {runs.planned + runs.dispatched + runs.checkedIn}
-                </span>
-              </div>
-
-              <div className="mt-3 grid gap-2">
-                <SoTDataRow label="PLANNED" value={runs.planned} />
-                <SoTDataRow label="DISPATCHED" value={runs.dispatched} />
-                <SoTDataRow
-                  label="CHECKED_IN (manager)"
-                  value={runs.needsManagerReview}
-                />
-              </div>
-
-              <Link
-                to="/runs"
-                className="mt-3 inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Open runs →
-              </Link>
-            </div>
-
-            {/* Schedule (big placeholder) */}
-            <div className={sotCardClass({})}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Schedule
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-slate-900">
-                    Employee Schedule (soon)
-                  </div>
-                </div>
-                <span className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                  PLAN
-                </span>
-              </div>
-
-              <p className="mt-3 text-xs text-slate-600">
-                Card for: today’s assigned staff/riders, duty hours, and
-                coverage gaps. (We’ll add models for attendance + payroll
-                later.)
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  to="/employees"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  View employees →
-                </Link>
-                <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                  Schedule board soon
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Manager focus (cash) */}
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Manager Focus
-            </h2>
-          </div>
-
-          <div className={sotCardClass({})}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                  Cash Position
-                </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  Drawer money + today cash signals
-                </div>
-              </div>
-              <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                TODAY
-              </span>
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs text-slate-600">Open shifts</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {cash.openShifts}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs text-slate-600">
-                  Expected drawers
-                </div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {peso(cash.expectedDrawerTotal)}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs text-slate-600">
-                  Cash sales today
-                </div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {peso(cash.cashSalesToday)}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs text-slate-600">
-                  Drawer movements
-                </div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {peso(cash.drawerTxnsToday)}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-              <Link
-                to="/store/cashier-shifts"
-                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Open/Close cashier shifts →
-              </Link>
-
-              <Link
-                to="/store/cashier-variances"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Shift variances <MiniBadge n={cash.openShiftVariances} />
-              </Link>
-
-              <span className="text-xs text-slate-600">
-                DROP = vault movement (cash out of drawer).
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* Exceptions */}
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Exceptions
-            </h2>
-            <span className="text-xs text-slate-500">
-              Not frequent. Show small. Total:{" "}
-              <span className="font-semibold text-slate-900">
-                {exceptionCount}
-              </span>
-            </span>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Link
-              to="/store/rider-variances"
-              className={sotCardClass({ interaction: "link" })}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Rider Variances
-                </div>
-                <MiniBadge n={exceptions.riderVariancesOpen} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {exceptions.riderVariancesOpen}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Open / manager-approved items.
-              </p>
-            </Link>
-
-            <Link
-              to="/store/cashier-variances"
-              className={sotCardClass({ interaction: "link" })}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Cashier Variances
-                </div>
-                <MiniBadge n={exceptions.cashierShiftVariancesOpen} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {exceptions.cashierShiftVariancesOpen}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Shift close audit queue.
-              </p>
-            </Link>
-
-            <Link
-              to="/store/payroll"
-              className={sotCardClass({ interaction: "link" })}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Rider AR (tagged)
-                </div>
-                <MiniBadge n={exceptions.payrollRiderAR} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {exceptions.payrollRiderAR}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Payroll deduction queue.
-              </p>
-            </Link>
-
-            <Link
-              to="/store/payroll"
-              className={sotCardClass({ interaction: "link" })}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Cashier AR (tagged)
-                </div>
-                <MiniBadge n={exceptions.payrollCashierAR} />
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
-                {exceptions.payrollCashierAR}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Payroll deduction queue.
-              </p>
-            </Link>
-          </div>
-        </section>
-
-        {/* Payroll / attendance future note */}
-        <section>
-          <div className={sotCardClass({})}>
-            <div className="text-sm font-medium text-slate-900">
-              Payroll (future)
-            </div>
-            <p className="mt-1 text-xs text-slate-600">
-              Next milestone: Attendance + Salary payouts (not just deductions).
-              The dashboard will show: schedule coverage → attendance logs →
-              payroll computation → payouts.
-            </p>
-          </div>
-        </section>
-      </div>
     </main>
+  );
+}
+
+function ManagerInboxRow({
+  to,
+  label,
+  count,
+}: {
+  to: string;
+  label: string;
+  count: number;
+}) {
+  return (
+    <Link
+      to={to}
+      className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white px-3 py-2 transition-colors duration-150 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+    >
+      <div>
+        <div className="text-sm font-medium text-slate-800">{label}</div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <MiniBadge n={count} />
+        <span className="text-xs font-medium text-indigo-700">Open →</span>
+      </div>
+    </Link>
   );
 }
