@@ -1,4 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { UserAuthState } from "@prisma/client";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
 import { createHash, randomBytes } from "node:crypto";
@@ -8,7 +9,11 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { db } from "~/utils/db.server";
 import { getUser, homePathFor } from "~/utils/auth.server";
-import { resolveAppBaseUrl, sendPasswordResetEmail } from "~/utils/mail.server";
+import {
+  resolveAppBaseUrl,
+  sendPasswordResetEmail,
+  sendPasswordSetupEmail,
+} from "~/utils/mail.server";
 
 type ActionData =
   | { ok: true; message: string }
@@ -51,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const user = await db.user.findUnique({
       where: { email },
-      select: { id: true, email: true, active: true },
+      select: { id: true, email: true, active: true, authState: true },
     });
 
     if (user?.active && user.email) {
@@ -85,7 +90,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const baseUrl = resolveAppBaseUrl(request);
       const resetUrl = `${baseUrl}/reset-password/${rawToken}`;
-      await sendPasswordResetEmail({ to: user.email, resetUrl });
+      if (user.authState === UserAuthState.PENDING_PASSWORD) {
+        await sendPasswordSetupEmail({ to: user.email, setupUrl: resetUrl });
+      } else {
+        await sendPasswordResetEmail({ to: user.email, resetUrl });
+      }
     }
 
     return json<ActionData>({ ok: true, message: SUCCESS_MESSAGE });

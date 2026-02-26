@@ -21,6 +21,7 @@ This document is the binding authority for role boundaries.
 3. Canonical target mapping is one person to one account (`Employee` to `User` is 1:1 for active accounts).
 4. `ADMIN` may exist without linked `Employee` because it is a control-plane role.
 5. `CASHIER` uses the same email/password login contract as other roles.
+6. Employee account creation requires email (`no email = no account`).
 
 ## Canonical Role Authority Matrix
 
@@ -134,6 +135,11 @@ Representative routes:
    - clear legacy `pinHash`
    - increment `authVersion`
 4. Reset responses must avoid account enumeration leaks.
+5. New employee accounts must use invite-based setup:
+   - admin creates account without entering password
+   - system sets `authState = PENDING_PASSWORD`
+   - system sends set-password email link
+   - user becomes `ACTIVE` auth state only after password is set
 
 ## Manager Identity Model (Binding)
 
@@ -219,6 +225,7 @@ Implemented in auth routes:
 
 1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
 2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
+3. `app/routes/creation.employees.tsx` uses invite-based setup (no admin-known default password), plus resend invite.
 
 ## Cross-Doc Contract
 

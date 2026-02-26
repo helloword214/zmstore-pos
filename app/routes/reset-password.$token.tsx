@@ -115,6 +115,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       data: {
         passwordHash: await hash(password, 12),
         pinHash: null,
+        authState: "ACTIVE",
         authVersion: { increment: 1 },
       },
     });

@@ -41,6 +41,7 @@ export async function action({ request }: ActionFunctionArgs) {
     select: {
       id: true,
       active: true,
+      authState: true,
       role: true,
       passwordHash: true,
     },
@@ -59,6 +60,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (!user.passwordHash || !(await compare(password, user.passwordHash))) {
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
+  }
+  if (user.authState !== "ACTIVE") {
+    return json<ActionError>(
+      { form: "Account setup is incomplete. Check your email and set your password first." },
+      { status: 400 }
+    );
   }
 
   const { headers } = await createUserSession(request, user.id);

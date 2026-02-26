@@ -68,6 +68,7 @@ Identity operations note:
 2. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
 3. `login.tsx` is email/password-only for all roles (including cashier).
 4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
+5. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
 
 ## B. Supporting (Context / Detailed Rationale)
 

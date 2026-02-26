@@ -1387,6 +1387,11 @@ enum ManagerKind {
   STAFF
 }
 
+enum UserAuthState {
+  PENDING_PASSWORD
+  ACTIVE
+}
+
 enum CashDrawerTxnType {
   CASH_IN
   CASH_OUT
@@ -1415,6 +1420,7 @@ model User {
   role         UserRole
   managerKind  ManagerKind?
   active       Boolean  @default(true)
+  authState    UserAuthState @default(ACTIVE)
   authVersion  Int      @default(1)
 
   employeeId Int?      @unique

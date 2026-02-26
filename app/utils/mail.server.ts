@@ -60,15 +60,18 @@ export function resolveAppBaseUrl(request: Request) {
   return new URL(request.url).origin;
 }
 
-export async function sendPasswordResetEmail(args: {
+async function sendAuthEmail(args: {
   to: string;
-  resetUrl: string;
+  linkUrl: string;
+  subject: string;
+  headline: string;
+  note: string;
 }) {
   const cfg = readSmtpConfig();
 
   if (!cfg) {
     if (process.env.NODE_ENV !== "production") {
-      console.log(`[auth] SMTP not configured. Reset link for ${args.to}: ${args.resetUrl}`);
+      console.log(`[auth] SMTP not configured. Auth link for ${args.to}: ${args.linkUrl}`);
       return;
     }
     throw new Error("SMTP is not configured. Set SMTP_HOST/SMTP_PORT/SMTP_FROM (and SMTP_USER/SMTP_PASS if required).");
@@ -76,26 +79,51 @@ export async function sendPasswordResetEmail(args: {
 
   const transporter = getTransporter(cfg);
 
-  const subject = "Reset your account password";
   const text = [
-    "You requested a password reset.",
+    args.headline,
     "",
-    `Open this link to continue: ${args.resetUrl}`,
+    `Open this link to continue: ${args.linkUrl}`,
     "",
-    "If you did not request this, you can ignore this email.",
+    args.note,
   ].join("\n");
 
   const html = `
-    <p>You requested a password reset.</p>
-    <p><a href="${args.resetUrl}">Reset your password</a></p>
-    <p>If you did not request this, you can ignore this email.</p>
+    <p>${args.headline}</p>
+    <p><a href="${args.linkUrl}">${args.subject}</a></p>
+    <p>${args.note}</p>
   `;
 
   await transporter.sendMail({
     from: cfg.from,
     to: args.to,
-    subject,
+    subject: args.subject,
     text,
     html,
+  });
+}
+
+export async function sendPasswordResetEmail(args: {
+  to: string;
+  resetUrl: string;
+}) {
+  await sendAuthEmail({
+    to: args.to,
+    linkUrl: args.resetUrl,
+    subject: "Reset your account password",
+    headline: "You requested a password reset.",
+    note: "If you did not request this, you can ignore this email.",
+  });
+}
+
+export async function sendPasswordSetupEmail(args: {
+  to: string;
+  setupUrl: string;
+}) {
+  await sendAuthEmail({
+    to: args.to,
+    linkUrl: args.setupUrl,
+    subject: "Set your account password",
+    headline: "Your account is ready. Set your password to activate sign-in.",
+    note: "If you did not expect this account, contact your administrator.",
   });
 }

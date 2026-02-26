@@ -6,11 +6,12 @@ import {
   Prisma,
   RiderVarianceStatus,
   RunStatus,
+  UserAuthState,
   UserRole,
 } from "@prisma/client";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
-import { hash } from "bcryptjs";
+import { createHash, randomBytes } from "node:crypto";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -27,6 +28,7 @@ import {
 } from "~/components/ui/SoTTable";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
+import { resolveAppBaseUrl, sendPasswordSetupEmail } from "~/utils/mail.server";
 
 type Lane = "RIDER" | "CASHIER" | "STORE_MANAGER";
 type SwitchLane = "RIDER" | "CASHIER";
@@ -40,6 +42,7 @@ type EmployeeAccountRow = {
   email: string | null;
   lane: Lane;
   managerKind: ManagerKind | null;
+  authState: UserAuthState;
   active: boolean;
   createdAt: string;
 };
@@ -93,6 +96,41 @@ function fullName(firstName: string, lastName: string) {
   return `${firstName} ${lastName}`.trim();
 }
 
+function tokenHash(rawToken: string) {
+  return createHash("sha256").update(rawToken).digest("hex");
+}
+
+function requestIp(request: Request) {
+  const fwd = request.headers.get("x-forwarded-for");
+  if (!fwd) return null;
+  return fwd.split(",")[0]?.trim() || null;
+}
+
+async function issuePasswordSetupToken(
+  tx: Prisma.TransactionClient,
+  args: { userId: number; now: Date; requestIp: string | null; userAgent: string | null },
+) {
+  const rawToken = randomBytes(32).toString("hex");
+  await tx.passwordResetToken.updateMany({
+    where: {
+      userId: args.userId,
+      usedAt: null,
+      expiresAt: { gt: args.now },
+    },
+    data: { usedAt: args.now },
+  });
+  await tx.passwordResetToken.create({
+    data: {
+      userId: args.userId,
+      tokenHash: tokenHash(rawToken),
+      expiresAt: new Date(args.now.getTime() + 1000 * 60 * 60 * 24),
+      requestedIp: args.requestIp,
+      requestedUserAgent: args.userAgent,
+    },
+  });
+  return rawToken;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
@@ -106,6 +144,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             email: true,
             role: true,
             managerKind: true,
+            authState: true,
             active: true,
             createdAt: true,
           },
@@ -145,6 +184,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         email: u.email ?? e.email ?? null,
         lane,
         managerKind: u.managerKind ?? null,
+        authState: u.authState,
         active: u.active,
         createdAt: u.createdAt.toISOString(),
       };
@@ -179,7 +219,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const email = String(fd.get("email") || "")
       .trim()
       .toLowerCase();
-    const password = String(fd.get("password") || "");
     const defaultVehicleRaw = String(fd.get("defaultVehicleId") || "").trim();
     const defaultVehicleId = defaultVehicleRaw ? Number(defaultVehicleRaw) : null;
 
@@ -196,13 +235,13 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const authError =
-      password.length < 8 ? "Password must be at least 8 characters." : null;
-    if (authError) {
-      return json<ActionData>({ ok: false, message: authError }, { status: 400 });
-    }
-
     try {
+      const now = new Date();
+      const ip = requestIp(request);
+      const ua = request.headers.get("user-agent");
+      let inviteToken = "";
+      let inviteEmail = email;
+
       await db.$transaction(async (tx) => {
         const employee = await tx.employee.create({
           data: {
@@ -230,13 +269,14 @@ export async function action({ request }: ActionFunctionArgs) {
             managerKind: lane === "STORE_MANAGER" ? ManagerKind.STAFF : null,
             employeeId: employee.id,
             active: true,
-            passwordHash: await hash(password, 12),
+            authState: UserAuthState.PENDING_PASSWORD,
+            passwordHash: null,
             pinHash: null,
             branches: defaultBranch
               ? { create: { branchId: defaultBranch.id } }
               : undefined,
           },
-          select: { id: true, role: true },
+          select: { id: true, role: true, email: true },
         });
 
         await tx.userRoleAssignment.create({
@@ -257,9 +297,31 @@ export async function action({ request }: ActionFunctionArgs) {
             changedById: me.userId,
           },
         });
+
+        inviteEmail = user.email ?? email;
+        inviteToken = await issuePasswordSetupToken(tx, {
+          userId: user.id,
+          now,
+          requestIp: ip,
+          userAgent: ua,
+        });
       });
 
-      return json<ActionData>({ ok: true, message: "Employee account created." });
+      const setupUrl = `${resolveAppBaseUrl(request)}/reset-password/${inviteToken}`;
+      try {
+        await sendPasswordSetupEmail({ to: inviteEmail, setupUrl });
+        return json<ActionData>({
+          ok: true,
+          message: "Employee account created. Password setup link sent via email.",
+        });
+      } catch (mailError) {
+        console.error("[auth] employee invite send failed", mailError);
+        return json<ActionData>({
+          ok: true,
+          message:
+            "Employee account created, but setup email failed. User can request a link from Forgot password.",
+        });
+      }
     } catch (e: unknown) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
         return json<ActionData>(
@@ -279,7 +341,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const userId = Number(fd.get("userId"));
     const targetLaneRaw = String(fd.get("targetLane") || "").trim();
     const reason = String(fd.get("reason") || "").trim();
-    const password = String(fd.get("password") || "");
 
     if (!Number.isFinite(userId) || userId <= 0) {
       return json<ActionData>(
@@ -302,14 +363,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const targetLane = targetLaneRaw as SwitchLane;
     const targetRole = toSwitchUserRole(targetLane);
-
-    const authError =
-      password.length < 8
-        ? "Password must be at least 8 characters for role switch."
-        : null;
-    if (authError) {
-      return json<ActionData>({ ok: false, message: authError }, { status: 400 });
-    }
 
     const current = await db.user.findUnique({
       where: { id: userId },
@@ -426,8 +479,6 @@ export async function action({ request }: ActionFunctionArgs) {
             role: targetRole,
             managerKind: null,
             authVersion: { increment: 1 },
-            passwordHash: await hash(password, 12),
-            pinHash: null,
           },
         });
 
@@ -470,6 +521,74 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       const message = e instanceof Error ? e.message : "Role switch failed.";
       return json<ActionData>({ ok: false, message }, { status: 500 });
+    }
+  }
+
+  if (intent === "resend-invite") {
+    const userId = Number(fd.get("userId"));
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return json<ActionData>(
+        { ok: false, message: "Invalid user id." },
+        { status: 400 },
+      );
+    }
+
+    const target = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        active: true,
+        authState: true,
+      },
+    });
+    if (!target || !target.email) {
+      return json<ActionData>({ ok: false, message: "User not found." }, { status: 404 });
+    }
+    if (!target.active) {
+      return json<ActionData>(
+        { ok: false, message: "Inactive accounts cannot receive setup invites." },
+        { status: 400 },
+      );
+    }
+    if (target.authState !== UserAuthState.PENDING_PASSWORD) {
+      return json<ActionData>(
+        { ok: false, message: "Password setup is already completed for this account." },
+        { status: 400 },
+      );
+    }
+
+    const now = new Date();
+    const ip = requestIp(request);
+    const ua = request.headers.get("user-agent");
+    let inviteToken = "";
+
+    await db.$transaction(async (tx) => {
+      inviteToken = await issuePasswordSetupToken(tx, {
+        userId: target.id,
+        now,
+        requestIp: ip,
+        userAgent: ua,
+      });
+    });
+
+    try {
+      const setupUrl = `${resolveAppBaseUrl(request)}/reset-password/${inviteToken}`;
+      await sendPasswordSetupEmail({ to: target.email, setupUrl });
+      return json<ActionData>({
+        ok: true,
+        message: "Password setup link re-sent.",
+      });
+    } catch (mailError) {
+      console.error("[auth] resend invite failed", mailError);
+      return json<ActionData>(
+        {
+          ok: false,
+          message:
+            "Invite token was refreshed but email send failed. User can use Forgot password.",
+        },
+        { status: 500 },
+      );
     }
   }
 
@@ -527,7 +646,7 @@ export default function EmployeeCreationPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Employees"
-        subtitle="Create employee accounts and perform admin-only immediate cashier/rider role switches."
+        subtitle="Create employee accounts, send password setup invites, and manage cashier/rider role switches."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -590,18 +709,12 @@ export default function EmployeeCreationPage() {
                 </select>
               </SoTFormField>
 
-              <SoTInput
-                name="password"
-                type="password"
-                label="Password"
-                placeholder="At least 8 characters"
-                required
-              />
             </div>
 
             <div className="mt-4 flex items-center justify-between">
               <p className="text-xs text-slate-500">
-                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}
+                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}.
+                Setup link will be sent to employee email.
               </p>
               <SoTButton variant="primary" type="submit" disabled={busy}>
                 {busy ? "Saving..." : "Create Employee Account"}
@@ -653,6 +766,17 @@ export default function EmployeeCreationPage() {
                       >
                         {row.active ? "ACTIVE" : "INACTIVE"}
                       </span>
+                      <div className="mt-1">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            row.authState === "ACTIVE"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {row.authState === "ACTIVE" ? "PASSWORD_READY" : "PENDING_PASSWORD"}
+                        </span>
+                      </div>
                     </SoTTd>
                     <SoTTd>
                       {nextSwitchLane(row.lane) ? (
@@ -664,26 +788,6 @@ export default function EmployeeCreationPage() {
                             name="targetLane"
                             value={nextSwitchLane(row.lane) ?? ""}
                           />
-
-                          {row.lane === "CASHIER" ? (
-                            <input
-                              name="password"
-                              type="password"
-                              required
-                              minLength={8}
-                              placeholder="New rider password"
-                              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                            />
-                          ) : (
-                            <input
-                              name="password"
-                              type="password"
-                              required
-                              minLength={8}
-                              placeholder="New cashier password"
-                              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                            />
-                          )}
 
                           <input
                             name="reason"
@@ -705,13 +809,25 @@ export default function EmployeeCreationPage() {
                       )}
                     </SoTTd>
                     <SoTTd align="right">
-                      <Form method="post">
-                        <input type="hidden" name="intent" value="toggle-active" />
-                        <input type="hidden" name="userId" value={row.userId} />
-                        <SoTButton type="submit" variant="secondary" disabled={busy}>
-                          {row.active ? "Deactivate" : "Activate"}
-                        </SoTButton>
-                      </Form>
+                      <div className="space-y-2">
+                        {row.authState === "PENDING_PASSWORD" && row.active ? (
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="resend-invite" />
+                            <input type="hidden" name="userId" value={row.userId} />
+                            <SoTButton type="submit" variant="secondary" disabled={busy}>
+                              Resend Invite
+                            </SoTButton>
+                          </Form>
+                        ) : null}
+
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="toggle-active" />
+                          <input type="hidden" name="userId" value={row.userId} />
+                          <SoTButton type="submit" variant="secondary" disabled={busy}>
+                            {row.active ? "Deactivate" : "Activate"}
+                          </SoTButton>
+                        </Form>
+                      </div>
                     </SoTTd>
                   </SoTTableRow>
                 ))
