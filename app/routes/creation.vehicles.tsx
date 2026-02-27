@@ -33,6 +33,10 @@ type VehicleRow = {
   id: number;
   name: string;
   type: VehicleType;
+  plateNumber: string | null;
+  orNumber: string | null;
+  crNumber: string | null;
+  ltoRegistrationExpiry: string | null;
   capacityUnits: number;
   notes: string | null;
   active: boolean;
@@ -58,6 +62,24 @@ function computeLpgSlots(capKg: number) {
   return Math.floor((capKg || 0) / LPG_TANK_NET_KG);
 }
 
+function parseDateInput(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function toDateInputValue(value: string | Date | null | undefined) {
+  if (!value) return "";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function normalizeOptionalUpper(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "").trim().toUpperCase();
+  return value || null;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
@@ -72,6 +94,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     where.OR = [
       { name: { contains: q, mode: "insensitive" } },
       { notes: { contains: q, mode: "insensitive" } },
+      { plateNumber: { contains: q, mode: "insensitive" } },
+      { orNumber: { contains: q, mode: "insensitive" } },
+      { crNumber: { contains: q, mode: "insensitive" } },
       { type: { equals: q as VehicleType } },
     ];
   }
@@ -118,6 +143,16 @@ export async function action({ request }: ActionFunctionArgs) {
       const type = String(fd.get("type") || "") as keyof typeof VehicleType;
       const capacityUnits = Number(fd.get("capacityUnits"));
       const notes = String(fd.get("notes") || "").trim() || null;
+      const plateNumber = normalizeOptionalUpper(fd.get("plateNumber"));
+      const orNumber = normalizeOptionalUpper(fd.get("orNumber"));
+      const crNumber = normalizeOptionalUpper(fd.get("crNumber"));
+      const ltoRegistrationExpiry = parseDateInput(fd.get("ltoRegistrationExpiry"));
+      if (String(fd.get("ltoRegistrationExpiry") || "").trim() && !ltoRegistrationExpiry) {
+        return json<ActionData>(
+          { ok: false, error: "Invalid LTO registration expiry date." },
+          { status: 400 }
+        );
+      }
 
       if (!name || !type || !Number.isFinite(capacityUnits) || capacityUnits <= 0) {
         return json<ActionData>(
@@ -127,7 +162,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       const created = await db.vehicle.create({
-        data: { name, type, capacityUnits, notes, active: true },
+        data: {
+          name,
+          type,
+          plateNumber,
+          orNumber,
+          crNumber,
+          ltoRegistrationExpiry,
+          capacityUnits,
+          notes,
+          active: true,
+        },
       });
 
       await db.vehicleCapacityProfile.upsert({
@@ -149,6 +194,16 @@ export async function action({ request }: ActionFunctionArgs) {
       const type = String(fd.get("type") || "") as keyof typeof VehicleType;
       const capacityUnits = Number(fd.get("capacityUnits"));
       const notes = String(fd.get("notes") || "").trim() || null;
+      const plateNumber = normalizeOptionalUpper(fd.get("plateNumber"));
+      const orNumber = normalizeOptionalUpper(fd.get("orNumber"));
+      const crNumber = normalizeOptionalUpper(fd.get("crNumber"));
+      const ltoRegistrationExpiry = parseDateInput(fd.get("ltoRegistrationExpiry"));
+      if (String(fd.get("ltoRegistrationExpiry") || "").trim() && !ltoRegistrationExpiry) {
+        return json<ActionData>(
+          { ok: false, error: "Invalid LTO registration expiry date." },
+          { status: 400 }
+        );
+      }
 
       if (!Number.isFinite(id)) {
         return json<ActionData>({ ok: false, error: "Invalid id." }, { status: 400 });
@@ -162,7 +217,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
       await db.vehicle.update({
         where: { id },
-        data: { name, type, capacityUnits, notes },
+        data: {
+          name,
+          type,
+          plateNumber,
+          orNumber,
+          crNumber,
+          ltoRegistrationExpiry,
+          capacityUnits,
+          notes,
+        },
       });
 
       await db.vehicleCapacityProfile.upsert({
@@ -244,6 +308,10 @@ export default function VehiclesPage() {
   const [createForm, setCreateForm] = React.useState({
     name: "",
     type: vehicleTypes[0] ?? "TRICYCLE",
+    plateNumber: "",
+    orNumber: "",
+    crNumber: "",
+    ltoRegistrationExpiry: "",
     capacityUnits: "150",
     notes: "",
   });
@@ -252,6 +320,10 @@ export default function VehiclesPage() {
   const [editForm, setEditForm] = React.useState({
     name: "",
     type: vehicleTypes[0] ?? "TRICYCLE",
+    plateNumber: "",
+    orNumber: "",
+    crNumber: "",
+    ltoRegistrationExpiry: "",
     capacityUnits: "150",
     notes: "",
   });
@@ -261,6 +333,10 @@ export default function VehiclesPage() {
     setEditForm({
       name: editing.name,
       type: editing.type,
+      plateNumber: editing.plateNumber ?? "",
+      orNumber: editing.orNumber ?? "",
+      crNumber: editing.crNumber ?? "",
+      ltoRegistrationExpiry: toDateInputValue(editing.ltoRegistrationExpiry),
       capacityUnits: String(editing.capacityUnits),
       notes: editing.notes ?? "",
     });
@@ -281,7 +357,7 @@ export default function VehiclesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Vehicles"
-        subtitle="Scalable vehicle master list for dispatch and rider assignment."
+        subtitle="Scalable vehicle master list for dispatch, rider assignment, and registration monitoring."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -335,6 +411,57 @@ export default function VehiclesPage() {
                     ))}
                   </select>
                 </SoTFormField>
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
+                  name="plateNumber"
+                  label="Plate Number"
+                  placeholder="Optional"
+                  value={createForm.plateNumber}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({ ...prev, plateNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
+                  name="orNumber"
+                  label="OR Number"
+                  placeholder="Optional"
+                  value={createForm.orNumber}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({ ...prev, orNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
+                  name="crNumber"
+                  label="CR Number"
+                  placeholder="Optional"
+                  value={createForm.crNumber}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({ ...prev, crNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <SoTInput
+                  name="ltoRegistrationExpiry"
+                  label="LTO Registration Expiry"
+                  type="date"
+                  value={createForm.ltoRegistrationExpiry}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      ltoRegistrationExpiry: e.target.value,
+                    }))
+                  }
+                />
               </div>
 
               <div className="md:col-span-2">
@@ -415,6 +542,54 @@ export default function VehiclesPage() {
 
               <div className="md:col-span-2">
                 <SoTInput
+                  name="plateNumber"
+                  label="Plate Number"
+                  value={editForm.plateNumber}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, plateNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
+                  name="orNumber"
+                  label="OR Number"
+                  value={editForm.orNumber}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, orNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
+                  name="crNumber"
+                  label="CR Number"
+                  value={editForm.crNumber}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, crNumber: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <SoTInput
+                  name="ltoRegistrationExpiry"
+                  label="LTO Registration Expiry"
+                  type="date"
+                  value={editForm.ltoRegistrationExpiry}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      ltoRegistrationExpiry: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <SoTInput
                   name="capacityUnits"
                   label="Capacity (kg)"
                   type="number"
@@ -475,6 +650,7 @@ export default function VehiclesPage() {
               <SoTTableRow>
                 <SoTTh>Name</SoTTh>
                 <SoTTh>Type</SoTTh>
+                <SoTTh>Registration</SoTTh>
                 <SoTTh align="right">Capacity</SoTTh>
                 <SoTTh align="right">LPG Slots</SoTTh>
                 <SoTTh>Notes</SoTTh>
@@ -484,12 +660,32 @@ export default function VehiclesPage() {
             </SoTTableHead>
             <tbody>
               {vehicles.length === 0 ? (
-                <SoTTableEmptyRow colSpan={7} message="No vehicles found." />
+                <SoTTableEmptyRow colSpan={8} message="No vehicles found." />
               ) : (
                 vehicles.map((vehicle) => {
                   const lpgSlots =
                     vehicle.capacityProfiles?.[0]?.maxUnits ??
                     computeLpgSlots(vehicle.capacityUnits);
+                  const expiry = vehicle.ltoRegistrationExpiry
+                    ? new Date(vehicle.ltoRegistrationExpiry)
+                    : null;
+                  const missingRegistration =
+                    !vehicle.plateNumber ||
+                    !vehicle.orNumber ||
+                    !vehicle.crNumber ||
+                    !expiry;
+                  const expiredRegistration =
+                    !!expiry && !missingRegistration && expiry.getTime() < Date.now();
+                  const registrationState = missingRegistration
+                    ? "MISSING"
+                    : expiredRegistration
+                      ? "EXPIRED"
+                      : "OK";
+                  const registrationToneClass = missingRegistration
+                    ? "bg-amber-100 text-amber-700"
+                    : expiredRegistration
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-emerald-100 text-emerald-700";
 
                   return (
                     <SoTTableRow key={vehicle.id}>
@@ -497,6 +693,24 @@ export default function VehiclesPage() {
                         <span className="font-medium text-slate-900">{vehicle.name}</span>
                       </SoTTd>
                       <SoTTd>{vehicle.type}</SoTTd>
+                      <SoTTd>
+                        <div className="text-xs text-slate-700">
+                          Plate: {vehicle.plateNumber ?? "-"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          OR: {vehicle.orNumber ?? "-"} · CR: {vehicle.crNumber ?? "-"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          LTO Expiry: {expiry ? toDateInputValue(expiry) : "-"}
+                        </div>
+                        <div className="mt-1">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${registrationToneClass}`}
+                          >
+                            {registrationState}
+                          </span>
+                        </div>
+                      </SoTTd>
                       <SoTTd align="right" className="font-mono tabular-nums">
                         {vehicle.capacityUnits} kg
                       </SoTTd>

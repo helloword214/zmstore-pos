@@ -391,6 +391,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const saved = await storage.saveBuffer(webp, {
         ext: "webp",
         contentType: "image/webp",
+        keyPrefix: "products",
       });
       finalImageUrl = saved.url;
       finalImageKey = saved.key;

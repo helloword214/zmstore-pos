@@ -14,12 +14,16 @@ type SaveResult = {
   size: number;
 };
 
+type SaveOptions = {
+  keyPrefix?: string;
+};
+
 export interface StorageDriver {
-  save(file: File): Promise<SaveResult>;
+  save(file: File, opts?: SaveOptions): Promise<SaveResult>;
   delete(key: string): Promise<void>;
   saveBuffer(
     buf: Buffer,
-    opts: { ext: string; contentType: string }
+    opts: { ext: string; contentType: string; keyPrefix?: string }
   ): Promise<SaveResult>;
 }
 
@@ -30,7 +34,28 @@ const MIME_EXT: Record<string, string> = {
   "image/gif": "gif",
   "image/heic": "heic",
   "image/heif": "heif",
+  "application/pdf": "pdf",
 };
+
+function normalizeKeyPrefix(raw: string | undefined) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  return value
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/");
+}
+
+function resolveSafeLocalPath(rootDir: string, key: string) {
+  const root = path.resolve(rootDir);
+  const full = path.resolve(root, key);
+  if (full !== root && !full.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Unsafe storage key path");
+  }
+  return full;
+}
 
 class LocalStorage implements StorageDriver {
   constructor(
@@ -38,42 +63,45 @@ class LocalStorage implements StorageDriver {
       // resolve against project root to avoid CWD surprises
       path.resolve(process.cwd(), "public/uploads")
   ) {}
-  async ensureDir() {
-    await fs.mkdir(this.dir, { recursive: true });
+
+  private buildKey(ext: string, keyPrefix?: string) {
+    const safePrefix = normalizeKeyPrefix(keyPrefix);
+    const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
+    return safePrefix ? `${safePrefix}/${filename}` : filename;
   }
 
-  async save(file: File): Promise<SaveResult> {
+  async ensureDirForKey(key: string) {
+    const fullPath = resolveSafeLocalPath(this.dir, key);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    return fullPath;
+  }
+
+  async save(file: File, opts?: SaveOptions): Promise<SaveResult> {
     const type = file.type || "application/octet-stream";
     const ext = MIME_EXT[type] || "bin";
-    const name = `${Date.now()}-${crypto
-      .randomBytes(8)
-      .toString("hex")}.${ext}`;
-    await this.ensureDir();
+    const key = this.buildKey(ext, opts?.keyPrefix);
     const buf = Buffer.from(await file.arrayBuffer());
-    const fullPath = path.join(this.dir, name);
+    const fullPath = await this.ensureDirForKey(key);
     await fs.writeFile(fullPath, buf);
     console.log(`[upload] wrote ${fullPath} (${buf.length}B)`);
     return {
-      url: `/uploads/${name}`,
-      key: name,
+      url: `/uploads/${key}`,
+      key,
       contentType: type,
       size: buf.length,
     };
   }
   async saveBuffer(
     buf: Buffer,
-    opts: { ext: string; contentType: string }
+    opts: { ext: string; contentType: string; keyPrefix?: string }
   ): Promise<SaveResult> {
-    await this.ensureDir();
-    const name = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${
-      opts.ext
-    }`;
-    const fullPath = path.join(this.dir, name);
+    const key = this.buildKey(opts.ext, opts.keyPrefix);
+    const fullPath = await this.ensureDirForKey(key);
     await fs.writeFile(fullPath, buf);
     console.log(`[upload] wrote ${fullPath} (${buf.length}B)`);
     return {
-      url: `/uploads/${name}`,
-      key: name,
+      url: `/uploads/${key}`,
+      key,
       contentType: opts.contentType,
       size: buf.length,
     };
@@ -81,7 +109,8 @@ class LocalStorage implements StorageDriver {
 
   async delete(key: string): Promise<void> {
     try {
-      await fs.unlink(path.join(this.dir, key));
+      const fullPath = resolveSafeLocalPath(this.dir, key);
+      await fs.unlink(fullPath);
     } catch {
       // ignore if missing
     }
@@ -92,7 +121,7 @@ class S3Storage implements StorageDriver {
   private client: S3Client;
   private bucket: string;
   private region: string;
-  private prefix: string;
+  private basePrefix: string;
   private publicUrlPrefix?: string;
   private usePathStyle: boolean;
   private endpoint?: string;
@@ -100,9 +129,7 @@ class S3Storage implements StorageDriver {
   constructor() {
     this.bucket = process.env.S3_BUCKET!;
     this.region = process.env.S3_REGION!;
-    this.prefix =
-      (process.env.UPLOADS_PREFIX || "uploads/").replace(/^\/+|\/+$/g, "") +
-      "/";
+    this.basePrefix = normalizeKeyPrefix(process.env.UPLOADS_PREFIX || "uploads");
     this.publicUrlPrefix = process.env.PUBLIC_URL_PREFIX;
     this.endpoint = process.env.S3_ENDPOINT;
     this.usePathStyle =
@@ -133,12 +160,17 @@ class S3Storage implements StorageDriver {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
-  async save(file: File): Promise<SaveResult> {
+  private buildObjectKey(ext: string, keyPrefix?: string) {
+    const runtimePrefix = normalizeKeyPrefix(keyPrefix);
+    const prefix = [this.basePrefix, runtimePrefix].filter(Boolean).join("/");
+    const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
+    return prefix ? `${prefix}/${filename}` : filename;
+  }
+
+  async save(file: File, opts?: SaveOptions): Promise<SaveResult> {
     const type = file.type || "application/octet-stream";
     const ext = MIME_EXT[type] || "bin";
-    const key = `${this.prefix}${Date.now()}-${crypto
-      .randomBytes(8)
-      .toString("hex")}.${ext}`;
+    const key = this.buildObjectKey(ext, opts?.keyPrefix);
     const body = Buffer.from(await file.arrayBuffer());
 
     // If your bucket blocks ACLs (recommended), omit ACL entirely.
@@ -166,11 +198,9 @@ class S3Storage implements StorageDriver {
 
   async saveBuffer(
     buf: Buffer,
-    opts: { ext: string; contentType: string }
+    opts: { ext: string; contentType: string; keyPrefix?: string }
   ): Promise<SaveResult> {
-    const key = `${this.prefix}${Date.now()}-${crypto
-      .randomBytes(8)
-      .toString("hex")}.${opts.ext}`;
+    const key = this.buildObjectKey(opts.ext, opts.keyPrefix);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,

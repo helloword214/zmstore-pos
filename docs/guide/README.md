@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-02-27
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -70,6 +70,8 @@ Identity operations note:
 4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
 5. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
 6. Employee account creation captures one primary address using canonical address masters.
+7. Employee creation also captures optional compliance profile fields plus scanned document history (`BARANGAY_CLEARANCE`, `VALID_ID`, optional `DRIVER_LICENSE_SCAN`).
+8. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
 
 ## B. Supporting (Context / Detailed Rationale)
 

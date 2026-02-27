@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
+  EmployeeDocumentType,
   EmployeeRole,
   ManagerKind,
   Prisma,
@@ -29,6 +30,7 @@ import {
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { resolveAppBaseUrl, sendPasswordSetupEmail } from "~/utils/mail.server";
+import { storage } from "~/utils/storage.server";
 
 type Lane = "RIDER" | "CASHIER" | "STORE_MANAGER";
 type SwitchLane = "RIDER" | "CASHIER";
@@ -37,13 +39,20 @@ type EmployeeAccountRow = {
   employeeId: number;
   userId: number;
   name: string;
+  middleName: string | null;
   alias: string | null;
+  birthDate: string | null;
   phone: string | null;
   email: string | null;
+  sssNumber: string | null;
+  pagIbigNumber: string | null;
+  licenseNumber: string | null;
+  licenseExpiry: string | null;
   lane: Lane;
   managerKind: ManagerKind | null;
   authState: UserAuthState;
   active: boolean;
+  complianceFlags: string[];
   createdAt: string;
   addressLine: string | null;
   addressArea: string | null;
@@ -52,6 +61,25 @@ type EmployeeAccountRow = {
 type ActionData =
   | { ok: true; message: string }
   | { ok: false; message: string };
+
+type EmployeeDocUpload = {
+  label: string;
+  docType: EmployeeDocumentType;
+  file: File;
+  expiresAt: Date | null;
+};
+
+const MAX_DOC_UPLOAD_MB = Math.max(
+  1,
+  Number.parseFloat(process.env.MAX_DOC_UPLOAD_MB || process.env.MAX_UPLOAD_MB || "10") || 10,
+);
+const MAX_DOC_UPLOAD_BYTES = Math.floor(MAX_DOC_UPLOAD_MB * 1024 * 1024);
+const ALLOWED_DOC_MIME = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 function isLane(value: string): value is Lane {
   return value === "RIDER" || value === "CASHIER" || value === "STORE_MANAGER";
@@ -94,8 +122,11 @@ function toSwitchEmployeeRole(lane: SwitchLane): EmployeeRole {
   return lane === "CASHIER" ? EmployeeRole.STAFF : EmployeeRole.RIDER;
 }
 
-function fullName(firstName: string, lastName: string) {
-  return `${firstName} ${lastName}`.trim();
+function fullName(firstName: string, lastName: string, middleName?: string | null) {
+  return [firstName, middleName ?? null, lastName]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 function tokenHash(rawToken: string) {
@@ -116,11 +147,49 @@ function parseOptionalId(raw: FormDataEntryValue | null) {
   return Math.floor(n);
 }
 
+function parseOptionalDate(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
+  if (!(raw instanceof File)) return null;
+  if (!raw.size) return null;
+  return raw;
+}
+
+function validateDocUpload(file: File) {
+  if (!ALLOWED_DOC_MIME.has(file.type)) {
+    return "Only PDF, JPG, PNG, and WEBP files are allowed.";
+  }
+  if (file.size > MAX_DOC_UPLOAD_BYTES) {
+    return `File is too large. Limit is ${MAX_DOC_UPLOAD_MB}MB.`;
+  }
+  return null;
+}
+
+function latestDocumentByType<
+  T extends {
+    docType: EmployeeDocumentType;
+    uploadedAt: Date;
+    expiresAt: Date | null;
+  },
+>(docs: T[], docType: EmployeeDocumentType) {
+  return docs.find((doc) => doc.docType === docType) ?? null;
+}
+
 function formatAddressArea(parts: Array<string | null | undefined>) {
   const clean = parts
     .map((p) => (p ?? "").trim())
     .filter((p) => p.length > 0);
   return clean.length ? clean.join(", ") : null;
+}
+
+function presentComplianceFlag(flag: string) {
+  return flag.replace(/_/g, " ");
 }
 
 async function issuePasswordSetupToken(
@@ -183,6 +252,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
             province: true,
           },
         },
+        documents: {
+          select: {
+            docType: true,
+            uploadedAt: true,
+            expiresAt: true,
+          },
+          orderBy: { uploadedAt: "desc" },
+        },
       },
       orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }],
       take: 300,
@@ -234,17 +311,62 @@ export async function loader({ request }: LoaderFunctionArgs) {
             ? "STORE_MANAGER"
             : "RIDER";
 
+      const latestValidId = latestDocumentByType(e.documents, EmployeeDocumentType.VALID_ID);
+      const latestBrgy = latestDocumentByType(
+        e.documents,
+        EmployeeDocumentType.BARANGAY_CLEARANCE,
+      );
+      const latestLicenseScan = latestDocumentByType(
+        e.documents,
+        EmployeeDocumentType.DRIVER_LICENSE_SCAN,
+      );
+      const now = Date.now();
+      const complianceFlags: string[] = [];
+
+      if (!latestValidId) {
+        complianceFlags.push("VALID_ID_MISSING");
+      } else if (latestValidId.expiresAt && latestValidId.expiresAt.getTime() < now) {
+        complianceFlags.push("VALID_ID_EXPIRED");
+      }
+
+      if (!latestBrgy) {
+        complianceFlags.push("BARANGAY_CLEARANCE_MISSING");
+      } else if (latestBrgy.expiresAt && latestBrgy.expiresAt.getTime() < now) {
+        complianceFlags.push("BARANGAY_CLEARANCE_EXPIRED");
+      }
+
+      if (lane === "RIDER") {
+        if (!e.licenseNumber) complianceFlags.push("RIDER_LICENSE_NUMBER_MISSING");
+        if (!e.licenseExpiry) {
+          complianceFlags.push("RIDER_LICENSE_EXPIRY_MISSING");
+        } else if (e.licenseExpiry.getTime() < now) {
+          complianceFlags.push("RIDER_LICENSE_EXPIRED");
+        }
+        if (!latestLicenseScan) {
+          complianceFlags.push("RIDER_LICENSE_SCAN_MISSING");
+        } else if (latestLicenseScan.expiresAt && latestLicenseScan.expiresAt.getTime() < now) {
+          complianceFlags.push("RIDER_LICENSE_SCAN_EXPIRED");
+        }
+      }
+
       return {
         employeeId: e.id,
         userId: u.id,
-        name: fullName(e.firstName, e.lastName),
+        name: fullName(e.firstName, e.lastName, e.middleName),
+        middleName: e.middleName ?? null,
         alias: e.alias ?? null,
+        birthDate: e.birthDate ? e.birthDate.toISOString().slice(0, 10) : null,
         phone: e.phone ?? null,
         email: u.email ?? e.email ?? null,
+        sssNumber: e.sssNumber ?? null,
+        pagIbigNumber: e.pagIbigNumber ?? null,
+        licenseNumber: e.licenseNumber ?? null,
+        licenseExpiry: e.licenseExpiry ? e.licenseExpiry.toISOString().slice(0, 10) : null,
         lane,
         managerKind: u.managerKind ?? null,
         authState: u.authState,
         active: u.active,
+        complianceFlags,
         createdAt: u.createdAt.toISOString(),
         addressLine: e.address?.line1 ?? null,
         addressArea: formatAddressArea([
@@ -283,12 +405,63 @@ export async function action({ request }: ActionFunctionArgs) {
     const lane = laneRaw as Lane;
 
     const firstName = String(fd.get("firstName") || "").trim();
+    const middleName = String(fd.get("middleName") || "").trim() || null;
     const lastName = String(fd.get("lastName") || "").trim();
     const alias = String(fd.get("alias") || "").trim() || null;
+    const birthDate = parseOptionalDate(fd.get("birthDate"));
     const phone = String(fd.get("phone") || "").trim() || null;
     const email = String(fd.get("email") || "")
       .trim()
       .toLowerCase();
+    const sssNumber = String(fd.get("sssNumber") || "").trim() || null;
+    const pagIbigNumber = String(fd.get("pagIbigNumber") || "").trim() || null;
+    const licenseNumber = String(fd.get("licenseNumber") || "").trim() || null;
+    const licenseExpiry = parseOptionalDate(fd.get("licenseExpiry"));
+    const barangayClearanceExpiry = parseOptionalDate(fd.get("barangayClearanceExpiry"));
+    const validIdExpiry = parseOptionalDate(fd.get("validIdExpiry"));
+    const driverLicenseScanExpiry =
+      parseOptionalDate(fd.get("driverLicenseScanExpiry")) ?? licenseExpiry;
+
+    const barangayClearanceFile = readOptionalUpload(fd.get("barangayClearanceFile"));
+    const validIdFile = readOptionalUpload(fd.get("validIdFile"));
+    const driverLicenseFile = readOptionalUpload(fd.get("driverLicenseFile"));
+
+    const docsToUpload: EmployeeDocUpload[] = [];
+    if (barangayClearanceFile) {
+      docsToUpload.push({
+        label: "Barangay clearance",
+        docType: EmployeeDocumentType.BARANGAY_CLEARANCE,
+        file: barangayClearanceFile,
+        expiresAt: barangayClearanceExpiry,
+      });
+    }
+    if (validIdFile) {
+      docsToUpload.push({
+        label: "Valid ID",
+        docType: EmployeeDocumentType.VALID_ID,
+        file: validIdFile,
+        expiresAt: validIdExpiry,
+      });
+    }
+    if (driverLicenseFile) {
+      docsToUpload.push({
+        label: "Driver license scan",
+        docType: EmployeeDocumentType.DRIVER_LICENSE_SCAN,
+        file: driverLicenseFile,
+        expiresAt: driverLicenseScanExpiry,
+      });
+    }
+
+    for (const doc of docsToUpload) {
+      const docError = validateDocUpload(doc.file);
+      if (docError) {
+        return json<ActionData>(
+          { ok: false, message: `${doc.label}: ${docError}` },
+          { status: 400 },
+        );
+      }
+    }
+
     const defaultVehicleRaw = String(fd.get("defaultVehicleId") || "").trim();
     const defaultVehicleId = defaultVehicleRaw ? Number(defaultVehicleRaw) : null;
 
@@ -408,21 +581,29 @@ export async function action({ request }: ActionFunctionArgs) {
       const ua = request.headers.get("user-agent");
       let inviteToken = "";
       let inviteEmail = email;
+      let createdEmployeeId: number | null = null;
 
       await db.$transaction(async (tx) => {
         const employee = await tx.employee.create({
           data: {
             firstName,
+            middleName,
             lastName,
             alias,
+            birthDate,
             phone,
             email,
+            sssNumber,
+            pagIbigNumber,
+            licenseNumber,
+            licenseExpiry,
             role: toEmployeeRole(lane),
             active: true,
             defaultVehicleId: lane === "RIDER" ? defaultVehicleId || null : null,
           },
           select: { id: true },
         });
+        createdEmployeeId = employee.id;
 
         await tx.employeeAddress.create({
           data: {
@@ -494,19 +675,60 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       });
 
+      if (!createdEmployeeId) {
+        return json<ActionData>(
+          { ok: false, message: "Employee profile was not created." },
+          { status: 500 },
+        );
+      }
+
+      let uploadedDocCount = 0;
+      const docUploadFailures: string[] = [];
+      for (const doc of docsToUpload) {
+        try {
+          const saved = await storage.save(doc.file, {
+            keyPrefix: `employees/${createdEmployeeId}/${doc.docType.toLowerCase()}`,
+          });
+          await db.employeeDocument.create({
+            data: {
+              employeeId: createdEmployeeId,
+              docType: doc.docType,
+              fileKey: saved.key,
+              fileUrl: saved.url,
+              mimeType: saved.contentType,
+              sizeBytes: saved.size,
+              expiresAt: doc.expiresAt,
+              uploadedById: me.userId,
+            },
+          });
+          uploadedDocCount += 1;
+        } catch (docErr) {
+          console.error("[employee-doc] upload failed", docErr);
+          docUploadFailures.push(doc.label);
+        }
+      }
+
       const setupUrl = `${resolveAppBaseUrl(request)}/reset-password/${inviteToken}`;
+      const documentSummary =
+        uploadedDocCount > 0
+          ? ` ${uploadedDocCount} compliance document(s) uploaded.`
+          : " No compliance documents uploaded yet.";
+      const failureSummary = docUploadFailures.length
+        ? ` Document upload failed for: ${docUploadFailures.join(", ")}.`
+        : "";
+
       try {
         await sendPasswordSetupEmail({ to: inviteEmail, setupUrl });
         return json<ActionData>({
           ok: true,
-          message: "Employee account created with primary address. Setup link sent via email.",
+          message: `Employee account created with primary address.${documentSummary}${failureSummary} Setup link sent via email.`,
         });
       } catch (mailError) {
         console.error("[auth] employee invite send failed", mailError);
         return json<ActionData>({
           ok: true,
           message:
-            "Employee account created with primary address, but setup email failed. User can use Forgot password.",
+            `Employee account created with primary address.${documentSummary}${failureSummary} Setup email failed. User can use Forgot password.`,
         });
       }
     } catch (e: unknown) {
@@ -601,6 +823,7 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 400 },
       );
     }
+    const currentEmployeeId = current.employeeId;
 
     if (current.role === UserRole.CASHIER) {
       const openShift = await db.cashierShift.findFirst({
@@ -667,7 +890,7 @@ export async function action({ request }: ActionFunctionArgs) {
         });
 
         await tx.employee.update({
-          where: { id: current.employeeId },
+          where: { id: currentEmployeeId },
           data: { role: toSwitchEmployeeRole(targetLane) },
         });
 
@@ -916,7 +1139,7 @@ export default function EmployeeCreationPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Employees"
-        subtitle="Create employee identity, capture primary address, and send password setup invite."
+        subtitle="Create employee identity, capture primary address and compliance data, then send password setup invite."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-7xl"
@@ -928,7 +1151,11 @@ export default function EmployeeCreationPage() {
         ) : null}
 
         <SoTCard>
-          <Form method="post" className={busy ? "pointer-events-none opacity-70" : ""}>
+          <Form
+            method="post"
+            encType="multipart/form-data"
+            className={busy ? "pointer-events-none opacity-70" : ""}
+          >
             <input type="hidden" name="intent" value="create" />
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -958,8 +1185,10 @@ export default function EmployeeCreationPage() {
                   </SoTFormField>
 
                   <SoTInput name="firstName" label="First Name" required />
+                  <SoTInput name="middleName" label="Middle Name (optional)" />
                   <SoTInput name="lastName" label="Last Name" required />
                   <SoTInput name="alias" label="Alias (optional)" />
+                  <SoTInput name="birthDate" label="Birth Date (optional)" type="date" />
                   <SoTInput
                     name="phone"
                     label="Phone"
@@ -968,6 +1197,10 @@ export default function EmployeeCreationPage() {
                     placeholder="09XXXXXXXXX"
                   />
                   <SoTInput name="email" label="Email" type="email" required />
+                  <SoTInput name="sssNumber" label="SSS Number (optional)" />
+                  <SoTInput name="pagIbigNumber" label="Pag-IBIG Number (optional)" />
+                  <SoTInput name="licenseNumber" label="License Number (optional)" />
+                  <SoTInput name="licenseExpiry" label="License Expiry (optional)" type="date" />
 
                   <SoTFormField
                     label="Default Vehicle (Rider only)"
@@ -1090,6 +1323,65 @@ export default function EmployeeCreationPage() {
               </section>
             </div>
 
+            <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold text-slate-900">Compliance Documents</h3>
+                <p className="text-xs text-slate-500">
+                  Upload scanned files (PDF/JPG/PNG/WEBP). Full upload history is preserved per document type.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <SoTInput
+                  name="barangayClearanceExpiry"
+                  label="Barangay Clearance Expiry (optional)"
+                  type="date"
+                />
+                <SoTInput name="validIdExpiry" label="Valid ID Expiry (optional)" type="date" />
+                <SoTInput
+                  name="driverLicenseScanExpiry"
+                  label="Driver License Scan Expiry (optional)"
+                  type="date"
+                />
+
+                <SoTFormField
+                  label="Barangay Clearance Scan (optional)"
+                  hint="No upload yet will show manager reminder."
+                >
+                  <input
+                    type="file"
+                    name="barangayClearanceFile"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+                  />
+                </SoTFormField>
+
+                <SoTFormField
+                  label="Valid ID Scan (optional)"
+                  hint="Accepted: PDF/JPG/PNG/WEBP."
+                >
+                  <input
+                    type="file"
+                    name="validIdFile"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+                  />
+                </SoTFormField>
+
+                <SoTFormField
+                  label="Driver License Scan (optional)"
+                  hint="Recommended for rider profiles."
+                >
+                  <input
+                    type="file"
+                    name="driverLicenseFile"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+                  />
+                </SoTFormField>
+              </div>
+            </section>
+
             <div className="mt-4 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
                 Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}. Password setup link will be sent to employee email.
@@ -1112,13 +1404,14 @@ export default function EmployeeCreationPage() {
                 <SoTTh>Lane</SoTTh>
                 <SoTTh>Login</SoTTh>
                 <SoTTh>Status</SoTTh>
+                <SoTTh>Compliance</SoTTh>
                 <SoTTh>Role Switch</SoTTh>
                 <SoTTh align="right">Account</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow colSpan={6} message="No employee accounts yet." />
+                <SoTTableEmptyRow colSpan={7} message="No employee accounts yet." />
               ) : (
                 rows.map((row: EmployeeAccountRow) => (
                   <SoTTableRow key={row.userId}>
@@ -1137,6 +1430,10 @@ export default function EmployeeCreationPage() {
                         ) : (
                           "No address on file"
                         )}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {row.birthDate ? `Birth: ${row.birthDate}` : "Birth: -"} · SSS:{" "}
+                        {row.sssNumber ?? "-"} · Pag-IBIG: {row.pagIbigNumber ?? "-"}
                       </div>
                     </SoTTd>
                     <SoTTd>{prettyLane(row)}</SoTTd>
@@ -1165,6 +1462,30 @@ export default function EmployeeCreationPage() {
                           {row.authState === "ACTIVE" ? "PASSWORD_READY" : "PENDING_PASSWORD"}
                         </span>
                       </div>
+                    </SoTTd>
+                    <SoTTd>
+                      {row.complianceFlags.length === 0 ? (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          COMPLIANT
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {row.complianceFlags.slice(0, 4).map((flag) => (
+                            <span
+                              key={`${row.userId}-${flag}`}
+                              className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                              title={presentComplianceFlag(flag)}
+                            >
+                              {presentComplianceFlag(flag)}
+                            </span>
+                          ))}
+                          {row.complianceFlags.length > 4 ? (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                              +{row.complianceFlags.length - 4} more
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </SoTTd>
                     <SoTTd>
                       {nextSwitchLane(row.lane) ? (

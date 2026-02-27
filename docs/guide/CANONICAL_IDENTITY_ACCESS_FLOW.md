@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-02-27
 
 ## Purpose
 
@@ -23,6 +23,19 @@ This document is the binding authority for role boundaries.
 5. `CASHIER` uses the same email/password login contract as other roles.
 6. Employee account creation requires email (`no email = no account`).
 7. Employee account creation must capture one primary address using canonical geo masters (`Province`, `Municipality`, `Barangay`, optional `Zone`/`Landmark`).
+8. Employee profile compliance fields are optional but tracked (`middleName`, `birthDate`, `sssNumber`, `pagIbigNumber`, `licenseNumber`, `licenseExpiry`).
+9. Employee compliance scans are stored as document history per type (no overwrite): `BARANGAY_CLEARANCE`, `VALID_ID`, optional `DRIVER_LICENSE_SCAN`.
+10. Vehicle master records must support registration monitoring fields: `plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`.
+
+## Employee + Vehicle Compliance Capture (Binding)
+
+1. Compliance documents are metadata-first:
+   - binary file is stored in storage driver (`local` or `s3`)
+   - database stores `fileKey`, `fileUrl`, `mimeType`, `sizeBytes`, `uploadedBy`, `uploadedAt`, optional `expiresAt`
+2. Upload history is immutable by default per document type (new upload adds a new history row).
+3. Missing compliance documents must not block account creation by default, but must remain visible through warnings in admin employee views.
+4. Rider lane monitoring must highlight missing or expired license information.
+5. Vehicle registration monitoring must highlight missing OR/CR/plate/expiry or expired LTO registration.
 
 ## Canonical Role Authority Matrix
 
@@ -228,6 +241,8 @@ Implemented in auth routes:
 2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
 3. `app/routes/creation.employees.tsx` uses invite-based setup (no admin-known default password), plus resend invite.
 4. `app/routes/creation.employees.tsx` captures one primary employee address and stores both master references and snapshot text.
+5. `app/routes/creation.employees.tsx` now captures optional compliance profile fields and optional scanned documents with history tracking.
+6. `app/routes/creation.vehicles.tsx` now captures OR/CR/plate/LTO expiry metadata for registration monitoring.
 
 ## Cross-Doc Contract
 
