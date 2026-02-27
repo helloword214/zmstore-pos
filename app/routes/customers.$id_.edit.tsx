@@ -16,6 +16,63 @@ import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
+import { storage } from "~/utils/storage.server";
+
+type AddressPhotoUpload = {
+  addressId: number;
+  slot: number;
+  caption: string | null;
+  file: File;
+};
+
+const MAX_ADDRESS_PHOTO_MB = Math.max(
+  1,
+  Number.parseFloat(
+    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB || "10"
+  ) || 10
+);
+const MAX_ADDRESS_PHOTO_BYTES = Math.floor(MAX_ADDRESS_PHOTO_MB * 1024 * 1024);
+const ALLOWED_ADDRESS_PHOTO_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
+  if (!(raw instanceof File)) return null;
+  if (!raw.size) return null;
+  return raw;
+}
+
+function validateAddressPhotoUpload(file: File) {
+  if (!ALLOWED_ADDRESS_PHOTO_MIME.has(file.type)) {
+    return "Only JPG, PNG, and WEBP files are allowed.";
+  }
+  if (file.size > MAX_ADDRESS_PHOTO_BYTES) {
+    return `File is too large. Limit is ${MAX_ADDRESS_PHOTO_MB}MB.`;
+  }
+  return null;
+}
+
+function parseAddressPhotoUploads(formData: FormData, addressIds: number[]) {
+  const uploads: AddressPhotoUpload[] = [];
+  for (const addressId of addressIds) {
+    for (let slot = 1; slot <= 4; slot += 1) {
+      const file = readOptionalUpload(formData.get(`addrPhotoFile_${addressId}_${slot}`));
+      if (!file) continue;
+      const captionRaw = String(
+        formData.get(`addrPhotoCaption_${addressId}_${slot}`) || ""
+      ).trim();
+      uploads.push({
+        addressId,
+        slot,
+        caption: captionRaw || null,
+        file,
+      });
+    }
+  }
+  return uploads;
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
@@ -30,10 +87,34 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       firstName: true,
       middleName: true,
       lastName: true,
+      suffix: true,
       alias: true,
       phone: true,
+      email: true,
       creditLimit: true,
       notes: true,
+      addresses: {
+        select: {
+          id: true,
+          label: true,
+          line1: true,
+          barangay: true,
+          city: true,
+          province: true,
+          landmark: true,
+          photos: {
+            select: {
+              id: true,
+              slot: true,
+              fileUrl: true,
+              caption: true,
+              uploadedAt: true,
+            },
+            orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+          },
+        },
+        orderBy: [{ id: "asc" }],
+      },
     },
   });
   if (!customer) throw new Response("Not found", { status: 404 });
@@ -43,8 +124,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
   const id = Number(params.id);
-  if (!Number.isFinite(id))
+  if (!Number.isFinite(id)) {
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });
+  }
 
   const fd = await request.formData();
   const firstName = String(fd.get("firstName") || "").trim();
@@ -52,8 +134,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     | string
     | null;
   const lastName = String(fd.get("lastName") || "").trim();
+  const suffix = (String(fd.get("suffix") || "").trim() || null) as
+    | string
+    | null;
   const alias = (String(fd.get("alias") || "").trim() || null) as string | null;
   const phone = (String(fd.get("phone") || "").trim() || null) as string | null;
+  const email = (String(fd.get("email") || "").trim() || null) as string | null;
   const creditLimitRaw = fd.get("creditLimit");
   const creditLimit =
     creditLimitRaw === null || String(creditLimitRaw).trim() === ""
@@ -68,14 +154,98 @@ export async function action({ request, params }: ActionFunctionArgs) {
     errors.creditLimit = "Enter a number";
   }
 
+  const addressRows = await db.customerAddress.findMany({
+    where: { customerId: id },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  const addressIds = addressRows.map((a) => a.id);
+
+  const photoUploads = parseAddressPhotoUploads(fd, addressIds);
+  for (const upload of photoUploads) {
+    const photoError = validateAddressPhotoUpload(upload.file);
+    if (photoError) {
+      return json(
+        {
+          ok: false,
+          error: `Address #${upload.addressId} photo slot ${upload.slot}: ${photoError}`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   if (Object.keys(errors).length) {
     return json({ ok: false, errors }, { status: 400 });
   }
 
   await db.customer.update({
     where: { id },
-    data: { firstName, middleName, lastName, alias, phone, creditLimit, notes },
+    data: {
+      firstName,
+      middleName,
+      lastName,
+      suffix,
+      alias,
+      phone,
+      email,
+      creditLimit,
+      notes,
+    },
   });
+
+  const updatedAddressIds = new Set<number>();
+  for (const upload of photoUploads) {
+    try {
+      const saved = await storage.save(upload.file, {
+        keyPrefix: `customers/${id}/addresses/${upload.addressId}/photos`,
+      });
+      await db.customerAddressPhoto.upsert({
+        where: {
+          customerAddressId_slot: {
+            customerAddressId: upload.addressId,
+            slot: upload.slot,
+          },
+        },
+        create: {
+          customerAddressId: upload.addressId,
+          slot: upload.slot,
+          fileKey: saved.key,
+          fileUrl: saved.url,
+          mimeType: saved.contentType,
+          sizeBytes: saved.size,
+          caption: upload.caption?.slice(0, 160) || null,
+        },
+        update: {
+          fileKey: saved.key,
+          fileUrl: saved.url,
+          mimeType: saved.contentType,
+          sizeBytes: saved.size,
+          caption: upload.caption?.slice(0, 160) || null,
+          uploadedAt: new Date(),
+        },
+      });
+      updatedAddressIds.add(upload.addressId);
+    } catch (error) {
+      console.error("[customer-address-photo] edit upload failed", error);
+    }
+  }
+
+  for (const addressId of updatedAddressIds) {
+    const cover = await db.customerAddressPhoto.findFirst({
+      where: { customerAddressId: addressId },
+      orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+      select: { fileUrl: true, fileKey: true },
+    });
+    await db.customerAddress.update({
+      where: { id: addressId },
+      data: {
+        photoUrl: cover?.fileUrl ?? null,
+        photoKey: cover?.fileKey ?? null,
+        photoUpdatedAt: cover ? new Date() : null,
+      },
+    });
+  }
 
   return redirect(`/customers/${id}?ctx=admin`);
 }
@@ -95,10 +265,10 @@ export default function EditCustomer() {
         subtitle={[customer.firstName, customer.lastName].filter(Boolean).join(" ")}
         backTo={backHref}
         backLabel="Customer Profile"
-        maxWidthClassName="max-w-4xl"
+        maxWidthClassName="max-w-5xl"
       />
 
-      <div className="mx-auto max-w-4xl px-5 py-6">
+      <div className="mx-auto max-w-5xl px-5 py-6">
         {formError ? (
           <SoTAlert tone="danger" className="mb-3">
             {formError}
@@ -106,7 +276,7 @@ export default function EditCustomer() {
         ) : null}
 
         <SoTCard interaction="form">
-          <Form method="post" className="grid gap-3 sm:grid-cols-2">
+          <Form method="post" encType="multipart/form-data" className="grid gap-3 sm:grid-cols-2">
             <SoTFormField label="First Name" error={fieldErrors?.firstName}>
               <input
                 name="firstName"
@@ -131,6 +301,14 @@ export default function EditCustomer() {
               />
             </SoTFormField>
 
+            <SoTFormField label="Suffix">
+              <input
+                name="suffix"
+                defaultValue={customer.suffix ?? ""}
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              />
+            </SoTFormField>
+
             <SoTFormField label="Alias">
               <input
                 name="alias"
@@ -147,10 +325,15 @@ export default function EditCustomer() {
               />
             </SoTFormField>
 
-            <SoTFormField
-              label="Credit Limit (PHP)"
-              error={fieldErrors?.creditLimit}
-            >
+            <SoTFormField label="Email">
+              <input
+                name="email"
+                defaultValue={customer.email ?? ""}
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              />
+            </SoTFormField>
+
+            <SoTFormField label="Credit Limit (PHP)" error={fieldErrors?.creditLimit}>
               <input
                 name="creditLimit"
                 type="number"
@@ -169,6 +352,90 @@ export default function EditCustomer() {
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
+
+            <div className="sm:col-span-2 space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Address Location Photos
+              </div>
+              {customer.addresses.length === 0 ? (
+                <SoTAlert tone="info">No customer address found yet.</SoTAlert>
+              ) : (
+                customer.addresses.map((address) => {
+                  return (
+                    <div key={address.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-1 text-sm font-semibold text-slate-900">
+                        {address.label} · {address.line1}
+                      </div>
+                      <div className="mb-2 text-xs text-slate-600">
+                        {[address.barangay, address.city, address.province]
+                          .filter(Boolean)
+                          .join(", ") || "No area snapshot"}
+                        {address.landmark ? ` · ${address.landmark}` : ""}
+                      </div>
+
+                      {address.photos.length > 0 ? (
+                        <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {address.photos.map((photo) => (
+                            <div
+                              key={photo.id}
+                              className="rounded-lg border border-slate-200 bg-white p-2"
+                            >
+                              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                Slot {photo.slot}
+                              </div>
+                              <a
+                                href={photo.fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-medium text-indigo-700 underline"
+                              >
+                                Open current photo
+                              </a>
+                              <div className="mt-1 text-[11px] text-slate-500">
+                                {photo.caption || "No caption"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mb-3 text-[11px] text-slate-500">
+                          No location photos yet for this address.
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                        {[1, 2, 3, 4].map((slot) => {
+                          const current = address.photos.find((p) => p.slot === slot);
+                          return (
+                            <div
+                              key={`address-${address.id}-slot-${slot}`}
+                              className="rounded-lg border border-slate-200 bg-white p-2"
+                            >
+                              <SoTFormField label={`Slot ${slot} photo (optional)`}>
+                                <input
+                                  type="file"
+                                  name={`addrPhotoFile_${address.id}_${slot}`}
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+                                />
+                              </SoTFormField>
+                              <SoTFormField label="Caption (optional)">
+                                <input
+                                  name={`addrPhotoCaption_${address.id}_${slot}`}
+                                  defaultValue={current?.caption ?? ""}
+                                  placeholder="ex: Kanto view / Gate color"
+                                  className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                                />
+                              </SoTFormField>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
 
             <div className="sm:col-span-2">
               <SoTActionBar

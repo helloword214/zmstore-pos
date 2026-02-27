@@ -11,6 +11,7 @@ import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
+import { storage } from "~/utils/storage.server";
 
 type Province = { id: number; name: string; isActive: boolean };
 type Municipality = {
@@ -41,6 +42,64 @@ type LoaderData = {
   landmarks: Landmark[];
   ctx: "admin";
 };
+
+type AddressPhotoUpload = {
+  addressIndex: number;
+  slot: number;
+  caption: string | null;
+  file: File;
+};
+
+const MAX_ADDRESS_PHOTO_MB = Math.max(
+  1,
+  Number.parseFloat(
+    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB || "10"
+  ) || 10
+);
+const MAX_ADDRESS_PHOTO_BYTES = Math.floor(MAX_ADDRESS_PHOTO_MB * 1024 * 1024);
+const ALLOWED_ADDRESS_PHOTO_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
+  if (!(raw instanceof File)) return null;
+  if (!raw.size) return null;
+  return raw;
+}
+
+function parseAddressPhotoUploads(formData: FormData, addressCount: number) {
+  const uploads: AddressPhotoUpload[] = [];
+  for (let addressIndex = 0; addressIndex < addressCount; addressIndex += 1) {
+    for (let slot = 1; slot <= 4; slot += 1) {
+      const file = readOptionalUpload(
+        formData.get(`addrPhotoFile_${addressIndex}_${slot}`)
+      );
+      if (!file) continue;
+      const captionRaw = String(
+        formData.get(`addrPhotoCaption_${addressIndex}_${slot}`) || ""
+      ).trim();
+      uploads.push({
+        addressIndex,
+        slot,
+        caption: captionRaw || null,
+        file,
+      });
+    }
+  }
+  return uploads;
+}
+
+function validateAddressPhotoUpload(file: File) {
+  if (!ALLOWED_ADDRESS_PHOTO_MIME.has(file.type)) {
+    return "Only JPG, PNG, and WEBP files are allowed.";
+  }
+  if (file.size > MAX_ADDRESS_PHOTO_BYTES) {
+    return `File is too large. Limit is ${MAX_ADDRESS_PHOTO_MB}MB.`;
+  }
+  return null;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
@@ -124,6 +183,19 @@ export async function action({ request }: ActionFunctionArgs) {
   } catch {
     addresses = [];
   }
+  const photoUploads = parseAddressPhotoUploads(fd, addresses.length);
+  for (const upload of photoUploads) {
+    const photoError = validateAddressPhotoUpload(upload.file);
+    if (photoError) {
+      return json(
+        {
+          ok: false,
+          message: `Address #${upload.addressIndex + 1} photo slot ${upload.slot}: ${photoError}`,
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   // Collect unique IDs to snapshot names server-side
   const pIds = Array.from(
@@ -160,59 +232,124 @@ export async function action({ request }: ActionFunctionArgs) {
   const mMap = new Map(mRows.map((r) => [r.id, r.name]));
   const bMap = new Map(bRows.map((r) => [r.id, r.name]));
 
-  const customer = await db.customer.create({
-    data: {
-      firstName,
-      middleName,
-      lastName,
-      suffix,
-      alias,
-      phone,
-      email,
-      isActive: true,
-    },
-    select: { id: true },
+  let customerId: number | null = null;
+  const addressIdsByIndex = new Map<number, number>();
+
+  await db.$transaction(async (tx) => {
+    const customer = await tx.customer.create({
+      data: {
+        firstName,
+        middleName,
+        lastName,
+        suffix,
+        alias,
+        phone,
+        email,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    customerId = customer.id;
+
+    for (let index = 0; index < addresses.length; index += 1) {
+      const a = addresses[index];
+      if (String(a?.line1 || "").trim().length === 0) continue;
+
+      const provinceId = a.provinceId ? Number(a.provinceId) : null;
+      const municipalityId = a.municipalityId ? Number(a.municipalityId) : null;
+      const barangayId = a.barangayId ? Number(a.barangayId) : null;
+      const zoneId = a.zoneId ? Number(a.zoneId) : null;
+      const landmarkId = a.landmarkId ? Number(a.landmarkId) : null;
+      const parsedGeo = normalizeCoords(a.geoLat, a.geoLng);
+
+      const createdAddress = await tx.customerAddress.create({
+        data: {
+          customerId: customer.id,
+          label: String(a.label || "Home").slice(0, 64),
+          line1: String(a.line1 || "").slice(0, 255),
+          provinceId,
+          municipalityId,
+          barangayId,
+          zoneId,
+          landmarkId,
+          province: provinceId ? pMap.get(provinceId) || "" : "",
+          city: municipalityId ? mMap.get(municipalityId) || "" : "",
+          barangay: barangayId ? bMap.get(barangayId) || "" : "",
+          purok: a.purok ? String(a.purok).slice(0, 64) : null,
+          postalCode: a.postalCode ? String(a.postalCode).slice(0, 16) : null,
+          landmark: a.landmarkText ? String(a.landmarkText).slice(0, 255) : null,
+          geoLat: parsedGeo?.geoLat ?? null,
+          geoLng: parsedGeo?.geoLng ?? null,
+        },
+        select: { id: true },
+      });
+      addressIdsByIndex.set(index, createdAddress.id);
+    }
   });
 
-  if (addresses.length) {
-    await db.customerAddress.createMany({
-      data: addresses
-        .filter((a) => String(a.line1 || "").trim().length > 0)
-        .map((a) => {
-          const provinceId = a.provinceId ? Number(a.provinceId) : null;
-          const municipalityId = a.municipalityId
-            ? Number(a.municipalityId)
-            : null;
-          const barangayId = a.barangayId ? Number(a.barangayId) : null;
-          const zoneId = a.zoneId ? Number(a.zoneId) : null;
-          const landmarkId = a.landmarkId ? Number(a.landmarkId) : null;
-          const parsedGeo = normalizeCoords(a.geoLat, a.geoLng);
-          return {
-            customerId: customer.id,
-            label: String(a.label || "Home").slice(0, 64),
-            line1: String(a.line1 || "").slice(0, 255),
-            provinceId,
-            municipalityId,
-            barangayId,
-            zoneId,
-            landmarkId,
-            // snapshots
-            province: provinceId ? pMap.get(provinceId) || "" : "",
-            city: municipalityId ? mMap.get(municipalityId) || "" : "",
-            barangay: barangayId ? bMap.get(barangayId) || "" : "",
-            purok: a.purok ? String(a.purok).slice(0, 64) : null,
-            postalCode: a.postalCode ? String(a.postalCode).slice(0, 16) : null,
-            landmark: a.landmarkText
-              ? String(a.landmarkText).slice(0, 255)
-              : null,
-            geoLat: parsedGeo?.geoLat ?? null,
-            geoLng: parsedGeo?.geoLng ?? null,
-          };
-        }),
+  if (!customerId) {
+    return json(
+      { ok: false, message: "Customer create failed." },
+      { status: 500 }
+    );
+  }
+
+  const updatedAddressIds = new Set<number>();
+  for (const upload of photoUploads) {
+    const addressId = addressIdsByIndex.get(upload.addressIndex);
+    if (!addressId) continue;
+    try {
+      const saved = await storage.save(upload.file, {
+        keyPrefix: `customers/${customerId}/addresses/${addressId}/photos`,
+      });
+      await db.customerAddressPhoto.upsert({
+        where: {
+          customerAddressId_slot: {
+            customerAddressId: addressId,
+            slot: upload.slot,
+          },
+        },
+        create: {
+          customerAddressId: addressId,
+          slot: upload.slot,
+          fileKey: saved.key,
+          fileUrl: saved.url,
+          mimeType: saved.contentType,
+          sizeBytes: saved.size,
+          caption: upload.caption?.slice(0, 160) || null,
+        },
+        update: {
+          fileKey: saved.key,
+          fileUrl: saved.url,
+          mimeType: saved.contentType,
+          sizeBytes: saved.size,
+          caption: upload.caption?.slice(0, 160) || null,
+          uploadedAt: new Date(),
+        },
+      });
+      updatedAddressIds.add(addressId);
+    } catch (error) {
+      console.error("[customer-address-photo] create upload failed", error);
+    }
+  }
+
+  for (const addressId of updatedAddressIds) {
+    const cover = await db.customerAddressPhoto.findFirst({
+      where: { customerAddressId: addressId },
+      orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+      select: { fileUrl: true, fileKey: true },
+    });
+    await db.customerAddress.update({
+      where: { id: addressId },
+      data: {
+        photoUrl: cover?.fileUrl ?? null,
+        photoKey: cover?.fileKey ?? null,
+        photoUpdatedAt: cover ? new Date() : null,
+      },
     });
   }
 
-  return redirect(`/customers/${customer.id}?ctx=admin`);
+  return redirect(`/customers/${customerId}?ctx=admin`);
 }
 
 type AddressRow = {
@@ -452,7 +589,11 @@ export default function NewCustomerPage() {
         maxWidthClassName="max-w-5xl"
       />
 
-      <Form method="post" className="mx-auto max-w-5xl space-y-4 px-5 py-6">
+      <Form
+        method="post"
+        encType="multipart/form-data"
+        className="mx-auto max-w-5xl space-y-4 px-5 py-6"
+      >
         {actionData?.message ? (
           <SoTAlert tone="danger">{actionData.message}</SoTAlert>
         ) : null}
@@ -761,6 +902,40 @@ export default function NewCustomerPage() {
                             Clear Pin
                           </button>
                         ) : null}
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-12 rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Location Photos (Optional)
+                      </div>
+                      <p className="mb-2 text-[11px] text-slate-500">
+                        Up to 4 photos per address (road, kanto, gate, house front). No upload is also allowed.
+                      </p>
+
+                      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                        {[1, 2, 3, 4].map((slot) => (
+                          <div
+                            key={`addr-${idx}-photo-slot-${slot}`}
+                            className="rounded-lg border border-slate-200 bg-slate-50 p-2"
+                          >
+                            <SoTFormField label={`Photo Slot ${slot}`}>
+                              <input
+                                type="file"
+                                name={`addrPhotoFile_${idx}_${slot}`}
+                                accept="image/jpeg,image/png,image/webp"
+                                className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+                              />
+                            </SoTFormField>
+                            <SoTFormField label="Caption (optional)">
+                              <input
+                                name={`addrPhotoCaption_${idx}_${slot}`}
+                                placeholder="ex: Kanto view / Gate color"
+                                className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                              />
+                            </SoTFormField>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
