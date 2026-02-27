@@ -289,6 +289,20 @@ export default function CustomerProfile() {
           </div>
         </SoTCard>
 
+        <SoTCard>
+          <div className="mb-2 text-sm font-medium text-slate-700">Customer Details</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <SoTDataRow label="Full Name" value={name || "—"} />
+            <SoTDataRow label="Alias" value={customer.alias || "—"} />
+            <SoTDataRow label="First Name" value={customer.firstName || "—"} />
+            <SoTDataRow label="Middle Name" value={customer.middleName || "—"} />
+            <SoTDataRow label="Last Name" value={customer.lastName || "—"} />
+            <SoTDataRow label="Suffix" value={customer.suffix || "—"} />
+            <SoTDataRow label="Email" value={customer.email || "—"} />
+            <SoTDataRow label="Phone" value={customer.phone || "—"} />
+          </div>
+        </SoTCard>
+
         <div className="grid gap-4 md:grid-cols-3">
           <SoTCard>
             <SoTDataRow
