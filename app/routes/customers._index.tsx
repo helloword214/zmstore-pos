@@ -93,13 +93,21 @@ export default function CustomersIndex() {
   const { rows, q } = useLoaderData<LoaderData>();
   const searchRef = React.useRef<HTMLInputElement | null>(null);
   const formRef = React.useRef<HTMLFormElement | null>(null);
+  const debounceRef = React.useRef<number | null>(null);
   const submit = useSubmit();
   const searchFx = useFetcher<{ hits: CustomerRow[] }>();
 
   const [query, setQuery] = React.useState(q);
-  const [debounceId, setDebounceId] = React.useState<number | null>(null);
 
   const ctxSuffix = "?ctx=admin";
+  const clearDebounce = React.useCallback(() => {
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => clearDebounce, [clearDebounce]);
 
   // Keyboard shortcut: press "/" outside inputs to focus search.
   React.useEffect(() => {
@@ -154,6 +162,7 @@ export default function CustomersIndex() {
                 className="flex flex-wrap items-end gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  clearDebounce();
                   submit(formRef.current!, { method: "get", replace: true });
                 }}
               >
@@ -168,17 +177,15 @@ export default function CustomersIndex() {
                       const value = e.target.value;
                       setQuery(value);
 
-                      if (debounceId) window.clearTimeout(debounceId);
-                      const nextDebounceId = window.setTimeout(() => {
-                        submit(formRef.current!, { method: "get", replace: true });
+                      clearDebounce();
+                      debounceRef.current = window.setTimeout(() => {
+                        debounceRef.current = null;
                         if (value.trim()) {
                           searchFx.load(
                             `/api/customers/search?q=${encodeURIComponent(value.trim())}`
                           );
                         }
                       }, 250);
-
-                      setDebounceId(nextDebounceId);
                     }}
                     placeholder="Search name / alias / phone"
                     className="h-9 w-72 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
@@ -191,6 +198,7 @@ export default function CustomersIndex() {
 
                 <Link
                   to={`/customers${ctxSuffix}`}
+                  onMouseDown={clearDebounce}
                   className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
                   Reset
@@ -200,6 +208,7 @@ export default function CustomersIndex() {
             right={
               <Link
                 to={`/customers/new${ctxSuffix}`}
+                onMouseDown={clearDebounce}
                 className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 New Customer
@@ -259,6 +268,7 @@ export default function CustomersIndex() {
                           <div className="flex flex-wrap justify-end gap-2">
                             <Link
                               to={`/customers/${customer.id}${ctxSuffix}`}
+                              onMouseDown={clearDebounce}
                               className="inline-flex h-8 items-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             >
                               View Profile

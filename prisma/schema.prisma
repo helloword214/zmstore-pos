@@ -175,19 +175,22 @@ model ReceiptCounter {
 }
 
 model Customer {
-  id            Int     @id @default(autoincrement())
-  firstName     String
-  middleName    String?
-  lastName      String
-  suffix        String?
-  alias         String?
-  phone         String? @unique
-  email         String?
-  isActive      Boolean @default(true)
-  notes         String?
-  creditLimit   Float?
-  loyaltyPoints Int     @default(0)
-  tier          String?
+  id             Int       @id @default(autoincrement())
+  firstName      String
+  middleName     String?
+  lastName       String
+  suffix         String?
+  alias          String?
+  phone          String?   @unique
+  email          String?
+  isActive       Boolean   @default(true)
+  notes          String?
+  creditLimit    Float?
+  loyaltyPoints  Int       @default(0)
+  tier           String?
+  photoUrl       String?
+  photoKey       String?
+  photoUpdatedAt DateTime?
 
   addresses          CustomerAddress[]
   orders             Order[]
@@ -243,7 +246,7 @@ model CustomerAddress {
   photoKey       String?
   photoUpdatedAt DateTime?
 
-  deliveryOrders Order[] @relation("OrderDeliveryAddress")
+  deliveryOrders Order[]                @relation("OrderDeliveryAddress")
   photos         CustomerAddressPhoto[]
 
   @@index([provinceId])
@@ -254,7 +257,7 @@ model CustomerAddress {
 }
 
 model CustomerAddressPhoto {
-  id                Int             @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   customerAddressId Int
   slot              Int
   fileKey           String
@@ -262,8 +265,8 @@ model CustomerAddressPhoto {
   mimeType          String
   sizeBytes         Int
   caption           String?
-  uploadedAt        DateTime        @default(now())
-  createdAt         DateTime        @default(now())
+  uploadedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   customerAddress CustomerAddress @relation(fields: [customerAddressId], references: [id], onDelete: Cascade)
 

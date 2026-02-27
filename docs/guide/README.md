@@ -79,6 +79,7 @@ Identity operations note:
 11. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
 12. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
 13. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
+14. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
 
 ## B. Supporting (Context / Detailed Rationale)
 
