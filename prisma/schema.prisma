@@ -244,12 +244,31 @@ model CustomerAddress {
   photoUpdatedAt DateTime?
 
   deliveryOrders Order[] @relation("OrderDeliveryAddress")
+  photos         CustomerAddressPhoto[]
 
   @@index([provinceId])
   @@index([municipalityId])
   @@index([barangayId])
   @@index([zoneId])
   @@index([landmarkId])
+}
+
+model CustomerAddressPhoto {
+  id                Int             @id @default(autoincrement())
+  customerAddressId Int
+  slot              Int
+  fileKey           String
+  fileUrl           String
+  mimeType          String
+  sizeBytes         Int
+  caption           String?
+  uploadedAt        DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+
+  customerAddress CustomerAddress @relation(fields: [customerAddressId], references: [id], onDelete: Cascade)
+
+  @@unique([customerAddressId, slot])
+  @@index([customerAddressId, uploadedAt])
 }
 
 model CustomerItemPrice {

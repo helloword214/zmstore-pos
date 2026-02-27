@@ -78,6 +78,7 @@ Identity operations note:
 10. Employee compliance remains monitoring-only in current phase; warnings focus on `VALID_ID` and rider license signals, while HR docs remain optional records.
 11. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
 12. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
+13. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
 
 ## B. Supporting (Context / Detailed Rationale)
 

@@ -23,10 +23,34 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       firstName: true,
       middleName: true,
       lastName: true,
+      suffix: true,
       alias: true,
       phone: true,
+      email: true,
       creditLimit: true,
       notes: true,
+      addresses: {
+        select: {
+          id: true,
+          label: true,
+          line1: true,
+          barangay: true,
+          city: true,
+          province: true,
+          landmark: true,
+          photos: {
+            select: {
+              id: true,
+              slot: true,
+              fileUrl: true,
+              caption: true,
+              uploadedAt: true,
+            },
+            orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+          },
+        },
+        orderBy: [{ id: "asc" }],
+      },
       _count: { select: { customerItemPrices: true, orders: true } },
       orders: {
         where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
@@ -67,10 +91,10 @@ export default function CustomerProfile() {
         subtitle="Master record view for pricing and operational setup."
         backTo={backHref}
         backLabel="Customers"
-        maxWidthClassName="max-w-4xl"
+        maxWidthClassName="max-w-5xl"
       />
 
-      <section className="mx-auto max-w-4xl space-y-4 px-5 py-6">
+      <section className="mx-auto max-w-5xl space-y-4 px-5 py-6">
         <SoTPageHeader
           title={name}
           subtitle={
@@ -136,6 +160,61 @@ export default function CustomerProfile() {
           <div className="whitespace-pre-wrap text-sm text-slate-700">
             {customer.notes || "—"}
           </div>
+        </SoTCard>
+
+        <SoTCard>
+          <div className="mb-2 text-sm font-medium text-slate-700">
+            Address Location Photos
+          </div>
+          {customer.addresses.length === 0 ? (
+            <p className="text-sm text-slate-600">No address on file.</p>
+          ) : (
+            <div className="space-y-3">
+              {customer.addresses.map((address) => (
+                <div
+                  key={address.id}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                >
+                  <div className="text-sm font-semibold text-slate-900">
+                    {address.label} · {address.line1}
+                  </div>
+                  <div className="mb-2 text-xs text-slate-600">
+                    {[address.barangay, address.city, address.province]
+                      .filter(Boolean)
+                      .join(", ") || "No area snapshot"}
+                    {address.landmark ? ` · ${address.landmark}` : ""}
+                  </div>
+                  {address.photos.length === 0 ? (
+                    <p className="text-xs text-slate-500">No location photos yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-4">
+                      {address.photos.map((photo) => (
+                        <div
+                          key={photo.id}
+                          className="rounded-lg border border-slate-200 bg-white p-2"
+                        >
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Slot {photo.slot}
+                          </div>
+                          <a
+                            href={photo.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-medium text-indigo-700 underline"
+                          >
+                            Open photo
+                          </a>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {photo.caption || "No caption"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </SoTCard>
       </section>
     </main>
