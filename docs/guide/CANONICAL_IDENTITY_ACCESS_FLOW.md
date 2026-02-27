@@ -17,9 +17,12 @@ This document is the binding authority for role boundaries.
 ## Core Identity Model
 
 1. `Employee` is the person/profile record used by operations (rider assignment, names, staffing metadata).
-2. `User` is the authentication/access record (`email`/`password` or `pin`, role, active flag).
+2. `User` is the authentication/access record (`email`/`password`, role, active flag).
 3. Canonical target mapping is one person to one account (`Employee` to `User` is 1:1 for active accounts).
 4. `ADMIN` may exist without linked `Employee` because it is a control-plane role.
+5. `CASHIER` uses the same email/password login contract as other roles.
+6. Employee account creation requires email (`no email = no account`).
+7. Employee account creation must capture one primary address using canonical geo masters (`Province`, `Municipality`, `Barangay`, optional `Zone`/`Landmark`).
 
 ## Canonical Role Authority Matrix
 
@@ -40,16 +43,17 @@ Representative routes:
 
 1. `app/routes/_index.tsx`
 2. `app/routes/creation._index.tsx`
-3. `app/routes/creation.riders.tsx`
-4. `app/routes/creation.vehicles.tsx`
-5. `app/routes/creation.areas.tsx`
-6. `app/routes/creation.provinces.tsx`
-7. `app/routes/customers._index.tsx`
-8. `app/routes/customers.new.tsx`
-9. `app/routes/customers.$id.tsx`
-10. `app/routes/customers.$id_.edit.tsx`
-11. `app/routes/customers.$id_.pricing.tsx`
-12. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
+3. `app/routes/creation.employees.tsx`
+4. `app/routes/creation.riders.tsx`
+5. `app/routes/creation.vehicles.tsx`
+6. `app/routes/creation.areas.tsx`
+7. `app/routes/creation.provinces.tsx`
+8. `app/routes/customers._index.tsx`
+9. `app/routes/customers.new.tsx`
+10. `app/routes/customers.$id.tsx`
+11. `app/routes/customers.$id_.edit.tsx`
+12. `app/routes/customers.$id_.pricing.tsx`
+13. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
 
 ### B) Manager Operational/Commercial Routes
 
@@ -99,6 +103,19 @@ Representative routes:
 4. `app/routes/runs.$id.rider-checkin.tsx`
 5. `app/routes/runs.$id.summary.tsx` (`mine` rider scope)
 
+### E) Authentication + Recovery Routes
+
+Allowed audience:
+
+1. `login`: unauthenticated users.
+2. `forgot-password` and `reset-password`: unauthenticated users with valid account email/token.
+
+Representative routes:
+
+1. `app/routes/login.tsx`
+2. `app/routes/forgot-password.tsx`
+3. `app/routes/reset-password.$token.tsx`
+
 ## Employee Role Lifecycle (Binding)
 
 1. Role switching is immediate once approved and validated.
@@ -109,6 +126,21 @@ Representative routes:
    - `RIDER -> CASHIER`
 5. Any switch involving `STORE_MANAGER` is blocked in normal role switch flow.
 6. Manager role assignment/revocation is a protected governance action and must use a separate secured flow.
+
+## Password Recovery (Binding)
+
+1. Forgot-password is self-service for all active roles with valid account email.
+2. Reset flow uses single-use, expiring token links delivered through configured SMTP.
+3. Successful password reset must:
+   - update `passwordHash`
+   - clear legacy `pinHash`
+   - increment `authVersion`
+4. Reset responses must avoid account enumeration leaks.
+5. New employee accounts must use invite-based setup:
+   - admin creates account without entering password
+   - system sets `authState = PENDING_PASSWORD`
+   - system sends set-password email link
+   - user becomes `ACTIVE` auth state only after password is set
 
 ## Manager Identity Model (Binding)
 
@@ -173,6 +205,30 @@ flowchart TD
     E --> F["User re-login with new role lane"]
 ```
 
+## Runtime Status (2026-02-26)
+
+Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
+
+1. Admin-only role switch endpoint.
+2. Allowed lane transitions: `CASHIER <-> RIDER` only.
+3. Protected manager role rejection (`STORE_MANAGER` not switchable in normal flow).
+4. Immediate blocker checks before switch:
+   - open cashier shift (cashier -> rider)
+   - active rider runs (rider -> cashier)
+   - pending rider variances (rider -> cashier)
+5. Single transaction writes:
+   - close active `UserRoleAssignment`
+   - update `User.role` and linked `Employee.role`
+   - append `UserRoleAssignment` and `UserRoleAuditEvent`
+   - increment `authVersion`
+
+Implemented in auth routes:
+
+1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
+2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
+3. `app/routes/creation.employees.tsx` uses invite-based setup (no admin-known default password), plus resend invite.
+4. `app/routes/creation.employees.tsx` captures one primary employee address and stores both master references and snapshot text.
+
 ## Cross-Doc Contract
 
 1. This role-boundary SoT must be read together with:
@@ -200,10 +256,9 @@ Access drift examples:
 
 Role lifecycle drift:
 
-1. Normalized role-assignment history flow and immediate switch contract are not yet fully implemented in runtime code.
+1. Global session invalidation using `authVersion` is not yet enforced across all route guards (runtime currently bumps `authVersion` during switch).
 
 Follow-up code patch must:
 
 1. Remove `ADMIN` from manager-route guards listed above.
-2. Implement canonical immediate role switch flow (`CASHIER <-> RIDER` only, admin-only actor).
-3. Enforce protected manager role handling outside normal switch flow.
+2. Enforce `authVersion` session freshness globally to force immediate re-login after role switch.

@@ -47,16 +47,29 @@ Current route-level mapping coverage (canonical):
 22. `store.payroll.tsx`
 23. `_index.tsx`
 24. `creation._index.tsx`
-25. `creation.riders.tsx`
-26. `creation.vehicles.tsx`
-27. `creation.areas.tsx`
-28. `creation.provinces.tsx`
-29. `customers._index.tsx`
-30. `customers.new.tsx`
-31. `customers.$id.tsx`
-32. `customers.$id_.edit.tsx`
-33. `customers.$id_.pricing.tsx`
-34. `customers.$id_.pricing_.$ruleId.tsx`
+25. `creation.employees.tsx`
+26. `creation.riders.tsx`
+27. `creation.vehicles.tsx`
+28. `creation.areas.tsx`
+29. `creation.provinces.tsx`
+30. `customers._index.tsx`
+31. `customers.new.tsx`
+32. `customers.$id.tsx`
+33. `customers.$id_.edit.tsx`
+34. `customers.$id_.pricing.tsx`
+35. `customers.$id_.pricing_.$ruleId.tsx`
+36. `login.tsx`
+37. `forgot-password.tsx`
+38. `reset-password.$token.tsx`
+
+Identity operations note:
+
+1. `creation.employees.tsx` is the canonical admin surface for employee account creation and normal `CASHIER <-> RIDER` role switching.
+2. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
+3. `login.tsx` is email/password-only for all roles (including cashier).
+4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
+5. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
+6. Employee account creation captures one primary address using canonical address masters.
 
 ## B. Supporting (Context / Detailed Rationale)
 

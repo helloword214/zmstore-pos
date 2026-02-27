@@ -6,6 +6,8 @@ import {
   EmployeeRole,
   VehicleType,
   UserRole,
+  UserAuthState,
+  ManagerKind,
 } from "@prisma/client";
 import { generateSKU } from "~/utils/skuHelpers";
 import * as bcrypt from "bcryptjs";
@@ -1507,34 +1509,45 @@ async function seed() {
   // ADMIN (walang Employee; system-level)
   await db.user.upsert({
     where: { email: "admin@local" },
-    update: {},
+    update: {
+      role: UserRole.ADMIN,
+      active: true,
+      authState: UserAuthState.ACTIVE,
+    },
     create: {
       email: "admin@local",
       passwordHash: hash("admin123"),
       role: UserRole.ADMIN,
+      managerKind: null,
       active: true,
+      authState: UserAuthState.ACTIVE,
       branches: { create: { branchId: mainBranchId } },
     },
   });
 
-  // CASHIER USERS (linked sa cashierEmployees + PIN login)
-  const cashierPins = ["111111", "222222"];
+  // CASHIER USERS (linked sa cashierEmployees + password login)
   for (let i = 0; i < cashierEmployees.length; i++) {
     const emp = cashierEmployees[i];
-    const pin = cashierPins[i] ?? "999999";
     const idx = i + 1;
     await db.user.upsert({
       where: { email: `cashier${idx}@local` },
       update: {
         employeeId: emp.id,
         role: UserRole.CASHIER,
+        managerKind: null,
         active: true,
+        authState: UserAuthState.ACTIVE,
+        passwordHash: hash(`cashier${idx}123`),
+        pinHash: null,
       },
       create: {
         email: `cashier${idx}@local`,
-        pinHash: hash(pin),
+        passwordHash: hash(`cashier${idx}123`),
+        pinHash: null,
         role: UserRole.CASHIER,
+        managerKind: null,
         active: true,
+        authState: UserAuthState.ACTIVE,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },
       },
@@ -1550,13 +1563,19 @@ async function seed() {
       update: {
         employeeId: emp.id,
         role: UserRole.STORE_MANAGER,
+        managerKind: ManagerKind.STAFF,
         active: true,
+        authState: UserAuthState.ACTIVE,
+        pinHash: null,
       },
       create: {
         email: `manager${idx}@local`,
         passwordHash: hash(`manager${idx}123`),
+        pinHash: null,
         role: UserRole.STORE_MANAGER,
+        managerKind: ManagerKind.STAFF,
         active: true,
+        authState: UserAuthState.ACTIVE,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },
       },
@@ -1577,13 +1596,19 @@ async function seed() {
       update: {
         employeeId: emp.id,
         role: UserRole.EMPLOYEE,
+        managerKind: null,
         active: true,
+        authState: UserAuthState.ACTIVE,
+        pinHash: null,
       },
       create: {
         email: `rider${idx}@local`,
         passwordHash: hash(`rider${idx}123`),
+        pinHash: null,
         role: UserRole.EMPLOYEE,
+        managerKind: null,
         active: true,
+        authState: UserAuthState.ACTIVE,
         employeeId: emp.id,
         branches: { create: { branchId: mainBranchId } },
       },

@@ -539,7 +539,8 @@ model Employee {
   // Back-relations
   ordersAsRider  Order[]            @relation("OrderRider")
   runsAsRider    DeliveryRun[]      @relation("RunRider")
-  users          User[]
+  user           User?
+  address        EmployeeAddress?
   riderVariances RiderRunVariance[]
 
   createdAt   DateTime      @default(now())
@@ -547,6 +548,44 @@ model Employee {
   RiderCharge RiderCharge[]
 
   @@index([role, active])
+}
+
+model EmployeeAddress {
+  id             Int      @id @default(autoincrement())
+  employeeId     Int      @unique
+  line1          String
+  provinceId     Int
+  municipalityId Int
+  barangayId     Int
+  zoneId         Int?
+  landmarkId     Int?
+
+  // snapshot fields (audit-safe text copy)
+  province String
+  city     String
+  barangay String
+  purok    String?
+
+  postalCode String?
+  landmark  String?
+  geoLat    Float?
+  geoLng    Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  provinceRef  Province     @relation(fields: [provinceId], references: [id], onDelete: Restrict)
+  municipality Municipality @relation(fields: [municipalityId], references: [id], onDelete: Restrict)
+  barangayRef  Barangay     @relation(fields: [barangayId], references: [id], onDelete: Restrict)
+  zone         Zone?        @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  landmarkRef  Landmark?    @relation("LandmarkToEmployeeAddresses", fields: [landmarkId], references: [id], onDelete: SetNull)
+
+  @@index([provinceId])
+  @@index([municipalityId])
+  @@index([barangayId])
+  @@index([zoneId])
+  @@index([landmarkId])
 }
 
 enum EmployeeRole {
@@ -1290,6 +1329,7 @@ model Province {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   addresses      CustomerAddress[]
+  employeeAddresses EmployeeAddress[]
 
   @@unique([name]) // app also guards case-insensitive dupes
   @@index([isActive])
@@ -1306,6 +1346,7 @@ model Municipality {
 
   barangays Barangay[]
   addresses CustomerAddress[]
+  employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1327,6 +1368,7 @@ model Barangay {
   zones     Zone[]
   landmarks Landmark[]
   addresses CustomerAddress[]
+  employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1345,6 +1387,7 @@ model Zone {
   barangay   Barangay @relation(fields: [barangayId], references: [id], onDelete: Cascade)
 
   addresses CustomerAddress[]
+  employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1364,6 +1407,7 @@ model Landmark {
   barangay   Barangay? @relation(fields: [barangayId], references: [id], onDelete: SetNull)
 
   addresses CustomerAddress[] @relation("LandmarkToAddresses")
+  employeeAddresses EmployeeAddress[] @relation("LandmarkToEmployeeAddresses")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1380,6 +1424,16 @@ enum UserRole {
   CASHIER
   STORE_MANAGER
   EMPLOYEE
+}
+
+enum ManagerKind {
+  OWNER
+  STAFF
+}
+
+enum UserAuthState {
+  PENDING_PASSWORD
+  ACTIVE
 }
 
 enum CashDrawerTxnType {
@@ -1405,12 +1459,15 @@ enum CashierShiftStatus {
 model User {
   id           Int      @id @default(autoincrement())
   email        String?  @unique
-  passwordHash String? // for ADMIN/SELLER
-  pinHash      String? // for CASHIER fast login (6-digit recommended)
+  passwordHash String? // password login for all roles
+  pinHash      String? // legacy field; no longer used for login
   role         UserRole
+  managerKind  ManagerKind?
   active       Boolean  @default(true)
+  authState    UserAuthState @default(ACTIVE)
+  authVersion  Int      @default(1)
 
-  employeeId Int?
+  employeeId Int?      @unique
   employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   // Scoping & usage
@@ -1446,11 +1503,72 @@ model User {
   // ✅ NEW: cashier who verified opening float
   cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
+  // Role lifecycle and immutable audit
+  roleAssignments         UserRoleAssignment[] @relation("UserRoleAssignments")
+  roleAssignmentsAuthored UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
+  roleAuditEvents         UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
+  roleAuditEventsAuthored UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
+  passwordResetTokens     PasswordResetToken[]
+
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([role, active])
+}
+
+model UserRoleAssignment {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  role        UserRole
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  reason      String?
+  changedById Int?
+  createdAt   DateTime  @default(now())
+
+  user      User  @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  changedBy User? @relation("UserRoleAssignmentsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, startedAt])
+  @@index([role, endedAt])
+  @@index([changedById, createdAt])
+}
+
+model UserRoleAuditEvent {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  beforeRole  UserRole
+  afterRole   UserRole
+  reason      String?
+  changedById Int?
+  createdAt   DateTime @default(now())
+
+  user      User  @relation("UserRoleAuditEventsOnUser", fields: [userId], references: [id], onDelete: Cascade)
+  changedBy User? @relation("UserRoleAuditEventsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([changedById, createdAt])
+  @@index([afterRole, createdAt])
+}
+
+model PasswordResetToken {
+  id                 Int       @id @default(autoincrement())
+  userId             Int
+  tokenHash          String    @unique
+  expiresAt          DateTime
+  usedAt             DateTime?
+  createdAt          DateTime  @default(now())
+  requestedIp        String?   @db.VarChar(64)
+  requestedUserAgent String?   @db.VarChar(300)
+  consumedIp         String?   @db.VarChar(64)
+  consumedUserAgent  String?   @db.VarChar(300)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 // (Removed) UserLocation — legacy mapping; replaced by UserBranch/Branch
