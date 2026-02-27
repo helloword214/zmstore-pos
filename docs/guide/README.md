@@ -48,30 +48,36 @@ Current route-level mapping coverage (canonical):
 23. `_index.tsx`
 24. `creation._index.tsx`
 25. `creation.employees.tsx`
-26. `creation.riders.tsx`
-27. `creation.vehicles.tsx`
-28. `creation.areas.tsx`
-29. `creation.provinces.tsx`
-30. `customers._index.tsx`
-31. `customers.new.tsx`
-32. `customers.$id.tsx`
-33. `customers.$id_.edit.tsx`
-34. `customers.$id_.pricing.tsx`
-35. `customers.$id_.pricing_.$ruleId.tsx`
-36. `login.tsx`
-37. `forgot-password.tsx`
-38. `reset-password.$token.tsx`
+26. `creation.employees_.new.tsx`
+27. `creation.employees_.$employeeId.edit.tsx`
+28. `creation.riders.tsx`
+29. `creation.vehicles.tsx`
+30. `creation.areas.tsx`
+31. `creation.provinces.tsx`
+32. `customers._index.tsx`
+33. `customers.new.tsx`
+34. `customers.$id.tsx`
+35. `customers.$id_.edit.tsx`
+36. `customers.$id_.pricing.tsx`
+37. `customers.$id_.pricing_.$ruleId.tsx`
+38. `login.tsx`
+39. `forgot-password.tsx`
+40. `reset-password.$token.tsx`
 
 Identity operations note:
 
-1. `creation.employees.tsx` is the canonical admin surface for employee account creation and normal `CASHIER <-> RIDER` role switching.
-2. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
-3. `login.tsx` is email/password-only for all roles (including cashier).
-4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
-5. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
-6. Employee account creation captures one primary address using canonical address masters.
-7. Employee creation also captures optional compliance profile fields plus scanned document history (`BARANGAY_CLEARANCE`, `VALID_ID`, optional `DRIVER_LICENSE_SCAN`).
-8. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
+1. `creation.employees_.new.tsx` is the canonical admin surface for new employee account creation.
+2. `creation.employees.tsx` is the canonical employee directory/manage surface for normal `CASHIER <-> RIDER` role switching.
+3. `creation.employees_.$employeeId.edit.tsx` is the canonical profile/compliance update surface for existing employee accounts.
+4. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
+5. `login.tsx` is email/password-only for all roles (including cashier).
+6. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
+7. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
+8. Employee account creation captures one primary address using canonical address masters.
+9. Employee creation/edit captures optional profile compliance fields plus document history (`VALID_ID`, `DRIVER_LICENSE_SCAN`, `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `OTHER`).
+10. Employee compliance remains monitoring-only in current phase; warnings focus on `VALID_ID` and rider license signals, while HR docs remain optional records.
+11. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
+12. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
 
 ## B. Supporting (Context / Detailed Rationale)
 

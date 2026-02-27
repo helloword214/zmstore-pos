@@ -26,9 +26,10 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "indigo",
   },
   {
-    to: "/creation/employees",
+    to: "/creation/employees/new",
     title: "Create Employee",
-    description: "Create cashier, rider, or staff-manager accounts with linked profile and login.",
+    description:
+      "Open the dedicated onboarding form for cashier, rider, or staff-manager account creation.",
     eyebrow: "Workforce",
     tone: "emerald",
   },
@@ -80,6 +81,12 @@ const supportCreationShortcuts: AdminShortcut[] = [
     to: "/creation/riders",
     title: "Rider Directory",
     description: "Manage rider profile details and default vehicle assignments.",
+    tone: "emerald",
+  },
+  {
+    to: "/creation/employees",
+    title: "Employee Directory",
+    description: "Manage employee profile edits, compliance reminders, and account controls.",
     tone: "emerald",
   },
   {
