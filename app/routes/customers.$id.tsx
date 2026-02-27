@@ -237,33 +237,31 @@ export default function CustomerProfile() {
           }
         />
 
-        <SoTCard>
-          <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-700">Customer Photo</div>
-              <div className="flex h-52 w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                {customer.photoUrl ? (
-                  <img
-                    src={customer.photoUrl}
-                    alt={`${name} profile`}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="px-3 text-center text-xs text-slate-500">
-                    No customer photo uploaded.
-                  </span>
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500">
-                {photoUpdatedAtLabel
-                  ? `Last updated: ${photoUpdatedAtLabel}`
-                  : "No upload record yet."}
-              </div>
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <SoTCard interaction="form" className="h-fit space-y-3">
+            <div className="text-sm font-medium text-slate-700">Profile Photo</div>
+            <div className="flex h-64 w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              {customer.photoUrl ? (
+                <img
+                  src={customer.photoUrl}
+                  alt={`${name} profile`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="px-3 text-center text-xs text-slate-500">
+                  No customer photo uploaded.
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {photoUpdatedAtLabel
+                ? `Last updated: ${photoUpdatedAtLabel}`
+                : "No upload record yet."}
             </div>
 
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-slate-700">
-                Upload / Replace Profile Photo
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Upload / Replace
               </div>
               <Form method="post" encType="multipart/form-data" className="space-y-3">
                 <input type="hidden" name="intent" value="upload-customer-photo" />
@@ -286,53 +284,68 @@ export default function CustomerProfile() {
                 </SoTButton>
               </Form>
             </div>
+          </SoTCard>
+
+          <div className="space-y-4">
+            <SoTCard>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-medium text-slate-700">Customer Identity</div>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                  {customer.alias ? `@${customer.alias}` : "No alias"}
+                </span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <SoTDataRow label="Full Name" value={name || "—"} />
+                <SoTDataRow label="First Name" value={customer.firstName || "—"} />
+                <SoTDataRow label="Middle Name" value={customer.middleName || "—"} />
+                <SoTDataRow label="Last Name" value={customer.lastName || "—"} />
+                <SoTDataRow label="Suffix" value={customer.suffix || "—"} />
+              </div>
+            </SoTCard>
+
+            <SoTCard>
+              <div className="mb-3 text-sm font-medium text-slate-700">Contact</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <SoTDataRow label="Email" value={customer.email || "—"} />
+                <SoTDataRow label="Phone" value={customer.phone || "—"} />
+              </div>
+            </SoTCard>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <SoTCard compact>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  AR Balance (open)
+                </div>
+                <div className="font-mono text-lg font-semibold tabular-nums text-slate-900">
+                  {peso(arBalance)}
+                </div>
+              </SoTCard>
+
+              <SoTCard compact>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Credit Limit
+                </div>
+                <div className="font-mono text-lg font-semibold tabular-nums text-slate-900">
+                  {customer.creditLimit == null
+                    ? "—"
+                    : peso(Number(customer.creditLimit))}
+                </div>
+              </SoTCard>
+
+              <SoTCard compact>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Pricing Rules
+                </div>
+                <div className="text-lg font-semibold text-slate-900">{rulesCount}</div>
+                <Link
+                  to={`/customers/${customer.id}/pricing${ctxSuffix}`}
+                  className="mt-2 inline-block text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  Manage rules →
+                </Link>
+              </SoTCard>
+            </div>
           </div>
-        </SoTCard>
-
-        <SoTCard>
-          <div className="mb-2 text-sm font-medium text-slate-700">Customer Details</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <SoTDataRow label="Full Name" value={name || "—"} />
-            <SoTDataRow label="Alias" value={customer.alias || "—"} />
-            <SoTDataRow label="First Name" value={customer.firstName || "—"} />
-            <SoTDataRow label="Middle Name" value={customer.middleName || "—"} />
-            <SoTDataRow label="Last Name" value={customer.lastName || "—"} />
-            <SoTDataRow label="Suffix" value={customer.suffix || "—"} />
-            <SoTDataRow label="Email" value={customer.email || "—"} />
-            <SoTDataRow label="Phone" value={customer.phone || "—"} />
-          </div>
-        </SoTCard>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <SoTCard>
-            <SoTDataRow
-              label="AR Balance (open)"
-              value={
-                <span className="font-mono tabular-nums">{peso(arBalance)}</span>
-              }
-            />
-          </SoTCard>
-
-          <SoTCard>
-            <SoTDataRow
-              label="Credit Limit"
-              value={
-                customer.creditLimit == null
-                  ? "—"
-                  : peso(Number(customer.creditLimit))
-              }
-            />
-          </SoTCard>
-
-          <SoTCard>
-            <SoTDataRow label="Active Pricing Rules" value={rulesCount} />
-            <Link
-              to={`/customers/${customer.id}/pricing${ctxSuffix}`}
-              className="mt-2 inline-block text-xs text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              Manage rules →
-            </Link>
-          </SoTCard>
         </div>
 
         <SoTCard>
