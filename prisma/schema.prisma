@@ -524,14 +524,20 @@ enum LpgSwapKind {
 // ────────────── NEW: Workforce & Fleet ──────────────
 
 model Employee {
-  id        Int          @id @default(autoincrement())
-  firstName String
-  lastName  String
-  alias     String?
-  phone     String?      @unique
-  email     String?      @unique
-  role      EmployeeRole @default(STAFF)
-  active    Boolean      @default(true)
+  id            Int          @id @default(autoincrement())
+  firstName     String
+  middleName    String?
+  lastName      String
+  alias         String?
+  birthDate     DateTime?
+  phone         String?      @unique
+  email         String?      @unique
+  sssNumber     String?
+  pagIbigNumber String?
+  licenseNumber String?
+  licenseExpiry DateTime?
+  role          EmployeeRole @default(STAFF)
+  active        Boolean      @default(true)
 
   defaultVehicleId Int?
   defaultVehicle   Vehicle? @relation("DefaultVehicle", fields: [defaultVehicleId], references: [id], onDelete: SetNull)
@@ -541,6 +547,7 @@ model Employee {
   runsAsRider    DeliveryRun[]      @relation("RunRider")
   user           User?
   address        EmployeeAddress?
+  documents      EmployeeDocument[]
   riderVariances RiderRunVariance[]
 
   createdAt   DateTime      @default(now())
@@ -551,8 +558,8 @@ model Employee {
 }
 
 model EmployeeAddress {
-  id             Int      @id @default(autoincrement())
-  employeeId     Int      @unique
+  id             Int    @id @default(autoincrement())
+  employeeId     Int    @unique
   line1          String
   provinceId     Int
   municipalityId Int
@@ -567,9 +574,9 @@ model EmployeeAddress {
   purok    String?
 
   postalCode String?
-  landmark  String?
-  geoLat    Float?
-  geoLng    Float?
+  landmark   String?
+  geoLat     Float?
+  geoLng     Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -594,13 +601,28 @@ enum EmployeeRole {
   MANAGER
 }
 
+enum EmployeeDocumentType {
+  BARANGAY_CLEARANCE
+  VALID_ID
+  DRIVER_LICENSE_SCAN
+  POLICE_CLEARANCE
+  NBI_CLEARANCE
+  PHOTO_2X2
+  RESUME
+  OTHER
+}
+
 model Vehicle {
-  id            Int         @id @default(autoincrement())
-  name          String
-  type          VehicleType
-  capacityUnits Float? // e.g., "LPG unit slots" default capacity
-  notes         String?
-  active        Boolean     @default(true)
+  id                    Int         @id @default(autoincrement())
+  name                  String
+  type                  VehicleType
+  plateNumber           String?
+  orNumber              String?
+  crNumber              String?
+  ltoRegistrationExpiry DateTime?
+  capacityUnits         Float? // e.g., "LPG unit slots" default capacity
+  notes                 String?
+  active                Boolean     @default(true)
 
   // backrefs
   defaultForEmployees Employee[]               @relation("DefaultVehicle")
@@ -635,6 +657,28 @@ model VehicleCapacityProfile {
 
   @@unique([vehicleId, key])
   @@index([vehicleId])
+}
+
+model EmployeeDocument {
+  id           Int                  @id @default(autoincrement())
+  employeeId   Int
+  docType      EmployeeDocumentType
+  fileKey      String
+  fileUrl      String
+  mimeType     String
+  sizeBytes    Int
+  expiresAt    DateTime?
+  uploadedById Int?
+  notes        String?
+  uploadedAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("EmployeeDocumentsUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, docType, uploadedAt])
+  @@index([docType, expiresAt])
+  @@index([uploadedById, uploadedAt])
 }
 
 // ────────────── NEW: Stock Movements for Loadout (Milestone 2) ──────────────
@@ -755,16 +799,16 @@ model RunReceipt {
   run   DeliveryRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
   lines RunReceiptLine[]
 
-  status           RunReceiptStatus  @default(DRAFT)
-  reviewedAt       DateTime?
-  settledAt        DateTime?
+  status     RunReceiptStatus @default(DRAFT)
+  reviewedAt DateTime?
+  settledAt  DateTime?
 
   // v2.6: operational VOIDED (after manager REJECT + goods not released)
   // VOIDED is treated as "settled" for submit/remit gates (logic-level).
-  voidedAt     DateTime?
-  voidReason   String?   @db.VarChar(200)
-  voidedById   Int?
-  voidedBy     User?     @relation("RunReceiptVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidedAt   DateTime?
+  voidReason String?   @db.VarChar(200)
+  voidedById Int?
+  voidedBy   User?     @relation("RunReceiptVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
 
   RiderRunVariance RiderRunVariance?
 
@@ -1176,7 +1220,7 @@ model ClearanceCase {
   id     Int                 @id @default(autoincrement())
   status ClearanceCaseStatus @default(NEEDS_CLEARANCE)
   origin ClearanceOrigin
- 
+
   /// CCS v2.5: stable per-receipt idempotency key (SoT).
   /// Examples:
   /// - "PARENT:12345" (Order.id)
@@ -1321,14 +1365,14 @@ model CustomerArPayment {
 }
 
 model Province {
-  id             Int               @id @default(autoincrement())
-  name           String
-  code           String?           @db.VarChar(16)
-  isActive       Boolean           @default(true)
-  municipalities Municipality[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  addresses      CustomerAddress[]
+  id                Int               @id @default(autoincrement())
+  name              String
+  code              String?           @db.VarChar(16)
+  isActive          Boolean           @default(true)
+  municipalities    Municipality[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  addresses         CustomerAddress[]
   employeeAddresses EmployeeAddress[]
 
   @@unique([name]) // app also guards case-insensitive dupes
@@ -1344,8 +1388,8 @@ model Municipality {
   provinceId Int
   province   Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
 
-  barangays Barangay[]
-  addresses CustomerAddress[]
+  barangays         Barangay[]
+  addresses         CustomerAddress[]
   employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
@@ -1365,9 +1409,9 @@ model Barangay {
   municipalityId Int
   municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Cascade)
 
-  zones     Zone[]
-  landmarks Landmark[]
-  addresses CustomerAddress[]
+  zones             Zone[]
+  landmarks         Landmark[]
+  addresses         CustomerAddress[]
   employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
@@ -1386,7 +1430,7 @@ model Zone {
   barangayId Int
   barangay   Barangay @relation(fields: [barangayId], references: [id], onDelete: Cascade)
 
-  addresses CustomerAddress[]
+  addresses         CustomerAddress[]
   employeeAddresses EmployeeAddress[]
 
   createdAt DateTime @default(now())
@@ -1406,7 +1450,7 @@ model Landmark {
   barangayId Int?
   barangay   Barangay? @relation(fields: [barangayId], references: [id], onDelete: SetNull)
 
-  addresses CustomerAddress[] @relation("LandmarkToAddresses")
+  addresses         CustomerAddress[] @relation("LandmarkToAddresses")
   employeeAddresses EmployeeAddress[] @relation("LandmarkToEmployeeAddresses")
 
   createdAt DateTime @default(now())
@@ -1457,15 +1501,15 @@ enum CashierShiftStatus {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String?  @unique
+  id           Int           @id @default(autoincrement())
+  email        String?       @unique
   passwordHash String? // password login for all roles
   pinHash      String? // legacy field; no longer used for login
   role         UserRole
   managerKind  ManagerKind?
-  active       Boolean  @default(true)
+  active       Boolean       @default(true)
   authState    UserAuthState @default(ACTIVE)
-  authVersion  Int      @default(1)
+  authVersion  Int           @default(1)
 
   employeeId Int?      @unique
   employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
@@ -1493,7 +1537,6 @@ model User {
   clearanceDecisionsMade      ClearanceDecision[] @relation("ClearanceDecidedBy")
   customerArPaymentsProcessed CustomerArPayment[] @relation("CustomerArPaymentsProcessed")
 
-  
   // v2.6: who voided a receipt
   voidedRunReceipts RunReceipt[] @relation("RunReceiptVoidedBy")
 
@@ -1504,11 +1547,12 @@ model User {
   cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
   // Role lifecycle and immutable audit
-  roleAssignments         UserRoleAssignment[] @relation("UserRoleAssignments")
-  roleAssignmentsAuthored UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
-  roleAuditEvents         UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
-  roleAuditEventsAuthored UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
-  passwordResetTokens     PasswordResetToken[]
+  roleAssignments           UserRoleAssignment[] @relation("UserRoleAssignments")
+  roleAssignmentsAuthored   UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
+  roleAuditEvents           UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
+  roleAuditEventsAuthored   UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
+  passwordResetTokens       PasswordResetToken[]
+  employeeDocumentsUploaded EmployeeDocument[]   @relation("EmployeeDocumentsUploadedBy")
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())

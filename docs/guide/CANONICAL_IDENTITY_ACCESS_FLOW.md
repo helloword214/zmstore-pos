@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-02-27
 
 ## Purpose
 
@@ -23,6 +23,21 @@ This document is the binding authority for role boundaries.
 5. `CASHIER` uses the same email/password login contract as other roles.
 6. Employee account creation requires email (`no email = no account`).
 7. Employee account creation must capture one primary address using canonical geo masters (`Province`, `Municipality`, `Barangay`, optional `Zone`/`Landmark`).
+8. Employee profile compliance fields are optional but tracked (`middleName`, `birthDate`, `sssNumber`, `pagIbigNumber`, `licenseNumber`, `licenseExpiry`).
+9. Employee document scans are stored as document history per type (no overwrite): `VALID_ID`, `DRIVER_LICENSE_SCAN`, `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `OTHER`.
+10. Vehicle master records must support registration monitoring fields: `plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`.
+
+## Employee + Vehicle Compliance Capture (Binding)
+
+1. Compliance documents are metadata-first:
+   - binary file is stored in storage driver (`local` or `s3`)
+   - database stores `fileKey`, `fileUrl`, `mimeType`, `sizeBytes`, `uploadedBy`, `uploadedAt`, optional `expiresAt`
+2. Upload history is immutable by default per document type (new upload adds a new history row).
+3. Employee compliance remains monitoring-only in current phase: missing/expired docs must not block account creation, profile updates, or role switching.
+4. Admin directory compliance badges currently monitor `VALID_ID` for all lanes plus rider license checks for current `RIDER` lane only.
+5. `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, and `NBI_CLEARANCE` are hiring/reference documents and must be stored without expiry tracking (`expiresAt = null`).
+6. Optional HR documents (`POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `BARANGAY_CLEARANCE`) are upload-ready but do not emit reminder badges by default.
+7. Vehicle registration monitoring must highlight missing OR/CR/plate/expiry or expired LTO registration.
 
 ## Canonical Role Authority Matrix
 
@@ -44,16 +59,18 @@ Representative routes:
 1. `app/routes/_index.tsx`
 2. `app/routes/creation._index.tsx`
 3. `app/routes/creation.employees.tsx`
-4. `app/routes/creation.riders.tsx`
-5. `app/routes/creation.vehicles.tsx`
-6. `app/routes/creation.areas.tsx`
-7. `app/routes/creation.provinces.tsx`
-8. `app/routes/customers._index.tsx`
-9. `app/routes/customers.new.tsx`
-10. `app/routes/customers.$id.tsx`
-11. `app/routes/customers.$id_.edit.tsx`
-12. `app/routes/customers.$id_.pricing.tsx`
-13. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
+4. `app/routes/creation.employees_.new.tsx`
+5. `app/routes/creation.employees_.$employeeId.edit.tsx`
+6. `app/routes/creation.riders.tsx`
+7. `app/routes/creation.vehicles.tsx`
+8. `app/routes/creation.areas.tsx`
+9. `app/routes/creation.provinces.tsx`
+10. `app/routes/customers._index.tsx`
+11. `app/routes/customers.new.tsx`
+12. `app/routes/customers.$id.tsx`
+13. `app/routes/customers.$id_.edit.tsx`
+14. `app/routes/customers.$id_.pricing.tsx`
+15. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
 
 ### B) Manager Operational/Commercial Routes
 
@@ -205,7 +222,7 @@ flowchart TD
     E --> F["User re-login with new role lane"]
 ```
 
-## Runtime Status (2026-02-26)
+## Runtime Status (2026-02-27)
 
 Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
 
@@ -226,8 +243,12 @@ Implemented in auth routes:
 
 1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
 2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
-3. `app/routes/creation.employees.tsx` uses invite-based setup (no admin-known default password), plus resend invite.
-4. `app/routes/creation.employees.tsx` captures one primary employee address and stores both master references and snapshot text.
+3. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.
+4. `app/routes/creation.employees.tsx` is now the employee directory/manage surface (role switch, resend invite, activate/deactivate, compliance warnings).
+5. `app/routes/creation.employees_.$employeeId.edit.tsx` handles employee profile and compliance updates with document history preserved.
+6. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
+7. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
+8. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
 
 ## Cross-Doc Contract
 

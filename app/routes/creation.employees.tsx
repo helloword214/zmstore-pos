@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
+  EmployeeDocumentType,
   EmployeeRole,
   ManagerKind,
   Prisma,
@@ -9,14 +10,12 @@ import {
   UserAuthState,
   UserRole,
 } from "@prisma/client";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
 import { createHash, randomBytes } from "node:crypto";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
-import { SoTFormField } from "~/components/ui/SoTFormField";
-import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import {
   SoTTable,
@@ -37,13 +36,20 @@ type EmployeeAccountRow = {
   employeeId: number;
   userId: number;
   name: string;
+  middleName: string | null;
   alias: string | null;
+  birthDate: string | null;
   phone: string | null;
   email: string | null;
+  sssNumber: string | null;
+  pagIbigNumber: string | null;
+  licenseNumber: string | null;
+  licenseExpiry: string | null;
   lane: Lane;
   managerKind: ManagerKind | null;
   authState: UserAuthState;
   active: boolean;
+  complianceFlags: string[];
   createdAt: string;
   addressLine: string | null;
   addressArea: string | null;
@@ -53,24 +59,11 @@ type ActionData =
   | { ok: true; message: string }
   | { ok: false; message: string };
 
-function isLane(value: string): value is Lane {
-  return value === "RIDER" || value === "CASHIER" || value === "STORE_MANAGER";
-}
-
-function isSwitchLane(value: string): value is SwitchLane {
-  return value === "RIDER" || value === "CASHIER";
-}
-
-function toEmployeeRole(lane: Lane): EmployeeRole {
-  if (lane === "RIDER") return EmployeeRole.RIDER;
-  if (lane === "STORE_MANAGER") return EmployeeRole.MANAGER;
-  return EmployeeRole.STAFF;
-}
-
-function toUserRole(lane: Lane): UserRole {
-  if (lane === "RIDER") return UserRole.EMPLOYEE;
-  if (lane === "STORE_MANAGER") return UserRole.STORE_MANAGER;
-  return UserRole.CASHIER;
+function fullName(firstName: string, lastName: string, middleName?: string | null) {
+  return [firstName, middleName ?? null, lastName]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 function prettyLane(row: EmployeeAccountRow) {
@@ -94,10 +87,6 @@ function toSwitchEmployeeRole(lane: SwitchLane): EmployeeRole {
   return lane === "CASHIER" ? EmployeeRole.STAFF : EmployeeRole.RIDER;
 }
 
-function fullName(firstName: string, lastName: string) {
-  return `${firstName} ${lastName}`.trim();
-}
-
 function tokenHash(rawToken: string) {
   return createHash("sha256").update(rawToken).digest("hex");
 }
@@ -108,19 +97,25 @@ function requestIp(request: Request) {
   return fwd.split(",")[0]?.trim() || null;
 }
 
-function parseOptionalId(raw: FormDataEntryValue | null) {
-  const value = String(raw ?? "").trim();
-  if (!value) return null;
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.floor(n);
-}
-
 function formatAddressArea(parts: Array<string | null | undefined>) {
   const clean = parts
     .map((p) => (p ?? "").trim())
     .filter((p) => p.length > 0);
   return clean.length ? clean.join(", ") : null;
+}
+
+function presentComplianceFlag(flag: string) {
+  return flag.replace(/_/g, " ");
+}
+
+function latestDocumentByType<
+  T extends {
+    docType: EmployeeDocumentType;
+    uploadedAt: Date;
+    expiresAt: Date | null;
+  },
+>(docs: T[], docType: EmployeeDocumentType) {
+  return docs.find((doc) => doc.docType === docType) ?? null;
 }
 
 async function issuePasswordSetupToken(
@@ -151,77 +146,40 @@ async function issuePasswordSetupToken(
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
-  const [
-    employees,
-    vehicles,
-    defaultBranch,
-    provinces,
-    municipalities,
-    barangays,
-    zones,
-    landmarks,
-  ] = await Promise.all([
-    db.employee.findMany({
-      where: { user: { isNot: null } },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            role: true,
-            managerKind: true,
-            authState: true,
-            active: true,
-            createdAt: true,
-          },
-        },
-        address: {
-          select: {
-            line1: true,
-            barangay: true,
-            city: true,
-            province: true,
-          },
+  const employees = await db.employee.findMany({
+    where: { user: { isNot: null } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          managerKind: true,
+          authState: true,
+          active: true,
+          createdAt: true,
         },
       },
-      orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }],
-      take: 300,
-    }),
-    db.vehicle.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, type: true },
-    }),
-    db.branch.findFirst({
-      orderBy: { id: "asc" },
-      select: { id: true, name: true },
-    }),
-    db.province.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, isActive: true },
-    }),
-    db.municipality.findMany({
-      where: { isActive: true },
-      orderBy: [{ provinceId: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, isActive: true, provinceId: true },
-    }),
-    db.barangay.findMany({
-      where: { isActive: true },
-      orderBy: [{ municipalityId: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, isActive: true, municipalityId: true },
-    }),
-    db.zone.findMany({
-      where: { isActive: true },
-      orderBy: [{ barangayId: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, isActive: true, barangayId: true },
-    }),
-    db.landmark.findMany({
-      where: { isActive: true },
-      orderBy: [{ barangayId: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, isActive: true, barangayId: true },
-    }),
-  ]);
+      address: {
+        select: {
+          line1: true,
+          barangay: true,
+          city: true,
+          province: true,
+        },
+      },
+      documents: {
+        select: {
+          docType: true,
+          uploadedAt: true,
+          expiresAt: true,
+        },
+        orderBy: { uploadedAt: "desc" },
+      },
+    },
+    orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }],
+    take: 300,
+  });
 
   const rows: EmployeeAccountRow[] = employees
     .filter((e) => Boolean(e.user))
@@ -234,17 +192,52 @@ export async function loader({ request }: LoaderFunctionArgs) {
             ? "STORE_MANAGER"
             : "RIDER";
 
+      const latestValidId = latestDocumentByType(e.documents, EmployeeDocumentType.VALID_ID);
+      const latestLicenseScan = latestDocumentByType(
+        e.documents,
+        EmployeeDocumentType.DRIVER_LICENSE_SCAN,
+      );
+      const now = Date.now();
+      const complianceFlags: string[] = [];
+
+      if (!latestValidId) {
+        complianceFlags.push("VALID_ID_MISSING");
+      } else if (latestValidId.expiresAt && latestValidId.expiresAt.getTime() < now) {
+        complianceFlags.push("VALID_ID_EXPIRED");
+      }
+
+      if (lane === "RIDER") {
+        if (!e.licenseNumber) complianceFlags.push("RIDER_LICENSE_NUMBER_MISSING");
+        if (!e.licenseExpiry) {
+          complianceFlags.push("RIDER_LICENSE_EXPIRY_MISSING");
+        } else if (e.licenseExpiry.getTime() < now) {
+          complianceFlags.push("RIDER_LICENSE_EXPIRED");
+        }
+        if (!latestLicenseScan) {
+          complianceFlags.push("RIDER_LICENSE_SCAN_MISSING");
+        } else if (latestLicenseScan.expiresAt && latestLicenseScan.expiresAt.getTime() < now) {
+          complianceFlags.push("RIDER_LICENSE_SCAN_EXPIRED");
+        }
+      }
+
       return {
         employeeId: e.id,
         userId: u.id,
-        name: fullName(e.firstName, e.lastName),
+        name: fullName(e.firstName, e.lastName, e.middleName),
+        middleName: e.middleName ?? null,
         alias: e.alias ?? null,
+        birthDate: e.birthDate ? e.birthDate.toISOString().slice(0, 10) : null,
         phone: e.phone ?? null,
         email: u.email ?? e.email ?? null,
+        sssNumber: e.sssNumber ?? null,
+        pagIbigNumber: e.pagIbigNumber ?? null,
+        licenseNumber: e.licenseNumber ?? null,
+        licenseExpiry: e.licenseExpiry ? e.licenseExpiry.toISOString().slice(0, 10) : null,
         lane,
         managerKind: u.managerKind ?? null,
         authState: u.authState,
         active: u.active,
+        complianceFlags,
         createdAt: u.createdAt.toISOString(),
         addressLine: e.address?.line1 ?? null,
         addressArea: formatAddressArea([
@@ -255,16 +248,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       };
     });
 
-  return json({
-    rows,
-    vehicles,
-    defaultBranch,
-    provinces,
-    municipalities,
-    barangays,
-    zones,
-    landmarks,
-  });
+  return json({ rows });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -272,271 +256,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "").trim();
 
-  if (intent === "create") {
-    const laneRaw = String(fd.get("lane") || "").trim();
-    if (!isLane(laneRaw)) {
-      return json<ActionData>(
-        { ok: false, message: "Invalid lane selected." },
-        { status: 400 },
-      );
-    }
-    const lane = laneRaw as Lane;
-
-    const firstName = String(fd.get("firstName") || "").trim();
-    const lastName = String(fd.get("lastName") || "").trim();
-    const alias = String(fd.get("alias") || "").trim() || null;
-    const phone = String(fd.get("phone") || "").trim() || null;
-    const email = String(fd.get("email") || "")
-      .trim()
-      .toLowerCase();
-    const defaultVehicleRaw = String(fd.get("defaultVehicleId") || "").trim();
-    const defaultVehicleId = defaultVehicleRaw ? Number(defaultVehicleRaw) : null;
-
-    const line1 = String(fd.get("line1") || "").trim();
-    const purok = String(fd.get("purok") || "").trim() || null;
-    const postalCode = String(fd.get("postalCode") || "").trim() || null;
-    const landmarkText = String(fd.get("landmarkText") || "").trim() || null;
-
-    const provinceId = parseOptionalId(fd.get("provinceId"));
-    const municipalityId = parseOptionalId(fd.get("municipalityId"));
-    const barangayId = parseOptionalId(fd.get("barangayId"));
-    const zoneId = parseOptionalId(fd.get("zoneId"));
-    const landmarkId = parseOptionalId(fd.get("landmarkId"));
-
-    if (!firstName || !lastName || !phone) {
-      return json<ActionData>(
-        { ok: false, message: "First name, last name, and phone are required." },
-        { status: 400 },
-      );
-    }
-    if (!email) {
-      return json<ActionData>(
-        { ok: false, message: "Email is required (no email, no account)." },
-        { status: 400 },
-      );
-    }
-    if (!line1) {
-      return json<ActionData>(
-        { ok: false, message: "House/Street address is required." },
-        { status: 400 },
-      );
-    }
-    if (!provinceId || !municipalityId || !barangayId) {
-      return json<ActionData>(
-        {
-          ok: false,
-          message:
-            "Province, municipality/city, and barangay are required for employee address.",
-        },
-        { status: 400 },
-      );
-    }
-
-    const [provinceRow, municipalityRow, barangayRow] = await Promise.all([
-      db.province.findFirst({
-        where: { id: provinceId, isActive: true },
-        select: { id: true, name: true },
-      }),
-      db.municipality.findFirst({
-        where: {
-          id: municipalityId,
-          provinceId,
-          isActive: true,
-        },
-        select: { id: true, name: true },
-      }),
-      db.barangay.findFirst({
-        where: {
-          id: barangayId,
-          municipalityId,
-          isActive: true,
-        },
-        select: { id: true, name: true },
-      }),
-    ]);
-
-    if (!provinceRow || !municipalityRow || !barangayRow) {
-      return json<ActionData>(
-        {
-          ok: false,
-          message:
-            "Invalid address hierarchy. Re-select province, municipality, and barangay.",
-        },
-        { status: 400 },
-      );
-    }
-
-    let zoneRow: { id: number; name: string } | null = null;
-    if (zoneId) {
-      zoneRow = await db.zone.findFirst({
-        where: {
-          id: zoneId,
-          barangayId,
-          isActive: true,
-        },
-        select: { id: true, name: true },
-      });
-      if (!zoneRow) {
-        return json<ActionData>(
-          { ok: false, message: "Selected zone/purok is invalid for the chosen barangay." },
-          { status: 400 },
-        );
-      }
-    }
-
-    let landmarkRow: { id: number; name: string } | null = null;
-    if (landmarkId) {
-      landmarkRow = await db.landmark.findFirst({
-        where: {
-          id: landmarkId,
-          isActive: true,
-          OR: [{ barangayId: null }, { barangayId }],
-        },
-        select: { id: true, name: true },
-      });
-      if (!landmarkRow) {
-        return json<ActionData>(
-          { ok: false, message: "Selected landmark is invalid for the chosen barangay." },
-          { status: 400 },
-        );
-      }
-    }
-
-    try {
-      const now = new Date();
-      const ip = requestIp(request);
-      const ua = request.headers.get("user-agent");
-      let inviteToken = "";
-      let inviteEmail = email;
-
-      await db.$transaction(async (tx) => {
-        const employee = await tx.employee.create({
-          data: {
-            firstName,
-            lastName,
-            alias,
-            phone,
-            email,
-            role: toEmployeeRole(lane),
-            active: true,
-            defaultVehicleId: lane === "RIDER" ? defaultVehicleId || null : null,
-          },
-          select: { id: true },
-        });
-
-        await tx.employeeAddress.create({
-          data: {
-            employeeId: employee.id,
-            line1,
-            provinceId,
-            municipalityId,
-            barangayId,
-            zoneId: zoneRow?.id ?? null,
-            landmarkId: landmarkRow?.id ?? null,
-            province: provinceRow.name,
-            city: municipalityRow.name,
-            barangay: barangayRow.name,
-            purok,
-            postalCode,
-            landmark: landmarkText || landmarkRow?.name || null,
-            geoLat: null,
-            geoLng: null,
-          },
-        });
-
-        const defaultBranch = await tx.branch.findFirst({
-          orderBy: { id: "asc" },
-          select: { id: true },
-        });
-
-        const user = await tx.user.create({
-          data: {
-            email,
-            role: toUserRole(lane),
-            managerKind: lane === "STORE_MANAGER" ? ManagerKind.STAFF : null,
-            employeeId: employee.id,
-            active: true,
-            authState: UserAuthState.PENDING_PASSWORD,
-            passwordHash: null,
-            pinHash: null,
-            branches: defaultBranch
-              ? { create: { branchId: defaultBranch.id } }
-              : undefined,
-          },
-          select: { id: true, role: true, email: true },
-        });
-
-        await tx.userRoleAssignment.create({
-          data: {
-            userId: user.id,
-            role: user.role,
-            reason: "INITIAL_CREATE_BY_ADMIN",
-            changedById: me.userId,
-          },
-        });
-
-        await tx.userRoleAuditEvent.create({
-          data: {
-            userId: user.id,
-            beforeRole: user.role,
-            afterRole: user.role,
-            reason: "INITIAL_CREATE_BY_ADMIN",
-            changedById: me.userId,
-          },
-        });
-
-        inviteEmail = user.email ?? email;
-        inviteToken = await issuePasswordSetupToken(tx, {
-          userId: user.id,
-          now,
-          requestIp: ip,
-          userAgent: ua,
-        });
-      });
-
-      const setupUrl = `${resolveAppBaseUrl(request)}/reset-password/${inviteToken}`;
-      try {
-        await sendPasswordSetupEmail({ to: inviteEmail, setupUrl });
-        return json<ActionData>({
-          ok: true,
-          message: "Employee account created with primary address. Setup link sent via email.",
-        });
-      } catch (mailError) {
-        console.error("[auth] employee invite send failed", mailError);
-        return json<ActionData>({
-          ok: true,
-          message:
-            "Employee account created with primary address, but setup email failed. User can use Forgot password.",
-        });
-      }
-    } catch (e: unknown) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        return json<ActionData>(
-          { ok: false, message: "Duplicate value detected (email or phone already exists)." },
-          { status: 400 },
-        );
-      }
-      const message = e instanceof Error ? e.message : "Employee creation failed.";
-      return json<ActionData>({ ok: false, message }, { status: 500 });
-    }
-  }
-
   if (intent === "switch-role") {
     const userId = Number(fd.get("userId"));
     const targetLaneRaw = String(fd.get("targetLane") || "").trim();
     const reason = String(fd.get("reason") || "").trim();
 
     if (!Number.isFinite(userId) || userId <= 0) {
-      return json<ActionData>(
-        { ok: false, message: "Invalid user id." },
-        { status: 400 },
-      );
+      return json<ActionData>({ ok: false, message: "Invalid user id." }, { status: 400 });
     }
-    if (!isSwitchLane(targetLaneRaw)) {
-      return json<ActionData>(
-        { ok: false, message: "Invalid target lane." },
-        { status: 400 },
-      );
+    if (targetLaneRaw !== "RIDER" && targetLaneRaw !== "CASHIER") {
+      return json<ActionData>({ ok: false, message: "Invalid target lane." }, { status: 400 });
     }
     if (!reason) {
       return json<ActionData>(
@@ -601,6 +330,7 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 400 },
       );
     }
+    const currentEmployeeId = current.employeeId;
 
     if (current.role === UserRole.CASHIER) {
       const openShift = await db.cashierShift.findFirst({
@@ -667,7 +397,7 @@ export async function action({ request }: ActionFunctionArgs) {
         });
 
         await tx.employee.update({
-          where: { id: current.employeeId },
+          where: { id: currentEmployeeId },
           data: { role: toSwitchEmployeeRole(targetLane) },
         });
 
@@ -711,10 +441,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "resend-invite") {
     const userId = Number(fd.get("userId"));
     if (!Number.isFinite(userId) || userId <= 0) {
-      return json<ActionData>(
-        { ok: false, message: "Invalid user id." },
-        { status: 400 },
-      );
+      return json<ActionData>({ ok: false, message: "Invalid user id." }, { status: 400 });
     }
 
     const target = await db.user.findUnique({
@@ -779,10 +506,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "toggle-active") {
     const userId = Number(fd.get("userId"));
     if (!Number.isFinite(userId) || userId <= 0) {
-      return json<ActionData>(
-        { ok: false, message: "Invalid user id." },
-        { status: 400 },
-      );
+      return json<ActionData>({ ok: false, message: "Invalid user id." }, { status: 400 });
     }
 
     const current = await db.user.findUnique({
@@ -819,104 +543,17 @@ export async function action({ request }: ActionFunctionArgs) {
   return json<ActionData>({ ok: false, message: "Unknown intent." }, { status: 400 });
 }
 
-export default function EmployeeCreationPage() {
-  const {
-    rows,
-    vehicles,
-    defaultBranch,
-    provinces,
-    municipalities,
-    barangays,
-    zones,
-    landmarks,
-  } = useLoaderData<typeof loader>();
+export default function EmployeeDirectoryPage() {
+  const { rows } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
-  const [lane, setLane] = React.useState<Lane>("RIDER");
-
-  const initialProvince = provinces[0]?.id ?? "";
-  const initialMunicipality =
-    municipalities.find((m) => m.provinceId === initialProvince)?.id ?? "";
-  const initialBarangay =
-    barangays.find((b) => b.municipalityId === initialMunicipality)?.id ?? "";
-
-  const [provinceId, setProvinceId] = React.useState<number | "">(initialProvince);
-  const [municipalityId, setMunicipalityId] = React.useState<number | "">(initialMunicipality);
-  const [barangayId, setBarangayId] = React.useState<number | "">(initialBarangay);
-  const [zoneId, setZoneId] = React.useState<number | "">("");
-  const [landmarkId, setLandmarkId] = React.useState<number | "">("");
-
-  const municipalityOptions = React.useMemo(
-    () =>
-      municipalities.filter((m) => m.provinceId === (provinceId === "" ? -1 : provinceId)),
-    [municipalities, provinceId],
-  );
-
-  const barangayOptions = React.useMemo(
-    () =>
-      barangays.filter(
-        (b) => b.municipalityId === (municipalityId === "" ? -1 : municipalityId),
-      ),
-    [barangays, municipalityId],
-  );
-
-  const zoneOptions = React.useMemo(
-    () => zones.filter((z) => z.barangayId === (barangayId === "" ? -1 : barangayId)),
-    [zones, barangayId],
-  );
-
-  const landmarkOptions = React.useMemo(
-    () =>
-      landmarks.filter(
-        (l) => l.barangayId === null || l.barangayId === (barangayId === "" ? -1 : barangayId),
-      ),
-    [landmarks, barangayId],
-  );
-
-  function onProvinceChange(raw: string) {
-    const nextProvince = Number(raw) || "";
-    const nextMunicipality =
-      nextProvince === ""
-        ? ""
-        : municipalities.find((m) => m.provinceId === nextProvince)?.id ?? "";
-    const nextBarangay =
-      nextMunicipality === ""
-        ? ""
-        : barangays.find((b) => b.municipalityId === nextMunicipality)?.id ?? "";
-
-    setProvinceId(nextProvince);
-    setMunicipalityId(nextMunicipality);
-    setBarangayId(nextBarangay);
-    setZoneId("");
-    setLandmarkId("");
-  }
-
-  function onMunicipalityChange(raw: string) {
-    const nextMunicipality = Number(raw) || "";
-    const nextBarangay =
-      nextMunicipality === ""
-        ? ""
-        : barangays.find((b) => b.municipalityId === nextMunicipality)?.id ?? "";
-
-    setMunicipalityId(nextMunicipality);
-    setBarangayId(nextBarangay);
-    setZoneId("");
-    setLandmarkId("");
-  }
-
-  function onBarangayChange(raw: string) {
-    const nextBarangay = Number(raw) || "";
-    setBarangayId(nextBarangay);
-    setZoneId("");
-    setLandmarkId("");
-  }
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Employees"
-        subtitle="Create employee identity, capture primary address, and send password setup invite."
+        subtitle="Directory and account controls. Use the create page for new employee onboarding."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-7xl"
@@ -927,178 +564,16 @@ export default function EmployeeCreationPage() {
           <SoTAlert tone={actionData.ok ? "success" : "danger"}>{actionData.message}</SoTAlert>
         ) : null}
 
-        <SoTCard>
-          <Form method="post" className={busy ? "pointer-events-none opacity-70" : ""}>
-            <input type="hidden" name="intent" value="create" />
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Identity and Role</h3>
-                  <p className="text-xs text-slate-500">
-                    Email is mandatory. No email means no account creation.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <SoTFormField
-                    label="Lane"
-                    hint="Supported lanes: CASHIER, RIDER, STORE_MANAGER."
-                  >
-                    <select
-                      name="lane"
-                      value={lane}
-                      onChange={(e) => setLane(e.target.value as Lane)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                    >
-                      <option value="RIDER">RIDER</option>
-                      <option value="CASHIER">CASHIER</option>
-                      <option value="STORE_MANAGER">STORE_MANAGER (staff)</option>
-                    </select>
-                  </SoTFormField>
-
-                  <SoTInput name="firstName" label="First Name" required />
-                  <SoTInput name="lastName" label="Last Name" required />
-                  <SoTInput name="alias" label="Alias (optional)" />
-                  <SoTInput
-                    name="phone"
-                    label="Phone"
-                    inputMode="numeric"
-                    required
-                    placeholder="09XXXXXXXXX"
-                  />
-                  <SoTInput name="email" label="Email" type="email" required />
-
-                  <SoTFormField
-                    label="Default Vehicle (Rider only)"
-                    hint="Ignored for cashier and store manager."
-                  >
-                    <select
-                      name="defaultVehicleId"
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                    >
-                      <option value="">None</option>
-                      {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name} ({v.type})
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Primary Address</h3>
-                  <p className="text-xs text-slate-500">
-                    Uses canonical address masters (province → municipality → barangay).
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <SoTInput name="line1" label="House/Street" required />
-                  <SoTInput name="purok" label="Purok (text, optional)" />
-                  <SoTInput name="postalCode" label="Postal Code (optional)" />
-                  <SoTInput name="landmarkText" label="Landmark (text, optional)" />
-
-                  <SoTFormField label="Province">
-                    <select
-                      name="provinceId"
-                      value={provinceId}
-                      onChange={(e) => onProvinceChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select province</option>
-                      {provinces.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-
-                  <SoTFormField label="Municipality / City">
-                    <select
-                      name="municipalityId"
-                      value={municipalityId}
-                      onChange={(e) => onMunicipalityChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select municipality</option>
-                      {municipalityOptions.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-
-                  <SoTFormField label="Barangay">
-                    <select
-                      name="barangayId"
-                      value={barangayId}
-                      onChange={(e) => onBarangayChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select barangay</option>
-                      {barangayOptions.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-
-                  <SoTFormField label="Zone / Purok (ref, optional)">
-                    <select
-                      name="zoneId"
-                      value={zoneId}
-                      onChange={(e) => setZoneId(Number(e.target.value) || "")}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      disabled={barangayId === ""}
-                    >
-                      <option value="">None</option>
-                      {zoneOptions.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          {z.name}
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-
-                  <SoTFormField label="Landmark (ref, optional)">
-                    <select
-                      name="landmarkId"
-                      value={landmarkId}
-                      onChange={(e) => setLandmarkId(Number(e.target.value) || "")}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      disabled={barangayId === ""}
-                    >
-                      <option value="">None</option>
-                      {landmarkOptions.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}
-                        </option>
-                      ))}
-                    </select>
-                  </SoTFormField>
-                </div>
-              </section>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-500">
-                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}. Password setup link will be sent to employee email.
-              </p>
-              <SoTButton variant="primary" type="submit" disabled={busy}>
-                {busy ? "Saving..." : "Create Employee Account"}
-              </SoTButton>
-            </div>
-          </Form>
+        <SoTCard className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-600">
+            Manage role switches, invites, and account state. Compliance badges are monitoring-only and never block create/switch actions.
+          </p>
+          <Link
+            to="/creation/employees/new"
+            className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+          >
+            Create New Employee
+          </Link>
         </SoTCard>
 
         <SoTCard>
@@ -1112,13 +587,14 @@ export default function EmployeeCreationPage() {
                 <SoTTh>Lane</SoTTh>
                 <SoTTh>Login</SoTTh>
                 <SoTTh>Status</SoTTh>
+                <SoTTh>Compliance</SoTTh>
                 <SoTTh>Role Switch</SoTTh>
                 <SoTTh align="right">Account</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow colSpan={6} message="No employee accounts yet." />
+                <SoTTableEmptyRow colSpan={7} message="No employee accounts yet." />
               ) : (
                 rows.map((row: EmployeeAccountRow) => (
                   <SoTTableRow key={row.userId}>
@@ -1138,6 +614,10 @@ export default function EmployeeCreationPage() {
                           "No address on file"
                         )}
                       </div>
+                      <div className="text-xs text-slate-500">
+                        {row.birthDate ? `Birth: ${row.birthDate}` : "Birth: -"} · SSS: {row.sssNumber ?? "-"}
+                        {" "}· Pag-IBIG: {row.pagIbigNumber ?? "-"}
+                      </div>
                     </SoTTd>
                     <SoTTd>{prettyLane(row)}</SoTTd>
                     <SoTTd>
@@ -1147,9 +627,7 @@ export default function EmployeeCreationPage() {
                     <SoTTd>
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          row.active
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-200 text-slate-700"
+                          row.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
                         }`}
                       >
                         {row.active ? "ACTIVE" : "INACTIVE"}
@@ -1165,6 +643,30 @@ export default function EmployeeCreationPage() {
                           {row.authState === "ACTIVE" ? "PASSWORD_READY" : "PENDING_PASSWORD"}
                         </span>
                       </div>
+                    </SoTTd>
+                    <SoTTd>
+                      {row.complianceFlags.length === 0 ? (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          COMPLIANT
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {row.complianceFlags.slice(0, 4).map((flag) => (
+                            <span
+                              key={`${row.userId}-${flag}`}
+                              className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                              title={presentComplianceFlag(flag)}
+                            >
+                              {presentComplianceFlag(flag)}
+                            </span>
+                          ))}
+                          {row.complianceFlags.length > 4 ? (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                              +{row.complianceFlags.length - 4} more
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </SoTTd>
                     <SoTTd>
                       {nextSwitchLane(row.lane) ? (
@@ -1196,6 +698,13 @@ export default function EmployeeCreationPage() {
                     </SoTTd>
                     <SoTTd align="right">
                       <div className="space-y-2">
+                        <Link
+                          to={`/creation/employees/${row.employeeId}/edit`}
+                          className="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Edit Profile
+                        </Link>
+
                         {row.authState === "PENDING_PASSWORD" && row.active ? (
                           <Form method="post">
                             <input type="hidden" name="intent" value="resend-invite" />
