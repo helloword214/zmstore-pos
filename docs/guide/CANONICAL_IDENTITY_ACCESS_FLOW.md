@@ -22,6 +22,7 @@ This document is the binding authority for role boundaries.
 4. `ADMIN` may exist without linked `Employee` because it is a control-plane role.
 5. `CASHIER` uses the same email/password login contract as other roles.
 6. Employee account creation requires email (`no email = no account`).
+7. Employee account creation must capture one primary address using canonical geo masters (`Province`, `Municipality`, `Barangay`, optional `Zone`/`Landmark`).
 
 ## Canonical Role Authority Matrix
 
@@ -226,6 +227,7 @@ Implemented in auth routes:
 1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
 2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
 3. `app/routes/creation.employees.tsx` uses invite-based setup (no admin-known default password), plus resend invite.
+4. `app/routes/creation.employees.tsx` captures one primary employee address and stores both master references and snapshot text.
 
 ## Cross-Doc Contract
 

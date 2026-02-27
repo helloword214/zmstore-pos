@@ -45,6 +45,8 @@ type EmployeeAccountRow = {
   authState: UserAuthState;
   active: boolean;
   createdAt: string;
+  addressLine: string | null;
+  addressArea: string | null;
 };
 
 type ActionData =
@@ -106,6 +108,21 @@ function requestIp(request: Request) {
   return fwd.split(",")[0]?.trim() || null;
 }
 
+function parseOptionalId(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function formatAddressArea(parts: Array<string | null | undefined>) {
+  const clean = parts
+    .map((p) => (p ?? "").trim())
+    .filter((p) => p.length > 0);
+  return clean.length ? clean.join(", ") : null;
+}
+
 async function issuePasswordSetupToken(
   tx: Prisma.TransactionClient,
   args: { userId: number; now: Date; requestIp: string | null; userAgent: string | null },
@@ -134,7 +151,16 @@ async function issuePasswordSetupToken(
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
-  const [employees, vehicles, defaultBranch] = await Promise.all([
+  const [
+    employees,
+    vehicles,
+    defaultBranch,
+    provinces,
+    municipalities,
+    barangays,
+    zones,
+    landmarks,
+  ] = await Promise.all([
     db.employee.findMany({
       where: { user: { isNot: null } },
       include: {
@@ -149,6 +175,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
             createdAt: true,
           },
         },
+        address: {
+          select: {
+            line1: true,
+            barangay: true,
+            city: true,
+            province: true,
+          },
+        },
       },
       orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }],
       take: 300,
@@ -161,6 +195,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
     db.branch.findFirst({
       orderBy: { id: "asc" },
       select: { id: true, name: true },
+    }),
+    db.province.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, isActive: true },
+    }),
+    db.municipality.findMany({
+      where: { isActive: true },
+      orderBy: [{ provinceId: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true, provinceId: true },
+    }),
+    db.barangay.findMany({
+      where: { isActive: true },
+      orderBy: [{ municipalityId: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true, municipalityId: true },
+    }),
+    db.zone.findMany({
+      where: { isActive: true },
+      orderBy: [{ barangayId: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true, barangayId: true },
+    }),
+    db.landmark.findMany({
+      where: { isActive: true },
+      orderBy: [{ barangayId: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, isActive: true, barangayId: true },
     }),
   ]);
 
@@ -187,6 +246,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
         authState: u.authState,
         active: u.active,
         createdAt: u.createdAt.toISOString(),
+        addressLine: e.address?.line1 ?? null,
+        addressArea: formatAddressArea([
+          e.address?.barangay,
+          e.address?.city,
+          e.address?.province,
+        ]),
       };
     });
 
@@ -194,6 +259,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     rows,
     vehicles,
     defaultBranch,
+    provinces,
+    municipalities,
+    barangays,
+    zones,
+    landmarks,
   });
 }
 
@@ -222,6 +292,17 @@ export async function action({ request }: ActionFunctionArgs) {
     const defaultVehicleRaw = String(fd.get("defaultVehicleId") || "").trim();
     const defaultVehicleId = defaultVehicleRaw ? Number(defaultVehicleRaw) : null;
 
+    const line1 = String(fd.get("line1") || "").trim();
+    const purok = String(fd.get("purok") || "").trim() || null;
+    const postalCode = String(fd.get("postalCode") || "").trim() || null;
+    const landmarkText = String(fd.get("landmarkText") || "").trim() || null;
+
+    const provinceId = parseOptionalId(fd.get("provinceId"));
+    const municipalityId = parseOptionalId(fd.get("municipalityId"));
+    const barangayId = parseOptionalId(fd.get("barangayId"));
+    const zoneId = parseOptionalId(fd.get("zoneId"));
+    const landmarkId = parseOptionalId(fd.get("landmarkId"));
+
     if (!firstName || !lastName || !phone) {
       return json<ActionData>(
         { ok: false, message: "First name, last name, and phone are required." },
@@ -230,9 +311,95 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     if (!email) {
       return json<ActionData>(
-        { ok: false, message: "Email is required." },
+        { ok: false, message: "Email is required (no email, no account)." },
         { status: 400 },
       );
+    }
+    if (!line1) {
+      return json<ActionData>(
+        { ok: false, message: "House/Street address is required." },
+        { status: 400 },
+      );
+    }
+    if (!provinceId || !municipalityId || !barangayId) {
+      return json<ActionData>(
+        {
+          ok: false,
+          message:
+            "Province, municipality/city, and barangay are required for employee address.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const [provinceRow, municipalityRow, barangayRow] = await Promise.all([
+      db.province.findFirst({
+        where: { id: provinceId, isActive: true },
+        select: { id: true, name: true },
+      }),
+      db.municipality.findFirst({
+        where: {
+          id: municipalityId,
+          provinceId,
+          isActive: true,
+        },
+        select: { id: true, name: true },
+      }),
+      db.barangay.findFirst({
+        where: {
+          id: barangayId,
+          municipalityId,
+          isActive: true,
+        },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    if (!provinceRow || !municipalityRow || !barangayRow) {
+      return json<ActionData>(
+        {
+          ok: false,
+          message:
+            "Invalid address hierarchy. Re-select province, municipality, and barangay.",
+        },
+        { status: 400 },
+      );
+    }
+
+    let zoneRow: { id: number; name: string } | null = null;
+    if (zoneId) {
+      zoneRow = await db.zone.findFirst({
+        where: {
+          id: zoneId,
+          barangayId,
+          isActive: true,
+        },
+        select: { id: true, name: true },
+      });
+      if (!zoneRow) {
+        return json<ActionData>(
+          { ok: false, message: "Selected zone/purok is invalid for the chosen barangay." },
+          { status: 400 },
+        );
+      }
+    }
+
+    let landmarkRow: { id: number; name: string } | null = null;
+    if (landmarkId) {
+      landmarkRow = await db.landmark.findFirst({
+        where: {
+          id: landmarkId,
+          isActive: true,
+          OR: [{ barangayId: null }, { barangayId }],
+        },
+        select: { id: true, name: true },
+      });
+      if (!landmarkRow) {
+        return json<ActionData>(
+          { ok: false, message: "Selected landmark is invalid for the chosen barangay." },
+          { status: 400 },
+        );
+      }
     }
 
     try {
@@ -255,6 +422,26 @@ export async function action({ request }: ActionFunctionArgs) {
             defaultVehicleId: lane === "RIDER" ? defaultVehicleId || null : null,
           },
           select: { id: true },
+        });
+
+        await tx.employeeAddress.create({
+          data: {
+            employeeId: employee.id,
+            line1,
+            provinceId,
+            municipalityId,
+            barangayId,
+            zoneId: zoneRow?.id ?? null,
+            landmarkId: landmarkRow?.id ?? null,
+            province: provinceRow.name,
+            city: municipalityRow.name,
+            barangay: barangayRow.name,
+            purok,
+            postalCode,
+            landmark: landmarkText || landmarkRow?.name || null,
+            geoLat: null,
+            geoLng: null,
+          },
         });
 
         const defaultBranch = await tx.branch.findFirst({
@@ -312,14 +499,14 @@ export async function action({ request }: ActionFunctionArgs) {
         await sendPasswordSetupEmail({ to: inviteEmail, setupUrl });
         return json<ActionData>({
           ok: true,
-          message: "Employee account created. Password setup link sent via email.",
+          message: "Employee account created with primary address. Setup link sent via email.",
         });
       } catch (mailError) {
         console.error("[auth] employee invite send failed", mailError);
         return json<ActionData>({
           ok: true,
           message:
-            "Employee account created, but setup email failed. User can request a link from Forgot password.",
+            "Employee account created with primary address, but setup email failed. User can use Forgot password.",
         });
       }
     } catch (e: unknown) {
@@ -330,10 +517,7 @@ export async function action({ request }: ActionFunctionArgs) {
         );
       }
       const message = e instanceof Error ? e.message : "Employee creation failed.";
-      return json<ActionData>(
-        { ok: false, message },
-        { status: 500 },
-      );
+      return json<ActionData>({ ok: false, message }, { status: 500 });
     }
   }
 
@@ -510,7 +694,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       return json<ActionData>({
         ok: true,
-        message: `Role switched to ${targetLane}. User must re-login with new credentials.`,
+        message: `Role switched to ${targetLane}. User must re-login with new role lane.`,
       });
     } catch (e: unknown) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -636,85 +820,279 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function EmployeeCreationPage() {
-  const { rows, vehicles, defaultBranch } = useLoaderData<typeof loader>();
+  const {
+    rows,
+    vehicles,
+    defaultBranch,
+    provinces,
+    municipalities,
+    barangays,
+    zones,
+    landmarks,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
   const [lane, setLane] = React.useState<Lane>("RIDER");
 
+  const initialProvince = provinces[0]?.id ?? "";
+  const initialMunicipality =
+    municipalities.find((m) => m.provinceId === initialProvince)?.id ?? "";
+  const initialBarangay =
+    barangays.find((b) => b.municipalityId === initialMunicipality)?.id ?? "";
+
+  const [provinceId, setProvinceId] = React.useState<number | "">(initialProvince);
+  const [municipalityId, setMunicipalityId] = React.useState<number | "">(initialMunicipality);
+  const [barangayId, setBarangayId] = React.useState<number | "">(initialBarangay);
+  const [zoneId, setZoneId] = React.useState<number | "">("");
+  const [landmarkId, setLandmarkId] = React.useState<number | "">("");
+
+  const municipalityOptions = React.useMemo(
+    () =>
+      municipalities.filter((m) => m.provinceId === (provinceId === "" ? -1 : provinceId)),
+    [municipalities, provinceId],
+  );
+
+  const barangayOptions = React.useMemo(
+    () =>
+      barangays.filter(
+        (b) => b.municipalityId === (municipalityId === "" ? -1 : municipalityId),
+      ),
+    [barangays, municipalityId],
+  );
+
+  const zoneOptions = React.useMemo(
+    () => zones.filter((z) => z.barangayId === (barangayId === "" ? -1 : barangayId)),
+    [zones, barangayId],
+  );
+
+  const landmarkOptions = React.useMemo(
+    () =>
+      landmarks.filter(
+        (l) => l.barangayId === null || l.barangayId === (barangayId === "" ? -1 : barangayId),
+      ),
+    [landmarks, barangayId],
+  );
+
+  function onProvinceChange(raw: string) {
+    const nextProvince = Number(raw) || "";
+    const nextMunicipality =
+      nextProvince === ""
+        ? ""
+        : municipalities.find((m) => m.provinceId === nextProvince)?.id ?? "";
+    const nextBarangay =
+      nextMunicipality === ""
+        ? ""
+        : barangays.find((b) => b.municipalityId === nextMunicipality)?.id ?? "";
+
+    setProvinceId(nextProvince);
+    setMunicipalityId(nextMunicipality);
+    setBarangayId(nextBarangay);
+    setZoneId("");
+    setLandmarkId("");
+  }
+
+  function onMunicipalityChange(raw: string) {
+    const nextMunicipality = Number(raw) || "";
+    const nextBarangay =
+      nextMunicipality === ""
+        ? ""
+        : barangays.find((b) => b.municipalityId === nextMunicipality)?.id ?? "";
+
+    setMunicipalityId(nextMunicipality);
+    setBarangayId(nextBarangay);
+    setZoneId("");
+    setLandmarkId("");
+  }
+
+  function onBarangayChange(raw: string) {
+    const nextBarangay = Number(raw) || "";
+    setBarangayId(nextBarangay);
+    setZoneId("");
+    setLandmarkId("");
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Employees"
-        subtitle="Create employee accounts, send password setup invites, and manage cashier/rider role switches."
+        subtitle="Create employee identity, capture primary address, and send password setup invite."
         backTo="/"
         backLabel="Dashboard"
-        maxWidthClassName="max-w-6xl"
+        maxWidthClassName="max-w-7xl"
       />
 
-      <div className="mx-auto max-w-6xl space-y-5 px-5 py-6">
+      <div className="mx-auto max-w-7xl space-y-5 px-5 py-6">
         {actionData ? (
-          <SoTAlert tone={actionData.ok ? "success" : "danger"}>
-            {actionData.message}
-          </SoTAlert>
+          <SoTAlert tone={actionData.ok ? "success" : "danger"}>{actionData.message}</SoTAlert>
         ) : null}
 
         <SoTCard>
-          <Form method="post" className={busy ? "opacity-70 pointer-events-none" : ""}>
+          <Form method="post" className={busy ? "pointer-events-none opacity-70" : ""}>
             <input type="hidden" name="intent" value="create" />
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              <SoTFormField
-                label="Lane"
-                hint="Only CASHIER, RIDER, and STORE_MANAGER are supported in this creation flow."
-              >
-                <select
-                  name="lane"
-                  value={lane}
-                  onChange={(e) => setLane(e.target.value as Lane)}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                >
-                  <option value="RIDER">RIDER</option>
-                  <option value="CASHIER">CASHIER</option>
-                  <option value="STORE_MANAGER">STORE_MANAGER (staff)</option>
-                </select>
-              </SoTFormField>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Identity and Role</h3>
+                  <p className="text-xs text-slate-500">
+                    Email is mandatory. No email means no account creation.
+                  </p>
+                </div>
 
-              <SoTInput name="firstName" label="First Name" required />
-              <SoTInput name="lastName" label="Last Name" required />
-              <SoTInput name="alias" label="Alias (optional)" />
-              <SoTInput
-                name="phone"
-                label="Phone"
-                inputMode="numeric"
-                required
-                placeholder="09XXXXXXXXX"
-              />
-              <SoTInput name="email" label="Email" type="email" required />
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <SoTFormField
+                    label="Lane"
+                    hint="Supported lanes: CASHIER, RIDER, STORE_MANAGER."
+                  >
+                    <select
+                      name="lane"
+                      value={lane}
+                      onChange={(e) => setLane(e.target.value as Lane)}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                    >
+                      <option value="RIDER">RIDER</option>
+                      <option value="CASHIER">CASHIER</option>
+                      <option value="STORE_MANAGER">STORE_MANAGER (staff)</option>
+                    </select>
+                  </SoTFormField>
 
-              <SoTFormField
-                label="Default Vehicle (Rider only)"
-                hint="Ignored for cashier and store manager."
-              >
-                <select
-                  name="defaultVehicleId"
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                >
-                  <option value="">None</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name} ({v.type})
-                    </option>
-                  ))}
-                </select>
-              </SoTFormField>
+                  <SoTInput name="firstName" label="First Name" required />
+                  <SoTInput name="lastName" label="Last Name" required />
+                  <SoTInput name="alias" label="Alias (optional)" />
+                  <SoTInput
+                    name="phone"
+                    label="Phone"
+                    inputMode="numeric"
+                    required
+                    placeholder="09XXXXXXXXX"
+                  />
+                  <SoTInput name="email" label="Email" type="email" required />
 
+                  <SoTFormField
+                    label="Default Vehicle (Rider only)"
+                    hint="Ignored for cashier and store manager."
+                  >
+                    <select
+                      name="defaultVehicleId"
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                    >
+                      <option value="">None</option>
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name} ({v.type})
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Primary Address</h3>
+                  <p className="text-xs text-slate-500">
+                    Uses canonical address masters (province → municipality → barangay).
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <SoTInput name="line1" label="House/Street" required />
+                  <SoTInput name="purok" label="Purok (text, optional)" />
+                  <SoTInput name="postalCode" label="Postal Code (optional)" />
+                  <SoTInput name="landmarkText" label="Landmark (text, optional)" />
+
+                  <SoTFormField label="Province">
+                    <select
+                      name="provinceId"
+                      value={provinceId}
+                      onChange={(e) => onProvinceChange(e.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      required
+                    >
+                      <option value="">Select province</option>
+                      {provinces.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+
+                  <SoTFormField label="Municipality / City">
+                    <select
+                      name="municipalityId"
+                      value={municipalityId}
+                      onChange={(e) => onMunicipalityChange(e.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      required
+                    >
+                      <option value="">Select municipality</option>
+                      {municipalityOptions.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+
+                  <SoTFormField label="Barangay">
+                    <select
+                      name="barangayId"
+                      value={barangayId}
+                      onChange={(e) => onBarangayChange(e.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      required
+                    >
+                      <option value="">Select barangay</option>
+                      {barangayOptions.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+
+                  <SoTFormField label="Zone / Purok (ref, optional)">
+                    <select
+                      name="zoneId"
+                      value={zoneId}
+                      onChange={(e) => setZoneId(Number(e.target.value) || "")}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      disabled={barangayId === ""}
+                    >
+                      <option value="">None</option>
+                      {zoneOptions.map((z) => (
+                        <option key={z.id} value={z.id}>
+                          {z.name}
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+
+                  <SoTFormField label="Landmark (ref, optional)">
+                    <select
+                      name="landmarkId"
+                      value={landmarkId}
+                      onChange={(e) => setLandmarkId(Number(e.target.value) || "")}
+                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      disabled={barangayId === ""}
+                    >
+                      <option value="">None</option>
+                      {landmarkOptions.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </SoTFormField>
+                </div>
+              </section>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
-                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}.
-                Setup link will be sent to employee email.
+                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}. Password setup link will be sent to employee email.
               </p>
               <SoTButton variant="primary" type="submit" disabled={busy}>
                 {busy ? "Saving..." : "Create Employee Account"}
@@ -749,6 +1127,16 @@ export default function EmployeeCreationPage() {
                       <div className="text-xs text-slate-500">
                         {row.alias ? `${row.alias} · ` : ""}
                         {row.phone ?? "No phone"}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {row.addressLine ? (
+                          <>
+                            {row.addressLine}
+                            {row.addressArea ? ` · ${row.addressArea}` : ""}
+                          </>
+                        ) : (
+                          "No address on file"
+                        )}
                       </div>
                     </SoTTd>
                     <SoTTd>{prettyLane(row)}</SoTTd>
@@ -797,9 +1185,7 @@ export default function EmployeeCreationPage() {
                           />
 
                           <SoTButton type="submit" variant="secondary" disabled={busy}>
-                            {row.lane === "CASHIER"
-                              ? "Switch to RIDER"
-                              : "Switch to CASHIER"}
+                            {row.lane === "CASHIER" ? "Switch to RIDER" : "Switch to CASHIER"}
                           </SoTButton>
                         </Form>
                       ) : (

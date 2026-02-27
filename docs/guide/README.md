@@ -69,6 +69,7 @@ Identity operations note:
 3. `login.tsx` is email/password-only for all roles (including cashier).
 4. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
 5. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
+6. Employee account creation captures one primary address using canonical address masters.
 
 ## B. Supporting (Context / Detailed Rationale)
 
