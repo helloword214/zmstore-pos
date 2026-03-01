@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-02-28
 
 ## 1. Purpose
 
@@ -106,6 +106,35 @@ Not allowed under UI refactor objective:
 1. Loader/action business-rule changes
 2. Decision-state transition changes
 3. Data authority changes
+
+## 5.1 Product Module Revamp Contract (Mandatory)
+
+Scope:
+
+1. Applies to `products` module revamp (`list`, `new`, `detail`, `edit`) and supporting product UI components.
+
+UI is free to change:
+
+1. Existing productlist components may be replaced entirely.
+2. New page layout, visual hierarchy, and component composition are allowed.
+3. New SoT components can be introduced when recurring patterns appear.
+
+Behavior must remain unchanged unless explicitly approved:
+
+1. Retail quantity behavior remains `.25/.50/.75/1.00`.
+2. `open-pack` remains manual-only.
+3. Retail floor checks remain warning-only (non-blocking).
+4. `PACK` vs `RETAIL` stock semantics remain intact.
+
+Implementation rule:
+
+1. Extract mixed behavior logic from UI-only components into route/domain helpers before or during revamp.
+2. UI component replacement must not alter server action/loader contracts under the same objective.
+
+Deprecation rule (product UI only):
+
+1. Legacy productlist components may be marked deprecated once replacement routes pass conformance and behavior checks.
+2. Deprecated components must not be used as visual authority for new product routes.
 
 ## 6. Route Priority Queue
 

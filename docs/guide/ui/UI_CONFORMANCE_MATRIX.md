@@ -2,7 +2,7 @@
 
 Status: BASELINE SNAPSHOT  
 Owner: POS Platform  
-Captured On: 2026-02-26  
+Captured On: 2026-02-28  
 Source: Active route scan + canonical flow mapping + golden reference comparison
 
 ## 1. Status Legend
@@ -29,6 +29,10 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 | `app/routes/customers.$id_.pricing.tsx` | Admin pricing list | ALIGNED | REMIT | flattened pricing list route uses SoT non-dashboard header + alert/card/form/action bar patterns with context-safe rule actions | keep row metadata concise at higher rule volume | P2 |
 | `app/routes/customers.$id_.pricing_.$ruleId.tsx` | Admin pricing rule edit | ALIGNED | REMIT | flattened pricing-rule edit route uses SoT non-dashboard header + alert/card/form/action bar with role/context-safe redirects | none significant | P2 |
 | `app/routes/creation._index.tsx` | Admin product option library | ALIGNED | REMIT | compact SoT workspace now includes tabbed global and category sections, inline edit support, and internal scroll lists while preserving creation endpoints | monitor list density once option counts become high across categories | P2 |
+| `app/routes/products._index.tsx` | Product list (legacy monolith) | NEEDS_HARDENING | REMIT | list/create/edit behaviors are mixed in a single route with high UI and state density | split by responsibility (list/new/detail/edit) while preserving current business behavior | P1 |
+| `app/routes/products.new.tsx` | Product create (target) | NEEDS_HARDENING | REMIT | planned route not yet implemented in active baseline | implement as dedicated create flow with SoT form hierarchy and behavior parity | P1 |
+| `app/routes/products.$productId.tsx` | Product detail (target) | NEEDS_HARDENING | REMIT | planned route not yet implemented in active baseline | add stable deep-link detail page for future product-centric workflows | P1 |
+| `app/routes/products.$productId.edit.tsx` | Product edit (target) | NEEDS_HARDENING | REMIT | legacy edit path exists but is not current authority; target split route pending | implement dedicated edit route aligned with new product architecture | P1 |
 | `app/routes/creation.riders.tsx` | Admin rider creation | PARTIAL | REMIT | SoT non-dashboard header + SoT card/button/form controls are applied; row edit grid is still dense on narrow layouts | tighten row-column collapse behavior on smaller screens | P2 |
 | `app/routes/creation.vehicles.tsx` | Admin vehicle creation | ALIGNED | REMIT | province-style SoT pattern is applied (search/status toolbar, focused create/edit panels, paged table, consistent row actions) with existing vehicle/profile logic preserved | monitor if advanced filters are needed as fleet volume grows | P2 |
 | `app/routes/creation.provinces.tsx` | Admin province creation | PARTIAL | REMIT | SoT non-dashboard header + SoT input/button controls are applied; inline rename/code editing alignment still needs polish | align inline edit controls for stable row height | P2 |
@@ -89,6 +93,14 @@ When a route is modified, verify:
 3. locked/disabled/pending states are explicit.
 4. helper text stays within noise budget.
 5. desktop and mobile layout keep primary action visible.
+
+Product revamp parity checks (when touched):
+
+1. `.25/.50/.75/1.00` retail step behavior remains unchanged.
+2. `open-pack` remains manual trigger only.
+3. price floor behavior remains warning-only (no hard block).
+4. `PACK` vs `RETAIL` stock cues remain explicit in UI.
+5. list rows provide stable deep-link to product detail route once available.
 
 ## 7. Update Rule
 

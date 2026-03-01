@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-27
+Last Reviewed: 2026-02-28
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -14,12 +14,13 @@ Use these as source of truth for implementation and review:
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
 3. `CANONICAL_ORDER_PRICING_SOT.md`
-4. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-5. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-6. `DIAGRAMS_DELIVERY_CSS_AR.md`
-7. `Accounts Receivable — Canonical Source of Truth (SoT)`
-8. `RIDER_SHORTAGE_WORKFLOW.md`
-9. `RunReceipt_Architecture.md`
+4. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+5. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+6. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+7. `DIAGRAMS_DELIVERY_CSS_AR.md`
+8. `Accounts Receivable — Canonical Source of Truth (SoT)`
+9. `RIDER_SHORTAGE_WORKFLOW.md`
+10. `RunReceipt_Architecture.md`
 
 Current route-level mapping coverage (canonical):
 
@@ -63,6 +64,7 @@ Current route-level mapping coverage (canonical):
 38. `login.tsx`
 39. `forgot-password.tsx`
 40. `reset-password.$token.tsx`
+41. `products._index.tsx`
 
 Identity operations note:
 
@@ -95,6 +97,9 @@ Identity operations note:
 10. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
 11. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 12. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
+13. `PRODUCTLIST_REFACTOR_DIRECTION.md`
+14. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
+15. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
 
 These help implementation but must not override Canonical docs.
 
@@ -116,18 +121,20 @@ When two guide docs conflict, apply this order:
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
 3. `CANONICAL_ORDER_PRICING_SOT.md`
-4. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-5. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-6. `DIAGRAMS_DELIVERY_CSS_AR.md`
-7. `Accounts Receivable — Canonical Source of Truth (SoT)`
-8. `RIDER_SHORTAGE_WORKFLOW.md`
-9. all other guide docs
+4. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+5. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+6. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+7. `DIAGRAMS_DELIVERY_CSS_AR.md`
+8. `Accounts Receivable — Canonical Source of Truth (SoT)`
+9. `RIDER_SHORTAGE_WORKFLOW.md`
+10. all other guide docs
 
 ## E. Flow Change Sync Rule (Mandatory)
 
 1. If code changes flow behavior, update the corresponding canonical guide docs in the same objective/PR.
 2. Minimum required docs for flow-affecting updates:
    - `CANONICAL_ORDER_PRICING_SOT.md` when order-create pricing/freeze behavior changes
+   - `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` when product unit/pack/retail shape, stock semantics, or sell-mode rules change
    - `CANONICAL_IDENTITY_ACCESS_FLOW.md` when role/access authority boundaries change
    - relevant `CANONICAL_*.md` flow guide
    - `DIAGRAMS_DELIVERY_CSS_AR.md` when flow nodes/handoffs/decision gates changed
