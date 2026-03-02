@@ -15,6 +15,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 
@@ -236,17 +237,14 @@ export default function EditCustomerRule() {
             {formError ? <SoTAlert tone="danger">{formError}</SoTAlert> : null}
 
             <SoTFormField label="Product" error={fieldErrors?.productId}>
-              <select
+              <SelectInput
                 name="productId"
                 defaultValue={String(rule.productId)}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                options={products.map((p) => ({
+                  label: p.name,
+                  value: String(p.id),
+                }))}
+              />
             </SoTFormField>
 
             <SoTFormField label="Unit Kind" error={fieldErrors?.unitKind}>
@@ -267,15 +265,24 @@ export default function EditCustomerRule() {
             </SoTFormField>
 
             <SoTFormField label="Mode" error={fieldErrors?.mode}>
-              <select
+              <SelectInput
                 name="mode"
                 defaultValue={rule.mode}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <option value="FIXED_PRICE">FIXED_PRICE (set new price)</option>
-                <option value="FIXED_DISCOUNT">FIXED_DISCOUNT (minus PHP)</option>
-                <option value="PERCENT_DISCOUNT">PERCENT_DISCOUNT (minus %)</option>
-              </select>
+                options={[
+                  {
+                    label: "FIXED_PRICE (set new price)",
+                    value: "FIXED_PRICE",
+                  },
+                  {
+                    label: "FIXED_DISCOUNT (minus PHP)",
+                    value: "FIXED_DISCOUNT",
+                  },
+                  {
+                    label: "PERCENT_DISCOUNT (minus %)",
+                    value: "PERCENT_DISCOUNT",
+                  },
+                ]}
+              />
             </SoTFormField>
 
             <SoTFormField label="Value" error={fieldErrors?.value}>

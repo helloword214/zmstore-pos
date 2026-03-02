@@ -10,6 +10,7 @@ import { SoTEntityFormPanel } from "~/components/ui/SoTEntityFormPanel";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import {
   SoTTable,
   SoTTd,
@@ -404,58 +405,47 @@ export default function AreasPage() {
               <h2 className="text-sm font-semibold text-slate-900">Hierarchy Navigator</h2>
 
               <SoTFormField label="Province">
-                <select
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                <SelectInput
                   value={activeProvinceId ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value ? Number(e.target.value) : null;
-                    navigate(qs({ pid: value, mid: null, bid: null }));
+                  onChange={(value) => {
+                    const next = String(value) ? Number(value) : null;
+                    navigate(qs({ pid: next, mid: null, bid: null }));
                   }}
-                >
-                  {provinces.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  options={provinces.map((p) => ({ label: p.name, value: String(p.id) }))}
+                />
               </SoTFormField>
 
               <SoTFormField label="Municipality">
-                <select
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                <SelectInput
                   value={activeMunicipalityId ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value ? Number(e.target.value) : null;
-                    navigate(qs({ mid: value, bid: null }));
+                  onChange={(value) => {
+                    const next = String(value) ? Number(value) : null;
+                    navigate(qs({ mid: next, bid: null }));
                   }}
                   disabled={!activeProvinceId || municipalities.length === 0}
-                >
-                  <option value="">Select municipality</option>
-                  {municipalities.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { label: "Select municipality", value: "" },
+                    ...municipalities.map((m) => ({
+                      label: m.name,
+                      value: String(m.id),
+                    })),
+                  ]}
+                />
               </SoTFormField>
 
               <SoTFormField label="Barangay">
-                <select
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                <SelectInput
                   value={activeBarangayId ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value ? Number(e.target.value) : null;
-                    navigate(qs({ bid: value }));
+                  onChange={(value) => {
+                    const next = String(value) ? Number(value) : null;
+                    navigate(qs({ bid: next }));
                   }}
                   disabled={!activeMunicipalityId || barangays.length === 0}
-                >
-                  <option value="">Select barangay</option>
-                  {barangays.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { label: "Select barangay", value: "" },
+                    ...barangays.map((b) => ({ label: b.name, value: String(b.id) })),
+                  ]}
+                />
               </SoTFormField>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

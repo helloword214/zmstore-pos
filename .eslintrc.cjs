@@ -72,6 +72,19 @@ module.exports = {
         "plugin:import/typescript",
       ],
     },
+    {
+      files: ["app/routes/**/*.tsx"],
+      rules: {
+        "no-restricted-syntax": [
+          "error",
+          {
+            selector: "JSXOpeningElement[name.name='select']",
+            message:
+              "Use SelectInput (or approved SoT dropdown component) instead of native <select> in route files.",
+          },
+        ],
+      },
+    },
 
     // Node
     {

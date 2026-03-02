@@ -17,6 +17,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { resolveAppBaseUrl, sendPasswordSetupEmail } from "~/utils/mail.server";
@@ -612,6 +613,7 @@ export default function EmployeeCreatePage() {
   const [barangayId, setBarangayId] = React.useState<number | "">(initialBarangay);
   const [zoneId, setZoneId] = React.useState<number | "">("");
   const [landmarkId, setLandmarkId] = React.useState<number | "">("");
+  const [defaultVehicleId, setDefaultVehicleId] = React.useState<string>("");
 
   const municipalityOptions = React.useMemo(
     () => municipalities.filter((m) => m.provinceId === (provinceId === "" ? -1 : provinceId)),
@@ -714,16 +716,16 @@ export default function EmployeeCreatePage() {
                     label="Lane"
                     hint="Supported lanes: CASHIER, RIDER, STORE_MANAGER."
                   >
-                    <select
+                    <SelectInput
                       name="lane"
                       value={lane}
-                      onChange={(e) => setLane(e.target.value as Lane)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                    >
-                      <option value="RIDER">RIDER</option>
-                      <option value="CASHIER">CASHIER</option>
-                      <option value="STORE_MANAGER">STORE_MANAGER (staff)</option>
-                    </select>
+                      onChange={(value) => setLane(String(value) as Lane)}
+                      options={[
+                        { label: "RIDER", value: "RIDER" },
+                        { label: "CASHIER", value: "CASHIER" },
+                        { label: "STORE_MANAGER (staff)", value: "STORE_MANAGER" },
+                      ]}
+                    />
                   </SoTFormField>
 
                   <SoTInput name="firstName" label="First Name" required />
@@ -748,17 +750,18 @@ export default function EmployeeCreatePage() {
                     label="Default Vehicle (Rider only)"
                     hint="Ignored for cashier and store manager."
                   >
-                    <select
+                    <SelectInput
                       name="defaultVehicleId"
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                    >
-                      <option value="">None</option>
-                      {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name} ({v.type})
-                        </option>
-                      ))}
-                    </select>
+                      value={defaultVehicleId}
+                      onChange={(value) => setDefaultVehicleId(String(value))}
+                      options={[
+                        { label: "None", value: "" },
+                        ...vehicles.map((v) => ({
+                          label: `${v.name} (${v.type})`,
+                          value: String(v.id),
+                        })),
+                      ]}
+                    />
                   </SoTFormField>
                 </div>
               </section>
@@ -778,88 +781,65 @@ export default function EmployeeCreatePage() {
                   <SoTInput name="landmarkText" label="Landmark (text, optional)" />
 
                   <SoTFormField label="Province">
-                    <select
+                    <SelectInput
                       name="provinceId"
                       value={provinceId}
-                      onChange={(e) => onProvinceChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select province</option>
-                      {provinces.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => onProvinceChange(String(value))}
+                      options={[
+                        { label: "Select province", value: "" },
+                        ...provinces.map((p) => ({ label: p.name, value: p.id })),
+                      ]}
+                    />
                   </SoTFormField>
 
                   <SoTFormField label="Municipality / City">
-                    <select
+                    <SelectInput
                       name="municipalityId"
                       value={municipalityId}
-                      onChange={(e) => onMunicipalityChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select municipality</option>
-                      {municipalityOptions.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => onMunicipalityChange(String(value))}
+                      options={[
+                        { label: "Select municipality", value: "" },
+                        ...municipalityOptions.map((m) => ({ label: m.name, value: m.id })),
+                      ]}
+                    />
                   </SoTFormField>
 
                   <SoTFormField label="Barangay">
-                    <select
+                    <SelectInput
                       name="barangayId"
                       value={barangayId}
-                      onChange={(e) => onBarangayChange(e.target.value)}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select barangay</option>
-                      {barangayOptions.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => onBarangayChange(String(value))}
+                      options={[
+                        { label: "Select barangay", value: "" },
+                        ...barangayOptions.map((b) => ({ label: b.name, value: b.id })),
+                      ]}
+                    />
                   </SoTFormField>
 
                   <SoTFormField label="Zone / Purok (ref, optional)">
-                    <select
+                    <SelectInput
                       name="zoneId"
                       value={zoneId}
-                      onChange={(e) => setZoneId(Number(e.target.value) || "")}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      onChange={(value) => setZoneId(Number(value) || "")}
                       disabled={barangayId === ""}
-                    >
-                      <option value="">None</option>
-                      {zoneOptions.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          {z.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { label: "None", value: "" },
+                        ...zoneOptions.map((z) => ({ label: z.name, value: z.id })),
+                      ]}
+                    />
                   </SoTFormField>
 
                   <SoTFormField label="Landmark (ref, optional)">
-                    <select
+                    <SelectInput
                       name="landmarkId"
                       value={landmarkId}
-                      onChange={(e) => setLandmarkId(Number(e.target.value) || "")}
-                      className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                      onChange={(value) => setLandmarkId(Number(value) || "")}
                       disabled={barangayId === ""}
-                    >
-                      <option value="">None</option>
-                      {landmarkOptions.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { label: "None", value: "" },
+                        ...landmarkOptions.map((l) => ({ label: l.name, value: l.id })),
+                      ]}
+                    />
                   </SoTFormField>
                 </div>
               </section>

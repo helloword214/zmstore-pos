@@ -72,9 +72,9 @@ export function MultiSelectInput({
   }, []);
 
   return (
-    <div className="mb-4 relative" ref={wrapperRef}>
+    <div className="relative space-y-1" ref={wrapperRef}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-slate-700">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
           {label}
         </label>
       )}
@@ -113,20 +113,20 @@ export function MultiSelectInput({
         }}
         onFocus={() => setShowDropdown(true)}
         className={clsx(
-          "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
+          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors duration-150",
           "placeholder:text-slate-400",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:border-indigo-300 hover:bg-slate-50/50",
+          "focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 hover:bg-slate-50/50",
           error ? "border-rose-300 bg-rose-50" : "border-slate-300"
         )}
       />
 
-      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
+      {error && <p className="text-xs text-rose-600">{error}</p>}
 
       {/* dropdown */}
       {showDropdown && inputValue.trim() !== "" && (
         <ul
           ref={listRef}
-          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg"
+          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg"
         >
           {filteredOptions.map((opt) => (
             <li key={opt.value}>
@@ -136,7 +136,7 @@ export function MultiSelectInput({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") handleSelect(opt);
                 }}
-                className="w-full text-left rounded-xl px-2.5 py-2 text-sm text-slate-900 hover:bg-slate-50"
+                className="h-8 w-full rounded-xl px-2.5 text-left text-sm text-slate-900 transition-colors duration-150 hover:bg-slate-50"
               >
                 {opt.label}
               </button>
@@ -155,7 +155,7 @@ export function MultiSelectInput({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") handleCreate();
                   }}
-                  className="w-full text-left rounded-xl px-2.5 py-2 text-sm text-indigo-600 hover:bg-indigo-50"
+                  className="h-8 w-full rounded-xl px-2.5 text-left text-sm text-indigo-600 transition-colors duration-150 hover:bg-indigo-50"
                 >
                   Create “{inputValue.trim()}”
                 </button>

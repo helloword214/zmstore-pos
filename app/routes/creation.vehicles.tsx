@@ -12,6 +12,7 @@ import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTListToolbar } from "~/components/ui/SoTListToolbar";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTPagedTableFooter } from "~/components/ui/SoTPagedTableFooter";
 import {
   SoTTable,
@@ -396,20 +397,14 @@ export default function VehiclesPage() {
 
               <div className="md:col-span-3">
                 <SoTFormField label="Type">
-                  <select
+                  <SelectInput
                     name="type"
                     value={createForm.type}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, type: e.target.value }))
+                    onChange={(value) =>
+                      setCreateForm((prev) => ({ ...prev, type: String(value) }))
                     }
-                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    {vehicleTypes.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    options={vehicleTypes.map((t) => ({ label: t, value: t }))}
+                  />
                 </SoTFormField>
               </div>
 
@@ -523,20 +518,14 @@ export default function VehiclesPage() {
 
               <div className="md:col-span-3">
                 <SoTFormField label="Type">
-                  <select
+                  <SelectInput
                     name="type"
                     value={editForm.type}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({ ...prev, type: e.target.value }))
+                    onChange={(value) =>
+                      setEditForm((prev) => ({ ...prev, type: String(value) }))
                     }
-                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    {vehicleTypes.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    options={vehicleTypes.map((t) => ({ label: t, value: t }))}
+                  />
                 </SoTFormField>
               </div>
 

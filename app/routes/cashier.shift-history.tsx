@@ -7,6 +7,7 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { Prisma } from "@prisma/client";
 import { CashDrawerTxnType } from "@prisma/client";
+import { SelectInput } from "~/components/ui/SelectInput";
 
 const CASH_COUNT_MARKER = "CASH_COUNT_JSON:";
 const DENOMS: Array<{ key: string; label: string; value: number }> = [
@@ -415,18 +416,18 @@ export default function ShiftHistory() {
           method="get"
           className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-5"
         >
-          <label className="text-sm">
-            <span className="block text-slate-700 mb-1">Status</span>
-            <select
+          <div className="text-sm">
+            <SelectInput
               name="status"
+              label="Status"
               defaultValue={filters.status}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-              <option value="all">All</option>
-            </select>
-          </label>
+              options={[
+                { value: "open", label: "Open" },
+                { value: "closed", label: "Closed" },
+                { value: "all", label: "All" },
+              ]}
+            />
+          </div>
           <label className="text-sm">
             <span className="block text-slate-700 mb-1">From</span>
             <input
@@ -447,21 +448,17 @@ export default function ShiftHistory() {
           </label>
 
           {role === "ADMIN" ? (
-            <label className="text-sm">
-              <span className="block text-slate-700 mb-1">Cashier</span>
-              <select
+            <div className="text-sm">
+              <SelectInput
                 name="cashierId"
+                label="Cashier"
                 defaultValue={filters.cashierId ?? ""}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <option value="">All</option>
-                {cashiers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={[
+                  { value: "", label: "All" },
+                  ...cashiers.map((c) => ({ value: c.id, label: c.label })),
+                ]}
+              />
+            </div>
           ) : (
             <div className="hidden md:block" />
           )}

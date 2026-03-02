@@ -13,6 +13,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -210,23 +211,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return json({ ok: false, error: "Unknown action" }, { status: 400 });
 }
 
-// Mode-aware "Value" input. It watches the <select name="mode"> in the same form.
-function ModeAwareValue() {
-  const formRef = React.useRef<HTMLDivElement>(null);
-  const [mode, setMode] = React.useState<
-    "FIXED_PRICE" | "FIXED_DISCOUNT" | "PERCENT_DISCOUNT"
-  >("FIXED_PRICE");
-
-  React.useEffect(() => {
-    const select = formRef.current
-      ?.closest("form")
-      ?.querySelector<HTMLSelectElement>('select[name="mode"]');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = () => setMode((select?.value as any) ?? "FIXED_PRICE");
-    select?.addEventListener("change", handler);
-    handler(); // initialize from current select value
-    return () => select?.removeEventListener("change", handler);
-  }, []);
+function ModeAwareValue({
+  mode,
+}: {
+  mode: "FIXED_PRICE" | "FIXED_DISCOUNT" | "PERCENT_DISCOUNT";
+}) {
 
   const label =
     mode === "FIXED_PRICE"
@@ -239,7 +228,7 @@ function ModeAwareValue() {
   const min = "0";
 
   return (
-    <div ref={formRef}>
+    <div>
       <SoTFormField label={label}>
         <input
           name="value"
@@ -271,6 +260,8 @@ export default function CustomerPricingRules() {
     .join(" ");
   const ctxSuffix = "?ctx=admin";
   const subtitle = `${name}${customer.alias ? ` (${customer.alias})` : ""}`;
+  const [newUnitKind, setNewUnitKind] = React.useState<UnitKind>("RETAIL");
+  const [newMode, setNewMode] = React.useState<PriceMode>("FIXED_PRICE");
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -294,27 +285,29 @@ export default function CustomerPricingRules() {
               <ProductPickerHybrid name="productId" />
             </div>
             <SoTFormField label="Unit">
-              <select
+              <SelectInput
                 name="unitKind"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                defaultValue="RETAIL"
-              >
-                <option value="RETAIL">Retail</option>
-                <option value="PACK">Pack</option>
-              </select>
+                value={newUnitKind}
+                onChange={(value) => setNewUnitKind(String(value) as UnitKind)}
+                options={[
+                  { label: "Retail", value: "RETAIL" },
+                  { label: "Pack", value: "PACK" },
+                ]}
+              />
             </SoTFormField>
             <SoTFormField label="Mode">
-              <select
+              <SelectInput
                 name="mode"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                defaultValue="FIXED_PRICE"
-              >
-                <option value="FIXED_PRICE">Fixed price</option>
-                <option value="FIXED_DISCOUNT">Fixed discount</option>
-                <option value="PERCENT_DISCOUNT">Percent discount</option>
-              </select>
+                value={newMode}
+                onChange={(value) => setNewMode(String(value) as PriceMode)}
+                options={[
+                  { label: "Fixed price", value: "FIXED_PRICE" },
+                  { label: "Fixed discount", value: "FIXED_DISCOUNT" },
+                  { label: "Percent discount", value: "PERCENT_DISCOUNT" },
+                ]}
+              />
             </SoTFormField>
-            <ModeAwareValue />
+            <ModeAwareValue mode={newMode} />
             <SoTFormField label="Starts">
               <input
                 name="startsAt"

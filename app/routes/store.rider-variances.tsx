@@ -12,6 +12,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import {
   SoTTable,
@@ -503,22 +504,25 @@ export default function StoreRiderVariancesPage() {
                       ) : (
                         <Form method="post" className="flex flex-col gap-2">
                           <input type="hidden" name="id" value={v.id} />
-                          <select
+                          <SelectInput
                             name="resolution"
                             defaultValue={v.resolution ?? ""}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                          >
-                            <option value="" disabled>
-                              Select decision…
-                            </option>
-                            <option value="CHARGE_RIDER">
-                              Charge rider (needs rider accept)
-                            </option>
-                            <option value="INFO_ONLY">
-                              Info only (no rider accept)
-                            </option>
-                            <option value="WAIVE">Waive</option>
-                          </select>
+                            options={[
+                              {
+                                label: "Select decision…",
+                                value: "",
+                              },
+                              {
+                                label: "Charge rider (needs rider accept)",
+                                value: "CHARGE_RIDER",
+                              },
+                              {
+                                label: "Info only (no rider accept)",
+                                value: "INFO_ONLY",
+                              },
+                              { label: "Waive", value: "WAIVE" },
+                            ]}
+                          />
                           <input
                             name="note"
                             placeholder="Optional note"

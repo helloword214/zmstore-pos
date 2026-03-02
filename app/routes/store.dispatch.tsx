@@ -16,6 +16,7 @@ import { Button } from "~/components/ui/Button";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SelectInput } from "~/components/ui/SelectInput";
 
 type ActionData =
   | { ok: true; redirectedTo: string }
@@ -343,27 +344,27 @@ export default function StoreDispatchQueuePage() {
             </SoTFormField>
 
             <SoTFormField label="Sort" className="sm:col-span-3">
-              <select
+              <SelectInput
                 name="sort"
                 defaultValue={sort || "id"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <option value="id">Newest</option>
-                <option value="printedAt">Printed time</option>
-                <option value="stagedAt">Staged time</option>
-                <option value="amount">Amount</option>
-              </select>
+                options={[
+                  { label: "Newest", value: "id" },
+                  { label: "Printed time", value: "printedAt" },
+                  { label: "Staged time", value: "stagedAt" },
+                  { label: "Amount", value: "amount" },
+                ]}
+              />
             </SoTFormField>
 
             <SoTFormField label="Direction" className="sm:col-span-2">
-              <select
+              <SelectInput
                 name="dir"
                 defaultValue={dir || "desc"}
-                className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <option value="desc">Desc</option>
-                <option value="asc">Asc</option>
-              </select>
+                options={[
+                  { label: "Desc", value: "desc" },
+                  { label: "Asc", value: "asc" },
+                ]}
+              />
             </SoTFormField>
 
             <div className="sm:col-span-1">
@@ -422,19 +423,19 @@ export default function StoreDispatchQueuePage() {
               <input type="hidden" name="orderIds" value={selectedCsv} />
 
               <div className="flex items-center gap-2">
-                <select
+                <SelectInput
                   name="runId"
                   value={runId}
-                  onChange={(e) => setRunId(e.target.value)}
-                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  <option value="">— Assign to PLANNED run —</option>
-                  {runOptions.map((r: any) => (
-                    <option key={r.id} value={String(r.id)}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setRunId(String(value))}
+                  className="w-56"
+                  options={[
+                    { label: "— Assign to PLANNED run —", value: "" },
+                    ...runOptions.map((r: any) => ({
+                      label: r.label,
+                      value: String(r.id),
+                    })),
+                  ]}
+                />
 
                 <Button
                   type="submit"
