@@ -782,10 +782,6 @@ export default function ProductsPage() {
     useState<ProductWithDetails[]>(initialProducts);
   const brands = initialBrands;
 
-  const [targetOptions, setTargetOptions] = useState<
-    { label: string; value: string }[]
-  >([]);
-
   // -fetcher for reloading after create/update/delete-
   const actionFetcher = useFetcher<{
     success?: boolean;
@@ -807,8 +803,12 @@ export default function ProductsPage() {
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
 
-  const filteredIndications = indications.filter(
-    (ind) => !filterCategory || ind.categoryId === Number(filterCategory)
+  const filteredIndications = useMemo(
+    () =>
+      indications.filter(
+        (ind) => !filterCategory || ind.categoryId === Number(filterCategory)
+      ),
+    [indications, filterCategory]
   );
 
   const [sortBy, setSortBy] = useState<SortBy>("recent");
@@ -819,7 +819,6 @@ export default function ProductsPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   // ---  ui / ux  ----
-  const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
   const prevPageRef = useRef(currentPage);
@@ -851,9 +850,8 @@ export default function ProductsPage() {
     filterStatus: "all" as StatusFilter,
   });
 
-  useEffect(() => {
-    // Filter products by current Category + Brand
-    const filteredProducts = products.filter((p) => {
+  const validIndicationNames = useMemo(() => {
+    const filteredByTopFilters = products.filter((p) => {
       const okCat =
         !filterCategory || String(p.categoryId ?? "") === filterCategory;
       const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
@@ -863,26 +861,27 @@ export default function ProductsPage() {
       return okCat && okBr && okLoc;
     });
 
-    // Build unique indication options from those products
-    const seen = new Set<string>();
-    const opts = filteredProducts
-      .flatMap((p) => p.indications ?? [])
-      .filter((i) => {
-        const key = String(i.id);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((i) => ({ label: i.name, value: String(i.id) }));
-
-    // Drop selected indications that no longer exist under the filters
-    setFilterIndications((prev) =>
-      prev.filter((v) => opts.some((o) => o.value === v))
-    );
+    const names = new Set<string>();
+    for (const p of filteredByTopFilters) {
+      for (const ind of p.indications ?? []) {
+        names.add(ind.name);
+      }
+    }
+    return names;
   }, [products, filterCategory, filterBrand, filterLocation]);
 
   useEffect(() => {
-    // 1) filter targets by selected Category + Brand
+    // Keep selected indication filters only if they still exist for current top filters.
+    setFilterIndications((prev) => {
+      const next = prev.filter((name) => validIndicationNames.has(name));
+      const unchanged =
+        next.length === prev.length &&
+        next.every((name, idx) => name === prev[idx]);
+      return unchanged ? prev : next;
+    });
+  }, [validIndicationNames]);
+
+  const targetOptions = useMemo(() => {
     const filtered = targets.filter((t: any) => {
       const okCat =
         !filterCategory || String(t.categoryId ?? "") === filterCategory;
@@ -890,7 +889,6 @@ export default function ProductsPage() {
       return okCat && okBr;
     });
 
-    // 2) dedupe by target id to avoid dropping distinct records that share a name
     const byId = new Map<string, { label: string; value: string }>();
     for (const t of filtered) {
       const idKey = String(t.id);
@@ -898,20 +896,20 @@ export default function ProductsPage() {
         byId.set(idKey, { label: t.name, value: idKey });
       }
     }
-    const opts = Array.from(byId.values()).sort((a, b) =>
+
+    return Array.from(byId.values()).sort((a, b) =>
       a.label.localeCompare(b.label, undefined, {
         numeric: true,
         sensitivity: "base",
       })
     );
+  }, [targets, filterCategory, filterBrand]);
 
-    setTargetOptions(opts);
-
-    // 3) clear selection if no longer valid
-    if (filterTarget && !opts.some((o) => o.value === filterTarget)) {
+  useEffect(() => {
+    if (filterTarget && !targetOptions.some((o) => o.value === filterTarget)) {
       setFilterTarget("");
     }
-  }, [targets, filterCategory, filterBrand, filterTarget]);
+  }, [filterTarget, targetOptions]);
 
   useEffect(() => {
     const prev = prevFiltersRef.current;
@@ -1248,43 +1246,53 @@ export default function ProductsPage() {
     return stock; // fallback
   };
 
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = useMemo(() => {
     const s = searchTerm.trim().toLowerCase();
+    return products.filter((p) => {
+      const okSearch =
+        !s ||
+        p.name.toLowerCase().includes(s) ||
+        (p.description ?? "").toLowerCase().includes(s) ||
+        p.brand?.name.toLowerCase().includes(s);
 
-    const okSearch =
-      !s ||
-      p.name.toLowerCase().includes(s) ||
-      (p.description ?? "").toLowerCase().includes(s) ||
-      p.brand?.name.toLowerCase().includes(s);
+      const okCat =
+        !filterCategory || String(p.categoryId ?? "") === filterCategory;
 
-    const okCat =
-      !filterCategory || String(p.categoryId ?? "") === filterCategory;
+      const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
 
-    const okBr = !filterBrand || String(p.brandId ?? "") === filterBrand;
+      const productLocId = p.location?.id ?? p.locationId;
+      const okLoc =
+        !filterLocation || String(productLocId ?? "") === filterLocation;
 
-    const productLocId = p.location?.id ?? p.locationId;
-    const okLoc =
-      !filterLocation || String(productLocId ?? "") === filterLocation;
+      const okTg =
+        !filterTarget ||
+        (p.targets ?? []).some(
+          (t) => String(t.id) === filterTarget || t.name === filterTarget // fallback
+        );
 
-    const okTg =
-      !filterTarget ||
-      (p.targets ?? []).some(
-        (t) => String(t.id) === filterTarget || t.name === filterTarget // fallback
-      );
+      const okUse =
+        filterIndications.length === 0 ||
+        filterIndications.every((u) =>
+          (p.indications ?? []).some((i) => i.name === u)
+        );
 
-    const okUse =
-      filterIndications.length === 0 ||
-      filterIndications.every((u) =>
-        (p.indications ?? []).some((i) => i.name === u)
-      ); // ✅ updated
+      const okStatus =
+        filterStatus === "all" ||
+        (filterStatus === "active" && p.isActive) ||
+        (filterStatus === "inactive" && !p.isActive);
 
-    const okStatus =
-      filterStatus === "all" ||
-      (filterStatus === "active" && p.isActive) ||
-      (filterStatus === "inactive" && !p.isActive);
-
-    return okSearch && okCat && okBr && okLoc && okTg && okUse && okStatus;
-  });
+      return okSearch && okCat && okBr && okLoc && okTg && okUse && okStatus;
+    });
+  }, [
+    products,
+    searchTerm,
+    filterCategory,
+    filterBrand,
+    filterLocation,
+    filterTarget,
+    filterIndications,
+    filterStatus,
+  ]);
 
   const sortedProducts = useMemo(() => {
     const arr = [...filteredProducts];
@@ -1322,9 +1330,13 @@ export default function ProductsPage() {
     return arr;
   }, [filteredProducts, sortBy]);
 
-  const paginatedProducts = sortedProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+  const paginatedProducts = useMemo(
+    () =>
+      sortedProducts.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+      ),
+    [sortedProducts, currentPage]
   );
 
   return (
@@ -1569,7 +1581,7 @@ export default function ProductsPage() {
           <div className="h-px bg-slate-200" />
 
           {/* 📦 Product Table */}
-          <div ref={listRef} className="space-y-3">
+          <div className="space-y-3">
             {!paginatedProducts.length ? (
               <SoTEmptyState
                 title="No products available."
