@@ -941,6 +941,10 @@ export default function ProductsPage() {
     filterStatus,
   ]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortBy]);
+
   // Scroll to table only when page number actually changes.
   // This avoids initial-route auto-scroll even under React StrictMode.
   useEffect(() => {
@@ -1291,7 +1295,12 @@ export default function ProductsPage() {
         arr.sort((a, b) => priceForSort(b) - priceForSort(a));
         break;
       case "name-asc":
-        arr.sort((a, b) => a.name.localeCompare(b.name));
+        arr.sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          })
+        );
         break;
       case "stock-asc": // lowest stock first
         arr.sort((a, b) => {
