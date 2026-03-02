@@ -9,6 +9,7 @@ import { SoTEntityFormPanel } from "~/components/ui/SoTEntityFormPanel";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
 import {
   SoTTable,
@@ -273,18 +274,15 @@ export default function CreationIndex() {
             <SoTEntityFormPanel title="Category Option Workspace">
               <div className="space-y-4">
                 <SoTFormField label="Category Context">
-                  <select
+                  <SelectInput
                     id={catSelectId}
-                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     value={activeCategoryId ?? ""}
-                    onChange={(e) => setCategory(Number(e.target.value))}
-                  >
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setCategory(Number(value))}
+                    options={categories.map((category) => ({
+                      label: category.name,
+                      value: category.id,
+                    }))}
+                  />
                 </SoTFormField>
 
                 <SoTCard interaction="static" className="border-slate-200 bg-slate-50 p-3">

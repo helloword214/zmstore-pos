@@ -11,6 +11,7 @@ import {
 } from "@remix-run/react";
 import * as React from "react";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -879,24 +880,17 @@ export default function StoreCashierShiftsPage() {
             <Form method="post" className="grid gap-3 sm:grid-cols-3">
               <input type="hidden" name="_action" value="open" />
 
-              <label className="block text-sm sm:col-span-1">
-                <span className="text-slate-700">Cashier</span>
-                <select
+              <div className="block text-sm sm:col-span-1">
+                <SelectInput
                   name="cashierId"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  label="Cashier"
                   defaultValue=""
-                  required
-                >
-                  <option value="" disabled>
-                    Select cashier…
-                  </option>
-                  {cashiers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={[
+                    { label: "Select cashier…", value: "" },
+                    ...cashiers.map((c) => ({ label: c.label, value: c.id })),
+                  ]}
+                />
+              </div>
 
               <label className="block text-sm sm:col-span-1">
                 <span className="text-slate-700">Opening float</span>
@@ -1174,27 +1168,23 @@ export default function StoreCashierShiftsPage() {
                             title="Required: manager physical recount total"
                           />
                         </label>
-                        <label className="block">
-                          <span className="text-[11px] text-slate-600">
-                            Decision (required if short)
-                          </span>
-                          <select
+                        <div className="block">
+                          <SelectInput
                             name="resolution"
+                            label="Decision (required if short)"
                             value={closeForm.resolution}
-                            onChange={(e) =>
-                              setCloseField(s.id, "resolution", e.target.value)
+                            onChange={(value) =>
+                              setCloseField(s.id, "resolution", String(value))
                             }
                             disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
-                          >
-                            <option value="">No decision</option>
-                            <option value="CHARGE_CASHIER">
-                              Charge cashier
-                            </option>
-                            <option value="INFO_ONLY">Info only</option>
-                            <option value="WAIVE">Waive</option>
-                          </select>
-                        </label>
+                            options={[
+                              { label: "No decision", value: "" },
+                              { label: "Charge cashier", value: "CHARGE_CASHIER" },
+                              { label: "Info only", value: "INFO_ONLY" },
+                              { label: "Waive", value: "WAIVE" },
+                            ]}
+                          />
+                        </div>
                         <label className="block sm:col-span-2">
                           <span className="text-[11px] text-slate-600">
                             Paper reference no. (required if short)

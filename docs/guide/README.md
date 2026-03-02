@@ -65,6 +65,9 @@ Current route-level mapping coverage (canonical):
 39. `forgot-password.tsx`
 40. `reset-password.$token.tsx`
 41. `products._index.tsx`
+42. `products.new.tsx`
+43. `products.$productId.tsx`
+44. `products.$productId.edit.tsx`
 
 Identity operations note:
 

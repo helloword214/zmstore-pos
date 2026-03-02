@@ -104,20 +104,20 @@ export function DeletableSelectInput({
   };
 
   return (
-    <div className="mb-4 relative" ref={wrapperRef}>
+    <div className="relative space-y-1" ref={wrapperRef}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
           {label}
         </label>
       )}
       <button
         type="button"
         className={clsx(
-          "w-full px-3 py-2.5 border rounded-xl shadow-sm flex justify-between items-center text-left",
+          "flex h-9 w-full items-center justify-between rounded-xl border bg-white px-3 text-left text-sm text-slate-900 shadow-sm transition-colors duration-150",
           error
-            ? "border-rose-300 bg-rose-50 text-slate-900"
-            : "border-slate-300 text-slate-900 hover:bg-slate-50/50 focus-visible:border-indigo-300",
-          "bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200",
+            ? "border-rose-300 bg-rose-50"
+            : "border-slate-300 hover:bg-slate-50/50",
+          "focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1",
           className
         )}
         onClick={() => setShowDropdown((prev) => !prev)}
@@ -149,7 +149,7 @@ export function DeletableSelectInput({
       {showDropdown && (
         <ul
           ref={listRef}
-          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg text-sm text-slate-900"
+          className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white p-1 text-sm text-slate-900 shadow-lg"
           role="listbox"
           onMouseLeave={() => setInputMode(null)}
         >
@@ -183,7 +183,7 @@ export function DeletableSelectInput({
                 setHighlightedIndex(index);
               }}
               className={clsx(
-                "px-2.5 py-2 cursor-pointer transition select-none flex justify-between items-center rounded-xl",
+                "flex h-8 cursor-pointer select-none items-center justify-between rounded-xl px-2.5 text-sm transition-colors duration-150",
                 inputMode === "keyboard" && highlightedIndex === index
                   ? "bg-indigo-600 text-white"
                   : inputMode === "mouse" && highlightedIndex === index
@@ -215,7 +215,7 @@ export function DeletableSelectInput({
         </ul>
       )}
 
-      {error && <p className="text-sm text-rose-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-rose-600">{error}</p>}
     </div>
   );
 }

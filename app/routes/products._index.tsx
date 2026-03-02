@@ -1,8 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { storage } from "~/utils/storage.server";
-import { useLoaderData, useFetcher, useRevalidator } from "@remix-run/react";
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import {
+  Link,
+  useLoaderData,
+  useFetcher,
+  useRevalidator,
+} from "@remix-run/react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import type { LoaderData, ProductWithDetails, Brand } from "~/types";
 import type React from "react";
 import { db } from "~/utils/db.server";
@@ -10,7 +15,6 @@ import { FormSection } from "~/components/ui/FormSection";
 import { FormGroupRow } from "~/components/ui/FormGroupRow";
 import { TextInput } from "~/components/ui/TextInput";
 import { SelectInput } from "~/components/ui/SelectInput";
-import { DeletableSmartSelectInput } from "~/components/ui/DeletableSmartSelectInput";
 import { Button } from "~/components/ui/Button";
 import { Textarea } from "~/components/ui/Textarea";
 import { TagCheckbox } from "~/components/ui/TagCheckbox";
@@ -19,10 +23,13 @@ import { Pagination } from "~/components/ui/Pagination";
 import { CurrencyInput } from "~/components/ui/CurrencyInput";
 import { ComboInput } from "~/components/ui/ComboInput";
 import { MultiSelectInput } from "~/components/ui/MultiSelectInput";
+import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
-import { ManageOptionModal } from "~/components/ui/ManageOptionModal";
 import { makeLocalEan13 } from "~/utils/barcode";
 
 // === END Imports ===
@@ -230,8 +237,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const id = formData.get("id")?.toString();
   const name = formData.get("name")?.toString().trim() || "";
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const parseMoneyNumber = (value: FormDataEntryValue | null, fallback = 0) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return fallback;
+    const cleaned = raw.replace(/[^0-9.-]/g, "");
+    if (!cleaned || cleaned === "." || cleaned === "-" || cleaned === "-.") {
+      return fallback;
+    }
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
 
-  const priceRaw = parseFloat(formData.get("price")?.toString() || "0");
+  const priceRaw = parseMoneyNumber(formData.get("price"), 0);
   const price = r2(priceRaw);
   const unitId = formData.get("unitId")
     ? parseInt(formData.get("unitId")!.toString())
@@ -253,19 +270,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const brandIdRaw = formData.get("brandId")?.toString();
   const brandName = formData.get("brandName")?.toString().trim() || "";
-  const stock = r2(parseFloat(formData.get("stock")?.toString() || "0"));
+  const stock = r2(parseMoneyNumber(formData.get("stock"), 0));
   const packingStockRaw = formData.get("packingStock")?.toString() || "0";
-  const packingStock = r2(parseFloat(packingStockRaw));
-  const dealerPriceRaw = parseFloat(
-    formData.get("dealerPrice")?.toString() || "0"
-  );
+  const packingStock = r2(parseMoneyNumber(formData.get("packingStock"), 0));
+  const dealerPriceRaw = parseMoneyNumber(formData.get("dealerPrice"), 0);
   const dealerPrice = r2(dealerPriceRaw);
 
-  const srpRaw = parseFloat(formData.get("srp")?.toString() || "0");
+  const srpRaw = parseMoneyNumber(formData.get("srp"), 0);
   const srp = r2(srpRaw);
-  const packingSizeRaw = parseFloat(
-    formData.get("packingSize")?.toString() || "0"
-  );
+  const packingSizeRaw = parseMoneyNumber(formData.get("packingSize"), 0);
   const packingSize = r2(packingSizeRaw);
   const expiration = formData.get("expirationDate")?.toString();
   const replenishAt = formData.get("replenishAt")?.toString();
@@ -275,7 +288,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const description = formData.get("description")?.toString();
   const barcode = formData.get("barcode")?.toString() || undefined;
   const minStock = formData.get("minStock")
-    ? parseFloat(formData.get("minStock")!.toString())
+    ? parseMoneyNumber(formData.get("minStock"), 0)
     : undefined;
   const locRaw = (formData.get("locationId") ?? "").toString().trim();
   const customLocationName = (formData.get("customLocationName") ?? "")
@@ -322,9 +335,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   //deletaion LOGIC
   const actionType = formData.get("_action")?.toString();
-
-  //delete ----- location
-  const locationIdToDelete = formData.get("locationId")?.toString();
 
   if (actionType === "delete-product") {
     const idStr =
@@ -473,42 +483,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  if (actionType === "delete-location") {
-    if (!locationIdToDelete) {
-      return json(
-        { success: false, error: "❌ Missing location ID to delete." },
-        { status: 400 }
-      );
-    }
-
-    const id = Number(locationIdToDelete);
-    if (isNaN(id)) {
-      return json(
-        { success: false, error: "❌ Invalid location ID." },
-        { status: 400 }
-      );
-    }
-
-    const productsUsingLocation = await db.product.count({
-      where: { locationId: id },
-    });
-
-    if (productsUsingLocation > 3) {
-      return json(
-        {
-          success: false,
-          error: `❌ Cannot delete: used by ${productsUsingLocation} product(s). Limit is 3.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    await db.location.delete({ where: { id } });
-
-    return json({
-      success: true,
-      action: "delete-location",
-    });
+  if (
+    actionType === "delete-location" ||
+    actionType === "delete-brand" ||
+    actionType === "delete-indication" ||
+    actionType === "delete-target"
+  ) {
+    return json(
+      {
+        success: false,
+        error:
+          "Master-data delete is disabled in Product List. Use Admin > Master Data routes.",
+      },
+      { status: 403 }
+    );
   }
 
   if (toggleId && newIsActive !== null) {
@@ -519,79 +507,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     return json({ success: true, action: "toggled" });
   }
-  // deletete  ---- brand logic
-
-  const brandIdToDelete = formData.get("brandId")?.toString();
-
-  if (actionType === "delete-brand" && brandIdToDelete) {
-    const id = Number(brandIdToDelete);
-
-    // Check if any product is using this brand
-    const productsUsingBrand = await db.product.count({
-      where: { brandId: id },
-    });
-
-    if (productsUsingBrand > 3) {
-      return json(
-        {
-          success: false,
-          error: `❌ Cannot delete brand: used by ${productsUsingBrand} product(s).`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Proceed to delete from DB
-    await db.brand.delete({ where: { id } });
-
-    return json({
-      success: true,
-      action: "delete-brand",
-    });
-  }
-
-  //delete inidcation
-
-  const indicationIdToDelete = formData.get("indicationId")?.toString();
-
-  if (actionType === "delete-indication" && indicationIdToDelete) {
-    const id = Number(indicationIdToDelete);
-
-    // Check if any product is using this indication
-    const productsUsingIndication = await db.productIndication.count({
-      where: { indicationId: id },
-    });
-
-    if (productsUsingIndication > 100) {
-      return json(
-        {
-          success: false,
-          error: `❌ Cannot delete indication: used by ${productsUsingIndication} product(s).`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Proceed to delete from DB
-    await db.indication.delete({ where: { id } });
-
-    return json({
-      success: true,
-      action: "delete-indication",
-    });
-  }
-
-  //delation target
-  const targetIdToDelete = formData.get("targetId")?.toString();
-
-  if (actionType === "delete-target" && targetIdToDelete) {
-    const id = Number(targetIdToDelete);
-
-    await db.target.delete({ where: { id } });
-
-    return json({ success: true, action: "delete-target" });
-  }
-
   // 🔐 Required field validation
   if (!name) {
     return json(
@@ -968,10 +883,6 @@ export default function ProductsPage() {
     { label: string; value: string }[]
   >([]);
 
-  const [indicationOptions, setIndicationOptions] = useState<
-    { label: string; value: string }[]
-  >([]);
-
   const [customLocationName, setCustomLocationName] = useState("");
 
   const [formKey, setFormKey] = useState(0);
@@ -982,13 +893,7 @@ export default function ProductsPage() {
     success?: boolean;
     error?: string;
     field?: string;
-    action?:
-      | "created"
-      | "updated"
-      | "deleted"
-      | "toggled"
-      | "delete-location"
-      | "delete-brand";
+    action?: "created" | "updated" | "deleted" | "toggled";
     id?: number; //
   }>();
 
@@ -996,7 +901,6 @@ export default function ProductsPage() {
   const brandsFetcher = useFetcher<{ brands: Brand[] }>();
 
   // - modal & Form state -
-  const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<FormDataShape>({
     allowPackSale: "false",
@@ -1006,9 +910,6 @@ export default function ProductsPage() {
     location: "",
     locationId: "",
   });
-
-  const [showManageIndication, setShowManageIndication] = useState(false);
-  const [showManageTarget, setShowManageTarget] = useState(false);
 
   const [showAlert, setShowAlert] = useState(false);
 
@@ -1064,9 +965,6 @@ export default function ProductsPage() {
 
   //-------Effects ----------------------------------------------------------
 
-  const [localLocations, setLocalLocations] = useState(locations);
-  useEffect(() => setLocalLocations(locations), [locations]);
-
   //prevent memory leak on image Add preview state + cleanup:
   useEffect(() => {
     return () => {
@@ -1078,14 +976,9 @@ export default function ProductsPage() {
     setBrands(initialBrands);
   }, [initialBrands]);
 
-  // Full unfiltered list
-  const brandOptions = useMemo(
-    () => brands.map((b) => ({ label: b.name, value: String(b.id) })),
-    [brands]
-  );
   const locationOptions = useMemo(
-    () => localLocations.map((l) => ({ label: l.name, value: String(l.id) })),
-    [localLocations]
+    () => locations.map((l) => ({ label: l.name, value: String(l.id) })),
+    [locations]
   );
 
   // Filtered for the top-of-page Brand FILTER (uses filterCategory)
@@ -1163,27 +1056,6 @@ export default function ProductsPage() {
 
     return Array.from(byName.values());
   }, [targets, formData.categoryId, formData.brandId, selectedTargets]);
-  // All indications (optionally filtered by the top-of-page Category filter)
-  const manageIndicationOptions = useMemo(() => {
-    const source = filterCategory
-      ? indications.filter((i) => String(i.categoryId ?? "") === filterCategory)
-      : indications;
-
-    // mark which ones are in use (so you can warn/block deletion)
-    const usedIds = new Set(
-      products.flatMap((p) => (p.indications ?? []).map((i) => String(i.id)))
-    );
-
-    return source
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((i) => ({
-        label: usedIds.has(String(i.id)) ? `${i.name} • in use` : i.name,
-        value: String(i.id),
-        // if your modal supports disabling, you can add: disabled: usedIds.has(String(i.id))
-      }));
-  }, [indications, filterCategory, products]);
-
   // Unified product list updater
   // note: 🔁 Track last search term to avoid unnecessary page reset
   const prevSearchTermRef = useRef("");
@@ -1197,28 +1069,6 @@ export default function ProductsPage() {
     filterLocation: "",
     filterStatus: "all" as StatusFilter,
   });
-
-  //delete location
-
-  const getLabelFromValue = useCallback(
-    (val: string | number): string => {
-      const found = locationOptions.find(
-        (opt) => String(opt.value) === String(val)
-      );
-      return found?.label || `Location #${val}`;
-    },
-    [locationOptions]
-  );
-
-  const getLabelFromValueBrand = useCallback(
-    (val: string | number): string => {
-      const found = brandOptions.find(
-        (opt) => String(opt.value) === String(val)
-      );
-      return found?.label || `Brand #${val}`;
-    },
-    [brandOptions]
-  );
 
   useEffect(() => {
     // Filter products by current Category + Brand
@@ -1243,8 +1093,6 @@ export default function ProductsPage() {
         return true;
       })
       .map((i) => ({ label: i.name, value: String(i.id) }));
-
-    setIndicationOptions(opts);
 
     // Drop selected indications that no longer exist under the filters
     setFilterIndications((prev) =>
@@ -1331,37 +1179,6 @@ export default function ProductsPage() {
     filterIndications,
     filterStatus,
   ]);
-
-  // Clear when modal closes (any close path)
-  function handleCloseModal() {
-    // 1) clear preview + file input
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setFileInputKey((k) => k + 1);
-
-    // 2) reset native form
-    formRef.current?.reset();
-
-    // 3) reset controlled state
-    setFormData(INITIAL_FORM);
-    setSelectedIndications([]);
-    setSelectedTargets([]);
-    setErrors({});
-    setSuccessMsg("");
-    setErrorMsg("");
-    setStep(1);
-
-    // (optional) reset “user edited” refs
-    userEditedPrice.current = false;
-    userEditedRetailStock.current = false;
-    userEditedSku.current = false;
-
-    // 4) force a fresh <Form> mount so no stale values linger
-    setFormKey((k) => k + 1);
-
-    // 5) close
-    setShowModal(false);
-  }
 
   // when brands api returns fresh data:
   useEffect(() => {
@@ -1451,14 +1268,7 @@ export default function ProductsPage() {
     lastHandledRef.current = signature;
 
     // Skip all delete actions here — handled in the dedicated delete-effect
-    if (
-      action === "delete-product" ||
-      action === "deleted" ||
-      action === "delete-location" ||
-      action === "delete-brand" ||
-      action === "delete-indication" ||
-      action === "delete-target"
-    ) {
+    if (action === "delete-product" || action === "deleted") {
       return;
     }
 
@@ -1498,8 +1308,6 @@ export default function ProductsPage() {
         deleted: "🗑️ Product deleted successfully.",
         "delete-product": "🗑️ Product deleted successfully.",
         toggled: "Product status updated!",
-        "delete-location": "📍 Location deleted successfully.",
-        "delete-brand": "📍 Brand deleted successfully.",
         "open-pack": "↘︎ Opened stock to retail.",
       };
 
@@ -1621,18 +1429,6 @@ export default function ProductsPage() {
       else if (afData.id) setHighlightId(Number(afData.id));
       setTimeout(() => setHighlightId(null), 3000);
 
-      // Close modal only when saving/updating
-      if (action === "created" || action === "updated") {
-        setTimeout(() => {
-          setShowModal(false);
-          setFormData({});
-          setFormData(INITIAL_FORM);
-          setStep(1);
-          setErrors({});
-          formRef.current?.reset();
-        }, 300);
-      }
-
       setTimeout(() => setShowAlert(false), 2000);
       return;
     }
@@ -1659,7 +1455,7 @@ export default function ProductsPage() {
     }
   }, [afData, submittedForm, revalidator, formData.id]);
 
-  //hande location and brand delete logic
+  // Handle delete-product feedback
 
   useEffect(() => {
     const data = actionFetcher.data;
@@ -1674,119 +1470,20 @@ export default function ProductsPage() {
     const action =
       (data.action as string) ?? String(form?.get("_action") ?? "");
 
-    const dedupeKey =
-      action === "delete-brand"
-        ? `del:brand|${String(data.id ?? form?.get("brandId") ?? "")}`
-        : action === "delete-location"
-        ? `del:location|${String(form?.get("locationId") ?? "")}`
-        : action === "delete-product"
-        ? `del:product|${String(form?.get("id") ?? data.id ?? "")}`
-        : action === "delete-indication"
-        ? `del:indication|${String(form?.get("indicationId") ?? "")}`
-        : action === "delete-target"
-        ? `del:target|${String(form?.get("targetId") ?? "")}`
-        : "";
-    if (dedupeKey) {
-      if (lastHandledRef.current === dedupeKey) return;
-      lastHandledRef.current = dedupeKey;
+    if (action !== "delete-product" && action !== "deleted") return;
+
+    const dedupeKey = `del:product|${String(form?.get("id") ?? data.id ?? "")}`;
+    if (lastHandledRef.current === dedupeKey) return;
+    lastHandledRef.current = dedupeKey;
+
+    const deletedId = String(form?.get("id") ?? data.id ?? "");
+    if (deletedId) {
+      setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId));
     }
-    // ✅ Only remove from products when a product was deleted
-    if (action === "delete-product" || action === "deleted") {
-      const deletedId = String(form?.get("id") ?? data.id ?? "");
-      if (deletedId) {
-        setProducts((prev) => prev.filter((p) => String(p.id) !== deletedId));
-      }
-      setSuccessMsg("🗑️ Product deleted successfully.");
-      return;
-    }
-
-    if (data.action === "delete-location") {
-      const deletedId = String(form?.get("locationId") ?? ""); //
-      if (!deletedId) return;
-
-      const rawLabel = getLabelFromValue(deletedId);
-      const label =
-        typeof rawLabel === "string" ? rawLabel : `Location #${deletedId}`;
-
-      // 1) Remove the location from the options
-      setLocalLocations((prev) =>
-        prev.filter((l) => String(l.id) !== deletedId)
-      );
-
-      // 2) If the table filter was using this location, clear it
-      if (filterLocation === deletedId) setFilterLocation("");
-
-      // 3) If the modal currently has this location selected, clear it
-      if (formData.locationId === deletedId) {
-        setFormData((prev) => ({ ...prev, locationId: "" }));
-      }
-
-      // 4) (optional) make product rows consistent in UI
-      setProducts((prev) =>
-        prev.map((p) => {
-          const pLocId = String(p.location?.id ?? p.locationId ?? "");
-          if (pLocId !== deletedId) return p;
-
-          // keep shape but null-out the location fields
-          return {
-            ...p,
-            locationId: null, // not undefined
-            location: null, // not undefined
-          } as ProductWithDetails;
-        })
-      );
-
-      setSuccessMsg(`Deleted "${label}" from the list.`);
-      setTimeout(() => revalidator.revalidate(), 150);
-      return;
-    }
-
-    if (data.action === "delete-brand") {
-      const deletedBrandId = String(data.id ?? form?.get("brandId") ?? "");
-
-      const rawLabel = getLabelFromValueBrand(deletedBrandId); // ✅ Reuse this
-      const label =
-        typeof rawLabel === "string" ? rawLabel : `Brand #${deletedBrandId}`;
-
-      setBrands((prev) => prev.filter((b) => String(b.id) !== deletedBrandId));
-
-      if (formData.brandId === deletedBrandId) {
-        setFormData((prev) => ({ ...prev, brandId: "" }));
-      }
-      // if current table filter uses this brand, clear it
-      if (filterBrand === deletedBrandId) setFilterBrand("");
-
-      // make product rows consistent in UI (remove brand ref)
-      setProducts((prev) =>
-        prev.map((p) => {
-          const pBrandId = String(p.brand?.id ?? p.brandId ?? "");
-          if (pBrandId !== deletedBrandId) return p;
-          return {
-            ...p,
-            brandId: null,
-            brand: null,
-          } as ProductWithDetails;
-        })
-      );
-
-      setSuccessMsg(`Deleted "${label}" from the brand list.`);
-      setTimeout(() => revalidator.revalidate(), 150);
-    }
+    setSuccessMsg("🗑️ Product deleted successfully.");
   }, [
     actionFetcher.data,
     actionFetcher,
-    getLabelFromValue,
-    setFormData,
-    setCustomLocationName,
-    formData.locationId,
-    formData.brandId,
-    customLocationName,
-    setSuccessMsg,
-    setShowAlert,
-    getLabelFromValueBrand,
-    filterLocation,
-    filterBrand,
-    revalidator,
     lastHandledRef,
   ]);
 
@@ -1810,40 +1507,6 @@ export default function ProductsPage() {
       setSelectedTargets([]);
     }
   }, [formData.categoryId, formData.brandId, brands, setFormData]);
-
-  function handleOpenModal() {
-    // reset native form
-    formRef.current?.reset();
-
-    // clear “user edited” flags
-    userEditedPrice.current = false;
-    userEditedRetailStock.current = false;
-
-    // clear preview + free blob URL
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-
-    setFormData({
-      locationId: "", // default or preserved value, not full reset
-      // add default fields here as needed
-    });
-
-    // remount the form and the file input ONCE
-    setFormKey((k) => k + 1);
-    setFileInputKey((k) => k + 1);
-
-    // brand-new form state
-    setSelectedIndications([]);
-    setSelectedTargets([]);
-    // 🔑 reset the form data for a brand-new product
-    setFormData(INITIAL_FORM);
-
-    setStep(1);
-    setErrors({});
-    setSuccessMsg("");
-    setErrorMsg("");
-    setShowModal(true);
-  }
 
   // keep local table in sync whenever the loader revalidates
   useEffect(() => {
@@ -2060,72 +1723,6 @@ export default function ProductsPage() {
     setFormData((prev) => ({ ...prev, [name]: cleaned }));
   }
 
-  function handleDeleteLocation(valueToDelete: string | number) {
-    const label =
-      getLabelFromValue(valueToDelete) || `Location #${valueToDelete}`;
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${label}"?`
-    );
-    if (!confirmDelete) return;
-
-    const payLoad = new FormData();
-    payLoad.append("_action", "delete-location"); // 🔑 must match in action
-    payLoad.append("locationId", String(valueToDelete)); // 🔑 used in action
-
-    actionFetcher.submit(payLoad, { method: "post" });
-  }
-
-  function handleDeleteBrand(valueToDelete: string | number) {
-    const label =
-      getLabelFromValueBrand(valueToDelete) || `Brand #${valueToDelete}`;
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${label}"?`
-    );
-    if (!confirmDelete) return;
-
-    const payLoad = new FormData();
-    payLoad.append("_action", "delete-brand"); // 🔑 must match in action
-    payLoad.append("brandId", String(valueToDelete)); // 🔑 used in action
-
-    actionFetcher.submit(payLoad, { method: "post" });
-  }
-
-  function handleDeleteIndication(valueToDelete: string | number) {
-    const label =
-      indicationOptions.find(
-        (opt) => String(opt.value) === String(valueToDelete)
-      )?.label || `Indication #${valueToDelete}`;
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${label}"?`
-    );
-    if (!confirmDelete) return;
-
-    const payLoad = new FormData();
-    payLoad.append("_action", "delete-indication");
-    payLoad.append("indicationId", String(valueToDelete));
-
-    actionFetcher.submit(payLoad, { method: "post" });
-  }
-
-  function handleDeleteTarget(valueToDelete: string | number) {
-    const label =
-      targetOptions.find((t) => String(t.value) === String(valueToDelete))
-        ?.label || `Target #${valueToDelete}`;
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${label}"?`
-    );
-    if (!confirmDelete) return;
-
-    const payLoad = new FormData();
-    payLoad.append("_action", "delete-target");
-    payLoad.append("targetId", String(valueToDelete));
-    actionFetcher.submit(payLoad, { method: "post" });
-  }
-
   function CarryOverHiddenFields({ data }: { data: FormDataShape }) {
     const keys: (keyof FormDataShape)[] = [
       "id",
@@ -2161,83 +1758,6 @@ export default function ProductsPage() {
       </>
     );
   }
-  const toBoolStr = (b?: boolean): BoolStr => (b ? "true" : "false");
-
-  function handleEdit(p: ProductWithDetails) {
-    userEditedPrice.current = true;
-    userEditedRetailStock.current = true;
-
-    const newFormData = {
-      id: String(p.id ?? ""),
-      name: p.name ?? "",
-      price: String(p.price ?? ""),
-      unitId: p.unitId ? String(p.unitId) : "",
-      packingUnitId: p.packingUnitId ? String(p.packingUnitId) : "",
-      categoryId: String(p.category?.id ?? ""),
-      brandId: String(p.brand?.id ?? ""),
-      brandName: p.brand?.name ?? "",
-
-      stock: String(p.stock ?? ""),
-      dealerPrice: String(p.dealerPrice ?? ""),
-      srp: String(p.srp ?? ""),
-      packingStock: String(p.packingStock ?? ""),
-      packingSize: p.packingSize != null ? String(p.packingSize) : "",
-      expirationDate: p.expirationDate
-        ? new Date(p.expirationDate).toISOString().slice(0, 10)
-        : "",
-      replenishAt: p.replenishAt
-        ? new Date(p.replenishAt).toISOString().slice(0, 10)
-        : "",
-      imageTag: p.imageTag ?? "",
-      imageUrl: p.imageUrl ?? "",
-      description: p.description ?? "",
-      sku: p.sku ?? "",
-      minStock: String(p.minStock ?? ""),
-      locationId: p.location?.id
-        ? String(p.location.id)
-        : p.locationId
-        ? String(p.locationId)
-        : "",
-      customLocationName:
-        p.location?.id && locations.every((l) => l.id !== p.location?.id)
-          ? p.location.name
-          : "",
-      barcode: p.barcode ?? "",
-      isActive: toBoolStr(p.isActive),
-      allowPackSale: toBoolStr(p.allowPackSale),
-    };
-
-    setFormData(newFormData);
-
-    // ✅ Set indication and target multiselect
-    setSelectedIndications(
-      Array.isArray(p.indications)
-        ? p.indications.map((i) => ({
-            label: i.name,
-            value: String(i.id),
-          }))
-        : []
-    );
-
-    setSelectedTargets(
-      Array.isArray(p.targets)
-        ? p.targets.map((t) => ({
-            label: t.name,
-            value: String(t.id),
-          }))
-        : []
-    );
-
-    setStep(1);
-    setErrors({});
-    setSuccessMsg("");
-    setErrorMsg("");
-
-    setTimeout(() => {
-      setShowModal(true);
-    }, 0);
-  }
-
   // Unified toast controller: show when message exists, auto-hide + clear
   useEffect(() => {
     // nothing to show -> ensure hidden
@@ -2347,1023 +1867,273 @@ export default function ProductsPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb] text-slate-900 px-3 sm:px-4 py-6 sm:py-8">
-      {/* title + Add button */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-between items-start sm:items-center">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
-          🛒 Zaldy Merchandise{" "}
-          <span className="text-sm text-slate-500">Product List</span>
-        </h1>
-        <button
-          type="button"
-          onClick={handleOpenModal}
-          className="group inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 py-2 text-white shadow-sm transition hover:bg-indigo-700 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
-          aria-label="Add Product"
-        >
-          <svg
-            className="h-5 w-5 -ml-0.5 sm:ml-0 transition-transform group-hover:scale-110"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 5v14M5 12h14"
-            />
-          </svg>
-          <span className="font-medium">Add Product</span>
-        </button>
-      </div>
+    <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
+      <SoTNonDashboardHeader
+        title="Product List"
+        subtitle="Catalog list, operational filters, and deep-link product actions."
+        backTo="/"
+        backLabel="Dashboard"
+        maxWidthClassName="max-w-6xl"
+      />
 
-      {/* Filter panel */}
-      <div className="mt-4 sm:mt-6 rounded-2xl bg-white p-4 sm:p-6 shadow-lg space-y-4 sm:space-y-5">
-        {/* Row 1: Search (wide) + Sort (right) */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-end">
-          <div className="md:col-span-8">
-            <TextInput
-              label="Search"
-              placeholder="🔍 Search product name, description, brand..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-            />
-          </div>
-
-          <div className="md:col-span-4">
-            <SelectInput
-              label="Sort"
-              name="sortBy"
-              value={sortBy}
-              onChange={(v) => setSortBy(v as SortBy)}
-              options={[
-                { label: "Recent", value: "recent" },
-                { label: "A → Z", value: "name-asc" },
-                { label: "Price: Low → High", value: "price-asc" },
-                { label: "Price: High → Low", value: "price-desc" },
-                { label: "Stock: Lowest First", value: "stock-asc" },
-              ]}
-            />
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="h-px bg-gray-200" />
-
-        {/* Row 2: Category / Brand / Location / Status */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-start">
-          <div className="md:col-span-3">
-            <SelectInput
-              label="Category"
-              name="category"
-              value={filterCategory}
-              onChange={(val) => {
-                setFilterCategory(String(val));
-                setFilterBrand("");
-              }}
-              options={[
-                {
-                  label: "All Categories",
-                  value: "",
-                  style: { color: "#888" },
-                },
-                ...categories.map((c) => ({ label: c.name, value: c.id })),
-              ]}
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <DeletableSmartSelectInput
-              name="brandId"
-              label="Brand"
-              value={filterBrand}
-              onChange={(val) => setFilterBrand(String(val))}
-              options={[
-                { label: "All Brands", value: "", style: { color: "#888" } },
-                ...brandOptionsForFilter,
-              ]}
-              onDeleteOption={handleDeleteBrand}
-              deletableValues={brands.map((b) => b.id)}
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <DeletableSmartSelectInput
-              name="locationFilter"
-              label="Location"
-              value={filterLocation}
-              onChange={(val) => setFilterLocation(String(val))}
-              options={[
-                { label: "All Locations", value: "", style: { color: "#888" } },
-                ...locationOptions,
-              ]}
-              onDeleteOption={handleDeleteLocation}
-              deletableValues={localLocations.map((l) => l.id)}
-            />
-          </div>
-
-          <fieldset className="md:col-span-3">
-            <legend className="text-sm font-medium text-slate-700 mb-2">
-              Status
-            </legend>
-
-            <div className="inline-flex flex-wrap gap-2">
-              {[
-                { label: "All", value: "all" as const, dot: "bg-blue-500" },
-                {
-                  label: "Active",
-                  value: "active" as const,
-                  dot: "bg-green-500",
-                },
-                {
-                  label: "Inactive",
-                  value: "inactive" as const,
-                  dot: "bg-red-500",
-                },
-              ].map((opt) => {
-                const selected = filterStatus === opt.value;
-                return (
-                  <label
-                    key={opt.value}
-                    className={[
-                      "relative cursor-pointer select-none",
-                      "px-3 py-2 rounded-xl border text-sm",
-                      "flex items-center gap-2 transition",
-                      "hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98]",
-                      "focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
-                      selected
-                        ? "bg-white shadow-sm border-transparent ring-2 ring-offset-1 " +
-                          (opt.value === "active"
-                            ? "ring-emerald-300"
-                            : opt.value === "inactive"
-                            ? "ring-rose-300"
-                            : "ring-indigo-300")
-                        : "bg-slate-50 border-slate-200 text-slate-700",
-                    ].join(" ")}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value={opt.value}
-                      className="sr-only peer"
-                      checked={selected}
-                      onChange={() => setFilterStatus(opt.value)}
-                    />
-                    <span
-                      className={[
-                        "h-2.5 w-2.5 rounded-full",
-                        selected ? opt.dot : "bg-slate-300",
-                      ].join(" ")}
-                      aria-hidden="true"
-                    />
-                    <span
-                      className={
-                        selected
-                          ? "font-semibold " +
-                            (opt.value === "active"
-                              ? "text-emerald-700"
-                              : opt.value === "inactive"
-                              ? "text-rose-700"
-                              : "text-indigo-700")
-                          : "text-slate-700"
-                      }
-                    >
-                      {opt.label}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-        </div>
-
-        {/* Divider */}
-        <div className="h-px bg-gray-200" />
-
-        {/* 🎯 Target Filter (collapsible) */}
-        <details className="group">
-          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-slate-700">
-            <span>
-              🎯 Target Filter{" "}
-              <button
-                type="button"
-                className="ml-4 text-xs text-slate-500 underline hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                onClick={() => setShowManageTarget(true)}
+      <div className="mx-auto w-full max-w-6xl space-y-5 px-5 py-6">
+        <SoTActionBar
+          left={
+            <p className="text-xs text-slate-500">
+              Showing {paginatedProducts.length} of {sortedProducts.length} products
+            </p>
+          }
+          right={
+            <Link
+              to="/products/new"
+              className="group inline-flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              aria-label="Add Product"
+            >
+              <svg
+                className="h-5 w-5 -ml-0.5 sm:ml-0 transition-transform group-hover:scale-110"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                ⚙️ Manage
-              </button>
-            </span>
-            <span className="text-slate-500 group-open:rotate-180 transition-transform duration-200">
-              ▼
-            </span>
-          </summary>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 5v14M5 12h14"
+                />
+              </svg>
+              <span>Add Product</span>
+            </Link>
+          }
+        />
 
-          <div className="flex flex-wrap gap-2 mt-3">
-            {[{ label: "All", value: "" }, ...targetOptions].map((option) => (
-              <label
-                key={option.value}
-                className={clsx(
-                  "cursor-pointer px-4 py-1 rounded-full border text-sm transition",
-                  "focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
-                  filterTarget === option.value
-                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                )}
-              >
+        <SoTCard className="space-y-5 sm:p-6">
+          <section className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+              <div className="space-y-1 lg:col-span-8">
+                <label
+                  htmlFor="product-search"
+                  className="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                >
+                  Search
+                </label>
                 <input
-                  type="radio"
-                  name="target"
-                  value={option.value}
-                  className="hidden"
-                  checked={filterTarget === option.value}
-                  onChange={() => setFilterTarget(option.value)}
+                  id="product-search"
+                  type="text"
+                  placeholder="Search product name, description, or brand"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors duration-150 placeholder:text-slate-400 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </details>
+              </div>
 
-        {showManageTarget && (
-          <ManageOptionModal
-            title="Manage Targets"
-            options={targetOptions}
-            onDelete={handleDeleteTarget}
-            onClose={() => setShowManageTarget(false)}
-          />
-        )}
-
-        {/* Divider */}
-        <div className="h-px bg-gray-200" />
-
-        {/* 🏷️ Indication Filters (collapsible) */}
-        <details className="group">
-          <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700">
-            <span>
-              🏷️ Indication Filters{" "}
-              <button
-                type="button"
-                onClick={() => setShowManageIndication(true)}
-                className="ml-4 text-xs text-gray-500 hover:text-gray-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                title="Manage Indications"
-              >
-                ⚙️Manage
-              </button>
-            </span>
-            <span className="text-gray-500 group-open:rotate-180 transition-transform duration-200">
-              ▼
-            </span>
-          </summary>
-
-          <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto pr-1 pb-2 mt-3 -mr-1">
-            {filteredIndications.map((ind) => (
-              <TagCheckbox
-                key={ind.id}
-                label={ind.name}
-                value={ind.name}
-                checked={filterIndications.includes(ind.name)}
-                onChange={(e) => {
-                  const updated = e.target.checked
-                    ? [...filterIndications, ind.name]
-                    : filterIndications.filter((name) => name !== ind.name);
-                  setFilterIndications(updated);
-                }}
-              />
-            ))}
-          </div>
-        </details>
-
-        {showManageIndication && (
-          <ManageOptionModal
-            title="Manage Indications"
-            options={manageIndicationOptions}
-            onDelete={handleDeleteIndication}
-            onClose={() => setShowManageIndication(false)}
-          />
-        )}
-
-        {/* 📦 Product Table */}
-        <div ref={listRef}>
-          {!paginatedProducts.length ? (
-            <div className="text-gray-500 italic mt-6 text-center">
-              No products available.
+              <div className="lg:col-span-4">
+                <SelectInput
+                  label="Sort"
+                  name="sortBy"
+                  value={sortBy}
+                  onChange={(v) => setSortBy(v as SortBy)}
+                  options={[
+                    { label: "Recent", value: "recent" },
+                    { label: "A → Z", value: "name-asc" },
+                    { label: "Price: Low → High", value: "price-asc" },
+                    { label: "Price: High → Low", value: "price-desc" },
+                    { label: "Stock: Lowest First", value: "stock-asc" },
+                  ]}
+                />
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto -mx-3 sm:mx-0">
-              <div className="min-w-[340px] sm:min-w-[720px]">
-                <ProductTable
-                  products={paginatedProducts}
-                  onEdit={handleEdit}
-                  onDelete={(id) => {
-                    const form = new FormData();
-                    form.append("_action", "delete-product");
-                    form.append("id", String(id));
-                    form.append("deleteId", String(id));
-                    actionFetcher.submit(form, { method: "post" });
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+              <div className="xl:col-span-3">
+                <SelectInput
+                  label="Category"
+                  name="category"
+                  value={filterCategory}
+                  onChange={(val) => {
+                    setFilterCategory(String(val));
+                    setFilterBrand("");
                   }}
-                  highlightId={highlightId}
-                  actionFetcher={actionFetcher}
+                  options={[
+                    {
+                      label: "All Categories",
+                      value: "",
+                      style: { color: "#888" },
+                    },
+                    ...categories.map((c) => ({ label: c.name, value: c.id })),
+                  ]}
                 />
               </div>
-            </div>
-          )}
 
-          <div className="mt-3 sm:mt-4">
-            <Pagination
-              currentPage={currentPage}
-              totalItems={sortedProducts.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Modal: Step 1 / 2 / 3 */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-          <div className="relative w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl p-4 sm:p-6 flex flex-col">
-            <button
-              onClick={handleCloseModal}
-              className="absolute top-3.5 right-3.5 text-xl sm:text-lg text-slate-500 hover:text-slate-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              ×
-            </button>
-
-            <actionFetcher.Form
-              method="post"
-              key={formKey}
-              ref={formRef}
-              encType="multipart/form-data"
-              className="flex-1 overflow-y-auto pr-1 sm:pr-2 min-h-[500px] space-y-4
-                   [scrollbar-gutter:stable] scroll-smooth"
-              onSubmit={(e) => {
-                if (!confirm("Save this product?")) {
-                  e.preventDefault();
-                  return;
-                }
-                const fd = new FormData(e.currentTarget as HTMLFormElement);
-                console.groupCollapsed("🧾 Form submit payload");
-                for (const [k, v] of fd.entries()) {
-                  console.log(k, "→", v);
-                }
-                console.groupEnd();
-              }}
-            >
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  {step === 1
-                    ? "Step 1: Basic Info"
-                    : step === 2
-                    ? "Step 2: Stock & Pricing"
-                    : "Step 3: Description & Tags"}
-                </h2>
-                <span className="text-xs sm:text-sm text-slate-500 px-1">
-                  Step {step} of 3
-                </span>
+              <div className="xl:col-span-3">
+                <SelectInput
+                  name="brandId"
+                  label="Brand"
+                  value={filterBrand}
+                  onChange={(val) => setFilterBrand(String(val))}
+                  options={[
+                    { label: "All Brands", value: "", style: { color: "#888" } },
+                    ...brandOptionsForFilter,
+                  ]}
+                />
               </div>
 
-              {/* STEP 1: BASIC INFO */}
-              {step === 1 && (
-                <FormSection
-                  title="Step 1: Basic Info"
-                  description="Enter the basic product information."
-                  bordered
-                  className="space-y-3 sm:space-y-4"
-                >
-                  {errorMsg && (
-                    <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {errorMsg}
-                    </div>
-                  )}
+              <div className="xl:col-span-3">
+                <SelectInput
+                  name="locationFilter"
+                  label="Location"
+                  value={filterLocation}
+                  onChange={(val) => setFilterLocation(String(val))}
+                  options={[
+                    { label: "All Locations", value: "", style: { color: "#888" } },
+                    ...locationOptions,
+                  ]}
+                />
+              </div>
 
-                  <FormGroupRow>
-                    <TextInput
-                      name="name"
-                      label="Product Name"
-                      placeholder="Name"
-                      value={formData.name || ""}
-                      onChange={handleInput}
-                      error={errors.name}
-                    />
-                    <SelectInput
-                      name="unitId"
-                      label="Unit"
-                      value={formData.unitId || ""}
-                      onChange={(val) =>
-                        setFormData((p) => ({ ...p, unitId: String(val) }))
-                      }
-                      options={[
-                        { label: "-- Unit --", value: "" },
-                        ...units.map((u) => ({
-                          label: u.name,
-                          value: u.id,
-                        })),
-                      ]}
-                      error={errors.unitId}
-                    />
-                  </FormGroupRow>
-
-                  <FormGroupRow>
-                    <SelectInput
-                      name="categoryId"
-                      label="Category"
-                      value={formData.categoryId || ""}
-                      onChange={(v) =>
-                        setFormData((p) => ({ ...p, categoryId: String(v) }))
-                      }
-                      options={[
-                        {
-                          label: "-- Category --",
-                          value: "",
-                          style: { color: "#888" },
-                        },
-                        ...categories.map((c) => ({
-                          label: c.name,
-                          value: c.id,
-                        })),
-                      ]}
-                      error={errors.categoryId}
-                    />
-
-                    <ComboInput
-                      placeholder="Brand"
-                      label="Brand"
-                      options={brandOptionsForForm}
-                      selectedId={formData.brandId || ""}
-                      customName={formData.brandName || ""}
-                      onSelect={({ selectedId, customName }) => {
-                        setFormData((prev) => ({
-                          ...prev,
-                          brandId: selectedId,
-                          brandName: customName,
-                        }));
-                      }}
-                      error={errors.brandName}
-                    />
-                    <input
-                      type="hidden"
-                      name="brandId"
-                      value={formData.brandId || ""}
-                    />
-                    <input
-                      type="hidden"
-                      name="brandName"
-                      value={formData.brandName || ""}
-                    />
-                  </FormGroupRow>
-
-                  <div className="flex items-center gap-2 mt-3">
-                    <input
-                      type="checkbox"
-                      name="allowPackSale"
-                      checked={formData.allowPackSale === "true"}
-                      onChange={(e) =>
-                        setFormData((p) => ({
-                          ...p,
-                          allowPackSale: e.target.checked ? "true" : "false",
-                        }))
-                      }
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus-visible:ring-indigo-200"
-                    />
-                    <span className="text-sm text-slate-700">
-                      Sell per kilo (e.g. bigas/feeds/pet-food)
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Don’t check this if your product is sold as a whole unit
-                    only (e.g., tank, sack, bottle).
-                  </p>
-
-                  <div className="text-right">
-                    <Button
-                      variant="primary"
-                      className="w-full sm:w-auto"
-                      type="button"
-                      onClick={async (e) => {
-                        e.preventDefault();
-
-                        const requiredFields = [
-                          "name",
-                          "unitId",
-                          "categoryId",
-                        ] as const;
-
-                        const newErrors: Record<string, string> = {};
-                        type RequiredKey = (typeof requiredFields)[number];
-
-                        const fieldLabels: Record<RequiredKey, string> = {
-                          name: "Product Name",
-                          unitId: "Unit",
-                          categoryId: "Category",
-                        };
-
-                        requiredFields.forEach((field) => {
-                          const value = formData[field];
-                          const isEmpty =
-                            value === undefined ||
-                            value === null ||
-                            (typeof value === "string" && value.trim() === "");
-                          if (isEmpty) {
-                            newErrors[
-                              field
-                            ] = `${fieldLabels[field]} is required`;
-                          }
-                        });
-
-                        setErrors(newErrors);
-                        if (Object.keys(newErrors).length > 0) return;
-                        console.log(
-                          "📦 Step check: formData.location =",
-                          formData.location
-                        );
-
-                        if (formData.brandId) {
-                          console.log(
-                            "📦 Going to Step 2 — current location:",
-                            formData.location
-                          );
-
-                          setErrorMsg("");
-                          setFormData((prev) => ({
-                            ...prev,
-                            allowPackSale:
-                              prev.allowPackSale === "true" ? "true" : "false",
-                          }));
-                          console.log(
-                            "📦 location before step change:",
-                            formData.location
-                          );
-
-                          setTimeout(() => setStep(2), 50);
-
-                          return;
-                        }
-
-                        if (formData.brandName) {
-                          const checkData = new FormData();
-                          checkData.append(
-                            "brandName",
-                            formData.brandName.trim()
-                          );
-                          if (formData.categoryId) {
-                            checkData.append("categoryId", formData.categoryId);
-                          }
-
-                          try {
-                            const res = await fetch("/brand/check", {
-                              method: "POST",
-                              body: checkData,
-                            });
-                            const result = await res.json();
-                            if (result.exists) {
-                              setErrorMsg(
-                                `Brand "${formData.brandName}" already exists in this category.`
-                              );
-                              return;
-                            }
-                            console.log(
-                              "🧪 formData.location before step 2:",
-                              formData.location
-                            );
-
-                            setErrorMsg("");
-                            setStep(2);
-                          } catch {
-                            setErrorMsg(
-                              "Could not verify brand. Please try again."
-                            );
-                          }
-                          return;
-                        }
-
-                        setErrorMsg("Please select or enter a valid brand.");
-                      }}
-                    >
-                      Next →
-                    </Button>
-                  </div>
-                </FormSection>
-              )}
-
-              {/* STEP 2: STOCK & PRICING */}
-              {step === 2 && (
-                <FormSection
-                  title="Step 2: Stock, Packaging & Pricing"
-                  description="Set inventory levels, pricing, and packaging info."
-                  bordered
-                >
-                  {/* Hidden fields from Step 1 */}
-
-                  <CarryOverHiddenFields data={formData} />
-                  {/* ✅ Always visible */}
-                  <FormGroupRow>
-                    {/* Packing Size */}
-                    <div className="w-full">
-                      <TextInput
-                        name="packingSize"
-                        label="Packing Size"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="e.g. 25"
-                        value={formData.packingSize || ""}
-                        onChange={handleInput}
-                        error={errors.packingSize}
-                      />
-                    </div>
-
-                    {/* Packing Unit Select */}
-                    <div className="w-full">
-                      <SelectInput
-                        name="packingUnitId"
-                        label="Packing Unit"
-                        value={formData.packingUnitId || ""}
-                        onChange={(val) =>
-                          setFormData((p) => ({
-                            ...p,
-                            packingUnitId: String(val),
-                          }))
-                        }
-                        options={[
-                          { label: "-- Packing Unit --", value: "" },
-                          ...packingUnits.map((u) => ({
-                            label: u.name,
-                            value: String(u.id), // ✅ ensure string type
-                          })),
-                        ]}
-                        error={errors.packingUnitId}
-                      />
-                    </div>
-                  </FormGroupRow>
-
-                  {/* 📦 Packaging Note */}
-
-                  {/* 💰 Pricing */}
-                  <FormGroupRow>
-                    <CurrencyInput
-                      name="srp"
-                      label="Whole Unit Price"
-                      placeholder="₱0.00"
-                      value={formData.srp || ""}
-                      onChange={handleInput}
-                      error={errors.srp}
-                    />
-                    <CurrencyInput
-                      name="dealerPrice"
-                      label="Cost Price"
-                      placeholder="₱0.00"
-                      value={formData.dealerPrice || ""}
-                      onChange={handleInput}
-                      error={errors.dealerPrice}
-                    />
-                  </FormGroupRow>
-
-                  {/* 🛒 Retail-specific Fields */}
-                  {formData.allowPackSale === "true" && (
-                    <FormGroupRow>
-                      <div className="w-full">
-                        <div className="grid items-center justify-between mb-2">
-                          <CurrencyInput
-                            name="price"
-                            label="Retail Price"
-                            placeholder="₱0.00"
-                            value={formData.price || ""}
-                            onChange={onPriceChange}
-                            error={errors.price}
-                          />
-                          <button
-                            type="button"
-                            onClick={recomputeRetailPrice}
-                            disabled={!canRecomputeRetailPrice}
-                            className="text-gray-700 text-xs border px-1 py-0.5 rounded disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                            title="Recompute = Whole Unit Price ÷ Packing Size"
-                          >
-                            ↻ Recompute Retail Price
-                          </button>
-                        </div>
-                      </div>
-                      <TextInput
-                        name="packingStock"
-                        label="Retail Stock"
-                        type="number"
-                        placeholder="e.g. 4 (kilos)"
-                        value={formData.packingStock || ""}
-                        onChange={onRetailStockChange}
-                        error={errors.packingStock}
-                      />
-                    </FormGroupRow>
-                  )}
-
-                  {/* 📦 Stock for Whole Units */}
-                  <FormGroupRow>
-                    <TextInput
-                      name="stock"
-                      label="Stock"
-                      type="number"
-                      placeholder="e.g. 4 (sacks)"
-                      value={formData.stock || ""}
-                      onChange={handleInput}
-                    />
-                  </FormGroupRow>
-
-                  {/* 🏷️ Inventory ID */}
-                  <FormGroupRow>
-                    {/* BARCODE (left) */}
-                    <div className="w-full">
-                      <TextInput
-                        label="Barcode"
-                        name="barcode"
-                        placeholder="Auto-generated or manual"
-                        value={formData.barcode || ""}
-                        onChange={handleInput}
-                        error={errors.barcode}
-                      />
-                      {/* tiny inline helper under the input */}
-                      <div className="mt-1 flex items-center justify-between">
-                        <span className="text-[11px] text-gray-500">
-                          Generate a local EAN-13 if you don’t have one.
-                        </span>
-                        <button
-                          type="button"
-                          className="text-[11px] text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                          title="Generate in-store EAN-13"
-                          onClick={() => {
-                            const code = makeLocalEan13(storeCode);
-                            setFormData((p) => ({ ...p, barcode: code }));
-                          }}
-                        >
-                          Generate barcode
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* SKU (right) */}
-                    <div className="w-full">
-                      <TextInput
-                        name="sku"
-                        label="SKU"
-                        placeholder="Auto-generated or manual"
-                        value={formData.sku || ""}
-                        onChange={handleInput}
-                        error={errors.sku}
-                      />
-                    </div>
-                  </FormGroupRow>
-
-                  {/* 📅 Dates */}
-                  <FormGroupRow>
-                    <TextInput
-                      name="expirationDate"
-                      label="Expiration Date"
-                      type="date"
-                      value={formData.expirationDate || ""}
-                      onChange={handleInput}
-                    />
-                    <TextInput
-                      name="replenishAt"
-                      label="Replenish At"
-                      type="date"
-                      value={formData.replenishAt || ""}
-                      onChange={handleInput}
-                    />
-                  </FormGroupRow>
-
-                  {/* 🧾 Location & Minimum Stock */}
-                  <FormGroupRow>
-                    <TextInput
-                      name="minStock"
-                      label="Min Stock"
-                      type="number"
-                      placeholder="Trigger alert at..."
-                      value={formData.minStock || ""}
-                      onChange={handleInput}
-                    />
-                    <DeletableSmartSelectInput
-                      name="locationId"
-                      label="Location"
-                      value={formData.locationId || ""}
-                      onChange={(val) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          locationId: val,
-                        }))
-                      }
-                      customInputValue={formData.customLocationName || ""}
-                      onCustomInputChange={(val) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          customLocationName: val,
-                        }))
-                      }
-                      customValueLabel="Other"
-                      options={locationOptions}
-                      onDeleteOption={(val) => handleDeleteLocation(val)}
-                      deletableValues={locationOptions.map((o) =>
-                        Number(o.value)
-                      )}
-                    />
-
-                    <input
-                      type="hidden"
-                      name="customLocationName"
-                      value={formData.customLocationName || ""}
-                    />
-                  </FormGroupRow>
-
-                  {/* Navigation */}
-                  <div className="flex justify-between mt-4">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setStep(1)}
-                    >
-                      ← Back
-                    </Button>
-                    <Button
-                      variant="primary"
-                      type="button"
-                      onClick={() => {
-                        const requiredFields = [
-                          "packingSize",
-                          "packingUnitId",
-                          "srp",
-                          "dealerPrice",
-                        ] as const;
-                        type RequiredKey = (typeof requiredFields)[number];
-
-                        const newErrors: Record<string, string> = {};
-                        const fieldLabels: Record<RequiredKey, string> = {
-                          packingSize: "Packing Size",
-                          packingUnitId: "Packing Unit",
-                          srp: "Whole Unit Price",
-                          dealerPrice: "Cost Price",
-                        };
-
-                        requiredFields.forEach((field) => {
-                          const value = formData[field];
-                          const isEmpty =
-                            value === undefined ||
-                            value === null ||
-                            (typeof value === "string" && value.trim() === "");
-                          if (isEmpty) {
-                            newErrors[
-                              field
-                            ] = `${fieldLabels[field]} is required`;
-                          }
-                        });
-
-                        setErrors(newErrors);
-                        if (Object.keys(newErrors).length > 0) return;
-
-                        setStep(3);
-                      }}
-                    >
-                      Next →
-                    </Button>
-                  </div>
-                </FormSection>
-              )}
-
-              {/* STEP 3: DESCRIPTION & TAGS */}
-              {step === 3 && (
-                <FormSection
-                  title="Step 3: Description & Tags"
-                  description="Write a product description, select uses and targets, and upload an image."
-                  bordered
-                >
-                  <CarryOverHiddenFields data={formData} />
-                  <Textarea
-                    name="description"
-                    label="Description"
-                    placeholder="Product description..."
-                    value={formData.description || ""}
-                    onChange={handleInput}
-                  />
-                  <FormSection title="Indications (Uses)">
-                    <MultiSelectInput
-                      name="indications"
-                      label="Indications"
-                      options={indications.map((i) => ({
-                        label: i.name,
-                        value: String(i.id),
-                      }))}
-                      selected={selectedIndications}
-                      onChange={setSelectedIndications}
-                      onCustomInput={handleCustomIndication}
-                    />
-
-                    {/* Presence flag so the action knows this field was shown */}
-                    <input
-                      type="hidden"
-                      name="indicationIds_present"
-                      value="1"
-                    />
-
-                    {/* Only send real IDs (deduped) */}
-                    {Array.from(
-                      new Set(selectedIndications.map((ind) => ind.value))
-                    ).map((id) => (
-                      <input
-                        key={id}
-                        type="hidden"
-                        name="indicationIds"
-                        value={id}
-                      />
-                    ))}
-                  </FormSection>
-                  <FormSection title="Target Group">
-                    <MultiSelectInput
-                      name="target"
-                      label="Target"
-                      options={modalTargetOptions} // ✅ unchanged
-                      selected={selectedTargets}
-                      onChange={setSelectedTargets}
-                      onCustomInput={handleCustomTarget}
-                    />
-
-                    {/* tell the server this field was included */}
-                    <input type="hidden" name="targetIds_present" value="1" />
-
-                    {/* only send IDs if any are selected */}
-                    {selectedTargets.map((t) => (
-                      <input
-                        key={t.value}
-                        type="hidden"
-                        name="targetIds"
-                        value={t.value}
-                      />
-                    ))}
-                  </FormSection>
-                  <FormGroupRow>
-                    <div className="w-full">
+              <fieldset className="space-y-1 xl:col-span-3">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Status
+                </legend>
+                <div className="grid h-9 grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                  {[
+                    { label: "All", value: "all" as const },
+                    { label: "Active", value: "active" as const },
+                    { label: "Inactive", value: "inactive" as const },
+                  ].map((opt) => {
+                    const selected = filterStatus === opt.value;
+                    return (
                       <label
-                        htmlFor="imageFile"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Upload Image
-                      </label>
-
-                      {/* Preview on top */}
-                      <div className="mt-2">
-                        {previewUrl || formData.imageUrl ? (
-                          <img
-                            src={previewUrl || formData.imageUrl!}
-                            alt="Preview"
-                            className="h-24 w-24 rounded object-cover border"
-                          />
-                        ) : (
-                          <div className="h-24 w-24 rounded border border-dashed grid place-items-center text-xs text-gray-400">
-                            No image
-                          </div>
+                        key={opt.value}
+                        className={clsx(
+                          "inline-flex h-full cursor-pointer items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors duration-150",
+                          "focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
+                          selected
+                            ? opt.value === "active"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : opt.value === "inactive"
+                              ? "bg-rose-100 text-rose-800"
+                              : "bg-indigo-100 text-indigo-800"
+                            : "text-slate-600 hover:bg-white"
                         )}
-                      </div>
+                      >
+                        <input
+                          type="radio"
+                          name="status"
+                          value={opt.value}
+                          className="sr-only"
+                          checked={selected}
+                          onChange={() => setFilterStatus(opt.value)}
+                        />
+                        {opt.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            </div>
+          </section>
 
-                      {/* File chooser below */}
+          <div className="h-px bg-slate-200" />
+
+          <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <details className="group rounded-xl border border-slate-200 bg-white">
+              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
+                <span>Target Filter</span>
+                <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
+                  ▼
+                </span>
+              </summary>
+              <div className="space-y-3 border-t border-slate-200 px-3 py-3">
+                <div className="flex flex-wrap gap-2">
+                  {[{ label: "All", value: "" }, ...targetOptions].map((option) => (
+                    <label
+                      key={option.value}
+                      className={clsx(
+                        "inline-flex h-8 cursor-pointer items-center rounded-xl border px-3 text-xs font-medium transition-colors duration-150",
+                        "focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-200 focus-within:ring-offset-1",
+                        filterTarget === option.value
+                          ? "border-indigo-600 bg-indigo-600 text-white"
+                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                      )}
+                    >
                       <input
-                        key={fileInputKey}
-                        id="imageFile"
-                        type="file"
-                        name="imageFile"
-                        accept="image/*"
-                        capture="environment"
-                        className="mt-3 block w-full text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        aria-describedby="imageHelp"
+                        type="radio"
+                        name="target"
+                        value={option.value}
+                        className="sr-only"
+                        checked={filterTarget === option.value}
+                        onChange={() => setFilterTarget(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </details>
+
+            <details className="group rounded-xl border border-slate-200 bg-white">
+              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
+                <span>Indication Filters</span>
+                <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
+                  ▼
+                </span>
+              </summary>
+              <div className="space-y-3 border-t border-slate-200 px-3 py-3">
+                <div className="max-h-[190px] overflow-y-auto pr-1">
+                  <div className="flex flex-wrap gap-2">
+                    {filteredIndications.map((ind) => (
+                      <TagCheckbox
+                        key={ind.id}
+                        label={ind.name}
+                        value={ind.name}
+                        checked={filterIndications.includes(ind.name)}
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (previewUrl) URL.revokeObjectURL(previewUrl);
-                          setPreviewUrl(
-                            file ? URL.createObjectURL(file) : null
-                          );
+                          const updated = e.target.checked
+                            ? [...filterIndications, ind.name]
+                            : filterIndications.filter((name) => name !== ind.name);
+                          setFilterIndications(updated);
                         }}
                       />
-
-                      <p id="imageHelp" className="text-xs text-gray-500 mt-1">
-                        PNG/JPG/WEBP. Large photos are auto-optimized on upload.
-                      </p>
-                    </div>
-                  </FormGroupRow>
-
-                  <div className="flex justify-between mt-4">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setStep(2)}
-                    >
-                      ← Back
-                    </Button>
-                    <Button type="submit" variant="primary">
-                      Save
-                    </Button>
+                    ))}
                   </div>
-                </FormSection>
-              )}
-            </actionFetcher.Form>
+                  {filteredIndications.length === 0 ? (
+                    <p className="text-xs text-slate-500">No indications available.</p>
+                  ) : null}
+                </div>
+              </div>
+            </details>
+          </section>
+
+          <div className="h-px bg-slate-200" />
+
+          {/* 📦 Product Table */}
+          <div ref={listRef} className="space-y-3">
+            {!paginatedProducts.length ? (
+              <SoTEmptyState
+                title="No products available."
+                hint="Try adjusting filters or add a new product."
+                className="mt-1"
+              />
+            ) : (
+              <ProductTable
+                products={paginatedProducts}
+                highlightId={highlightId}
+                actionFetcher={actionFetcher}
+              />
+            )}
+
+            <div className="pt-1 sm:pt-2">
+              <Pagination
+                currentPage={currentPage}
+                totalItems={sortedProducts.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        </SoTCard>
+      </div>
 
       <Toast
         message={successMsg || errorMsg}

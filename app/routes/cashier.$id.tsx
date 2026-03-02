@@ -20,6 +20,7 @@ import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
 import { sumAllPayments, EPS } from "~/services/settlementSoT";
+import { SelectInput } from "~/components/ui/SelectInput";
 
 // Lock TTL: 5 minutes (same as queue page)
 const LOCK_TTL_MS = 5 * 60 * 1000;
@@ -1576,15 +1577,16 @@ export default function CashierOrder() {
                     />
                     <div className="text-slate-700">Send to manager for clearance</div>
                     <div className="grid grid-cols-1 gap-2">
-                      <select
+                      <SelectInput
                         name="clearanceIntent"
                         defaultValue={hasCustomer ? "OPEN_BALANCE" : "PRICE_BARGAIN"}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                        className="rounded-md"
                         disabled={!canSendForClearance}
-                      >
-                        <option value="OPEN_BALANCE">Open balance (utang)</option>
-                        <option value="PRICE_BARGAIN">Price bargain</option>
-                      </select>
+                        options={[
+                          { label: "Open balance (utang)", value: "OPEN_BALANCE" },
+                          { label: "Price bargain", value: "PRICE_BARGAIN" },
+                        ]}
+                      />
                       <textarea
                         name="clearanceReason"
                         rows={2}

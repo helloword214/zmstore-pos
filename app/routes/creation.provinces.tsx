@@ -18,6 +18,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import {
   SoTTable,
@@ -302,15 +303,16 @@ export default function ProvincesCreationPage() {
                   />
                 </SoTFormField>
                 <SoTFormField label="Status">
-                  <select
+                  <SelectInput
                     name="status"
                     defaultValue={status}
-                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    <option value="all">All</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                    className="w-36"
+                    options={[
+                      { label: "All", value: "all" },
+                      { label: "Active", value: "active" },
+                      { label: "Inactive", value: "inactive" },
+                    ]}
+                  />
                 </SoTFormField>
                 <SoTButton type="submit" className="h-9" variant="secondary">
                   Apply

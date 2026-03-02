@@ -9,6 +9,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { storage } from "~/utils/storage.server";
@@ -1025,19 +1026,14 @@ function SelectField(props: {
   return (
     <div className={spanClass(props.span)}>
       <SoTFormField label={props.label}>
-        <select
-          id={props.id}
-          className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+        <SelectInput
           value={props.value}
-          onChange={(e) => props.onChange(e.target.value)}
-        >
-          {props.allowEmpty ? <option value="">—</option> : null}
-          {props.options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => props.onChange(String(value))}
+          options={[
+            ...(props.allowEmpty ? [{ label: "—", value: "" }] : []),
+            ...props.options.map((o) => ({ label: o.label, value: o.value })),
+          ]}
+        />
       </SoTFormField>
     </div>
   );

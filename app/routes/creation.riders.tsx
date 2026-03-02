@@ -11,6 +11,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import {
   SoTTable,
@@ -221,6 +222,7 @@ export default function RidersPage() {
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<ActionData>();
   const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(status);
 
   const [showCreate, setShowCreate] = React.useState(false);
   const [createForm, setCreateForm] = React.useState({
@@ -255,6 +257,10 @@ export default function RidersPage() {
         : "",
     });
   }, [editing]);
+
+  React.useEffect(() => {
+    setStatusFilter(status);
+  }, [status]);
 
   function gotoPage(nextPage: number) {
     const params = new URLSearchParams();
@@ -291,15 +297,17 @@ export default function RidersPage() {
                   />
                 </SoTFormField>
                 <SoTFormField label="Status">
-                  <select
+                  <SelectInput
                     name="status"
-                    defaultValue={status}
-                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    <option value="all">All</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                    value={statusFilter}
+                    onChange={(value) => setStatusFilter(String(value) as StatusFilter)}
+                    options={[
+                      { label: "All", value: "all" },
+                      { label: "Active", value: "active" },
+                      { label: "Inactive", value: "inactive" },
+                    ]}
+                    className="w-36"
+                  />
                 </SoTFormField>
                 <SoTButton type="submit" variant="secondary" className="h-9">
                   Apply
@@ -389,24 +397,23 @@ export default function RidersPage() {
 
               <div className="md:col-span-4">
                 <SoTFormField label="Default Vehicle">
-                  <select
+                  <SelectInput
                     name="defaultVehicleId"
                     value={createForm.defaultVehicleId}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        defaultVehicleId: e.target.value,
+                        defaultVehicleId: String(value),
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    <option value="">-</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name} - {v.type}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { label: "-", value: "" },
+                      ...vehicles.map((v) => ({
+                        label: `${v.name} - ${v.type}`,
+                        value: String(v.id),
+                      })),
+                    ]}
+                  />
                 </SoTFormField>
               </div>
 
@@ -479,24 +486,23 @@ export default function RidersPage() {
 
               <div className="md:col-span-4">
                 <SoTFormField label="Default Vehicle">
-                  <select
+                  <SelectInput
                     name="defaultVehicleId"
                     value={editForm.defaultVehicleId}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        defaultVehicleId: e.target.value,
+                        defaultVehicleId: String(value),
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    <option value="">-</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name} - {v.type}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { label: "-", value: "" },
+                      ...vehicles.map((v) => ({
+                        label: `${v.name} - ${v.type}`,
+                        value: String(v.id),
+                      })),
+                    ]}
+                  />
                 </SoTFormField>
               </div>
 

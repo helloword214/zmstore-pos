@@ -1770,26 +1770,25 @@ export default function KioskPage() {
                     >
                       Address
                     </label>
-                    <select
-                      id="delivery-address-id"
+                    <SelectInput
+                      name="deliveryAddressId"
                       value={deliveryAddressId ?? ""}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         setDeliveryAddressId(
-                          e.target.value ? Number(e.target.value) : null,
+                          String(value) ? Number(value) : null,
                         )
                       }
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                    >
-                      <option value="">— None / custom —</option>
-                      {selectedCustomer.addresses.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {(a.label ? `${a.label}: ` : "") +
-                            [a.line1, a.barangay, a.city]
-                              .filter(Boolean)
-                              .join(", ")}
-                        </option>
-                      ))}
-                    </select>
+                      className="mt-1"
+                      options={[
+                        { label: "— None / custom —", value: "" },
+                        ...selectedCustomer.addresses.map((a) => ({
+                          label:
+                            (a.label ? `${a.label}: ` : "") +
+                            [a.line1, a.barangay, a.city].filter(Boolean).join(", "),
+                          value: String(a.id),
+                        })),
+                      ]}
+                    />
                   </div>
                 ) : null}
               </div>

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SelectInput } from "~/components/ui/SelectInput";
 
 type StatusOption = {
   value: string;
@@ -58,17 +59,15 @@ export function SoTListToolbar({
           </SoTFormField>
 
           <SoTFormField label={statusLabel}>
-            <select
+            <SelectInput
               name="status"
               defaultValue={status}
-              className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              className="w-36"
+              options={statusOptions.map((option) => ({
+                label: option.label,
+                value: option.value,
+              }))}
+            />
           </SoTFormField>
 
           {extraFilters}

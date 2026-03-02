@@ -2,7 +2,7 @@
 
 Status: LOCKED  
 Owner: POS Platform  
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-01
 
 ## Purpose
 
@@ -14,11 +14,14 @@ This is an as-is behavioral snapshot of current implementation.
 
 In scope:
 
-1. `app/routes/products._index.tsx` (product encode/edit/list behavior)
-2. `app/routes/pad-order._index.tsx` (cart mode + client preflight)
-3. `app/routes/orders.new.tsx` (authoritative order-create validation)
-4. stock deduction callers that consume the same shape (cashier/dispatch/credit)
-5. `Product`, `Unit`, `PackingUnit` model semantics
+1. `app/routes/products._index.tsx` (product list/filter + product-level inventory operations)
+2. `app/routes/products.new.tsx` (product creation flow and payload shape)
+3. `app/routes/products.$productId.edit.tsx` (product update flow and payload shape)
+4. `app/routes/products.$productId.tsx` (product detail deep-link/read route)
+5. `app/routes/pad-order._index.tsx` (cart mode + client preflight)
+6. `app/routes/orders.new.tsx` (authoritative order-create validation)
+7. stock deduction callers that consume the same shape (cashier/dispatch/credit)
+8. `Product`, `Unit`, `PackingUnit` model semantics
 
 Out of scope:
 
@@ -49,7 +52,8 @@ Price fields:
 
 ## Price Input Behavior (Current)
 
-From `products._index.tsx` create/edit flow:
+From shared product upsert flow (`ProductUpsertForm` in
+`products.new.tsx` and `products.$productId.edit.tsx`):
 
 1. If `allowPackSale = true`, UI auto-suggests retail `price` from `srp / packingSize` (rounded to 2 decimals) when source values are valid.
 2. Admin can manually override retail `price` after auto-suggest.
@@ -67,6 +71,12 @@ Auxiliary:
 
 1. `locationId`, `description`, `imageUrl`, `imageKey`, `expirationDate`, `replenishAt`, `imageTag`
 2. tagging/relations: `ProductIndication`, `ProductTarget`
+
+## Product List Master-Data Boundary (Current)
+
+1. `app/routes/products._index.tsx` treats `Brand`, `Location`, `Target`, and `Indication` as selection/filter data only.
+2. Product list route does not expose destructive mutation actions for brand/location/target/indication.
+3. Brand/location/target/indication master-data lifecycle changes should be handled from dedicated admin master-data workspace routes.
 
 ## Selling Modes (Current Runtime Contract)
 
@@ -164,13 +174,13 @@ Use `unit + packingSize` for product content quantity or quantity conversion onl
 
 ## Product Form Behavior (Current)
 
-From `products._index.tsx` action validation:
+From `/products` action validation (used by dedicated create/edit routes):
 
 1. Always required: `name`, `categoryId`, `unitId`, `packingSize`, `dealerPrice`, `packingUnitId`, `srp`
 2. `price` required only when `allowPackSale = true`
 3. non-negative numeric guard is enforced
 4. `packingStock` decimal precision is validated up to 2 decimals in form/action logic
-5. Step 1 enforces brand selection/input before moving to Step 2 in current UI flow
+5. Product list route does not host create/edit modal; create/edit happens on dedicated routes.
 
 ## Stock Movement Semantics (Current)
 
@@ -178,14 +188,14 @@ From `products._index.tsx` action validation:
 2. `stock -= packs`
 3. `packingStock += packs * packingSize`
 4. order/cashier/dispatch deduction paths consume `unitKind` (`PACK` vs `RETAIL`) and decrement corresponding stock field
-5. `open-pack` is manual-only (triggered from product quick-view action), not an automatic checkout fallback
+5. `open-pack` is manual-only (triggered from product list row actions), not an automatic checkout fallback
 
 ## Watchpoints During Refactor
 
 1. Precision mismatch risk: runtime logic allows fractional retail (`0.25` multiples), but `packingStock` currently remains an integer DB field.
 2. Any shape refactor must preserve `unitKind`-driven stock deduction consistency across order-create, cashier release, run dispatch, and credit release paths.
 3. Do not conflate pricing SoT changes with product-shape cleanup; pricing authority remains `CANONICAL_ORDER_PRICING_SOT.md`.
-4. Legacy product edit route (`products.$productId.edit.tsx`) is not aligned with current product encode surface and must not be treated as authoritative behavior.
+4. Dedicated edit route (`products.$productId.edit.tsx`) is authoritative for product update UI behavior.
 5. Avoid hard-coding LPG-only rules when the same behavior is container-return semantics that can apply to other categories.
 6. Keep retail floor guidance non-blocking (`warning-only`) unless business policy explicitly changes.
 7. Preserve optional barcode path for products that have no supplier barcode, while keeping duplicate handling explicit and operator-friendly.

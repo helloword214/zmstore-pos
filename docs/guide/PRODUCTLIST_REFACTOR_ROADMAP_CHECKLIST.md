@@ -2,7 +2,7 @@
 
 Status: DRAFT (Execution Checklist)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-02
 
 Legend:
 
@@ -16,21 +16,22 @@ Objective: split product monolith route into focused routes without changing bus
 
 Checklist:
 
-1. `[TODO]` Freeze parity baseline from canonical docs.
-2. `[TODO]` Define route ownership map:
+1. `[DONE]` Freeze parity baseline from canonical docs.
+2. `[DONE]` Define route ownership map:
    - `products._index.tsx` (list)
    - `products.new.tsx` (create)
    - `products.$productId.tsx` (detail)
    - `products.$productId.edit.tsx` (edit)
-3. `[TODO]` Extract shared product form/validation helpers to avoid duplicated behavior.
-4. `[TODO]` Keep pack/retail rules unchanged (`0.25` fractions, manual `open-pack`, warning-only floor).
-5. `[TODO]` Add stable deep-link navigation from list rows to detail route.
-6. `[TODO]` Preserve SKU/barcode current behavior:
+3. `[IN_PROGRESS]` Extract shared product form/validation helpers to avoid duplicated behavior.
+4. `[DONE]` Keep pack/retail rules unchanged (`0.25` fractions, manual `open-pack`, warning-only floor).
+5. `[DONE]` Add stable deep-link navigation from list rows to detail route.
+6. `[DONE]` Preserve SKU/barcode current behavior:
    - SKU auto when blank, manual allowed
    - barcode optional
    - duplicate barcode -> regenerate/replace and retry save
 7. `[TODO]` Mark legacy productlist UI components as deprecated once replacement is stable.
-8. `[TODO]` Update UI conformance entries for touched product routes.
+8. `[DONE]` Update UI conformance entries for touched product routes.
+9. `[DONE]` Standardize route-level dropdown controls to shared SoT components (`SelectInput`/`SoTDropdown`) and add lint guard against native `<select>` regression in `app/routes/**/*.tsx`.
 
 Acceptance criteria:
 
