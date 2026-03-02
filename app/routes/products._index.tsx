@@ -8,21 +8,12 @@ import {
   useRevalidator,
 } from "@remix-run/react";
 import { useEffect, useRef, useState, useMemo } from "react";
-import type { LoaderData, ProductWithDetails, Brand } from "~/types";
-import type React from "react";
+import type { LoaderData, ProductWithDetails } from "~/types";
 import { db } from "~/utils/db.server";
-import { FormSection } from "~/components/ui/FormSection";
-import { FormGroupRow } from "~/components/ui/FormGroupRow";
-import { TextInput } from "~/components/ui/TextInput";
 import { SelectInput } from "~/components/ui/SelectInput";
-import { Button } from "~/components/ui/Button";
-import { Textarea } from "~/components/ui/Textarea";
 import { TagCheckbox } from "~/components/ui/TagCheckbox";
 import { ProductTable } from "~/components/ui/ProductTable";
 import { Pagination } from "~/components/ui/Pagination";
-import { CurrencyInput } from "~/components/ui/CurrencyInput";
-import { ComboInput } from "~/components/ui/ComboInput";
-import { MultiSelectInput } from "~/components/ui/MultiSelectInput";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
@@ -30,81 +21,8 @@ import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
-import { makeLocalEan13 } from "~/utils/barcode";
 
 // === END Imports ===
-
-// Define a LoaderData interface somewhere in this file (or import it)
-
-type BoolStr = "true" | "false";
-
-type FormDataShape = {
-  id?: string;
-
-  // Step 1
-  name?: string;
-  unitId?: string;
-  categoryId?: string;
-  brandId?: string;
-  brandName?: string;
-  allowPackSale?: "true" | "false";
-
-  // Step 2
-  packingSize?: string;
-  packingUnitId?: string;
-  srp?: string;
-  dealerPrice?: string;
-  price?: string; // retail price (if allowPackSale)
-  packingStock?: string; // retail stock (if allowPackSale)
-  stock?: string; // whole units stock
-  barcode?: string;
-  sku?: string;
-  expirationDate?: string;
-  replenishAt?: string;
-  minStock?: string;
-
-  // Location (combo with custom)
-  locationId?: string;
-  customLocationName?: string;
-
-  // Step 3
-  description?: string;
-  imageTag?: string;
-  imageUrl?: string;
-
-  // legacy keys (safe to keep as blanks)
-  target?: string;
-  indication?: string;
-  location?: string;
-  isActive?: BoolStr;
-};
-
-const INITIAL_FORM: FormDataShape = Object.freeze({
-  name: "",
-  unitId: "",
-  categoryId: "",
-  brandId: "",
-  brandName: "",
-  allowPackSale: "false",
-  isActive: "true",
-  packingSize: "",
-  packingUnitId: "",
-  srp: "",
-  dealerPrice: "",
-  price: "",
-  packingStock: "",
-  stock: "",
-  barcode: "",
-  sku: "",
-  expirationDate: "",
-  replenishAt: "",
-  minStock: "",
-  locationId: "",
-  customLocationName: "",
-  imageTag: "",
-  imageUrl: "",
-  description: "",
-});
 
 type SortBy = "recent" | "name-asc" | "price-asc" | "price-desc" | "stock-asc";
 
@@ -852,12 +770,9 @@ export default function ProductsPage() {
     products: initialProducts,
     categories,
     brands: initialBrands,
-    units,
-    packingUnits,
     indications,
     targets,
     locations,
-    storeCode,
   } = useLoaderData<LoaderData>();
 
   // top of the file, module scope (outside the component)
@@ -867,26 +782,11 @@ export default function ProductsPage() {
   // — State & Options —
   const [products, setProducts] =
     useState<ProductWithDetails[]>(initialProducts);
-  const [brands, setBrands] = useState<Brand[]>(initialBrands);
-
-  // state
-
-  const [selectedIndications, setSelectedIndications] = useState<
-    { label: string; value: string }[]
-  >([]);
-
-  const [selectedTargets, setSelectedTargets] = useState<
-    { label: string; value: string }[]
-  >([]);
+  const brands = initialBrands;
 
   const [targetOptions, setTargetOptions] = useState<
     { label: string; value: string }[]
   >([]);
-
-  const [customLocationName, setCustomLocationName] = useState("");
-
-  const [formKey, setFormKey] = useState(0);
-  const [fileInputKey, setFileInputKey] = useState(0);
 
   // -fetcher for reloading after create/update/delete-
   const actionFetcher = useFetcher<{
@@ -897,23 +797,7 @@ export default function ProductsPage() {
     id?: number; //
   }>();
 
-  const listFetcher = useFetcher<{ products: ProductWithDetails[] }>();
-  const brandsFetcher = useFetcher<{ brands: Brand[] }>();
-
-  // - modal & Form state -
-  const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState<FormDataShape>({
-    allowPackSale: "false",
-    isActive: "true",
-    target: "",
-    indication: "",
-    location: "",
-    locationId: "",
-  });
-
   const [showAlert, setShowAlert] = useState(false);
-
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   // — Filters & Paging —
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -924,7 +808,6 @@ export default function ProductsPage() {
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
-  const fetcher = useFetcher<{ products: ProductWithDetails[] }>();
 
   const filteredIndications = indications.filter(
     (ind) => !filterCategory || ind.categoryId === Number(filterCategory)
@@ -933,8 +816,7 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = useState<SortBy>("recent");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
 
-  // — Messages & Errors —
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // — Messages —
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -942,39 +824,9 @@ export default function ProductsPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
-  //refference
-  const userEditedPrice = useRef(false);
-  const userEditedRetailStock = useRef(false);
-  const userEditedSku = useRef(false);
-
-  const onPriceChange: React.ChangeEventHandler<
-    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-  > = (e) => {
-    userEditedPrice.current = true;
-    handleInput(e);
-  };
-
-  const onRetailStockChange: React.ChangeEventHandler<
-    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-  > = (e) => {
-    userEditedRetailStock.current = true;
-    handleInput(e);
-  };
-
-  const round2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+  const prevPageRef = useRef(currentPage);
 
   //-------Effects ----------------------------------------------------------
-
-  //prevent memory leak on image Add preview state + cleanup:
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  useEffect(() => {
-    setBrands(initialBrands);
-  }, [initialBrands]);
 
   const locationOptions = useMemo(
     () => locations.map((l) => ({ label: l.name, value: String(l.id) })),
@@ -989,76 +841,7 @@ export default function ProductsPage() {
     return list.map((b) => ({ label: b.name, value: String(b.id) }));
   }, [brands, filterCategory]);
 
-  // Filtered for the MODAL brand combo (uses formData.categoryId)
-  const brandOptionsForForm = useMemo(() => {
-    const list = formData.categoryId
-      ? brands.filter(
-          (b) => String(b.categoryId ?? "") === String(formData.categoryId)
-        )
-      : brands;
-
-    // optional: sort & dedupe by name
-    const seen = new Set<string>();
-    return list
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .filter((b) => {
-        const key = b.name.trim().toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((b) => ({ label: b.name, value: String(b.id) }));
-  }, [brands, formData.categoryId]);
-
-  const modalTargetOptions = useMemo(() => {
-    const cId = formData.categoryId || "";
-    const bId = formData.brandId || "";
-
-    // 1) filter by current Cat/Brand
-    const filtered = targets.filter((t: any) => {
-      const okCat = !cId || String(t.categoryId ?? "") === cId;
-      const okBr = !bId || String((t as any).brandId ?? "") === bId; // brandId optional-safe
-      return okCat && okBr;
-    });
-
-    // 2) prefer already-selected IDs when names collide
-    const selectedIds = new Set(
-      (selectedTargets ?? []).map((s) => String(s.value))
-    );
-
-    // 3) dedupe by name (case-insensitive)
-    const byName = new Map<string, { label: string; value: string }>();
-
-    // sort for determinism: name asc, id asc
-    filtered.sort(
-      (a: any, b: any) => a.name.localeCompare(b.name) || a.id - b.id
-    );
-
-    for (const t of filtered) {
-      const key = t.name.trim().toLowerCase();
-      const candidate = { label: t.name, value: String(t.id) };
-
-      const existing = byName.get(key);
-      if (!existing) {
-        byName.set(key, candidate);
-        continue;
-      }
-
-      // If the candidate is selected but existing isn't, prefer the candidate
-      const candSelected = selectedIds.has(candidate.value);
-      const existSelected = selectedIds.has(existing.value);
-      if (candSelected && !existSelected) {
-        byName.set(key, candidate);
-      }
-      // else keep the existing (first seen) entry
-    }
-
-    return Array.from(byName.values());
-  }, [targets, formData.categoryId, formData.brandId, selectedTargets]);
   // Unified product list updater
-  // note: 🔁 Track last search term to avoid unnecessary page reset
-  const prevSearchTermRef = useRef("");
 
   // 🔁 Track previous filters
   const prevFiltersRef = useRef({
@@ -1128,28 +911,6 @@ export default function ProductsPage() {
     }
   }, [targets, filterCategory, filterBrand, filterTarget]);
 
-  // 🧠 When fetcher gets search result, update products and reset page only if search term changed
-  useEffect(() => {
-    if (!fetcher.data?.products) return;
-    if (searchTerm.trim() === "") return; // guard
-    setProducts(fetcher.data.products);
-    if (searchTerm !== prevSearchTermRef.current) {
-      setCurrentPage(1);
-      prevSearchTermRef.current = searchTerm;
-    }
-  }, [fetcher.data, searchTerm]);
-
-  // 🧠 When full list fetcher returns data (initial load or after create/update/delete)
-  useEffect(() => {
-    if (listFetcher.data?.products) {
-      const sorted = [...listFetcher.data.products].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      setProducts(sorted);
-    }
-  }, [listFetcher.data]);
-
   useEffect(() => {
     const prev = prevFiltersRef.current;
     const changed =
@@ -1180,15 +941,13 @@ export default function ProductsPage() {
     filterStatus,
   ]);
 
-  // when brands api returns fresh data:
+  // Scroll to table only when page number actually changes.
+  // This avoids initial-route auto-scroll even under React StrictMode.
   useEffect(() => {
-    if (brandsFetcher.data?.brands) {
-      setBrands(brandsFetcher.data.brands);
+    if (prevPageRef.current === currentPage) {
+      return;
     }
-  }, [brandsFetcher.data]);
-
-  // Scroll to table (only when filters or page changes, not every keystroke)
-  useEffect(() => {
+    prevPageRef.current = currentPage;
     const timeout = setTimeout(() => {
       const anchor = document.getElementById("table-anchor");
       if (anchor) {
@@ -1199,39 +958,6 @@ export default function ProductsPage() {
   }, [currentPage]);
 
   // Handle create/update/delete feedback:
-
-  const formRef = useRef<HTMLFormElement>(null);
-
-  //sku ito yung nawawala
-  useEffect(() => {
-    if (!userEditedSku.current) {
-      const cat =
-        categories.find((c) => String(c.id) === String(formData.categoryId))
-          ?.name || "";
-      const br =
-        brands.find((b) => String(b.id) === String(formData.brandId))?.name ||
-        formData.brandName ||
-        "";
-      const nm = formData.name || "";
-
-      if (nm && (cat || br)) {
-        setFormData((prev) => ({
-          ...prev,
-          sku: generateSKU({ category: cat, brand: br, name: nm }),
-        }));
-      } else if (formData.sku) {
-        setFormData((prev) => ({ ...prev, sku: "" }));
-      }
-    }
-    // eslint-disable-next-line
-  }, [
-    formData.categoryId,
-    formData.brandId,
-    formData.brandName,
-    formData.name,
-    categories,
-    brands,
-  ]);
 
   // Hoist stable snapshots so we don't depend on the whole fetcher
   const afData = actionFetcher.data;
@@ -1314,13 +1040,6 @@ export default function ProductsPage() {
       setSuccessMsg(msgMap[action] || "✅ Operation completed.");
 
       setErrorMsg("");
-
-      //reset form
-      if (action === "created") {
-        setSelectedIndications([]);
-        setSelectedTargets([]);
-        setFormData(INITIAL_FORM);
-      }
 
       if ((afData as any)?.imageUrl) {
         console.log("✅ Image uploaded →", (afData as any).imageUrl);
@@ -1424,9 +1143,8 @@ export default function ProductsPage() {
         revalidator.revalidate();
       }
 
-      // Highlight fallback if server didn't return a product
-      if (formData.id) setHighlightId(Number(formData.id));
-      else if (afData.id) setHighlightId(Number(afData.id));
+      // Highlight if server returned a product id
+      if (afData.id) setHighlightId(Number(afData.id));
       setTimeout(() => setHighlightId(null), 3000);
 
       setTimeout(() => setShowAlert(false), 2000);
@@ -1437,14 +1155,9 @@ export default function ProductsPage() {
     if (afData.error) {
       const { field, error } = afData as any;
       if (field) {
-        setErrors((prev) => ({ ...prev, [field]: error }));
-        const el = document.querySelector(`[name="${field}"]`);
-        if (el && "scrollIntoView" in el) {
-          (el as HTMLElement).scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-          });
-        }
+        setErrorMsg(error);
+        setShowAlert(true);
+        setTimeout(() => setShowAlert(false), 2500);
       } else {
         setErrorMsg(afData.error);
         setShowAlert(true);
@@ -1453,7 +1166,7 @@ export default function ProductsPage() {
       setSuccessMsg("");
       setSearchTerm("");
     }
-  }, [afData, submittedForm, revalidator, formData.id]);
+  }, [afData, submittedForm, revalidator]);
 
   // Handle delete-product feedback
 
@@ -1487,27 +1200,6 @@ export default function ProductsPage() {
     lastHandledRef,
   ]);
 
-  // It guards the modal so when the user changes Category, any previously picked Brand that no longer belongs to that category is cleared. That prevents submitting an invalid pair.
-
-  useEffect(() => {
-    if (!formData.brandId) return; // nothing to validate if no brand selected
-
-    const brandIdStr = String(formData.brandId);
-    const catIdStr = String(formData.categoryId ?? "");
-
-    const stillValid = brands.some(
-      (b) =>
-        String(b.id) === brandIdStr &&
-        (!catIdStr || String(b.categoryId ?? "") === catIdStr)
-    );
-
-    if (!stillValid) {
-      setFormData((prev) => ({ ...prev, brandId: "", brandName: "" }));
-      // (optional) also clear targets, since they depend on brand/category:
-      setSelectedTargets([]);
-    }
-  }, [formData.categoryId, formData.brandId, brands, setFormData]);
-
   // keep local table in sync whenever the loader revalidates
   useEffect(() => {
     setProducts(
@@ -1517,247 +1209,6 @@ export default function ProductsPage() {
       )
     );
   }, [initialProducts]);
-
-  //auto recompute price in retail
-  useEffect(() => {
-    if (formData.allowPackSale !== "true") return;
-
-    const srp = parseFloat(formData.srp ?? "");
-    const packSize = parseFloat(formData.packingSize ?? "");
-
-    const canPrice =
-      Number.isFinite(srp) && Number.isFinite(packSize) && packSize > 0;
-    const canStock = Number.isFinite(packSize) && packSize > 0;
-
-    setFormData((prev) => {
-      // work only from prev so we don't need price/packingStock in deps
-      let changed = false;
-      const next = { ...prev };
-
-      // Retail Price (auto)
-      if (!userEditedPrice.current) {
-        if (canPrice) {
-          const computed = (Math.round((srp / packSize) * 100) / 100).toFixed(
-            2
-          );
-          if ((prev.price ?? "") !== computed) {
-            next.price = computed;
-            changed = true;
-          }
-        } else if ((prev.price ?? "") !== "") {
-          next.price = "";
-          changed = true;
-        }
-      }
-
-      // Retail Stock (auto)
-      if (!userEditedRetailStock.current) {
-        if (canStock) {
-          const computedStock = String(packSize);
-          if ((prev.packingStock ?? "") !== computedStock) {
-            next.packingStock = computedStock;
-            changed = true;
-          }
-        } else if ((prev.packingStock ?? "") !== "") {
-          next.packingStock = "";
-          changed = true;
-        }
-      }
-
-      return changed ? next : prev;
-    });
-  }, [formData.allowPackSale, formData.srp, formData.packingSize]);
-
-  function recomputeRetailPrice() {
-    if (formData.allowPackSale !== "true") return;
-
-    const srp = parseFloat(formData.srp ?? "");
-    const packSize = parseFloat(formData.packingSize ?? "");
-
-    if (!Number.isFinite(srp) || srp <= 0) {
-      setErrors((prev) => ({
-        ...prev,
-        srp: "Enter a valid Whole Unit Price first.",
-      }));
-      return;
-    }
-    if (!Number.isFinite(packSize) || packSize <= 0) {
-      setErrors((prev) => ({
-        ...prev,
-        packingSize: "Enter a valid Packing Size first.",
-      }));
-      return;
-    }
-
-    const computed = round2(srp / packSize);
-
-    // mark as “user took control” so any auto-effect won’t overwrite it
-    if (typeof userEditedPrice?.current !== "undefined") {
-      userEditedPrice.current = true;
-    }
-
-    setErrors((prev) => ({ ...prev, price: "" }));
-    setFormData((prev) => ({ ...prev, price: computed }));
-  }
-
-  const canRecomputeRetailPrice =
-    formData.allowPackSale === "true" &&
-    Number.isFinite(parseFloat(formData.srp ?? "")) &&
-    parseFloat(formData.srp ?? "") > 0 &&
-    Number.isFinite(parseFloat(formData.packingSize ?? "")) &&
-    parseFloat(formData.packingSize ?? "") > 0;
-
-  //multiselectinput indication logic
-  async function handleCustomIndication(
-    input: string
-  ): Promise<{ label: string; value: string }> {
-    const name = input.trim();
-
-    if (!name || !formData.categoryId) {
-      alert("Please enter an indication and select a category first.");
-      return Promise.reject();
-    }
-
-    try {
-      const response = await fetch("/indication/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          categoryId: Number(formData.categoryId),
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result?.error) {
-        alert(result.error);
-        return Promise.reject();
-      }
-
-      return {
-        label: result.name,
-        value: result.id.toString(), // ← IMPORTANT: use the unique ID
-      };
-    } catch (err) {
-      console.error("Error creating indication:", err);
-      alert("Something went wrong while creating the indication.");
-      return Promise.reject();
-    }
-  }
-
-  //multiselectinput tartget logic
-  async function handleCustomTarget(
-    input: string
-  ): Promise<{ label: string; value: string }> {
-    const name = input.trim();
-
-    if (!name || !formData.categoryId) {
-      alert("Please enter a target name and select a category first.");
-      return Promise.reject();
-    }
-
-    try {
-      const response = await fetch("/target/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          categoryId: Number(formData.categoryId),
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result?.error) {
-        alert(result.error);
-        return Promise.reject();
-      }
-
-      return {
-        label: result.name,
-        value: result.id.toString(), // must return ID
-      };
-    } catch (err) {
-      console.error("Error creating target:", err);
-      alert("Something went wrong while creating the target.");
-      return Promise.reject();
-    }
-  }
-
-  function handleInput(
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    >
-  ) {
-    const { name, value } = e.target;
-
-    if (name === "price") userEditedPrice.current = true;
-    if (name === "packingStock") userEditedRetailStock.current = true;
-
-    const cleaned = [
-      "price",
-      "srp",
-      "dealerPrice",
-      "stock",
-      "packingStock",
-      "minStock",
-    ].includes(name)
-      ? value.replace(/[^0-9.]/g, "")
-      : value;
-
-    const disallowNegative = [
-      "price",
-      "srp",
-      "dealerPrice",
-      "stock",
-      "packingStock",
-      "minStock",
-    ];
-
-    if (disallowNegative.includes(name) && parseFloat(cleaned) < 0) return;
-    if (disallowNegative.includes(name) && parseFloat(cleaned) < 0) {
-      return; // Skip setting negative value
-    }
-
-    setFormData((prev) => ({ ...prev, [name]: cleaned }));
-  }
-
-  function CarryOverHiddenFields({ data }: { data: FormDataShape }) {
-    const keys: (keyof FormDataShape)[] = [
-      "id",
-      "name",
-      "unitId",
-      "categoryId",
-      "brandId",
-      "brandName",
-      "sku",
-      "locationId",
-      "customLocationName",
-      "allowPackSale",
-      "packingSize",
-      "packingUnitId",
-      "srp",
-      "dealerPrice",
-      "price",
-      "packingStock",
-      "stock",
-      "barcode",
-      "expirationDate",
-      "replenishAt",
-      "minStock",
-      "imageTag",
-      "description",
-      "isActive",
-    ];
-    return (
-      <>
-        {keys.map((k) => (
-          <input key={k} type="hidden" name={k} value={data[k] ?? ""} />
-        ))}
-      </>
-    );
-  }
   // Unified toast controller: show when message exists, auto-hide + clear
   useEffect(() => {
     // nothing to show -> ensure hidden
