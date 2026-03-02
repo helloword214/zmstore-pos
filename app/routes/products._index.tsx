@@ -95,7 +95,7 @@ export async function loader() {
       return p.productTargets
         .map((pt) => pt.target)
         .filter((t) => {
-          const key = t.name.trim().toLowerCase();
+          const key = String(t.id);
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -118,9 +118,7 @@ export async function loader() {
     const bId = p.brandId ?? null;
 
     for (const t of p.targets ?? []) {
-      const key = `${t.name.trim().toLowerCase()}::${cId ?? "null"}::${
-        bId ?? "null"
-      }`;
+      const key = `${t.id}::${cId ?? "null"}::${bId ?? "null"}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
@@ -892,16 +890,20 @@ export default function ProductsPage() {
       return okCat && okBr;
     });
 
-    // 2) dedupe by name (case-insensitive)
-    const seen = new Set<string>();
-    const opts = filtered
-      .filter((t: any) => {
-        const key = t.name.trim().toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
+    // 2) dedupe by target id to avoid dropping distinct records that share a name
+    const byId = new Map<string, { label: string; value: string }>();
+    for (const t of filtered) {
+      const idKey = String(t.id);
+      if (!byId.has(idKey)) {
+        byId.set(idKey, { label: t.name, value: idKey });
+      }
+    }
+    const opts = Array.from(byId.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, {
+        numeric: true,
+        sensitivity: "base",
       })
-      .map((t: any) => ({ label: t.name, value: String(t.id) }));
+    );
 
     setTargetOptions(opts);
 
@@ -918,6 +920,7 @@ export default function ProductsPage() {
       prev.filterBrand !== filterBrand ||
       prev.filterLocation !== filterLocation ||
       prev.filterTarget !== filterTarget ||
+      prev.filterStatus !== filterStatus ||
       JSON.stringify(prev.filterIndications) !==
         JSON.stringify(filterIndications);
 
@@ -1128,7 +1131,6 @@ export default function ProductsPage() {
           if (!patch.id) return prev;
           const idx = prev.findIndex((p) => p.id === patch.id);
           if (idx === -1) {
-            revalidator.revalidate();
             return prev;
             // created: insert at top (recent first)
           }
@@ -1168,7 +1170,6 @@ export default function ProductsPage() {
         setTimeout(() => setShowAlert(false), 2500);
       }
       setSuccessMsg("");
-      setSearchTerm("");
     }
   }, [afData, submittedForm, revalidator]);
 
