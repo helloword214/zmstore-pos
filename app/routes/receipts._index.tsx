@@ -64,7 +64,7 @@ export default function ReceiptsIndex() {
           name="q"
           defaultValue={q}
           placeholder="Search order code / receipt no / rider / customer…"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+          className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         />
       </Form>
 

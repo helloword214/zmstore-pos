@@ -2,10 +2,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useNavigation } from "@remix-run/react";
 import { compare } from "bcryptjs";
-import { Button } from "~/components/ui/Button";
 import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { db } from "~/utils/db.server";
 import { createUserSession, getUser, homePathFor } from "~/utils/auth.server";
 
@@ -94,19 +95,17 @@ export default function LoginPage() {
 
           <Form method="post" className="mt-4 space-y-3" replace>
             <SoTFormField label="Email" error={actionData?.field?.email}>
-              <input
+              <SoTSearchInput
                 name="email"
                 type="email"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 placeholder="admin@local"
                 required
               />
             </SoTFormField>
             <SoTFormField label="Password" error={actionData?.field?.password}>
-              <input
+              <SoTSearchInput
                 name="password"
                 type="password"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 placeholder="••••••••"
                 required
               />
@@ -121,9 +120,9 @@ export default function LoginPage() {
               </a>
             </div>
 
-            <Button type="submit" variant="primary" className="w-full" disabled={busy}>
+            <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
               {busy ? "Signing in…" : "Sign in"}
-            </Button>
+            </SoTButton>
           </Form>
 
           <div className="mt-4 space-y-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

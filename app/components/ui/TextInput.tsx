@@ -31,10 +31,10 @@ export function TextInput({ label, error, id, className, ...props }: Props) {
         {...props}
         className={clsx(
           // base
-          "w-full rounded-xl border bg-white px-3 py-2.5 text-slate-900 shadow-sm transition",
+          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition",
           "placeholder:text-slate-400",
           // focus/hover
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:border-indigo-300 hover:bg-slate-50/50",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 hover:bg-slate-50/50",
           // error state
           error ? "border-rose-300 bg-rose-50" : "border-slate-300",
           className

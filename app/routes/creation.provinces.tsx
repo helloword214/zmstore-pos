@@ -17,7 +17,9 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import {
@@ -295,11 +297,11 @@ export default function ProvincesCreationPage() {
             left={
               <Form method="get" className="flex flex-wrap items-end gap-2">
                 <SoTFormField label="Search">
-                  <input
+                  <SoTSearchInput
                     name="q"
                     defaultValue={q}
                     placeholder="Search province"
-                    className="h-9 w-56 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    className="w-56"
                   />
                 </SoTFormField>
                 <SoTFormField label="Status">
@@ -317,12 +319,12 @@ export default function ProvincesCreationPage() {
                 <SoTButton type="submit" className="h-9" variant="secondary">
                   Apply
                 </SoTButton>
-                <Link
+                <SoTLinkButton
                   to="/creation/provinces"
-                  className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  variant="secondary"
                 >
                   Reset
-                </Link>
+                </SoTLinkButton>
               </Form>
             }
             right={
@@ -470,7 +472,7 @@ export default function ProvincesCreationPage() {
                         <SoTButton
                           type="button"
                           variant="secondary"
-                          className="h-8 px-2 py-0 text-xs"
+                          size="compact"
                           onClick={() => setEditing(p)}
                         >
                           Edit
@@ -483,7 +485,7 @@ export default function ProvincesCreationPage() {
                           <SoTButton
                             type="submit"
                             variant="secondary"
-                            className="h-8 px-2 py-0 text-xs"
+                            size="compact"
                           >
                             {p.isActive ? "Disable" : "Enable"}
                           </SoTButton>
@@ -506,7 +508,7 @@ export default function ProvincesCreationPage() {
                           <SoTButton
                             type="submit"
                             variant="danger"
-                            className="h-8 px-2 py-0 text-xs"
+                            size="compact"
                             disabled={p.usageCount > 0}
                           >
                             Delete
@@ -530,7 +532,7 @@ export default function ProvincesCreationPage() {
                 variant="secondary"
                 disabled={page <= 1}
                 onClick={() => gotoPage(page - 1)}
-                className="h-8 px-2 py-0 text-xs"
+                size="compact"
               >
                 Previous
               </SoTButton>
@@ -539,7 +541,7 @@ export default function ProvincesCreationPage() {
                 variant="secondary"
                 disabled={page >= totalPages}
                 onClick={() => gotoPage(page + 1)}
-                className="h-8 px-2 py-0 text-xs"
+                size="compact"
               >
                 Next
               </SoTButton>

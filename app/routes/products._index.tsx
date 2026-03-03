@@ -2,7 +2,6 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { storage } from "~/utils/storage.server";
 import {
-  Link,
   useLoaderData,
   useFetcher,
   useRevalidator,
@@ -17,7 +16,9 @@ import { Pagination } from "~/components/ui/Pagination";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
@@ -1357,9 +1358,10 @@ export default function ProductsPage() {
             </p>
           }
           right={
-            <Link
+            <SoTLinkButton
               to="/products/new"
-              className="group inline-flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3 sm:px-4 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              variant="primary"
+              className="group gap-2 sm:px-4"
               aria-label="Add Product"
             >
               <svg
@@ -1376,7 +1378,7 @@ export default function ProductsPage() {
                 />
               </svg>
               <span>Add Product</span>
-            </Link>
+            </SoTLinkButton>
           }
         />
 
@@ -1390,13 +1392,12 @@ export default function ProductsPage() {
                 >
                   Search
                 </label>
-                <input
+                <SoTSearchInput
                   id="product-search"
                   type="text"
                   placeholder="Search product name, description, or brand"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors duration-150 placeholder:text-slate-400 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </div>
 
@@ -1553,7 +1554,7 @@ export default function ProductsPage() {
                 </span>
               </summary>
               <div className="space-y-3 border-t border-slate-200 px-3 py-3">
-                <div className="max-h-[190px] overflow-y-auto pr-1">
+                <div className="max-h-[300px] overflow-y-auto overscroll-contain pr-1">
                   <div className="flex flex-wrap gap-2">
                     {filteredIndications.map((ind) => (
                       <TagCheckbox

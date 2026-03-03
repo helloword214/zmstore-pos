@@ -146,7 +146,7 @@ export function SoTDropdown({
         disabled={disabled}
         className={clsx(
           "flex h-9 w-full items-center justify-between rounded-xl border bg-white px-3 text-left text-sm text-slate-900 shadow-sm transition-colors duration-150",
-          "focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
           disabled && "cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100",
           error ? "border-rose-300 bg-rose-50" : "border-slate-300 hover:bg-slate-50/50",
           className

@@ -424,7 +424,7 @@ export default function EditCustomer() {
                                   name={`addrPhotoCaption_${address.id}_${slot}`}
                                   defaultValue={current?.caption ?? ""}
                                   placeholder="ex: Kanto view / Gate color"
-                                  className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                                 />
                               </SoTFormField>
                             </div>

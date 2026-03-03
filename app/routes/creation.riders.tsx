@@ -11,6 +11,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import {
@@ -289,11 +290,11 @@ export default function RidersPage() {
             left={
               <Form method="get" className="flex flex-wrap items-end gap-2">
                 <SoTFormField label="Search">
-                  <input
+                  <SoTSearchInput
                     name="q"
                     defaultValue={q}
                     placeholder="Search rider"
-                    className="h-9 w-56 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    className="w-56"
                   />
                 </SoTFormField>
                 <SoTFormField label="Status">
@@ -581,7 +582,7 @@ export default function RidersPage() {
                         <SoTButton
                           type="button"
                           variant="secondary"
-                          className="h-8 px-2 py-0 text-xs"
+                          size="compact"
                           onClick={() => setEditing(r)}
                         >
                           Edit
@@ -593,7 +594,7 @@ export default function RidersPage() {
                           <SoTButton
                             type="submit"
                             variant="secondary"
-                            className="h-8 px-2 py-0 text-xs"
+                            size="compact"
                           >
                             {r.active ? "Disable" : "Enable"}
                           </SoTButton>
@@ -612,7 +613,7 @@ export default function RidersPage() {
                           <SoTButton
                             type="submit"
                             variant="danger"
-                            className="h-8 px-2 py-0 text-xs"
+                            size="compact"
                           >
                             Delete
                           </SoTButton>
@@ -635,7 +636,7 @@ export default function RidersPage() {
                 variant="secondary"
                 disabled={page <= 1}
                 onClick={() => gotoPage(page - 1)}
-                className="h-8 px-2 py-0 text-xs"
+                size="compact"
               >
                 Previous
               </SoTButton>
@@ -644,7 +645,7 @@ export default function RidersPage() {
                 variant="secondary"
                 disabled={page >= totalPages}
                 onClick={() => gotoPage(page + 1)}
-                className="h-8 px-2 py-0 text-xs"
+                size="compact"
               >
                 Next
               </SoTButton>

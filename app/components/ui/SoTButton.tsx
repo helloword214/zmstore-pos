@@ -1,10 +1,12 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type SoTButtonVariant = "primary" | "secondary" | "danger";
+type SoTButtonSize = "default" | "compact";
 
 type SoTButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   variant?: SoTButtonVariant;
+  size?: SoTButtonSize;
 };
 
 function variantClass(variant: SoTButtonVariant) {
@@ -17,18 +19,29 @@ function variantClass(variant: SoTButtonVariant) {
   return "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
 }
 
+function sizeClass(size: SoTButtonSize) {
+  if (size === "compact") {
+    return "h-9 px-3 text-xs";
+  }
+  return "h-9 px-3 text-sm";
+}
+
 export function SoTButton({
   children,
   variant = "secondary",
+  size = "default",
   className = "",
   ...props
 }: SoTButtonProps) {
   const base =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium transition " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50";
+    "inline-flex items-center justify-center rounded-xl font-medium transition-colors duration-150 " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50";
 
   return (
-    <button className={`${base} ${variantClass(variant)} ${className}`.trim()} {...props}>
+    <button
+      className={`${base} ${sizeClass(size)} ${variantClass(variant)} ${className}`.trim()}
+      {...props}
+    >
       {children}
     </button>
   );
