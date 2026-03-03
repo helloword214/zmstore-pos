@@ -19,6 +19,17 @@ import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
+import {
+  createUploadSessionKey,
+  MAX_PRODUCT_PHOTO_SLOTS,
+  mbToBytes,
+  normalizeProductPhotoSlot,
+  readOptionalUpload,
+  resolveUploadSessionKey,
+  resolveMaxUploadMb,
+  uploadKeyPrefix,
+  validateImageUpload,
+} from "~/features/uploads/upload-policy";
 import { generateSKU } from "~/utils/skuHelpers";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
@@ -28,6 +39,52 @@ import { Toast } from "~/components/ui/Toast";
 type SortBy = "recent" | "name-asc" | "price-asc" | "price-desc" | "stock-asc";
 
 type StatusFilter = "all" | "active" | "inactive";
+type ProductPhotoUpload = {
+  slot: number;
+  file: File;
+};
+
+type SavedProductPhotoUpload = {
+  slot: number;
+  fileKey: string;
+  fileUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+function collectProductPhotoUploads(
+  formData: FormData,
+  actionType: string | undefined,
+  legacyImageFile: File | null
+): ProductPhotoUpload[] {
+  const bySlot = new Map<number, File>();
+  for (let slot = 1; slot <= MAX_PRODUCT_PHOTO_SLOTS; slot += 1) {
+    const file = readOptionalUpload(formData.get(`productPhotoFile_${slot}`));
+    if (file) {
+      bySlot.set(slot, file);
+    }
+  }
+
+  const requestedSlot = normalizeProductPhotoSlot(formData.get("slot")?.toString());
+  if (actionType === "upload-product-photo-slot") {
+    if (requestedSlot && legacyImageFile) {
+      bySlot.set(requestedSlot, legacyImageFile);
+    }
+    return Array.from(bySlot.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([slot, file]) => ({ slot, file }));
+  }
+
+  if ((actionType === "upload-product-image" || !actionType) && legacyImageFile) {
+    if (!bySlot.has(1)) {
+      bySlot.set(1, legacyImageFile);
+    }
+  }
+
+  return Array.from(bySlot.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([slot, file]) => ({ slot, file }));
+}
 
 export async function loader() {
   const [
@@ -149,9 +206,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const toggleId = formData.get("toggleId");
   const newIsActive = formData.get("isActive");
+  const actionType = formData.get("_action")?.toString();
 
   // Common fields
   const id = formData.get("id")?.toString();
+  const uploadSessionKey =
+    resolveUploadSessionKey(formData.get("uploadSessionKey")?.toString()) ??
+    createUploadSessionKey();
   const name = formData.get("name")?.toString().trim() || "";
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
   const parseMoneyNumber = (value: FormDataEntryValue | null, fallback = 0) => {
@@ -201,7 +262,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const replenishAt = formData.get("replenishAt")?.toString();
   const imageTag = formData.get("imageTag")?.toString().trim();
   const imageUrlInput = formData.get("imageUrl")?.toString().trim();
-  const imageFile = formData.get("imageFile") as File | null;
+  const imageFile = readOptionalUpload(formData.get("imageFile"));
+  const requestedSlot = normalizeProductPhotoSlot(formData.get("slot")?.toString());
+  const productPhotoUploads = collectProductPhotoUploads(formData, actionType, imageFile);
   const description = formData.get("description")?.toString();
   const barcode = formData.get("barcode")?.toString() || undefined;
   const minStock = formData.get("minStock")
@@ -218,18 +281,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const existingProduct = id
     ? await db.product.findUnique({
         where: { id: Number(id) },
-        select: { imageUrl: true, imageKey: true },
+        select: {
+          imageUrl: true,
+          imageKey: true,
+          photos: {
+            select: {
+              slot: true,
+              fileKey: true,
+              fileUrl: true,
+            },
+            orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+          },
+        },
       })
     : null;
 
   let finalImageUrl: string | undefined = imageUrlInput || undefined;
   let finalImageKey: string | undefined;
-
-  //for image size checking helper
-  const parseMb = (v: string | undefined, fallback: number) => {
-    const n = Number.parseFloat(v ?? "");
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
 
   const sku = formData.get("sku")?.toString().trim() || "";
   const finalSku =
@@ -251,7 +319,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const decimals = (packingStockRaw.split(".")[1] || "").length;
 
   //deletaion LOGIC
-  const actionType = formData.get("_action")?.toString();
 
   if (actionType === "delete-product") {
     const idStr =
@@ -269,69 +336,226 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json({ success: true, action: "delete-product", id: Number(idStr) });
   }
 
-  if (imageFile && imageFile.size > 0) {
-    // accept any image/* and process on server
-
-    const { default: sharp } = await import("sharp"); // server-only import
-
-    if (!String(imageFile.type || "").startsWith("image/")) {
-      return json(
-        { success: false, error: "File must be an image." },
-        { status: 400 }
-      );
-    }
-
-    const MAX_MB = parseMb(process.env.MAX_UPLOAD_MB, 20);
-    const maxBytes = Math.max(1, Math.floor(MAX_MB * 1024 * 1024));
-
-    const fileSize = Number(imageFile.size) || 0;
-    console.log(
-      "[upload] name=%s type=%s size=%dB limit=%dB (%dMB)",
-      (imageFile as any).name,
-      imageFile.type,
-      fileSize,
-      maxBytes,
-      MAX_MB
+  const processedPhotoUploads: SavedProductPhotoUpload[] = [];
+  if (productPhotoUploads.length > 0) {
+    const { default: sharp } = await import("sharp");
+    const maxMb = resolveMaxUploadMb(
+      process.env.MAX_PRODUCT_IMAGE_MB || process.env.MAX_UPLOAD_MB,
+      20
     );
+    const maxBytes = mbToBytes(maxMb);
 
-    if (fileSize > maxBytes) {
-      return json(
-        {
-          success: false,
-          error: `Image too large (>${MAX_MB}MB). Received ${fileSize} bytes.`,
+    for (const upload of productPhotoUploads) {
+      const validationError = validateImageUpload(upload.file, maxMb);
+      if (validationError) {
+        return json(
+          {
+            success: false,
+            error: `Photo slot ${upload.slot}: ${validationError}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const fileSize = Number(upload.file.size) || 0;
+      console.log(
+        "[upload] slot=%d name=%s type=%s size=%dB limit=%dB (%dMB)",
+        upload.slot,
+        (upload.file as any).name,
+        upload.file.type,
+        fileSize,
+        maxBytes,
+        maxMb
+      );
+
+      if (fileSize > maxBytes) {
+        return json(
+          {
+            success: false,
+            error: `Photo slot ${upload.slot}: image too large (>${maxMb}MB). Received ${fileSize} bytes.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const input = Buffer.from(await upload.file.arrayBuffer());
+        const webp = await sharp(input)
+          .rotate()
+          .resize({
+            width: 1920,
+            height: 1920,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 82 })
+          .toBuffer();
+
+        const saved = await storage.saveBuffer(webp, {
+          ext: "webp",
+          contentType: "image/webp",
+          keyPrefix: uploadKeyPrefix.productPhotoSlot({
+            productId: id ? Number(id) : null,
+            uploadSessionKey,
+            slot: upload.slot,
+          }),
+        });
+        processedPhotoUploads.push({
+          slot: upload.slot,
+          fileKey: saved.key,
+          fileUrl: saved.url,
+          mimeType: saved.contentType,
+          sizeBytes: saved.size,
+        });
+        console.log(
+          `[upload] slot=${upload.slot} saved ${saved.key} (${saved.size}B) → ${saved.url}`
+        );
+      } catch (error) {
+        console.error("[image] processing failed", error);
+        return json(
+          {
+            success: false,
+            error: `Photo slot ${upload.slot}: failed to process image.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  if (processedPhotoUploads.length > 0) {
+    const coverUpload = [...processedPhotoUploads].sort((a, b) => a.slot - b.slot)[0];
+    finalImageUrl = coverUpload?.fileUrl ?? finalImageUrl;
+    finalImageKey = coverUpload?.fileKey ?? finalImageKey;
+  }
+
+  const persistProductPhotos = async (
+    productId: number,
+    previousPhotos: Array<{ slot: number; fileKey: string; fileUrl: string }>
+  ) => {
+    const replacedKeys: string[] = [];
+    const previousBySlot = new Map(previousPhotos.map((photo) => [photo.slot, photo]));
+
+    for (const upload of processedPhotoUploads) {
+      const previous = previousBySlot.get(upload.slot);
+      await db.productPhoto.upsert({
+        where: {
+          productId_slot: {
+            productId,
+            slot: upload.slot,
+          },
         },
+        create: {
+          productId,
+          slot: upload.slot,
+          fileKey: upload.fileKey,
+          fileUrl: upload.fileUrl,
+          mimeType: upload.mimeType,
+          sizeBytes: upload.sizeBytes,
+        },
+        update: {
+          fileKey: upload.fileKey,
+          fileUrl: upload.fileUrl,
+          mimeType: upload.mimeType,
+          sizeBytes: upload.sizeBytes,
+          uploadedAt: new Date(),
+        },
+      });
+
+      if (previous?.fileKey && previous.fileKey !== upload.fileKey) {
+        replacedKeys.push(previous.fileKey);
+      }
+    }
+
+    const cover = await db.productPhoto.findFirst({
+      where: { productId },
+      orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+      select: { fileUrl: true, fileKey: true },
+    });
+
+    return { cover, replacedKeys };
+  };
+
+  if (
+    actionType === "upload-product-image" ||
+    actionType === "upload-product-photo-slot"
+  ) {
+    const idStr = formData.get("id")?.toString();
+    const productId = Number(idStr || 0);
+
+    if (!idStr || !Number.isFinite(productId) || productId <= 0) {
+      return json(
+        { success: false, error: "Missing or invalid product id." },
         { status: 400 }
       );
     }
-    try {
-      const input = Buffer.from(await imageFile.arrayBuffer());
-      const webp = await sharp(input)
-        .rotate()
-        .resize({
-          width: 1920,
-          height: 1920,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 82 })
-        .toBuffer();
-      const saved = await storage.saveBuffer(webp, {
-        ext: "webp",
-        contentType: "image/webp",
-        keyPrefix: "products",
-      });
-      finalImageUrl = saved.url;
-      finalImageKey = saved.key;
-      console.log(
-        `[upload] saved ${saved.key} (${saved.size}B) → ${saved.url}`
+
+    if (actionType === "upload-product-photo-slot" && requestedSlot == null) {
+      return json(
+        { success: false, error: "Invalid photo slot. Allowed slots are 1 to 4." },
+        { status: 400 }
       );
-    } catch (e) {
-      console.error("[image] processing failed:", e);
+    }
+
+    if (processedPhotoUploads.length <= 0) {
+      return json(
+        { success: false, error: "Please choose a photo to upload." },
+        { status: 400 }
+      );
+    }
+
+    if (!existingProduct) {
+      return json(
+        { success: false, error: "Product not found." },
+        { status: 404 }
+      );
+    }
+
+    if (!finalImageUrl || !finalImageKey) {
       return json(
         { success: false, error: "Failed to process image." },
         { status: 400 }
       );
     }
+
+    const persisted = await persistProductPhotos(productId, existingProduct.photos ?? []);
+    const coverImageUrl = persisted.cover?.fileUrl ?? null;
+    const coverImageKey = persisted.cover?.fileKey ?? null;
+
+    await db.product.update({
+      where: { id: productId },
+      data: {
+        imageUrl: coverImageUrl,
+        imageKey: coverImageKey,
+      },
+    });
+
+    const keysToDelete = new Set(persisted.replacedKeys);
+    if (
+      existingProduct.imageKey &&
+      !existingProduct.photos.some((photo) => photo.fileKey === existingProduct.imageKey) &&
+      existingProduct.imageKey !== coverImageKey
+    ) {
+      keysToDelete.add(existingProduct.imageKey);
+    }
+
+    for (const oldKey of keysToDelete) {
+      try {
+        await storage.delete(oldKey);
+      } catch (error) {
+        console.warn("delete old image failed", error);
+      }
+    }
+
+    finalImageUrl = coverImageUrl ?? finalImageUrl;
+    finalImageKey = coverImageKey ?? finalImageKey;
+
+    return json({
+      success: true,
+      action: "upload-product-photo-slot",
+      id: productId,
+      imageUrl: finalImageUrl,
+    });
   }
 
   if (actionType === "open-pack") {
@@ -700,8 +924,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      // 🧹 If image was replaced, delete old local file (post-update for safety)
-      if (
+      if (processedPhotoUploads.length > 0) {
+        const persisted = await persistProductPhotos(Number(id), existingProduct?.photos ?? []);
+        finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
+        finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
+
+        await db.product.update({
+          where: { id: Number(id) },
+          data: {
+            imageUrl: persisted.cover?.fileUrl ?? null,
+            imageKey: persisted.cover?.fileKey ?? null,
+          },
+        });
+
+        const keysToDelete = new Set(persisted.replacedKeys);
+        if (
+          existingProduct?.imageKey &&
+          !existingProduct.photos.some((photo) => photo.fileKey === existingProduct.imageKey) &&
+          existingProduct.imageKey !== persisted.cover?.fileKey
+        ) {
+          keysToDelete.add(existingProduct.imageKey);
+        }
+        for (const oldKey of keysToDelete) {
+          try {
+            await storage.delete(oldKey);
+          } catch (error) {
+            console.warn("delete old image failed", error);
+          }
+        }
+      } else if (
         finalImageUrl &&
         existingProduct?.imageUrl &&
         existingProduct.imageUrl !== finalImageUrl
@@ -714,8 +965,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         if (oldKey) {
           try {
             await storage.delete(oldKey);
-          } catch (e) {
-            console.warn("delete old image failed", e);
+          } catch (error) {
+            console.warn("delete old image failed", error);
           }
         }
       }
@@ -745,6 +996,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         },
       });
+
+      if (processedPhotoUploads.length > 0) {
+        const persisted = await persistProductPhotos(createdProduct.id, []);
+        finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
+        finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
+
+        await db.product.update({
+          where: { id: createdProduct.id },
+          data: {
+            imageUrl: persisted.cover?.fileUrl ?? null,
+            imageKey: persisted.cover?.fileKey ?? null,
+          },
+        });
+      }
 
       return json({
         success: true,

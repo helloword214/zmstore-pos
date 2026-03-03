@@ -71,6 +71,9 @@ Purpose: This is the **starter context** I will paste at the top of a new chat t
 
 - No silent renames (files, vars, routes, columns, statuses).
 - If a rename or migration is necessary: explain + ask approval first (project mode).
+- New files/modules/components must use specific, domain-scoped names; avoid generic names such as `policy.ts`, `utils.ts`, `helpers.ts`, or `common.ts`.
+- If a shared file is needed, keep domain context in the filename (example: `upload-policy.ts`, `pricing-utils.ts`, `auth-session-helpers.ts`).
+- Do not rename existing files for naming cleanup unless explicitly approved.
 
 ---
 

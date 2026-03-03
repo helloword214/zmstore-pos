@@ -15,13 +15,14 @@ If guidance conflicts, follow the order above.
 Start here for Order Pricing + Delivery + Clearance + Cashier + AR behavior:
 
 1. `docs/guide/README.md`
-2. `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
-3. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-4. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
-5. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
-6. `docs/guide/Commercial Clearance System V2`
-7. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
-8. `docs/guide/RunReceipt_Architecture.md`
+2. `docs/guide/CANONICAL_UPLOAD_STORAGE_SOT.md`
+3. `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
+4. `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+5. `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
+6. `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
+7. `docs/guide/Commercial Clearance System V2`
+8. `docs/guide/RIDER_SHORTAGE_WORKFLOW.md`
+9. `docs/guide/RunReceipt_Architecture.md`
 
 ## 3) Automation Operations (Separated)
 

@@ -16,11 +16,11 @@ export function TextInput({ label, error, id, className, ...props }: Props) {
   const isNumberInput = props.type === "number";
 
   return (
-    <div className="mb-4">
+    <div className="space-y-1">
       {label && (
         <label
           htmlFor={inputId}
-          className="block text-sm font-medium mb-1 text-slate-700"
+          className="block text-xs font-semibold uppercase tracking-wide text-slate-600"
         >
           {label}
         </label>
@@ -30,12 +30,9 @@ export function TextInput({ label, error, id, className, ...props }: Props) {
         id={inputId}
         {...props}
         className={clsx(
-          // base
-          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition",
+          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors duration-150",
           "placeholder:text-slate-400",
-          // focus/hover
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 hover:bg-slate-50/50",
-          // error state
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
           error ? "border-rose-300 bg-rose-50" : "border-slate-300",
           className
         )}
@@ -65,7 +62,7 @@ export function TextInput({ label, error, id, className, ...props }: Props) {
       />
 
       {error && (
-        <p id={`${inputId}-error`} className="mt-1 text-sm text-rose-600">
+        <p id={`${inputId}-error`} className="text-xs text-rose-600">
           {error}
         </p>
       )}

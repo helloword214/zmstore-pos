@@ -7,7 +7,7 @@ import {
   useOutlet,
   useRevalidator,
 } from "@remix-run/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -41,6 +41,8 @@ type ProductActionResult = {
   id?: number;
 };
 
+const PRODUCT_PHOTO_SLOTS = [1, 2, 3, 4] as const;
+
 export async function loader({ params }: LoaderFunctionArgs) {
   const productId = Number(params.productId);
   if (!Number.isFinite(productId) || productId <= 0) {
@@ -57,6 +59,14 @@ export async function loader({ params }: LoaderFunctionArgs) {
       location: true,
       productIndications: { include: { indication: true } },
       productTargets: { include: { target: true } },
+      photos: {
+        select: {
+          slot: true,
+          fileUrl: true,
+          uploadedAt: true,
+        },
+        orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+      },
     },
   });
 
@@ -91,14 +101,22 @@ export async function loader({ params }: LoaderFunctionArgs) {
       replenishAt: product.replenishAt?.toISOString() ?? null,
       indications: product.productIndications.map((entry) => entry.indication.name),
       targets: product.productTargets.map((entry) => entry.target.name),
+      photos: product.photos
+        .filter((photo, index, list) => {
+          const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+          return firstIndex === index;
+        })
+        .map((photo) => ({
+          slot: photo.slot,
+          fileUrl: photo.fileUrl,
+          uploadedAt: photo.uploadedAt.toISOString(),
+        })),
     },
   });
 }
 
 export default function ProductDetailRoute() {
   const outlet = useOutlet();
-  if (outlet) return outlet;
-
   const { product } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
@@ -112,6 +130,24 @@ export default function ProductDetailRoute() {
     product.allowPackSale &&
     (product.stock ?? 0) > 0 &&
     (product.packingSize ?? 0) > 0;
+  const photoBySlot = useMemo(() => {
+    const map = new Map<number, { fileUrl: string; uploadedAt: string }>();
+    for (const photo of product.photos ?? []) {
+      if (!map.has(photo.slot)) {
+        map.set(photo.slot, {
+          fileUrl: photo.fileUrl,
+          uploadedAt: photo.uploadedAt,
+        });
+      }
+    }
+    if (!map.has(1) && product.imageUrl) {
+      map.set(1, {
+        fileUrl: product.imageUrl,
+        uploadedAt: "",
+      });
+    }
+    return map;
+  }, [product.photos, product.imageUrl]);
 
   function handleOpenPack() {
     const packsStr = window.prompt("Open how many whole packs?", "1");
@@ -159,6 +195,8 @@ export default function ProductDetailRoute() {
       setMessage({ tone: "danger", text: actionFetcher.data.error });
     }
   }, [actionFetcher.state, actionFetcher.data, navigate, revalidator]);
+
+  if (outlet) return outlet;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
@@ -328,19 +366,34 @@ export default function ProductDetailRoute() {
         </SoTCard>
 
         <SoTCard>
-          <SoTSectionHeader title="Image" />
-          <div>
-            {product.imageUrl ? (
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="h-32 w-32 rounded-xl border object-cover"
-              />
-            ) : (
-              <div className="h-32 w-32 rounded-xl border border-dashed text-xs text-slate-400 grid place-items-center">
-                No image
-              </div>
-            )}
+          <SoTSectionHeader title="Photos (max 4)" />
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {PRODUCT_PHOTO_SLOTS.map((slot) => {
+                const current = photoBySlot.get(slot);
+                return (
+                  <div
+                    key={slot}
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Slot {slot}
+                    </div>
+                    {current?.fileUrl ? (
+                      <img
+                        src={current.fileUrl}
+                        alt={`${product.name} slot ${slot}`}
+                        className="mb-2 h-24 w-24 rounded border object-cover"
+                      />
+                    ) : (
+                      <div className="mb-2 h-24 w-24 rounded border border-dashed text-xs text-slate-400 grid place-items-center">
+                        Empty
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             {product.imageTag ? (
               <div className="mt-2 text-xs text-slate-500">Tag: {product.imageTag}</div>
             ) : null}

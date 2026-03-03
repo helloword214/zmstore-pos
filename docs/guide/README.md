@@ -13,14 +13,15 @@ Use these as source of truth for implementation and review:
 
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
-3. `CANONICAL_ORDER_PRICING_SOT.md`
-4. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
-5. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-6. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-7. `DIAGRAMS_DELIVERY_CSS_AR.md`
-8. `Accounts Receivable — Canonical Source of Truth (SoT)`
-9. `RIDER_SHORTAGE_WORKFLOW.md`
-10. `RunReceipt_Architecture.md`
+3. `CANONICAL_UPLOAD_STORAGE_SOT.md`
+4. `CANONICAL_ORDER_PRICING_SOT.md`
+5. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+6. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+7. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+8. `DIAGRAMS_DELIVERY_CSS_AR.md`
+9. `Accounts Receivable — Canonical Source of Truth (SoT)`
+10. `RIDER_SHORTAGE_WORKFLOW.md`
+11. `RunReceipt_Architecture.md`
 
 Current route-level mapping coverage (canonical):
 
@@ -123,14 +124,15 @@ When two guide docs conflict, apply this order:
 
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
-3. `CANONICAL_ORDER_PRICING_SOT.md`
-4. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
-5. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-6. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-7. `DIAGRAMS_DELIVERY_CSS_AR.md`
-8. `Accounts Receivable — Canonical Source of Truth (SoT)`
-9. `RIDER_SHORTAGE_WORKFLOW.md`
-10. all other guide docs
+3. `CANONICAL_UPLOAD_STORAGE_SOT.md`
+4. `CANONICAL_ORDER_PRICING_SOT.md`
+5. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+6. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+7. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+8. `DIAGRAMS_DELIVERY_CSS_AR.md`
+9. `Accounts Receivable — Canonical Source of Truth (SoT)`
+10. `RIDER_SHORTAGE_WORKFLOW.md`
+11. all other guide docs
 
 ## E. Flow Change Sync Rule (Mandatory)
 
@@ -142,3 +144,4 @@ When two guide docs conflict, apply this order:
    - relevant `CANONICAL_*.md` flow guide
    - `DIAGRAMS_DELIVERY_CSS_AR.md` when flow nodes/handoffs/decision gates changed
 3. Manager/cashier flow changes must not be considered complete until both behavior doc and diagram doc are aligned.
+4. Upload/storage behavior changes (driver rules, key naming, validation, metadata lifecycle) must also update `CANONICAL_UPLOAD_STORAGE_SOT.md`.

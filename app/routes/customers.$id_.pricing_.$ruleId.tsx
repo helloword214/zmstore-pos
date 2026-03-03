@@ -3,7 +3,6 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
-  Link,
   useActionData,
   useLoaderData,
   useNavigation,
@@ -14,7 +13,9 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -286,13 +287,12 @@ export default function EditCustomerRule() {
             </SoTFormField>
 
             <SoTFormField label="Value" error={fieldErrors?.value}>
-              <input
+              <SoTSearchInput
                 name="value"
                 type="number"
                 step="0.01"
                 min="0"
                 defaultValue={rule.value}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
@@ -308,19 +308,17 @@ export default function EditCustomerRule() {
 
             <div className="grid grid-cols-2 gap-3">
               <SoTFormField label="Starts At (optional)" error={fieldErrors?.startsAt}>
-                <input
+                <SoTSearchInput
                   name="startsAt"
                   type="date"
                   defaultValue={rule.startsAt ?? ""}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </SoTFormField>
               <SoTFormField label="Ends At (optional)" error={fieldErrors?.endsAt}>
-                <input
+                <SoTSearchInput
                   name="endsAt"
                   type="date"
                   defaultValue={rule.endsAt ?? ""}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 />
               </SoTFormField>
             </div>
@@ -353,12 +351,12 @@ export default function EditCustomerRule() {
                     Delete
                   </SoTButton>
 
-                  <Link
+                  <SoTLinkButton
                     to={`/customers/${customerId}/pricing${ctxSuffix}`}
-                    className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    variant="secondary"
                   >
                     Cancel
-                  </Link>
+                  </SoTLinkButton>
                 </>
               }
             />

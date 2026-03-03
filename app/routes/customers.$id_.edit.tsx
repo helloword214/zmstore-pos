@@ -3,7 +3,6 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
   Form,
-  Link,
   useLoaderData,
   useNavigation,
   useActionData,
@@ -12,8 +11,18 @@ import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
+import { SoTTextarea } from "~/components/ui/SoTTextarea";
+import {
+  readOptionalUpload,
+  resolveMaxUploadMb,
+  uploadKeyPrefix,
+  validateImageUpload,
+} from "~/features/uploads/upload-policy";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { storage } from "~/utils/storage.server";
@@ -24,35 +33,6 @@ type AddressPhotoUpload = {
   caption: string | null;
   file: File;
 };
-
-const MAX_ADDRESS_PHOTO_MB = Math.max(
-  1,
-  Number.parseFloat(
-    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB || "10"
-  ) || 10
-);
-const MAX_ADDRESS_PHOTO_BYTES = Math.floor(MAX_ADDRESS_PHOTO_MB * 1024 * 1024);
-const ALLOWED_ADDRESS_PHOTO_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-
-function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
-  if (!(raw instanceof File)) return null;
-  if (!raw.size) return null;
-  return raw;
-}
-
-function validateAddressPhotoUpload(file: File) {
-  if (!ALLOWED_ADDRESS_PHOTO_MIME.has(file.type)) {
-    return "Only JPG, PNG, and WEBP files are allowed.";
-  }
-  if (file.size > MAX_ADDRESS_PHOTO_BYTES) {
-    return `File is too large. Limit is ${MAX_ADDRESS_PHOTO_MB}MB.`;
-  }
-  return null;
-}
 
 function parseAddressPhotoUploads(formData: FormData, addressIds: number[]) {
   const uploads: AddressPhotoUpload[] = [];
@@ -123,6 +103,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
+  const addressPhotoMaxMb = resolveMaxUploadMb(
+    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB,
+    10
+  );
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });
@@ -163,7 +147,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const photoUploads = parseAddressPhotoUploads(fd, addressIds);
   for (const upload of photoUploads) {
-    const photoError = validateAddressPhotoUpload(upload.file);
+    const photoError = validateImageUpload(upload.file, addressPhotoMaxMb);
     if (photoError) {
       return json(
         {
@@ -198,7 +182,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   for (const upload of photoUploads) {
     try {
       const saved = await storage.save(upload.file, {
-        keyPrefix: `customers/${id}/addresses/${upload.addressId}/photos`,
+        keyPrefix: uploadKeyPrefix.customerAddressPhoto(id, upload.addressId),
       });
       await db.customerAddressPhoto.upsert({
         where: {
@@ -278,78 +262,76 @@ export default function EditCustomer() {
         <SoTCard interaction="form">
           <Form method="post" encType="multipart/form-data" className="grid gap-3 sm:grid-cols-2">
             <SoTFormField label="First Name" error={fieldErrors?.firstName}>
-              <input
+              <SoTSearchInput
                 name="firstName"
+                type="text"
                 defaultValue={customer.firstName ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Middle Name">
-              <input
+              <SoTSearchInput
                 name="middleName"
+                type="text"
                 defaultValue={customer.middleName ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Last Name" error={fieldErrors?.lastName}>
-              <input
+              <SoTSearchInput
                 name="lastName"
+                type="text"
                 defaultValue={customer.lastName ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Suffix">
-              <input
+              <SoTSearchInput
                 name="suffix"
+                type="text"
                 defaultValue={customer.suffix ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Alias">
-              <input
+              <SoTSearchInput
                 name="alias"
+                type="text"
                 defaultValue={customer.alias ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Phone">
-              <input
+              <SoTSearchInput
                 name="phone"
+                type="text"
                 defaultValue={customer.phone ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Email">
-              <input
+              <SoTSearchInput
                 name="email"
+                type="email"
                 defaultValue={customer.email ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Credit Limit (PHP)" error={fieldErrors?.creditLimit}>
-              <input
+              <SoTSearchInput
                 name="creditLimit"
                 type="number"
                 step="0.01"
                 min="0"
                 defaultValue={customer.creditLimit ?? ""}
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
             <SoTFormField label="Notes" className="sm:col-span-2">
-              <textarea
+              <SoTTextarea
                 name="notes"
                 rows={4}
                 defaultValue={customer.notes ?? ""}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
 
@@ -412,19 +394,17 @@ export default function EditCustomer() {
                               className="rounded-lg border border-slate-200 bg-white p-2"
                             >
                               <SoTFormField label={`Slot ${slot} photo (optional)`}>
-                                <input
-                                  type="file"
+                                <SoTFileInput
                                   name={`addrPhotoFile_${address.id}_${slot}`}
                                   accept="image/jpeg,image/png,image/webp"
-                                  className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                                 />
                               </SoTFormField>
                               <SoTFormField label="Caption (optional)">
-                                <input
+                                <SoTSearchInput
                                   name={`addrPhotoCaption_${address.id}_${slot}`}
+                                  type="text"
                                   defaultValue={current?.caption ?? ""}
                                   placeholder="ex: Kanto view / Gate color"
-                                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                                 />
                               </SoTFormField>
                             </div>
@@ -442,12 +422,12 @@ export default function EditCustomer() {
                 className="mb-0"
                 right={
                   <>
-                    <Link
+                    <SoTLinkButton
                       to={backHref}
-                      className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                      variant="secondary"
                     >
                       Cancel
-                    </Link>
+                    </SoTLinkButton>
                     <SoTButton
                       type="submit"
                       variant="primary"

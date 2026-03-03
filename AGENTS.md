@@ -118,3 +118,6 @@ Then wait for explicit `GO`.
 1. No silent assumptions. Ask one focused question if unclear.
 2. No silent renames or migrations; explain and ask approval first.
 3. Avoid broad refactors unless explicitly requested.
+4. New files/modules/components must use specific, domain-scoped names; avoid generic filenames such as `policy.ts`, `utils.ts`, `helpers.ts`, or `common.ts`.
+5. If a shared file is needed, the name must still include domain context (example: `upload-policy.ts`, `pricing-utils.ts`, `auth-session-helpers.ts`).
+6. Do not rename existing files for naming cleanup unless the user explicitly approves that rename.

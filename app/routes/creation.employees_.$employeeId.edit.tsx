@@ -11,6 +11,7 @@ import * as React from "react";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
@@ -23,6 +24,12 @@ import {
   SoTTableHead,
   SoTTableRow,
 } from "~/components/ui/SoTTable";
+import {
+  readOptionalUpload,
+  resolveMaxUploadMb,
+  uploadKeyPrefix,
+  validateEmployeeDocumentUpload,
+} from "~/features/uploads/upload-policy";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { storage } from "~/utils/storage.server";
@@ -39,18 +46,6 @@ type EmployeeDocUpload = {
   file: File;
   expiresAt: Date | null;
 };
-
-const MAX_DOC_UPLOAD_MB = Math.max(
-  1,
-  Number.parseFloat(process.env.MAX_DOC_UPLOAD_MB || process.env.MAX_UPLOAD_MB || "10") || 10,
-);
-const MAX_DOC_UPLOAD_BYTES = Math.floor(MAX_DOC_UPLOAD_MB * 1024 * 1024);
-const ALLOWED_DOC_MIME = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
 
 function parseEmployeeId(raw: string | undefined) {
   const id = Number(raw || "");
@@ -78,22 +73,6 @@ function parseOptionalDate(raw: FormDataEntryValue | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
-}
-
-function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
-  if (!(raw instanceof File)) return null;
-  if (!raw.size) return null;
-  return raw;
-}
-
-function validateDocUpload(file: File) {
-  if (!ALLOWED_DOC_MIME.has(file.type)) {
-    return "Only PDF, JPG, PNG, and WEBP files are allowed.";
-  }
-  if (file.size > MAX_DOC_UPLOAD_BYTES) {
-    return `File is too large. Limit is ${MAX_DOC_UPLOAD_MB}MB.`;
-  }
-  return null;
 }
 
 function formatDateForInput(date: string | Date | null | undefined) {
@@ -214,6 +193,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const me = await requireRole(request, ["ADMIN"]);
+  const docUploadMaxMb = resolveMaxUploadMb(
+    process.env.MAX_DOC_UPLOAD_MB || process.env.MAX_UPLOAD_MB,
+    10
+  );
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "").trim();
 
@@ -357,7 +340,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   for (const doc of docsToUpload) {
-    const docError = validateDocUpload(doc.file);
+    const docError = validateEmployeeDocumentUpload(doc.file, docUploadMaxMb);
     if (docError) {
       return json<ActionData>(
         { ok: false, message: `${doc.label}: ${docError}` },
@@ -526,7 +509,7 @@ export async function action({ request }: ActionFunctionArgs) {
     for (const doc of docsToUpload) {
       try {
         const saved = await storage.save(doc.file, {
-          keyPrefix: `employees/${employeeId}/${doc.docType.toLowerCase()}`,
+          keyPrefix: uploadKeyPrefix.employeeDocument(employeeId, doc.docType),
         });
         await db.employeeDocument.create({
           data: {
@@ -899,65 +882,51 @@ export default function EmployeeEditPage() {
                 />
 
                 <SoTFormField label="Barangay Clearance Scan (optional)" hint="No expiry tracking.">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="barangayClearanceFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="Valid ID Scan (optional)">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="validIdFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="Driver License Scan (optional)">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="driverLicenseFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="Police Clearance Scan (optional)" hint="No expiry tracking.">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="policeClearanceFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="NBI Clearance Scan (optional)" hint="No expiry tracking.">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="nbiClearanceFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="2x2 Photo (optional)">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="photo2x2File"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
 
                 <SoTFormField label="Resume (optional)">
-                  <input
-                    type="file"
+                  <SoTFileInput
                     name="resumeFile"
                     accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />
                 </SoTFormField>
               </div>
