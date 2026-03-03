@@ -35,27 +35,26 @@ export function CurrencyInput({
   };
 
   return (
-    <div className="mb-4">
+    <div className="space-y-1">
       {label && (
         <label
           htmlFor={name}
-          className="block text-sm font-medium mb-1 text-slate-700"
+          className="block text-xs font-semibold uppercase tracking-wide text-slate-600"
         >
           {label}
         </label>
       )}
 
       <input
+        id={name}
         type="text"
         name={name}
         placeholder={placeholder}
         className={[
-          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition",
+          "h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm transition-colors duration-150",
           "placeholder:text-slate-400",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
-          error
-            ? "border-rose-300 bg-rose-50"
-            : "border-slate-300 hover:bg-slate-50/50",
+          error ? "border-rose-300 bg-rose-50" : "border-slate-300",
         ].join(" ")}
         value={
           isFocused
@@ -73,7 +72,7 @@ export function CurrencyInput({
       />
 
       {error && (
-        <p id={`${name}-error`} className="mt-1 text-sm text-rose-600">
+        <p id={`${name}-error`} className="text-xs text-rose-600">
           {error}
         </p>
       )}

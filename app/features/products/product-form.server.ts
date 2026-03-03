@@ -47,6 +47,14 @@ export async function getProductInitialData(
       location: true,
       productIndications: { include: { indication: true } },
       productTargets: { include: { target: true } },
+      photos: {
+        select: {
+          slot: true,
+          fileUrl: true,
+          uploadedAt: true,
+        },
+        orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+      },
     },
   });
 
@@ -79,6 +87,15 @@ export async function getProductInitialData(
     description: product.description,
     imageTag: product.imageTag,
     imageUrl: product.imageUrl,
+    photoSlots: product.photos
+      .filter((photo, index, list) => {
+        const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+        return firstIndex === index;
+      })
+      .map((photo) => ({
+        slot: photo.slot,
+        fileUrl: photo.fileUrl,
+      })),
     isActive: product.isActive,
     indications: product.productIndications.map((entry) => ({
       id: entry.indication.id,

@@ -7,11 +7,18 @@ import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
+import {
+  readOptionalUpload,
+  resolveMaxUploadMb,
+  uploadKeyPrefix,
+  validateImageUpload,
+} from "~/features/uploads/upload-policy";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { storage } from "~/utils/storage.server";
@@ -53,25 +60,6 @@ type AddressPhotoUpload = {
   file: File;
 };
 
-const MAX_ADDRESS_PHOTO_MB = Math.max(
-  1,
-  Number.parseFloat(
-    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB || "10"
-  ) || 10
-);
-const MAX_ADDRESS_PHOTO_BYTES = Math.floor(MAX_ADDRESS_PHOTO_MB * 1024 * 1024);
-const ALLOWED_ADDRESS_PHOTO_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-
-function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
-  if (!(raw instanceof File)) return null;
-  if (!raw.size) return null;
-  return raw;
-}
-
 function parseAddressPhotoUploads(formData: FormData, addressCount: number) {
   const uploads: AddressPhotoUpload[] = [];
   for (let addressIndex = 0; addressIndex < addressCount; addressIndex += 1) {
@@ -92,16 +80,6 @@ function parseAddressPhotoUploads(formData: FormData, addressCount: number) {
     }
   }
   return uploads;
-}
-
-function validateAddressPhotoUpload(file: File) {
-  if (!ALLOWED_ADDRESS_PHOTO_MIME.has(file.type)) {
-    return "Only JPG, PNG, and WEBP files are allowed.";
-  }
-  if (file.size > MAX_ADDRESS_PHOTO_BYTES) {
-    return `File is too large. Limit is ${MAX_ADDRESS_PHOTO_MB}MB.`;
-  }
-  return null;
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -158,6 +136,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
+  const addressPhotoMaxMb = resolveMaxUploadMb(
+    process.env.MAX_ADDRESS_PHOTO_MB || process.env.MAX_UPLOAD_MB,
+    10
+  );
   const fd = await request.formData();
   const firstName = String(fd.get("firstName") || "").trim();
   const middleName = (String(fd.get("middleName") || "").trim() || null) as
@@ -188,7 +170,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const photoUploads = parseAddressPhotoUploads(fd, addresses.length);
   for (const upload of photoUploads) {
-    const photoError = validateAddressPhotoUpload(upload.file);
+    const photoError = validateImageUpload(upload.file, addressPhotoMaxMb);
     if (photoError) {
       return json(
         {
@@ -303,7 +285,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!addressId) continue;
     try {
       const saved = await storage.save(upload.file, {
-        keyPrefix: `customers/${customerId}/addresses/${addressId}/photos`,
+        keyPrefix: uploadKeyPrefix.customerAddressPhoto(customerId, addressId),
       });
       await db.customerAddressPhoto.upsert({
         where: {
@@ -869,20 +851,22 @@ export default function NewCustomerPage() {
 
                         <div className="md:col-span-2">
                           <SoTFormField label="Latitude">
-                            <input
+                            <SoTSearchInput
                               value={row.geoLat ?? ""}
+                              type="text"
                               readOnly
-                              className="h-9 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-700"
+                              className="bg-slate-50 text-slate-700"
                             />
                           </SoTFormField>
                         </div>
 
                         <div className="md:col-span-2">
                           <SoTFormField label="Longitude">
-                            <input
+                            <SoTSearchInput
                               value={row.geoLng ?? ""}
+                              type="text"
                               readOnly
-                              className="h-9 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-700"
+                              className="bg-slate-50 text-slate-700"
                             />
                           </SoTFormField>
                         </div>
@@ -924,11 +908,9 @@ export default function NewCustomerPage() {
                             className="rounded-lg border border-slate-200 bg-slate-50 p-2"
                           >
                             <SoTFormField label={`Photo Slot ${slot}`}>
-                              <input
-                                type="file"
+                              <SoTFileInput
                                 name={`addrPhotoFile_${idx}_${slot}`}
                                 accept="image/jpeg,image/png,image/webp"
-                                className="w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                               />
                             </SoTFormField>
                             <SoTFormField label="Caption (optional)">

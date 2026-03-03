@@ -3,6 +3,7 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { ProductUpsertForm } from "~/components/products/ProductUpsertForm";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { createUploadSessionKey } from "~/features/uploads/upload-policy";
 import {
   getProductFormReferences,
   getProductInitialData,
@@ -23,11 +24,12 @@ export async function loader({ params }: LoaderFunctionArgs) {
     throw new Response("Product not found", { status: 404 });
   }
 
-  return json({ refs, initialProduct });
+  const uploadSessionKey = createUploadSessionKey();
+  return json({ refs, initialProduct, uploadSessionKey });
 }
 
 export default function ProductEditRoute() {
-  const { refs, initialProduct } = useLoaderData<typeof loader>();
+  const { refs, initialProduct, uploadSessionKey } = useLoaderData<typeof loader>();
 
   return (
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
@@ -58,7 +60,12 @@ export default function ProductEditRoute() {
           }
         />
 
-        <ProductUpsertForm mode="edit" refs={refs} initialProduct={initialProduct} />
+        <ProductUpsertForm
+          mode="edit"
+          refs={refs}
+          initialProduct={initialProduct}
+          uploadSessionKey={uploadSessionKey}
+        />
       </div>
     </main>
   );

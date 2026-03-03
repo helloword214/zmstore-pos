@@ -8,6 +8,7 @@ import { FormSection } from "~/components/ui/FormSection";
 import { MultiSelectInput } from "~/components/ui/MultiSelectInput";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { TextInput } from "~/components/ui/TextInput";
 import { Textarea } from "~/components/ui/Textarea";
@@ -25,6 +26,8 @@ type Indication = IdName & { categoryId: number | null };
 type Target = IdName & { categoryId: number | null; brandId: number | null };
 
 type ProductTagOption = { id: number; name: string };
+type ProductPhotoSlot = { slot: number; fileUrl: string };
+const PRODUCT_PHOTO_SLOTS = [1, 2, 3, 4] as const;
 
 export type ProductFormReferenceData = {
   categories: Category[];
@@ -64,6 +67,7 @@ export type ProductFormInitialData = {
   imageUrl?: string | null;
   imageTag?: string | null;
   isActive?: boolean;
+  photoSlots?: ProductPhotoSlot[];
   indications?: ProductTagOption[];
   targets?: ProductTagOption[];
 };
@@ -160,17 +164,20 @@ export function ProductUpsertForm({
   mode,
   refs,
   initialProduct,
+  uploadSessionKey,
 }: {
   mode: "create" | "edit";
   refs: ProductFormReferenceData;
   initialProduct?: ProductFormInitialData;
+  uploadSessionKey: string;
 }) {
   const navigate = useNavigate();
   const fetcher = useFetcher<FetcherResponse>();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState("");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [slotPreviewUrls, setSlotPreviewUrls] = useState<Record<number, string>>({});
+  const slotPreviewUrlsRef = useRef<Record<number, string>>({});
 
   const userEditedPrice = useRef(false);
   const userEditedRetailStock = useRef(false);
@@ -259,9 +266,40 @@ export function ProductUpsertForm({
 
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      for (const url of Object.values(slotPreviewUrlsRef.current)) {
+        URL.revokeObjectURL(url);
+      }
     };
-  }, [previewUrl]);
+  }, []);
+
+  const existingPhotoBySlot = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const photo of initialProduct?.photoSlots ?? []) {
+      if (!map.has(photo.slot)) {
+        map.set(photo.slot, photo.fileUrl);
+      }
+    }
+    if (!map.has(1) && initialProduct?.imageUrl) {
+      map.set(1, initialProduct.imageUrl);
+    }
+    return map;
+  }, [initialProduct?.photoSlots, initialProduct?.imageUrl]);
+
+  function setSlotPreview(slot: number, file: File | null) {
+    setSlotPreviewUrls((prev) => {
+      const next = { ...prev };
+      const oldUrl = next[slot];
+      if (oldUrl) {
+        URL.revokeObjectURL(oldUrl);
+        delete next[slot];
+      }
+      if (file) {
+        next[slot] = URL.createObjectURL(file);
+      }
+      slotPreviewUrlsRef.current = next;
+      return next;
+    });
+  }
 
   const brandOptions = useMemo(() => {
     const source = formData.categoryId
@@ -555,6 +593,7 @@ export function ProductUpsertForm({
       }}
     >
       <input type="hidden" name="id" value={formData.id} />
+      <input type="hidden" name="uploadSessionKey" value={uploadSessionKey} />
       <input
         type="hidden"
         name="allowPackSale"
@@ -919,30 +958,46 @@ export function ProductUpsertForm({
           />
 
           <div>
-            <label className="block text-sm font-medium mb-1 text-slate-700">Upload Image</label>
-            {previewUrl || formData.imageUrl ? (
-              <img
-                src={previewUrl || formData.imageUrl}
-                alt="Preview"
-                className="mb-2 h-24 w-24 rounded border object-cover"
-              />
-            ) : (
-              <div className="mb-2 h-24 w-24 rounded border border-dashed text-xs text-slate-400 grid place-items-center">
-                No image
-              </div>
-            )}
-
-            <input
-              type="file"
-              name="imageFile"
-              accept="image/*"
-              className="block w-full text-sm"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (previewUrl) URL.revokeObjectURL(previewUrl);
-                setPreviewUrl(file ? URL.createObjectURL(file) : null);
-              }}
-            />
+            <div className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Product Photos (optional, max 4)
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {PRODUCT_PHOTO_SLOTS.map((slot) => {
+                const previewUrl = slotPreviewUrls[slot];
+                const currentUrl = previewUrl || existingPhotoBySlot.get(slot) || null;
+                return (
+                  <div key={slot} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      Slot {slot}
+                    </div>
+                    {currentUrl ? (
+                      <img
+                        src={currentUrl}
+                        alt={`Product slot ${slot}`}
+                        className="mb-2 h-20 w-20 rounded border object-cover"
+                      />
+                    ) : (
+                      <div className="mb-2 h-20 w-20 rounded border border-dashed text-[11px] text-slate-400 grid place-items-center">
+                        Empty
+                      </div>
+                    )}
+                    <SoTFileInput
+                      id={`productPhotoFile_${slot}`}
+                      name={`productPhotoFile_${slot}`}
+                      accept="image/jpeg,image/png,image/webp"
+                      className="block text-sm"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setSlotPreview(slot, file);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Upload up to 4 photos. Any slot can stay empty.
+            </p>
           </div>
         </FormGroupRow>
       </FormSection>

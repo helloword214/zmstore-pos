@@ -70,7 +70,8 @@ Stock fields:
 Auxiliary:
 
 1. `locationId`, `description`, `imageUrl`, `imageKey`, `expirationDate`, `replenishAt`, `imageTag`
-2. tagging/relations: `ProductIndication`, `ProductTarget`
+2. optional gallery photos: `ProductPhoto` (`slot` 1..4, metadata-first)
+3. tagging/relations: `ProductIndication`, `ProductTarget`
 
 ## Product List Master-Data Boundary (Current)
 
@@ -181,6 +182,14 @@ From `/products` action validation (used by dedicated create/edit routes):
 3. non-negative numeric guard is enforced
 4. `packingStock` decimal precision is validated up to 2 decimals in form/action logic
 5. Product list route does not host create/edit modal; create/edit happens on dedicated routes.
+
+### Product Photo Slots (Current)
+
+1. Product supports up to 4 optional photos (`slot` 1..4).
+2. Any slot may remain empty.
+3. New upload to an occupied slot replaces that slot metadata/object reference.
+4. Product cover fields (`imageUrl`, `imageKey`) mirror the lowest available slot photo.
+5. Product detail route is view-only for photos; upload/replace happens in product create/edit forms.
 
 ## Stock Movement Semantics (Current)
 

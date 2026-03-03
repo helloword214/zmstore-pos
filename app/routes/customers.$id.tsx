@@ -6,43 +6,25 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTDataRow } from "~/components/ui/SoTDataRow";
+import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTPageHeader } from "~/components/ui/SoTPageHeader";
+import {
+  readOptionalUpload,
+  resolveMaxUploadMb,
+  uploadKeyPrefix,
+  validateImageUpload,
+} from "~/features/uploads/upload-policy";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { storage } from "~/utils/storage.server";
 
-const MAX_CUSTOMER_PHOTO_MB = Math.max(
-  1,
-  Number.parseFloat(
-    process.env.MAX_CUSTOMER_PHOTO_MB || process.env.MAX_UPLOAD_MB || "10"
-  ) || 10
-);
-const MAX_CUSTOMER_PHOTO_BYTES = Math.floor(MAX_CUSTOMER_PHOTO_MB * 1024 * 1024);
-const ALLOWED_CUSTOMER_PHOTO_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-
-function readOptionalUpload(raw: FormDataEntryValue | null): File | null {
-  if (!(raw instanceof File)) return null;
-  if (!raw.size) return null;
-  return raw;
-}
-
-function validateCustomerPhotoUpload(file: File) {
-  if (!ALLOWED_CUSTOMER_PHOTO_MIME.has(file.type)) {
-    return "Only JPG, PNG, and WEBP files are allowed.";
-  }
-  if (file.size > MAX_CUSTOMER_PHOTO_BYTES) {
-    return `File is too large. Limit is ${MAX_CUSTOMER_PHOTO_MB}MB.`;
-  }
-  return null;
-}
-
 export async function action({ request, params }: ActionFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
+  const customerPhotoMaxMb = resolveMaxUploadMb(
+    process.env.MAX_CUSTOMER_PHOTO_MB || process.env.MAX_UPLOAD_MB,
+    10
+  );
   if (!params.id) throw new Response("Missing ID", { status: 400 });
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
@@ -63,14 +45,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  const validationError = validateCustomerPhotoUpload(file);
+  const validationError = validateImageUpload(file, customerPhotoMaxMb);
   if (validationError) {
     return json({ ok: false, error: validationError }, { status: 400 });
   }
 
   try {
     const saved = await storage.save(file, {
-      keyPrefix: `customers/${id}/profile`,
+      keyPrefix: uploadKeyPrefix.customerProfile(id),
     });
 
     await db.customer.update({
@@ -94,6 +76,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]); // 🔒 guard
+  const maxCustomerPhotoMb = resolveMaxUploadMb(
+    process.env.MAX_CUSTOMER_PHOTO_MB || process.env.MAX_UPLOAD_MB,
+    10
+  );
   const isAdminCtx = true;
   if (!params.id) throw new Response("Missing ID", { status: 400 });
   const id = Number(params.id);
@@ -169,7 +155,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     arBalance,
     rulesCount,
     isAdminCtx,
-    maxCustomerPhotoMb: MAX_CUSTOMER_PHOTO_MB,
+    maxCustomerPhotoMb,
     photoUpdatedAtLabel,
   });
 }
@@ -265,11 +251,10 @@ export default function CustomerProfile() {
               </div>
               <Form method="post" encType="multipart/form-data" className="space-y-3">
                 <input type="hidden" name="intent" value="upload-customer-photo" />
-                <input
-                  type="file"
+                <SoTFileInput
                   name="customerPhotoFile"
                   accept="image/jpeg,image/png,image/webp"
-                  className="block h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  className="block h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 file:border-0 file:bg-slate-100 hover:file:bg-slate-200"
                 />
                 <p className="text-xs text-slate-500">
                   JPG, PNG, or WEBP only. Max size: {maxCustomerPhotoMb}MB.
