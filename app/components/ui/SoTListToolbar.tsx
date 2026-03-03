@@ -1,8 +1,10 @@
-import { Form, Link } from "@remix-run/react";
+import { Form } from "@remix-run/react";
 import type { ReactNode } from "react";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 
 type StatusOption = {
@@ -50,11 +52,11 @@ export function SoTListToolbar({
       left={
         <Form method="get" className="flex flex-wrap items-end gap-2">
           <SoTFormField label={searchLabel}>
-            <input
+            <SoTSearchInput
               name="q"
               defaultValue={query}
               placeholder={searchPlaceholder}
-              className="h-9 w-56 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              className="w-56"
             />
           </SoTFormField>
 
@@ -72,16 +74,16 @@ export function SoTListToolbar({
 
           {extraFilters}
 
-          <SoTButton type="submit" variant="secondary" className="h-9">
+          <SoTButton type="submit" variant="secondary">
             Apply
           </SoTButton>
 
-          <Link
+          <SoTLinkButton
             to={resetTo}
-            className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            variant="secondary"
           >
             Reset
-          </Link>
+          </SoTLinkButton>
         </Form>
       }
       right={

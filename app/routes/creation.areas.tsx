@@ -9,6 +9,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEntityFormPanel } from "~/components/ui/SoTEntityFormPanel";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SelectInput } from "~/components/ui/SelectInput";
 import {
@@ -456,12 +457,12 @@ export default function AreasPage() {
                 <p>{selectedBarangayName}</p>
               </div>
 
-              <Link
+              <SoTLinkButton
                 to="/creation/areas"
-                className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                variant="secondary"
               >
                 Reset Selection
-              </Link>
+              </SoTLinkButton>
             </SoTCard>
 
             <SoTEntityFormPanel title="Province Directory">
@@ -472,7 +473,7 @@ export default function AreasPage() {
                 onChange={(e) => setProvinceSearch(e.target.value)}
               />
 
-              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              <div className="mt-3 max-h-[380px] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white">
                 <SoTTable>
                   <SoTTableHead>
                     <SoTTableRow>
@@ -505,7 +506,7 @@ export default function AreasPage() {
                               <SoTButton
                                 type="submit"
                                 variant="secondary"
-                                className="h-8 px-2 py-0 text-xs"
+                                size="compact"
                               >
                                 {province.isActive ? "Disable" : "Enable"}
                               </SoTButton>
@@ -532,7 +533,7 @@ export default function AreasPage() {
                     key={tab.id}
                     type="button"
                     variant={workspace === tab.id ? "primary" : "secondary"}
-                    className="h-8 px-2 py-0 text-xs"
+                    size="compact"
                     disabled={!tab.enabled}
                     onClick={() => setWorkspace(tab.id)}
                   >
@@ -606,7 +607,7 @@ export default function AreasPage() {
                       />
                     </div>
 
-                    <div className="mt-3 max-h-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <div className="mt-3 max-h-[460px] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white">
                       <SoTTable>
                         <SoTTableHead>
                           <SoTTableRow>
@@ -637,7 +638,7 @@ export default function AreasPage() {
                                     <SoTButton
                                       type="button"
                                       variant="secondary"
-                                      className="h-8 px-2 py-0 text-xs"
+                                      size="compact"
                                       onClick={() => setEditingMunicipality(municipality)}
                                     >
                                       Edit
@@ -653,7 +654,7 @@ export default function AreasPage() {
                                       <SoTButton
                                         type="submit"
                                         variant="secondary"
-                                        className="h-8 px-2 py-0 text-xs"
+                                        size="compact"
                                       >
                                         {municipality.isActive ? "Disable" : "Enable"}
                                       </SoTButton>
@@ -676,7 +677,7 @@ export default function AreasPage() {
                                       <SoTButton
                                         type="submit"
                                         variant="danger"
-                                        className="h-8 px-2 py-0 text-xs"
+                                        size="compact"
                                       >
                                         Delete
                                       </SoTButton>
@@ -761,7 +762,7 @@ export default function AreasPage() {
                       />
                     </div>
 
-                    <div className="mt-3 max-h-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <div className="mt-3 max-h-[460px] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white">
                       <SoTTable>
                         <SoTTableHead>
                           <SoTTableRow>
@@ -792,7 +793,7 @@ export default function AreasPage() {
                                     <SoTButton
                                       type="button"
                                       variant="secondary"
-                                      className="h-8 px-2 py-0 text-xs"
+                                      size="compact"
                                       onClick={() => setEditingBarangay(barangay)}
                                     >
                                       Edit
@@ -804,7 +805,7 @@ export default function AreasPage() {
                                       <SoTButton
                                         type="submit"
                                         variant="secondary"
-                                        className="h-8 px-2 py-0 text-xs"
+                                        size="compact"
                                       >
                                         {barangay.isActive ? "Disable" : "Enable"}
                                       </SoTButton>
@@ -827,7 +828,7 @@ export default function AreasPage() {
                                       <SoTButton
                                         type="submit"
                                         variant="danger"
-                                        className="h-8 px-2 py-0 text-xs"
+                                        size="compact"
                                       >
                                         Delete
                                       </SoTButton>
@@ -884,7 +885,7 @@ export default function AreasPage() {
                       />
                     </div>
 
-                    <div className="mt-3 max-h-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <div className="mt-3 max-h-[460px] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white">
                       <SoTTable>
                         <SoTTableHead>
                           <SoTTableRow>
@@ -915,7 +916,7 @@ export default function AreasPage() {
                                     <SoTButton
                                       type="submit"
                                       variant="danger"
-                                      className="h-8 px-2 py-0 text-xs"
+                                      size="compact"
                                     >
                                       Delete
                                     </SoTButton>
@@ -971,7 +972,7 @@ export default function AreasPage() {
                       />
                     </div>
 
-                    <div className="mt-3 max-h-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <div className="mt-3 max-h-[460px] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white">
                       <SoTTable>
                         <SoTTableHead>
                           <SoTTableRow>
@@ -1006,7 +1007,7 @@ export default function AreasPage() {
                                     <SoTButton
                                       type="submit"
                                       variant="danger"
-                                      className="h-8 px-2 py-0 text-xs"
+                                      size="compact"
                                     >
                                       Delete
                                     </SoTButton>

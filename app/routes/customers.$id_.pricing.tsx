@@ -2,7 +2,7 @@
 // app/routes/customers.$id_.pricing.tsx
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, Link } from "@remix-run/react";
+import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import { PriceMode, UnitKind } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import React from "react";
@@ -12,7 +12,9 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
 
@@ -230,12 +232,11 @@ function ModeAwareValue({
   return (
     <div>
       <SoTFormField label={label}>
-        <input
+        <SoTSearchInput
           name="value"
           type="number"
           step={step}
           min={min}
-          className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
         />
       </SoTFormField>
     </div>
@@ -309,17 +310,15 @@ export default function CustomerPricingRules() {
             </SoTFormField>
             <ModeAwareValue mode={newMode} />
             <SoTFormField label="Starts">
-              <input
+              <SoTSearchInput
                 name="startsAt"
                 type="datetime-local"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
             <SoTFormField label="Ends">
-              <input
+              <SoTSearchInput
                 name="endsAt"
                 type="datetime-local"
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               />
             </SoTFormField>
             <div className="sm:col-span-2">
@@ -369,18 +368,19 @@ export default function CustomerPricingRules() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link
+                  <SoTLinkButton
                     to={`${String(r.id)}${ctxSuffix}`}
-                    className="inline-flex h-8 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    variant="secondary"
+                    size="compact"
                   >
                     Edit
-                  </Link>
+                  </SoTLinkButton>
                   <Form method="post">
                     <input type="hidden" name="_action" value="toggleActive" />
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="active" value={r.active ? "0" : "1"} />
                     <button
-                      className={`inline-flex h-8 items-center rounded-xl border px-3 text-xs font-medium transition-colors duration-150 ${
+                      className={`inline-flex h-9 items-center rounded-xl border px-3 text-xs font-medium transition-colors duration-150 ${
                         r.active
                           ? "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
                           : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -397,9 +397,9 @@ export default function CustomerPricingRules() {
                   >
                     <input type="hidden" name="_action" value="delete" />
                     <input type="hidden" name="id" value={r.id} />
-                    <button className="inline-flex h-8 items-center rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-700 transition-colors duration-150 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
+                    <SoTButton type="submit" variant="danger" size="compact">
                       Delete
-                    </button>
+                    </SoTButton>
                   </Form>
                 </div>
               </div>

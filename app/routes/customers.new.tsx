@@ -1,14 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, redirect } from "@remix-run/node";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
+import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import * as React from "react";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -838,14 +840,15 @@ export default function NewCustomerPage() {
                           </div>
                         }
                         right={
-                          <Link
+                          <SoTLinkButton
                             to="https://maps.google.com"
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex h-8 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                            variant="secondary"
+                            size="compact"
                           >
                             Open Google Maps
-                          </Link>
+                          </SoTLinkButton>
                         }
                       />
 
@@ -855,12 +858,11 @@ export default function NewCustomerPage() {
                             label="Google Maps Pin URL"
                             hint='Open Google Maps, click location, then paste copied link (works without API key).'
                           >
-                            <input
+                            <SoTSearchInput
                               id={`addr-${idx}-mapurl`}
                               value={row.mapUrl}
                               onChange={(e) => updateMapUrl(idx, e.target.value)}
                               placeholder="https://www.google.com/maps/..."
-                              className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             />
                           </SoTFormField>
                         </div>
@@ -895,13 +897,14 @@ export default function NewCustomerPage() {
                             : "No map pin yet."}
                         </p>
                         {row.mapUrl || row.geoLat != null || row.geoLng != null ? (
-                          <button
+                          <SoTButton
                             type="button"
                             onClick={() => clearMapPin(idx)}
-                            className="inline-flex h-7 items-center rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                            variant="secondary"
+                            size="compact"
                           >
                             Clear Pin
-                          </button>
+                          </SoTButton>
                         ) : null}
                       </div>
                     </div>
@@ -929,10 +932,9 @@ export default function NewCustomerPage() {
                               />
                             </SoTFormField>
                             <SoTFormField label="Caption (optional)">
-                              <input
+                              <SoTSearchInput
                                 name={`addrPhotoCaption_${idx}_${slot}`}
                                 placeholder="ex: Kanto view / Gate color"
-                                className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                               />
                             </SoTFormField>
                           </div>
@@ -949,12 +951,12 @@ export default function NewCustomerPage() {
         <SoTActionBar
           right={
             <>
-              <Link
+              <SoTLinkButton
                 to={backHref}
-                className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                variant="secondary"
               >
                 Cancel
-              </Link>
+              </SoTLinkButton>
               <SoTButton type="submit" variant="primary">
                 Save Customer
               </SoTButton>
@@ -1002,9 +1004,8 @@ function Field(props: {
           </>
         }
       >
-        <input
+        <SoTSearchInput
           id={props.id}
-          className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           value={props.value}
           onChange={(e) => props.onChange(e.target.value)}
           required={props.required}

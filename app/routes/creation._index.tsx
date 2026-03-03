@@ -157,7 +157,7 @@ export default function CreationIndex() {
                   <SoTButton
                     type="button"
                     variant={globalTab === "units" ? "primary" : "secondary"}
-                    className="h-8 px-2 py-0 text-xs"
+                    size="compact"
                     onClick={() => setGlobalTab("units")}
                   >
                     Units
@@ -165,7 +165,7 @@ export default function CreationIndex() {
                   <SoTButton
                     type="button"
                     variant={globalTab === "packingUnits" ? "primary" : "secondary"}
-                    className="h-8 px-2 py-0 text-xs"
+                    size="compact"
                     onClick={() => setGlobalTab("packingUnits")}
                   >
                     Packing Units
@@ -173,7 +173,7 @@ export default function CreationIndex() {
                   <SoTButton
                     type="button"
                     variant={globalTab === "locations" ? "primary" : "secondary"}
-                    className="h-8 px-2 py-0 text-xs"
+                    size="compact"
                     onClick={() => setGlobalTab("locations")}
                   >
                     Locations
@@ -300,7 +300,7 @@ export default function CreationIndex() {
                       <SoTButton
                         type="button"
                         variant={categoryTab === "brands" ? "primary" : "secondary"}
-                        className="h-8 px-2 py-0 text-xs"
+                        size="compact"
                         onClick={() => setCategoryTab("brands")}
                       >
                         Brands
@@ -308,7 +308,7 @@ export default function CreationIndex() {
                       <SoTButton
                         type="button"
                         variant={categoryTab === "indications" ? "primary" : "secondary"}
-                        className="h-8 px-2 py-0 text-xs"
+                        size="compact"
                         onClick={() => setCategoryTab("indications")}
                       >
                         Indications
@@ -316,7 +316,7 @@ export default function CreationIndex() {
                       <SoTButton
                         type="button"
                         variant={categoryTab === "targets" ? "primary" : "secondary"}
-                        className="h-8 px-2 py-0 text-xs"
+                        size="compact"
                         onClick={() => setCategoryTab("targets")}
                       >
                         Targets
@@ -608,7 +608,7 @@ function CompactOptionSection(props: {
                       <SoTButton
                         type="button"
                         variant="secondary"
-                        className="h-8 px-2 py-0 text-xs"
+                        size="compact"
                         onClick={() => {
                           setEditingId(row.id);
                           setEditingName(row.name);
@@ -620,7 +620,7 @@ function CompactOptionSection(props: {
                       <SoTButton
                         type="button"
                         variant="danger"
-                        className="h-8 px-2 py-0 text-xs"
+                        size="compact"
                         onClick={() => {
                           if (!confirm(`Delete "${row.name}"?`)) return;
                           props.onDelete(row.id);

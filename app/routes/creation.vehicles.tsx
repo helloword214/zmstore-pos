@@ -725,7 +725,7 @@ export default function VehiclesPage() {
                           <SoTButton
                             type="button"
                             variant="secondary"
-                            className="h-8 px-2 py-0 text-xs"
+                            size="compact"
                             onClick={() => setEditing(vehicle)}
                           >
                             Edit
@@ -742,7 +742,7 @@ export default function VehiclesPage() {
                             <SoTButton
                               type="submit"
                               variant="secondary"
-                              className="h-8 px-2 py-0 text-xs"
+                              size="compact"
                             >
                               {vehicle.active ? "Disable" : "Enable"}
                             </SoTButton>
@@ -761,7 +761,7 @@ export default function VehiclesPage() {
                             <SoTButton
                               type="submit"
                               variant="danger"
-                              className="h-8 px-2 py-0 text-xs"
+                              size="compact"
                             >
                               Delete
                             </SoTButton>

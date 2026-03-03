@@ -10,13 +10,14 @@ import {
   UserAuthState,
   UserRole,
 } from "@prisma/client";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
-import * as React from "react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { createHash, randomBytes } from "node:crypto";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import {
   SoTTable,
   SoTTd,
@@ -568,12 +569,13 @@ export default function EmployeeDirectoryPage() {
           <p className="text-xs text-slate-600">
             Manage role switches, invites, and account state. Compliance badges are monitoring-only and never block create/switch actions.
           </p>
-          <Link
+          <SoTLinkButton
             to="/creation/employees/new"
-            className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+            variant="primary"
+            className="font-semibold"
           >
             Create New Employee
-          </Link>
+          </SoTLinkButton>
         </SoTCard>
 
         <SoTCard>
@@ -679,11 +681,10 @@ export default function EmployeeDirectoryPage() {
                             value={nextSwitchLane(row.lane) ?? ""}
                           />
 
-                          <input
+                          <SoTSearchInput
                             name="reason"
                             required
                             placeholder="Switch reason"
-                            className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                           />
 
                           <SoTButton type="submit" variant="secondary" disabled={busy}>
@@ -698,12 +699,14 @@ export default function EmployeeDirectoryPage() {
                     </SoTTd>
                     <SoTTd align="right">
                       <div className="space-y-2">
-                        <Link
+                        <SoTLinkButton
                           to={`/creation/employees/${row.employeeId}/edit`}
-                          className="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          variant="secondary"
+                          size="compact"
+                          className="hover:bg-slate-50"
                         >
                           Edit Profile
-                        </Link>
+                        </SoTLinkButton>
 
                         {row.authState === "PENDING_PASSWORD" && row.active ? (
                           <Form method="post">

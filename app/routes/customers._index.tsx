@@ -2,14 +2,16 @@
 import * as React from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useFetcher, useLoaderData, useSubmit } from "@remix-run/react";
+import { Form, useFetcher, useLoaderData, useSubmit } from "@remix-run/react";
 import type { Prisma } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import {
   SoTTable,
   SoTTd,
@@ -168,7 +170,7 @@ export default function CustomersIndex() {
               >
                 <input type="hidden" name="ctx" value="admin" />
                 <SoTFormField label="Search" className="w-full sm:w-auto">
-                  <input
+                  <SoTSearchInput
                     ref={searchRef}
                     name="q"
                     type="search"
@@ -188,7 +190,7 @@ export default function CustomersIndex() {
                       }, 250);
                     }}
                     placeholder="Search name / alias / phone"
-                    className="h-9 w-72 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    className="w-72"
                   />
                 </SoTFormField>
 
@@ -196,23 +198,23 @@ export default function CustomersIndex() {
                   Apply
                 </SoTButton>
 
-                <Link
+                <SoTLinkButton
                   to={`/customers${ctxSuffix}`}
                   onMouseDown={clearDebounce}
-                  className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  variant="secondary"
                 >
                   Reset
-                </Link>
+                </SoTLinkButton>
               </Form>
             }
             right={
-              <Link
+              <SoTLinkButton
                 to={`/customers/new${ctxSuffix}`}
                 onMouseDown={clearDebounce}
-                className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                variant="primary"
               >
                 New Customer
-              </Link>
+              </SoTLinkButton>
             }
           />
 
@@ -231,7 +233,7 @@ export default function CustomersIndex() {
             </span>
           </div>
 
-          <div className="max-h-[520px] overflow-y-auto">
+          <div>
             <SoTTable>
               <SoTTableHead>
                 <SoTTableRow>
@@ -266,13 +268,14 @@ export default function CustomersIndex() {
                         </SoTTd>
                         <SoTTd align="right">
                           <div className="flex flex-wrap justify-end gap-2">
-                            <Link
+                            <SoTLinkButton
                               to={`/customers/${customer.id}${ctxSuffix}`}
                               onMouseDown={clearDebounce}
-                              className="inline-flex h-8 items-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              variant="secondary"
+                              size="compact"
                             >
                               View Profile
-                            </Link>
+                            </SoTLinkButton>
                           </div>
                         </SoTTd>
                       </SoTTableRow>

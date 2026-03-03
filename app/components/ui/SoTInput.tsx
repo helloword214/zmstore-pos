@@ -21,8 +21,8 @@ export function SoTInput({ label, error, id, className = "", ...props }: SoTInpu
         id={inputId}
         {...props}
         className={
-          `w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ` +
-          `placeholder:text-slate-400 focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 ` +
+          `h-9 w-full rounded-xl border bg-white px-3 text-sm text-slate-900 shadow-sm ` +
+          `placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ` +
           `${error ? "border-rose-300 bg-rose-50" : "border-slate-300"} ${className}`
         }
         aria-invalid={Boolean(error)}
