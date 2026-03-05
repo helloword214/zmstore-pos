@@ -103,7 +103,7 @@ function buildCustomerLabelFromReceipt(r: any) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const caseId = Number(params.caseId);
   if (!Number.isFinite(caseId))
@@ -266,7 +266,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
 
   const caseId = Number(params.caseId);
   if (!Number.isFinite(caseId)) {

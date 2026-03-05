@@ -69,6 +69,8 @@ Current route-level mapping coverage (canonical):
 42. `products.new.tsx`
 43. `products.$productId.tsx`
 44. `products.$productId.edit.tsx`
+45. `creation.legacy-customer-ar-batches.tsx`
+46. `store.clearance-legacy-batches.tsx`
 
 Identity operations note:
 
@@ -86,6 +88,8 @@ Identity operations note:
 12. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
 13. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
 14. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
+15. Legacy utang onboarding uses admin staging (`creation.legacy-customer-ar-batches.tsx`) and manager-only bulk decision lane (`store.clearance-legacy-batches.tsx`).
+16. Legacy batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
 
 ## B. Supporting (Context / Detailed Rationale)
 

@@ -208,13 +208,22 @@ export default function CustomersIndex() {
               </Form>
             }
             right={
-              <SoTLinkButton
-                to={`/customers/new${ctxSuffix}`}
-                onMouseDown={clearDebounce}
-                variant="primary"
-              >
-                New Customer
-              </SoTLinkButton>
+              <div className="flex flex-wrap items-center gap-2">
+                <SoTLinkButton
+                  to="/creation/legacy-customer-ar-batches"
+                  onMouseDown={clearDebounce}
+                  variant="secondary"
+                >
+                  Legacy Utang Batch
+                </SoTLinkButton>
+                <SoTLinkButton
+                  to={`/customers/new${ctxSuffix}`}
+                  onMouseDown={clearDebounce}
+                  variant="primary"
+                >
+                  New Customer
+                </SoTLinkButton>
+              </div>
             }
           />
 

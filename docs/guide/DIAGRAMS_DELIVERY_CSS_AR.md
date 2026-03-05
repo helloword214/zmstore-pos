@@ -100,6 +100,7 @@ flowchart LR
         AD0["_index.tsx"]
         AD1["creation.*"]
         AD2["customers.* admin context"]
+        AD3["creation.legacy-customer-ar-batches.tsx"]
     end
 
     subgraph POS["Order Pricing Routes"]
@@ -118,6 +119,7 @@ flowchart LR
         M6["store.cashier-shifts.tsx"]
         M7["store.cashier-variances.tsx (read-only)"]
         M8["store.cashier-ar.tsx / store.payroll.tsx"]
+        M9["store.clearance-legacy-batches.tsx"]
     end
 
     subgraph Rider["Rider Routes"]
@@ -140,6 +142,7 @@ flowchart LR
 
     AD0 --> AD1
     AD0 --> AD2
+    AD1 --> AD3 --> M9
     P0 --> P1 --> M0
     P2 --> P1
     M0 --> M1 --> R1 --> M2
@@ -148,6 +151,7 @@ flowchart LR
     C4 --> C5 --> M6 --> C6 --> M8
     M6 --> M7
     M4 --> A1 --> A2
+    M9 --> A1
 ```
 
 Authority note:
@@ -164,6 +168,8 @@ Authority note:
 | `orders.new.tsx` | policy discount engine apply + frozen `order/orderItem` pricing snapshots |
 | `runs.$id.rider-checkin.tsx` | `runReceipt`, `clearanceCase` |
 | `store.clearance_.$caseId.tsx` | `clearanceDecision`, `customerAr` |
+| `creation.legacy-customer-ar-batches.tsx` | admin staging of legacy rows into pending `clearanceCase` only |
+| `store.clearance-legacy-batches.tsx` | manager bulk decision lane (`clearanceDecision`, `customerAr`) |
 | `runs.$id.remit.tsx` | stock recap + run close records |
 | `cashier.delivery.$runId.tsx` | turnover comparison (`runReceipt.cashCollected` vs `payment`) |
 | `delivery-remit.$id.tsx` | per-order `payment` + shortage bridge records |
@@ -214,17 +220,15 @@ As-implemented control note:
    - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
    - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
 
-## Known Implementation Drift (2026-02-26)
+## Known Implementation Drift (2026-03-05)
 
 Canonical diagram `v2.0` enforces admin separation from manager lanes.
 Current code still allows `ADMIN` in some manager routes and requires follow-up alignment:
 
 1. `app/routes/store.dispatch.tsx`
 2. `app/routes/runs.$id.dispatch.tsx`
-3. `app/routes/store.clearance.tsx`
-4. `app/routes/store.clearance_.$caseId.tsx`
-5. `app/routes/runs.$id.remit.tsx`
-6. `app/routes/store.cashier-shifts.tsx`
-7. `app/routes/store.cashier-variances.tsx`
-8. `app/routes/store.cashier-ar.tsx`
-9. `app/routes/store.payroll.tsx`
+3. `app/routes/runs.$id.remit.tsx`
+4. `app/routes/store.cashier-shifts.tsx`
+5. `app/routes/store.cashier-variances.tsx`
+6. `app/routes/store.cashier-ar.tsx`
+7. `app/routes/store.payroll.tsx`

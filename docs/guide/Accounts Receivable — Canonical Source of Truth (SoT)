@@ -30,6 +30,13 @@ For a receipt with `remaining = frozenTotal - cashCollected`:
 3. `APPROVE_DISCOUNT_OVERRIDE` -> `arBalance = 0` -> no AR entry.
 4. `REJECT` -> no AR entry unless customer later pays/settles under accepted rule.
 
+## Legacy Batch Onboarding Rule
+
+1. Legacy/admin batch rows are onboarding inputs only; they are not AR authority by themselves.
+2. A legacy row creates AR only after manager-side CCS decision per row (single or bulk lane).
+3. Batch auto-approval must still write `clearanceDecision` and then `customerAr` per approved row.
+4. Batch rejects/invalid rows must not create `customerAr` principal.
+
 ## AR Index Eligibility Rule
 
 A customer appears in AR list only when:

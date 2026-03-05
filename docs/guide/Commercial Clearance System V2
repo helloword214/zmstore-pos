@@ -74,6 +74,16 @@ Admin may NOT:
 
 Admin has zero commercial-decision access, including read-only manager decision lanes.
 
+### 3.2 Legacy Utang Batch Boundary (Binding)
+
+For one-time/high-volume legacy utang onboarding:
+
+1. `ADMIN` may stage/import rows as pending clearance cases in admin creation lanes.
+2. `ADMIN` may NOT approve or decide those rows.
+3. `STORE_MANAGER` remains the only decision authority and may process legacy rows in batch.
+4. Batch processing must still create normal CCS decision artifacts per row (`ClearanceDecision`), then AR ledger rows only for approved AR outcomes.
+5. Invalid or explicitly rejected rows must be recorded as `REJECT` decisions (no AR principal creation).
+
 ---
 
 ### 4. Role Isolation (Hard Rule)

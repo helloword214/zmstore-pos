@@ -21,6 +21,10 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, peso } from "~/utils/money";
+import {
+  extractLegacyBatchRefFromReceiptKey,
+  isLegacyReceiptKey,
+} from "~/services/legacyUtangBatch.server";
 
 type WalkInRow = {
   // CCS SoT: inbox item identity is ClearanceCase
@@ -57,7 +61,9 @@ type LoaderData = {
   counts: {
     walkInTotal: number;
     deliveryTotal: number;
-    total: number; // total pending across sources
+    legacyTotal: number;
+    legacyBatchTotal: number;
+    total: number; // walk-in + delivery tabs only
   };
 };
 
@@ -85,7 +91,7 @@ function buildCustomerLabelFromReceipt(r: any) {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   // ---------------------------
   // CCS INBOX (SOURCE OF TRUTH)
@@ -96,6 +102,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     where: { status: "NEEDS_CLEARANCE" } as any,
     select: {
       id: true,
+      receiptKey: true,
       flaggedAt: true,
       frozenTotal: true,
       cashCollected: true,
@@ -210,12 +217,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   const delivery = deliveryAll.slice(0, 120);
 
+  const legacyPending = cases.filter(
+    (c: any) =>
+      !c?.order?.id && !c?.runReceipt?.id && isLegacyReceiptKey(c?.receiptKey),
+  );
+  const legacyBatchRefs = new Set<string>();
+  for (const row of legacyPending) {
+    const ref = extractLegacyBatchRefFromReceiptKey(String(row?.receiptKey || ""));
+    if (ref) legacyBatchRefs.add(ref);
+  }
+
   const data: LoaderData = {
     walkIn,
     delivery,
     counts: {
       walkInTotal: walkInAll.length,
       deliveryTotal: deliveryAll.length,
+      legacyTotal: legacyPending.length,
+      legacyBatchTotal: legacyBatchRefs.size,
       total: walkInAll.length + deliveryAll.length,
     },
   };
@@ -251,6 +270,21 @@ export default function StoreClearanceInbox() {
         <SoTAlert tone="info">
           Manager decision layer ito; walang posting ng remit sa page na ito.
         </SoTAlert>
+        {counts.legacyTotal > 0 ? (
+          <SoTAlert tone="warning">
+            May {counts.legacyTotal} pending legacy case(s) across {counts.legacyBatchTotal} batch(es).
+            {" "}
+            Process them in
+            {" "}
+            <Link
+              to="/store/clearance-legacy-batches"
+              className="font-medium text-amber-900 underline"
+            >
+              Legacy Clearance Batches
+            </Link>
+            .
+          </SoTAlert>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <button

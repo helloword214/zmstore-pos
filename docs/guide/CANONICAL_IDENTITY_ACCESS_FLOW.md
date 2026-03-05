@@ -71,6 +71,7 @@ Representative routes:
 13. `app/routes/customers.$id_.edit.tsx`
 14. `app/routes/customers.$id_.pricing.tsx`
 15. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
+16. `app/routes/creation.legacy-customer-ar-batches.tsx`
 
 ### B) Manager Operational/Commercial Routes
 
@@ -88,6 +89,7 @@ Representative routes:
 8. `app/routes/store.cashier-variances.tsx`
 9. `app/routes/store.cashier-ar.tsx`
 10. `app/routes/store.payroll.tsx`
+11. `app/routes/store.clearance-legacy-batches.tsx`
 
 Hard rule:
 
@@ -249,6 +251,8 @@ Implemented in auth routes:
 6. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
 7. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
 8. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
+9. `app/routes/creation.legacy-customer-ar-batches.tsx` is admin staging only for high-volume legacy utang onboarding; manager approval remains required.
+10. `app/routes/store.clearance-legacy-batches.tsx` is manager-only bulk decision lane for pending legacy clearance rows.
 
 ## Cross-Doc Contract
 
@@ -258,7 +262,7 @@ Implemented in auth routes:
    - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 2. If any route-level flow doc conflicts on role authority, this file controls role/access interpretation.
 
-## Known Implementation Drift (2026-02-26)
+## Known Implementation Drift (2026-03-05)
 
 Canonical authority is already defined above, but current code still allows `ADMIN` access in some manager operational routes.
 
@@ -267,13 +271,11 @@ Access drift examples:
 1. `app/routes/store._index.tsx`
 2. `app/routes/store.dispatch.tsx`
 3. `app/routes/runs.$id.dispatch.tsx`
-4. `app/routes/store.clearance.tsx`
-5. `app/routes/store.clearance_.$caseId.tsx`
-6. `app/routes/runs.$id.remit.tsx`
-7. `app/routes/store.cashier-shifts.tsx`
-8. `app/routes/store.cashier-variances.tsx`
-9. `app/routes/store.cashier-ar.tsx`
-10. `app/routes/store.payroll.tsx`
+4. `app/routes/runs.$id.remit.tsx`
+5. `app/routes/store.cashier-shifts.tsx`
+6. `app/routes/store.cashier-variances.tsx`
+7. `app/routes/store.cashier-ar.tsx`
+8. `app/routes/store.payroll.tsx`
 
 Role lifecycle drift:
 

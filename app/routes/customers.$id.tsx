@@ -122,22 +122,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         },
         orderBy: [{ id: "asc" }],
       },
-      _count: { select: { customerItemPrices: true, orders: true } },
-      orders: {
-        where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
-        select: { id: true, totalBeforeDiscount: true },
-      },
+      _count: { select: { customerItemPrices: true } },
     },
   });
   if (!customer) throw new Response("Not found", { status: 404 });
 
+  const arAgg = await db.customerAr.aggregate({
+    where: {
+      customerId: id,
+      balance: { gt: 0 },
+      status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
+    },
+    _sum: { balance: true },
+  });
+
   const name = [customer.firstName, customer.middleName, customer.lastName]
     .filter(Boolean)
     .join(" ");
-  const arBalance = customer.orders.reduce(
-    (s, o) => s + Number(o.totalBeforeDiscount || 0),
-    0
-  );
+  const arBalance = Number(arAgg?._sum?.balance ?? 0);
   const rulesCount = customer._count.customerItemPrices;
   const photoUpdatedAtLabel = customer.photoUpdatedAt
     ? new Intl.DateTimeFormat("en-PH", {
