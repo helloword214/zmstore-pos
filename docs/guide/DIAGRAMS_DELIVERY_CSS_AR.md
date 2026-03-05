@@ -100,7 +100,7 @@ flowchart LR
         AD0["_index.tsx"]
         AD1["creation.*"]
         AD2["customers.* admin context"]
-        AD3["creation.legacy-customer-ar-batches.tsx"]
+        AD3["creation.opening-ar-batches.tsx"]
     end
 
     subgraph POS["Order Pricing Routes"]
@@ -119,7 +119,7 @@ flowchart LR
         M6["store.cashier-shifts.tsx"]
         M7["store.cashier-variances.tsx (read-only)"]
         M8["store.cashier-ar.tsx / store.payroll.tsx"]
-        M9["store.clearance-legacy-batches.tsx"]
+        M9["store.clearance-opening-batches.tsx"]
     end
 
     subgraph Rider["Rider Routes"]
@@ -168,8 +168,8 @@ Authority note:
 | `orders.new.tsx` | policy discount engine apply + frozen `order/orderItem` pricing snapshots |
 | `runs.$id.rider-checkin.tsx` | `runReceipt`, `clearanceCase` |
 | `store.clearance_.$caseId.tsx` | `clearanceDecision`, `customerAr` |
-| `creation.legacy-customer-ar-batches.tsx` | admin staging of legacy rows into pending `clearanceCase` only |
-| `store.clearance-legacy-batches.tsx` | manager bulk decision lane (`clearanceDecision`, `customerAr`) |
+| `creation.opening-ar-batches.tsx` | admin staging of opening balance rows into pending `clearanceCase` only |
+| `store.clearance-opening-batches.tsx` | manager bulk decision lane (`clearanceDecision`, `customerAr`) |
 | `runs.$id.remit.tsx` | stock recap + run close records |
 | `cashier.delivery.$runId.tsx` | turnover comparison (`runReceipt.cashCollected` vs `payment`) |
 | `delivery-remit.$id.tsx` | per-order `payment` + shortage bridge records |

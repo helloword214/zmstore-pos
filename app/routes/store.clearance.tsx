@@ -22,9 +22,9 @@ import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, peso } from "~/utils/money";
 import {
-  extractLegacyBatchRefFromReceiptKey,
-  isLegacyReceiptKey,
-} from "~/services/legacyUtangBatch.server";
+  extractOpeningBatchRefFromReceiptKey,
+  isOpeningArReceiptKey,
+} from "~/services/openingArBatch.server";
 
 type WalkInRow = {
   // CCS SoT: inbox item identity is ClearanceCase
@@ -61,8 +61,8 @@ type LoaderData = {
   counts: {
     walkInTotal: number;
     deliveryTotal: number;
-    legacyTotal: number;
-    legacyBatchTotal: number;
+    openingBalanceTotal: number;
+    openingBatchTotal: number;
     total: number; // walk-in + delivery tabs only
   };
 };
@@ -163,7 +163,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           ),
       );
       // CCS SoT: prefer ClearanceCase.cashCollected as "paid so far" snapshot,
-      // fallback to payments sum for legacy/backfill gaps.
+      // fallback to payments sum for older/backfill gaps.
       const paidFallback = (o.payments || []).reduce(
         (s: number, p: any) => s + Number(p?.amount ?? 0),
         0,
@@ -217,14 +217,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   const delivery = deliveryAll.slice(0, 120);
 
-  const legacyPending = cases.filter(
+  const openingBalancePending = cases.filter(
     (c: any) =>
-      !c?.order?.id && !c?.runReceipt?.id && isLegacyReceiptKey(c?.receiptKey),
+      !c?.order?.id && !c?.runReceipt?.id && isOpeningArReceiptKey(c?.receiptKey),
   );
-  const legacyBatchRefs = new Set<string>();
-  for (const row of legacyPending) {
-    const ref = extractLegacyBatchRefFromReceiptKey(String(row?.receiptKey || ""));
-    if (ref) legacyBatchRefs.add(ref);
+  const openingBatchRefs = new Set<string>();
+  for (const row of openingBalancePending) {
+    const ref = extractOpeningBatchRefFromReceiptKey(String(row?.receiptKey || ""));
+    if (ref) openingBatchRefs.add(ref);
   }
 
   const data: LoaderData = {
@@ -233,8 +233,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     counts: {
       walkInTotal: walkInAll.length,
       deliveryTotal: deliveryAll.length,
-      legacyTotal: legacyPending.length,
-      legacyBatchTotal: legacyBatchRefs.size,
+      openingBalanceTotal: openingBalancePending.length,
+      openingBatchTotal: openingBatchRefs.size,
       total: walkInAll.length + deliveryAll.length,
     },
   };
@@ -260,7 +260,7 @@ export default function StoreClearanceInbox() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Commercial Clearance — Inbox"
-        subtitle="Unified list of kulang bayad / utang / release with balance (walk-in + delivery)."
+        subtitle="Unified list of payment shortfall and open-balance release cases (walk-in + delivery)."
         backTo="/store"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -268,19 +268,19 @@ export default function StoreClearanceInbox() {
 
       <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
         <SoTAlert tone="info">
-          Manager decision layer ito; walang posting ng remit sa page na ito.
+          Manager decision layer only; no remit posting is allowed on this page.
         </SoTAlert>
-        {counts.legacyTotal > 0 ? (
+        {counts.openingBalanceTotal > 0 ? (
           <SoTAlert tone="warning">
-            May {counts.legacyTotal} pending legacy case(s) across {counts.legacyBatchTotal} batch(es).
+            There are {counts.openingBalanceTotal} pending opening balance case(s) across {counts.openingBatchTotal} batch(es).
             {" "}
             Process them in
             {" "}
             <Link
-              to="/store/clearance-legacy-batches"
+              to="/store/clearance-opening-batches"
               className="font-medium text-amber-900 underline"
             >
-              Legacy Clearance Batches
+              Opening Balance Clearance Batches
             </Link>
             .
           </SoTAlert>

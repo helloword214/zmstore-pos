@@ -71,7 +71,7 @@ Representative routes:
 13. `app/routes/customers.$id_.edit.tsx`
 14. `app/routes/customers.$id_.pricing.tsx`
 15. `app/routes/customers.$id_.pricing_.$ruleId.tsx`
-16. `app/routes/creation.legacy-customer-ar-batches.tsx`
+16. `app/routes/creation.opening-ar-batches.tsx`
 
 ### B) Manager Operational/Commercial Routes
 
@@ -89,7 +89,7 @@ Representative routes:
 8. `app/routes/store.cashier-variances.tsx`
 9. `app/routes/store.cashier-ar.tsx`
 10. `app/routes/store.payroll.tsx`
-11. `app/routes/store.clearance-legacy-batches.tsx`
+11. `app/routes/store.clearance-opening-batches.tsx`
 
 Hard rule:
 
@@ -251,8 +251,8 @@ Implemented in auth routes:
 6. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
 7. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
 8. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
-9. `app/routes/creation.legacy-customer-ar-batches.tsx` is admin staging only for high-volume legacy utang onboarding; manager approval remains required.
-10. `app/routes/store.clearance-legacy-batches.tsx` is manager-only bulk decision lane for pending legacy clearance rows.
+9. `app/routes/creation.opening-ar-batches.tsx` is admin staging only for high-volume opening balance receivable onboarding; manager approval remains required.
+10. `app/routes/store.clearance-opening-batches.tsx` is manager-only bulk decision lane for pending opening balance clearance rows.
 
 ## Cross-Doc Contract
 

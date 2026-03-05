@@ -18,13 +18,13 @@ import {
   SoTTd,
 } from "~/components/ui/SoTTable";
 import {
-  LEGACY_RECEIPT_PREFIX,
-  buildLegacyReceiptKey,
-  encodeLegacyBatchCaseNote,
-  extractLegacyBatchRefFromReceiptKey,
-  normalizeLegacyBatchRef,
+  OPENING_AR_RECEIPT_PREFIX,
+  buildOpeningArReceiptKey,
+  encodeOpeningBatchCaseNote,
+  extractOpeningBatchRefFromReceiptKey,
+  normalizeOpeningBatchRef,
   parseDueDateISO,
-} from "~/services/legacyUtangBatch.server";
+} from "~/services/openingArBatch.server";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { MONEY_EPS, peso, r2 } from "~/utils/money";
@@ -142,7 +142,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
   const rows = await db.clearanceCase.findMany({
-    where: { receiptKey: { startsWith: LEGACY_RECEIPT_PREFIX } } as any,
+    where: { receiptKey: { startsWith: OPENING_AR_RECEIPT_PREFIX } } as any,
     select: {
       id: true,
       receiptKey: true,
@@ -157,7 +157,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const grouped = new Map<string, BatchSummary>();
   for (const row of rows) {
-    const batchRef = extractLegacyBatchRefFromReceiptKey(row.receiptKey);
+    const batchRef = extractOpeningBatchRefFromReceiptKey(row.receiptKey);
     if (!batchRef) continue;
 
     const balance = r2(
@@ -206,7 +206,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const rawBatchRef = String(fd.get("batchRef") || "");
-  const batchRef = normalizeLegacyBatchRef(rawBatchRef);
+  const batchRef = normalizeOpeningBatchRef(rawBatchRef);
   if (!batchRef) {
     return json<ActionData>(
       { ok: false, error: "Batch ref is required (letters/numbers only)." },
@@ -239,7 +239,7 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  const prefix = `LEGACY:${batchRef}:`;
+  const prefix = `OPENING_AR:${batchRef}:`;
   const existingBatch = await db.clearanceCase.count({
     where: { receiptKey: { startsWith: prefix } } as any,
   });
@@ -301,13 +301,13 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           status: "NEEDS_CLEARANCE",
           origin: "CASHIER",
-          receiptKey: buildLegacyReceiptKey(batchRef, row.lineNo),
+          receiptKey: buildOpeningArReceiptKey(batchRef, row.lineNo),
           customerId: Number(row.customerId),
           frozenTotal: new Prisma.Decimal(row.amount.toFixed(2)),
           cashCollected: new Prisma.Decimal("0.00"),
           flaggedById: me.userId,
           flaggedAt: new Date(),
-          note: encodeLegacyBatchCaseNote(
+          note: encodeOpeningBatchCaseNote(
             {
               batchRef,
               lineNo: row.lineNo,
@@ -340,7 +340,7 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 }
 
-export default function CreationLegacyCustomerArBatchesPage() {
+export default function CreationOpeningArBatchesPage() {
   const { summaries } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
@@ -350,7 +350,7 @@ export default function CreationLegacyCustomerArBatchesPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Legacy Utang Batch Encode"
+        title="Opening Balance Batch Encode"
         subtitle="Admin staging lane only. Manager approval is still required before AR creation."
         backTo="/"
         backLabel="Dashboard"
@@ -374,7 +374,7 @@ export default function CreationLegacyCustomerArBatchesPage() {
             {" "}
             Manager should process this at
             {" "}
-            <span className="font-mono">/store/clearance-legacy-batches</span>.
+            <span className="font-mono">/store/clearance-opening-batches</span>.
           </SoTAlert>
         ) : null}
 
@@ -415,7 +415,7 @@ export default function CreationLegacyCustomerArBatchesPage() {
                 rows={12}
                 required
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-800 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                placeholder={`customerId,amount,dueDate,refNo,note\n101,1500,2026-03-20,BOOK1-P1,old utang\n102,420,,BOOK1-P2,\n`}
+                placeholder={`customerId,amount,dueDate,refNo,note\n101,1500,2026-03-20,BOOK1-P1,opening balance\n102,420,,BOOK1-P2,\n`}
               />
             </SoTFormField>
 
@@ -455,7 +455,7 @@ export default function CreationLegacyCustomerArBatchesPage() {
 
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-800">
-            Recent Legacy Batches
+            Recent Opening Balance Batches
           </div>
           <SoTTable>
             <SoTTableHead>
@@ -470,7 +470,7 @@ export default function CreationLegacyCustomerArBatchesPage() {
             </SoTTableHead>
             <tbody>
               {summaries.length === 0 ? (
-                <SoTTableEmptyRow colSpan={6} message="No legacy batches yet." />
+                <SoTTableEmptyRow colSpan={6} message="No opening balance batches yet." />
               ) : (
                 summaries.map((s) => (
                   <SoTTableRow key={s.batchRef}>

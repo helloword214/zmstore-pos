@@ -18,12 +18,12 @@ import {
   SoTTd,
 } from "~/components/ui/SoTTable";
 import {
-  LEGACY_RECEIPT_PREFIX,
-  decodeLegacyBatchCaseNote,
-  extractLegacyBatchRefFromReceiptKey,
-  normalizeLegacyBatchRef,
+  OPENING_AR_RECEIPT_PREFIX,
+  decodeOpeningBatchCaseNote,
+  extractOpeningBatchRefFromReceiptKey,
+  normalizeOpeningBatchRef,
   parseDueDateISO,
-} from "~/services/legacyUtangBatch.server";
+} from "~/services/openingArBatch.server";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { MONEY_EPS, peso, r2 } from "~/utils/money";
@@ -99,7 +99,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rows = await db.clearanceCase.findMany({
     where: {
       status: "NEEDS_CLEARANCE",
-      receiptKey: { startsWith: LEGACY_RECEIPT_PREFIX },
+      receiptKey: { startsWith: OPENING_AR_RECEIPT_PREFIX },
     } as any,
     select: {
       id: true,
@@ -125,12 +125,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const mappedRows: BatchRow[] = rows
     .map((row) => {
-      const batchRef = extractLegacyBatchRefFromReceiptKey(row.receiptKey);
+      const batchRef = extractOpeningBatchRefFromReceiptKey(row.receiptKey);
       if (!batchRef) return null;
       const balance = r2(
         Math.max(0, Number(row.frozenTotal ?? 0) - Number(row.cashCollected ?? 0)),
       );
-      const decoded = decodeLegacyBatchCaseNote(row.note);
+      const decoded = decodeOpeningBatchCaseNote(row.note);
       const autoRejectReason = computeAutoRejectReason({
         customerId: row.customerId ?? null,
         balance,
@@ -180,7 +180,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const selectedBatchRefRaw = String(url.searchParams.get("batchRef") || "").trim();
   const selectedBatchRef = selectedBatchRefRaw
-    ? normalizeLegacyBatchRef(selectedBatchRefRaw)
+    ? normalizeOpeningBatchRef(selectedBatchRefRaw)
     : batches[0]?.batchRef ?? null;
   const selectedRows = selectedBatchRef
     ? mappedRows.filter((row) => row.batchRef === selectedBatchRef)
@@ -211,16 +211,16 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const rawBatchRef = String(fd.get("batchRef") || "");
-  const batchRef = normalizeLegacyBatchRef(rawBatchRef);
+  const batchRef = normalizeOpeningBatchRef(rawBatchRef);
   if (!batchRef) {
     return json({ ok: false, error: "batchRef is required." }, { status: 400 });
   }
 
   const rejectIds = parseRejectIds(fd.getAll("rejectCaseIds"));
   const approveNote =
-    String(fd.get("approveNote") || "").trim() || "Legacy batch approved.";
+    String(fd.get("approveNote") || "").trim() || "Opening balance batch approved.";
   const rejectNote = String(fd.get("rejectNote") || "").trim() || null;
-  const prefix = `LEGACY:${batchRef}:`;
+  const prefix = `OPENING_AR:${batchRef}:`;
 
   let approvedCount = 0;
   let rejectedCount = 0;
@@ -250,7 +250,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const balance = r2(
         Math.max(0, Number(row.frozenTotal ?? 0) - Number(row.cashCollected ?? 0)),
       );
-      const decoded = decodeLegacyBatchCaseNote(row.note);
+      const decoded = decodeOpeningBatchCaseNote(row.note);
       const isManualReject = rejectIds.has(caseId);
       const autoRejectReason = computeAutoRejectReason({
         customerId: row.customerId ?? null,
@@ -292,7 +292,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const dueDate = parseDueDateISO(decoded.meta?.dueDate || null);
       const arNoteParts = [
-        `Legacy batch ${batchRef}`,
+        `Opening balance batch ${batchRef}`,
         decoded.meta?.refNo ? `ref ${decoded.meta.refNo}` : null,
         decoded.meta?.lineNote ? decoded.meta.lineNote : null,
       ].filter(Boolean);
@@ -326,10 +326,10 @@ export async function action({ request }: ActionFunctionArgs) {
   qs.set("approved", String(approvedCount));
   qs.set("rejected", String(rejectedCount));
   qs.set("processed", String(processedCount));
-  return redirect(`/store/clearance-legacy-batches?${qs.toString()}`);
+  return redirect(`/store/clearance-opening-batches?${qs.toString()}`);
 }
 
-export default function StoreClearanceLegacyBatchesPage() {
+export default function StoreClearanceOpeningBatchesPage() {
   const { batches, selectedBatchRef, selectedRows, flash } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
@@ -340,7 +340,7 @@ export default function StoreClearanceLegacyBatchesPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Legacy Clearance Batches"
+        title="Opening Balance Clearance Batches"
         subtitle="Manager bulk lane: approve valid rows by default, reject only exceptions."
         backTo="/store/clearance"
         backLabel="Clearance Inbox"
@@ -378,7 +378,7 @@ export default function StoreClearanceLegacyBatchesPage() {
             </SoTTableHead>
             <tbody>
               {batches.length === 0 ? (
-                <SoTTableEmptyRow colSpan={5} message="No pending legacy batches." />
+                <SoTTableEmptyRow colSpan={5} message="No pending opening balance batches." />
               ) : (
                 batches.map((batch) => (
                   <SoTTableRow key={batch.batchRef}>
@@ -394,7 +394,7 @@ export default function StoreClearanceLegacyBatchesPage() {
                     </SoTTd>
                     <SoTTd align="right">
                       <Link
-                        to={`/store/clearance-legacy-batches?batchRef=${encodeURIComponent(
+                        to={`/store/clearance-opening-batches?batchRef=${encodeURIComponent(
                           batch.batchRef,
                         )}`}
                         className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
@@ -424,7 +424,7 @@ export default function StoreClearanceLegacyBatchesPage() {
                 <SoTFormField label="Approval note">
                   <SoTInput
                     name="approveNote"
-                    defaultValue="Legacy batch approved."
+                    defaultValue="Opening balance batch approved."
                     maxLength={500}
                   />
                 </SoTFormField>

@@ -210,11 +210,11 @@ export default function CustomersIndex() {
             right={
               <div className="flex flex-wrap items-center gap-2">
                 <SoTLinkButton
-                  to="/creation/legacy-customer-ar-batches"
+                  to="/creation/opening-ar-batches"
                   onMouseDown={clearDebounce}
                   variant="secondary"
                 >
-                  Legacy Utang Batch
+                  Opening Balance Batch
                 </SoTLinkButton>
                 <SoTLinkButton
                   to={`/customers/new${ctxSuffix}`}

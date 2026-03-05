@@ -53,8 +53,8 @@ This map is the primary route-level reference for canonical target behavior.
 | Rider check-in | Rider | `app/routes/runs.$id.rider-checkin.tsx` | Encode receipt cash and send clearance requests | `runReceipt`, `clearanceCase(status=NEEDS_CLEARANCE)` |
 | Clearance inbox | Manager | `app/routes/store.clearance.tsx` | View pending clearance workload | `clearanceCase` pending list |
 | Clearance decision | Manager | `app/routes/store.clearance_.$caseId.tsx` | Approve/reject and classify decision | `clearanceDecision`, `customerAr` creation when `arBalance > 0` |
-| Legacy batch staging | Admin | `app/routes/creation.legacy-customer-ar-batches.tsx` | Encode/import pre-system utang rows into pending clearance | `clearanceCase(status=NEEDS_CLEARANCE)` creation only; no decision authority |
-| Legacy batch decision | Manager | `app/routes/store.clearance-legacy-batches.tsx` | Bulk approve valid rows, reject exceptions | Per-row `clearanceDecision` + `customerAr` for approved rows |
+| Opening balance batch staging | Admin | `app/routes/creation.opening-ar-batches.tsx` | Encode/import pre-system open-balance rows into pending clearance | `clearanceCase(status=NEEDS_CLEARANCE)` creation only; no decision authority |
+| Opening balance batch decision | Manager | `app/routes/store.clearance-opening-batches.tsx` | Bulk approve valid rows, reject exceptions | Per-row `clearanceDecision` + `customerAr` for approved rows |
 | Manager remit | Manager | `app/routes/runs.$id.remit.tsx` | Stock audit and close run | Stock return/missing flow, no direct AR authority |
 | Cashier run list | Cashier | `app/routes/cashier.delivery._index.tsx` | Open closed runs for turnover remit | Run/order cash turnover visibility |
 | Cashier run remit hub | Cashier | `app/routes/cashier.delivery.$runId.tsx` | Track turnover cash gap and finalize run settlement | `runReceipt.cashCollected` vs cashier cash payments |
@@ -79,8 +79,8 @@ Role label interpretation rule:
 | `app/routes/pad-order._index.tsx` | Finalize payable totals without `/orders/new` server validation/freeze |
 | `app/routes/orders.new.tsx` | Reprice an already-created order or mix CSS override discount into policy discount freeze |
 | `app/routes/runs.$id.rider-checkin.tsx` | Auto-approve AR/discount without manager decision |
-| `app/routes/creation.legacy-customer-ar-batches.tsx` | Create `customerAr` directly or issue manager decision outcomes |
-| `app/routes/store.clearance-legacy-batches.tsx` | Skip per-row decision artifacts when processing batch approvals |
+| `app/routes/creation.opening-ar-batches.tsx` | Create `customerAr` directly or issue manager decision outcomes |
+| `app/routes/store.clearance-opening-batches.tsx` | Skip per-row decision artifacts when processing batch approvals |
 | `app/routes/runs.$id.remit.tsx` | Infer customer AR from `PARTIALLY_PAID` alone |
 | `app/routes/cashier.delivery.$runId.tsx` | Treat turnover shortage as automatic customer AR |
 | `app/routes/delivery-remit.$id.tsx` | Recompute prices from product table for remit totals |
@@ -133,9 +133,9 @@ Decision effects:
 - If `arBalance > 0`, create `customerAr` entry.
 - Reject requires full pay or VOIDED before settled state.
 
-### T3b Legacy Batch Clearance (Pre-system Utang Onboarding)
+### T3b Opening Balance Batch Clearance (Pre-system Opening Balance Onboarding)
 
-- Admin may stage/import legacy rows only as pending clearance workload.
+- Admin may stage/import opening balance rows only as pending clearance workload.
 - Manager bulk lane processes those rows with default approve-valid behavior and explicit reject handling for exceptions/invalid rows.
 - Every processed row still writes one `clearanceDecision`; approved rows with positive AR write `customerAr`.
 - No admin action may create `customerAr` principal directly.
@@ -179,7 +179,7 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 
 1. `PARTIALLY_PAID -> AR list` direct mapping.
 2. Using `isOnCredit` alone as AR authority.
-3. Treating rider-shortage bridge as new customer utang.
+3. Treating rider-shortage bridge as new customer open balance.
 4. Recomputing prices to derive AR.
 5. Re-running customer pricing rules after order creation to change payable totals.
 

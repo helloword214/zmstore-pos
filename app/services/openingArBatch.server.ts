@@ -1,7 +1,7 @@
-export const LEGACY_RECEIPT_PREFIX = "LEGACY:";
-const LEGACY_CASE_NOTE_META_PREFIX = "LEGACY_BATCH_META:";
+export const OPENING_AR_RECEIPT_PREFIX = "OPENING_AR:";
+const OPENING_AR_BATCH_META_PREFIX = "OPENING_AR_BATCH_META:";
 
-export type LegacyBatchCaseMeta = {
+export type OpeningArBatchMeta = {
   batchRef: string;
   lineNo: number;
   dueDate: string | null; // YYYY-MM-DD
@@ -10,7 +10,7 @@ export type LegacyBatchCaseMeta = {
   lineNote: string | null;
 };
 
-export function normalizeLegacyBatchRef(input: string) {
+export function normalizeOpeningBatchRef(input: string) {
   return String(input || "")
     .trim()
     .toUpperCase()
@@ -19,52 +19,52 @@ export function normalizeLegacyBatchRef(input: string) {
     .slice(0, 48);
 }
 
-export function isLegacyReceiptKey(receiptKey: string | null | undefined) {
-  return String(receiptKey || "").startsWith(LEGACY_RECEIPT_PREFIX);
+export function isOpeningArReceiptKey(receiptKey: string | null | undefined) {
+  return String(receiptKey || "").startsWith(OPENING_AR_RECEIPT_PREFIX);
 }
 
-export function extractLegacyBatchRefFromReceiptKey(
+export function extractOpeningBatchRefFromReceiptKey(
   receiptKey: string | null | undefined,
 ) {
   const raw = String(receiptKey || "");
-  if (!raw.startsWith(LEGACY_RECEIPT_PREFIX)) return null;
+  if (!raw.startsWith(OPENING_AR_RECEIPT_PREFIX)) return null;
   const parts = raw.split(":");
   const ref = String(parts[1] || "").trim();
   return ref || null;
 }
 
-export function buildLegacyReceiptKey(batchRef: string, lineNo: number) {
-  const safeBatchRef = normalizeLegacyBatchRef(batchRef);
+export function buildOpeningArReceiptKey(batchRef: string, lineNo: number) {
+  const safeBatchRef = normalizeOpeningBatchRef(batchRef);
   const safeLineNo = Math.max(1, Math.floor(Number(lineNo) || 1));
-  return `LEGACY:${safeBatchRef}:${String(safeLineNo).padStart(5, "0")}`;
+  return `OPENING_AR:${safeBatchRef}:${String(safeLineNo).padStart(5, "0")}`;
 }
 
-export function encodeLegacyBatchCaseNote(
-  meta: LegacyBatchCaseMeta,
+export function encodeOpeningBatchCaseNote(
+  meta: OpeningArBatchMeta,
   extraNote?: string | null,
 ) {
   const metaJson = JSON.stringify(meta);
   const cleanExtra = String(extraNote || "").trim();
-  if (!cleanExtra) return `${LEGACY_CASE_NOTE_META_PREFIX}${metaJson}`;
-  return `${LEGACY_CASE_NOTE_META_PREFIX}${metaJson}\n${cleanExtra}`;
+  if (!cleanExtra) return `${OPENING_AR_BATCH_META_PREFIX}${metaJson}`;
+  return `${OPENING_AR_BATCH_META_PREFIX}${metaJson}\n${cleanExtra}`;
 }
 
-export function decodeLegacyBatchCaseNote(note: string | null | undefined): {
-  meta: LegacyBatchCaseMeta | null;
+export function decodeOpeningBatchCaseNote(note: string | null | undefined): {
+  meta: OpeningArBatchMeta | null;
   extraNote: string | null;
 } {
   const raw = String(note || "");
-  if (!raw.startsWith(LEGACY_CASE_NOTE_META_PREFIX)) {
+  if (!raw.startsWith(OPENING_AR_BATCH_META_PREFIX)) {
     return { meta: null, extraNote: raw || null };
   }
 
-  const rest = raw.slice(LEGACY_CASE_NOTE_META_PREFIX.length);
+  const rest = raw.slice(OPENING_AR_BATCH_META_PREFIX.length);
   const newlineIdx = rest.indexOf("\n");
   const jsonPart = newlineIdx >= 0 ? rest.slice(0, newlineIdx) : rest;
   const extra = newlineIdx >= 0 ? rest.slice(newlineIdx + 1).trim() : "";
 
   try {
-    const parsed = JSON.parse(jsonPart) as LegacyBatchCaseMeta;
+    const parsed = JSON.parse(jsonPart) as OpeningArBatchMeta;
     if (!parsed || typeof parsed !== "object") {
       return { meta: null, extraNote: extra || null };
     }
