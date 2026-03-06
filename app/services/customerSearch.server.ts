@@ -3,17 +3,28 @@ import { toE164PH, toE164PrefixForContains, digitsOnly } from "~/utils/phone";
 
 export type CustomerSearchOptions = {
   q: string;
-  mustHaveOpenOrders?: boolean; // for AR pages
+  // Legacy name kept for compatibility with callers.
+  // SoT behavior: open AR customers only (customerAr with open balance).
+  mustHaveOpenOrders?: boolean;
 };
 
 export function buildCustomerSearchWhere({
   q,
   mustHaveOpenOrders,
 }: CustomerSearchOptions): Prisma.CustomerWhereInput {
+  const openArOnly: Prisma.CustomerWhereInput = {
+    customerAr: {
+      some: {
+        balance: { gt: 0 },
+        status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
+      },
+    },
+  };
+
   const query = (q || "").trim();
   if (!query)
     return mustHaveOpenOrders
-      ? { orders: { some: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } } } }
+      ? openArOnly
       : {};
 
   const tokens = query.split(/\s+/).filter(Boolean);
@@ -48,9 +59,7 @@ export function buildCustomerSearchWhere({
     ? {
         AND: [
           base,
-          {
-            orders: { some: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } } },
-          },
+          openArOnly,
         ],
       }
     : base;

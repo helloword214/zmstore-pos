@@ -14,7 +14,7 @@ for all cases where **payment does not satisfy frozen commercial rules**.
 
 It ensures that:
 
-- No utang, kulang bayad, or bargain price is released **without explicit manager decision**
+- No open balance, short payment, or bargain price is released **without explicit manager decision**
 - No commercial risk is silently absorbed by riders or cashiers
 - Accounts Receivable (A/R) exists **only by decision**, never by inference
 - Discount overrides are **intentional, visible, and reviewable**
@@ -53,7 +53,7 @@ All deviations must pass through clearance **before commitment**.
 
 Only the Store Manager may:
 
-- Approve utang (open balance)
+- Approve open-balance cases
 - Approve discount override
 - Approve hybrid settlement
 - Reject exception
@@ -73,6 +73,16 @@ Admin may NOT:
 - perform manager remit decisions tied to CCS outcomes
 
 Admin has zero commercial-decision access, including read-only manager decision lanes.
+
+### 3.2 Opening Balance Batch Boundary (Binding)
+
+For one-time/high-volume opening balance receivable onboarding:
+
+1. `ADMIN` may stage/import rows as pending clearance cases in admin creation lanes.
+2. `ADMIN` may NOT approve or decide those rows.
+3. `STORE_MANAGER` remains the only decision authority and may process opening balance rows in batch.
+4. Batch processing must still create normal CCS decision artifacts per row (`ClearanceDecision`), then AR ledger rows only for approved AR outcomes.
+5. Invalid or explicitly rejected rows must be recorded as `REJECT` decisions (no AR principal creation).
 
 ---
 

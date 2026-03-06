@@ -3,7 +3,7 @@
 Status: LOCKED
 Owner: POS Platform
 Last Reviewed: 2026-02-18
-Supersedes: legacy status-based AR listing rules
+Supersedes: prior status-based AR listing rules
 
 ## Scope
 
@@ -29,6 +29,13 @@ For a receipt with `remaining = frozenTotal - cashCollected`:
 2. `APPROVE_HYBRID` -> `arBalance = remaining - approvedDiscount` -> create/update `customerAr` for AR part.
 3. `APPROVE_DISCOUNT_OVERRIDE` -> `arBalance = 0` -> no AR entry.
 4. `REJECT` -> no AR entry unless customer later pays/settles under accepted rule.
+
+## Opening Balance Batch Onboarding Rule
+
+1. Opening-balance admin batch rows are onboarding inputs only; they are not AR authority by themselves.
+2. An opening balance row creates AR only after manager-side CCS decision per row (single or bulk lane).
+3. Batch auto-approval must still write `clearanceDecision` and then `customerAr` per approved row.
+4. Batch rejects/invalid rows must not create `customerAr` principal.
 
 ## AR Index Eligibility Rule
 
@@ -65,6 +72,6 @@ Customer ledger debit/credit must be decision-traceable:
 
 ## Operational Notes
 
-1. A customer may have multiple approved utang events across weeks.
+1. A customer may have multiple approved open-balance events across weeks.
 2. Each approved event appends to the same customer ledger via new/updated `customerAr` records.
 3. Ledger continuity is per customer, decision-driven, and auditable.
