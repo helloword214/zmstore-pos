@@ -86,10 +86,26 @@ type CustomerOption = {
   phone?: string | null;
 };
 
+type ComposerItemLine = {
+  id: string;
+  name: string;
+  qty: string;
+  unitAmount: string;
+};
+
 function sanitizeRowCell(input: string | null | undefined) {
   return String(input || "")
     .replace(/[\r\n\t|,]+/g, " ")
     .trim();
+}
+
+function parseMoneyInput(input: string | number | null | undefined) {
+  const cleaned =
+    typeof input === "number"
+      ? String(input)
+      : String(input || "").replace(/[^0-9.-]/g, "");
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 function buildPhoneLookupCandidates(input: string) {
@@ -480,11 +496,108 @@ export default function CreationOpeningArBatchesPage() {
   const [composerDueDate, setComposerDueDate] = React.useState("");
   const [composerRefNo, setComposerRefNo] = React.useState("");
   const [composerLineNote, setComposerLineNote] = React.useState("");
+  const [composerItems, setComposerItems] = React.useState<ComposerItemLine[]>([]);
   const [composerError, setComposerError] = React.useState<string | null>(null);
+  const composerItemSeqRef = React.useRef(1);
 
   const stagedRowCount = rowsText
     .split(/\r?\n/)
     .filter((line) => String(line || "").trim().length > 0).length;
+
+  const makeComposerItemLine = React.useCallback((): ComposerItemLine => {
+    const seq = composerItemSeqRef.current;
+    composerItemSeqRef.current += 1;
+    return {
+      id: `item-${Date.now()}-${seq}`,
+      name: "",
+      qty: "1",
+      unitAmount: "",
+    };
+  }, []);
+
+  const addComposerItemLine = React.useCallback(() => {
+    setComposerItems((prev) => [...prev, makeComposerItemLine()]);
+    setComposerError(null);
+  }, [makeComposerItemLine]);
+
+  const removeComposerItemLine = React.useCallback((id: string) => {
+    setComposerItems((prev) => prev.filter((line) => line.id !== id));
+  }, []);
+
+  const updateComposerItemLine = React.useCallback(
+    (id: string, field: "name" | "qty" | "unitAmount", value: string) => {
+      setComposerItems((prev) =>
+        prev.map((line) =>
+          line.id === id
+            ? {
+                ...line,
+                [field]: value,
+              }
+            : line,
+        ),
+      );
+      setComposerError(null);
+    },
+    [],
+  );
+
+  const itemizedPreviewTotal = React.useMemo(
+    () =>
+      r2(
+        composerItems.reduce((sum, line) => {
+          const qty = parseMoneyInput(line.qty);
+          const unitAmount = parseMoneyInput(line.unitAmount);
+          if (!Number.isFinite(qty) || qty <= MONEY_EPS) return sum;
+          if (!Number.isFinite(unitAmount) || unitAmount < 0) return sum;
+          return sum + r2(qty * unitAmount);
+        }, 0),
+      ),
+    [composerItems],
+  );
+
+  const hasItemInputs = React.useMemo(
+    () =>
+      composerItems.some(
+        (line) =>
+          Boolean(sanitizeRowCell(line.name)) ||
+          Boolean(String(line.qty || "").trim()) ||
+          Boolean(String(line.unitAmount || "").trim()),
+      ),
+    [composerItems],
+  );
+
+  const resetComposerDraft = React.useCallback(() => {
+    setComposerCustomer(null);
+    setComposerAmount("");
+    setComposerDueDate("");
+    setComposerRefNo("");
+    setComposerLineNote("");
+    setComposerItems([]);
+    setComposerError(null);
+  }, []);
+
+  const removeLastRow = React.useCallback(() => {
+    setRowsText((prev) => {
+      const rows = String(prev || "")
+        .split(/\r?\n/)
+        .map((row) => row.trim())
+        .filter((row) => row.length > 0);
+      if (!rows.length) return "";
+      rows.pop();
+      return rows.join("\n");
+    });
+  }, []);
+
+  const clearAllRows = React.useCallback(() => {
+    setRowsText("");
+  }, []);
+
+  const applyItemizedTotal = React.useCallback(() => {
+    if (itemizedPreviewTotal > MONEY_EPS) {
+      setComposerAmount(itemizedPreviewTotal.toFixed(2));
+      setComposerError(null);
+    }
+  }, [itemizedPreviewTotal]);
 
   const appendComposerRow = React.useCallback(() => {
     if (!composerCustomer) {
@@ -492,8 +605,7 @@ export default function CreationOpeningArBatchesPage() {
       return;
     }
 
-    const amountRaw = String(composerAmount || "").replace(/[^0-9.-]/g, "");
-    const amountParsed = Number(amountRaw);
+    const amountParsed = parseMoneyInput(composerAmount);
     const amount = Number.isFinite(amountParsed) ? r2(amountParsed) : Number.NaN;
     if (!Number.isFinite(amount) || amount <= MONEY_EPS) {
       setComposerError("Amount must be greater than 0.");
@@ -506,12 +618,62 @@ export default function CreationOpeningArBatchesPage() {
       return;
     }
 
+    const normalizedItems: Array<{
+      name: string;
+      qty: number;
+      unitAmount: number;
+      lineTotal: number;
+    }> = [];
+    for (const line of composerItems) {
+      const name = sanitizeRowCell(line.name);
+      const qtyRaw = String(line.qty || "").trim();
+      const unitRaw = String(line.unitAmount || "").trim();
+      const hasAnyInput = Boolean(name) || Boolean(qtyRaw) || Boolean(unitRaw);
+      if (!hasAnyInput) continue;
+
+      const qty = parseMoneyInput(qtyRaw);
+      const unitAmount = parseMoneyInput(unitRaw);
+
+      if (!name) {
+        setComposerError("Item name is required when itemization is used.");
+        return;
+      }
+      if (!Number.isFinite(qty) || qty <= MONEY_EPS) {
+        setComposerError(`Item "${name}" must have qty greater than 0.`);
+        return;
+      }
+      if (!Number.isFinite(unitAmount) || unitAmount < 0) {
+        setComposerError(`Item "${name}" must have a valid unit amount.`);
+        return;
+      }
+
+      normalizedItems.push({
+        name,
+        qty: r2(qty),
+        unitAmount: r2(unitAmount),
+        lineTotal: r2(qty * unitAmount),
+      });
+    }
+
+    const itemizedNote = normalizedItems.length
+      ? `Items: ${normalizedItems
+          .map(
+            (line) =>
+              `${line.name} x${line.qty.toFixed(2)} @ ${line.unitAmount.toFixed(2)} = ${line.lineTotal.toFixed(2)}`,
+          )
+          .join("; ")}`
+      : "";
+
+    const combinedLineNote = sanitizeRowCell(
+      [sanitizeRowCell(composerLineNote), itemizedNote].filter(Boolean).join(" | "),
+    );
+
     const row = [
       String(composerCustomer.id),
       amount.toFixed(2),
       sanitizeRowCell(dueDate),
       sanitizeRowCell(composerRefNo),
-      sanitizeRowCell(composerLineNote),
+      combinedLineNote,
     ].join(",");
 
     setRowsText((prev) => {
@@ -523,19 +685,22 @@ export default function CreationOpeningArBatchesPage() {
     setComposerDueDate("");
     setComposerRefNo("");
     setComposerLineNote("");
+    setComposerItems([]);
     setComposerError(null);
-  }, [composerAmount, composerCustomer, composerDueDate, composerLineNote, composerRefNo]);
+  }, [
+    composerAmount,
+    composerCustomer,
+    composerDueDate,
+    composerItems,
+    composerLineNote,
+    composerRefNo,
+  ]);
 
   React.useEffect(() => {
     if (!actionData?.ok) return;
     setRowsText("");
-    setComposerCustomer(null);
-    setComposerAmount("");
-    setComposerDueDate("");
-    setComposerRefNo("");
-    setComposerLineNote("");
-    setComposerError(null);
-  }, [actionData]);
+    resetComposerDraft();
+  }, [actionData, resetComposerDraft]);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -663,15 +828,125 @@ export default function CreationOpeningArBatchesPage() {
                 </div>
               </div>
 
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Itemization (optional)</p>
+                    <p className="text-xs text-slate-600">
+                      Add item lines if record book has details. Leave empty for balance-only rows.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <SoTButton type="button" variant="secondary" size="compact" onClick={addComposerItemLine}>
+                      Add Item Line
+                    </SoTButton>
+                    <SoTButton
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      onClick={applyItemizedTotal}
+                      disabled={itemizedPreviewTotal <= MONEY_EPS}
+                    >
+                      Use Itemized Total
+                    </SoTButton>
+                  </div>
+                </div>
+
+                {composerItems.length > 0 ? (
+                  <div className="space-y-2">
+                    {composerItems.map((line, idx) => {
+                      const qty = parseMoneyInput(line.qty);
+                      const unitAmount = parseMoneyInput(line.unitAmount);
+                      const lineTotal =
+                        Number.isFinite(qty) &&
+                        qty > MONEY_EPS &&
+                        Number.isFinite(unitAmount) &&
+                        unitAmount >= 0
+                          ? r2(qty * unitAmount)
+                          : 0;
+
+                      return (
+                        <div
+                          key={line.id}
+                          className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 md:grid-cols-12"
+                        >
+                          <div className="md:col-span-5">
+                            <SoTInput
+                              value={line.name}
+                              onChange={(e) =>
+                                updateComposerItemLine(line.id, "name", e.currentTarget.value)
+                              }
+                              placeholder={`Item ${idx + 1}`}
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <SoTInput
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.qty}
+                              onChange={(e) =>
+                                updateComposerItemLine(line.id, "qty", e.currentTarget.value)
+                              }
+                              placeholder="Qty"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <SoTInput
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.unitAmount}
+                              onChange={(e) =>
+                                updateComposerItemLine(line.id, "unitAmount", e.currentTarget.value)
+                              }
+                              placeholder="Unit"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <div className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm leading-9 text-slate-700">
+                              {lineTotal > 0 ? peso(lineTotal) : "—"}
+                            </div>
+                          </div>
+                          <div className="md:col-span-1">
+                            <SoTButton
+                              type="button"
+                              variant="danger"
+                              size="compact"
+                              className="w-full"
+                              onClick={() => removeComposerItemLine(line.id)}
+                            >
+                              Remove
+                            </SoTButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No item lines added.</p>
+                )}
+
+                <div className="text-xs text-slate-600">
+                  Itemized total preview: <span className="font-semibold text-slate-800">{peso(itemizedPreviewTotal)}</span>
+                </div>
+              </div>
+
               {composerError ? <SoTAlert tone="warning">{composerError}</SoTAlert> : null}
 
               <div className="flex flex-wrap items-center gap-2">
                 <SoTButton type="button" variant="secondary" onClick={appendComposerRow}>
                   Add Row To Batch
                 </SoTButton>
+                <SoTButton type="button" variant="secondary" onClick={resetComposerDraft}>
+                  Cancel Row Draft
+                </SoTButton>
                 <span className="text-xs text-slate-600">
                   Staged rows: <span className="font-semibold text-slate-800">{stagedRowCount}</span>
                 </span>
+                {hasItemInputs ? (
+                  <span className="text-xs text-slate-600">Itemization attached</span>
+                ) : null}
               </div>
             </div>
 
@@ -694,6 +969,22 @@ export default function CreationOpeningArBatchesPage() {
             <div className="flex flex-wrap items-center gap-2">
               <SoTButton type="submit" variant="primary" disabled={busy}>
                 {busy ? "Submitting..." : "Submit Batch"}
+              </SoTButton>
+              <SoTButton
+                type="button"
+                variant="secondary"
+                onClick={removeLastRow}
+                disabled={stagedRowCount === 0}
+              >
+                Remove Last Row
+              </SoTButton>
+              <SoTButton
+                type="button"
+                variant="danger"
+                onClick={clearAllRows}
+                disabled={stagedRowCount === 0}
+              >
+                Clear All Rows
               </SoTButton>
             </div>
           </Form>
