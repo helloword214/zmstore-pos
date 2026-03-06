@@ -79,10 +79,11 @@ Admin has zero commercial-decision access, including read-only manager decision 
 For one-time/high-volume opening balance receivable onboarding:
 
 1. `ADMIN` may stage/import rows as pending clearance cases in admin creation lanes.
-2. `ADMIN` may NOT approve or decide those rows.
-3. `STORE_MANAGER` remains the only decision authority and may process opening balance rows in batch.
-4. Batch processing must still create normal CCS decision artifacts per row (`ClearanceDecision`), then AR ledger rows only for approved AR outcomes.
-5. Invalid or explicitly rejected rows must be recorded as `REJECT` decisions (no AR principal creation).
+2. Staging route is `creation.opening-ar-batches.tsx` from admin dashboard and supports `customerRef` inputs (`customerId` or phone); item details are optional per row.
+3. `ADMIN` may NOT approve or decide those rows.
+4. `STORE_MANAGER` remains the only decision authority and may process opening balance rows in batch.
+5. Batch processing must still create normal CCS decision artifacts per row (`ClearanceDecision`), then AR ledger rows only for approved AR outcomes.
+6. Invalid or explicitly rejected rows must be recorded as `REJECT` decisions (no AR principal creation).
 
 ---
 

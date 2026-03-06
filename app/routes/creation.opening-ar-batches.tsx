@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import * as React from "react";
 import { Prisma } from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { CustomerPicker } from "~/components/CustomerPicker";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -28,6 +30,7 @@ import {
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { MONEY_EPS, peso, r2 } from "~/utils/money";
+import { digitsOnly, toE164PH } from "~/utils/phone";
 
 type BatchSummary = {
   batchRef: string;
@@ -64,13 +67,66 @@ type ActionData =
 type ParsedDraft = {
   lineNo: number;
   raw: string;
+  customerRefRaw: string;
   customerId: number | null;
+  customerPhoneRaw: string | null;
   amount: number;
   dueDateRaw: string | null;
   refNo: string | null;
   lineNote: string | null;
   errors: string[];
 };
+
+type CustomerOption = {
+  id: number;
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  alias?: string | null;
+  phone?: string | null;
+};
+
+function sanitizeRowCell(input: string | null | undefined) {
+  return String(input || "")
+    .replace(/[\r\n\t|,]+/g, " ")
+    .trim();
+}
+
+function buildPhoneLookupCandidates(input: string) {
+  const trimmed = String(input || "").trim();
+  const out: string[] = [];
+  const push = (value: string | null | undefined) => {
+    const clean = String(value || "").trim();
+    if (!clean || out.includes(clean)) return;
+    out.push(clean);
+  };
+
+  if (!trimmed) return out;
+
+  const digits = digitsOnly(trimmed);
+  const e164 = toE164PH(trimmed);
+
+  push(trimmed);
+  push(digits);
+  push(e164);
+
+  if (e164.startsWith("+63")) {
+    push(`0${e164.slice(3)}`);
+    push(e164.slice(1));
+  }
+
+  if (digits.startsWith("63") && digits.length === 12) {
+    push(`+${digits}`);
+    push(`0${digits.slice(2)}`);
+  }
+
+  if (digits.startsWith("9") && digits.length === 10) {
+    push(`0${digits}`);
+    push(`+63${digits}`);
+  }
+
+  return out;
+}
 
 function parseDraftLines(rowsText: string, defaultDueDateRaw: string | null) {
   const rawLines = String(rowsText || "").split(/\r?\n/);
@@ -99,11 +155,17 @@ function parseDraftLines(rowsText: string, defaultDueDateRaw: string | null) {
       continue;
     }
 
-    const customerIdNum = Number(cols[0] || 0);
+    const customerRefRaw = String(cols[0] || "").trim();
+    const normalizedPhone = toE164PH(customerRefRaw);
+    const customerIdNum = Number(customerRefRaw || 0);
     const customerId =
-      Number.isFinite(customerIdNum) && Math.floor(customerIdNum) === customerIdNum && customerIdNum > 0
+      !normalizedPhone &&
+      Number.isFinite(customerIdNum) &&
+      Math.floor(customerIdNum) === customerIdNum &&
+      customerIdNum > 0
         ? customerIdNum
         : null;
+    const customerPhoneRaw = normalizedPhone ? customerRefRaw : null;
 
     const amountRaw = String(cols[1] || "").replace(/[^0-9.-]/g, "");
     const amountParsed = Number(amountRaw);
@@ -115,7 +177,11 @@ function parseDraftLines(rowsText: string, defaultDueDateRaw: string | null) {
       cols.length > 4 ? cols.slice(4).join(delimiter).trim() || null : null;
 
     const errors: string[] = [];
-    if (!customerId) errors.push("customerId must be a positive integer.");
+    if (!customerRefRaw) {
+      errors.push("customerRef is required (customerId or phone).");
+    } else if (!customerId && !customerPhoneRaw) {
+      errors.push("customerRef must be a valid customerId or phone.");
+    }
     if (!Number.isFinite(amount) || amount <= MONEY_EPS) {
       errors.push("amount must be greater than 0.");
     }
@@ -126,7 +192,9 @@ function parseDraftLines(rowsText: string, defaultDueDateRaw: string | null) {
     drafts.push({
       lineNo,
       raw: trimmed,
+      customerRefRaw,
       customerId,
+      customerPhoneRaw,
       amount,
       dueDateRaw,
       refNo,
@@ -253,6 +321,56 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  const phoneLookupValues = Array.from(
+    new Set(
+      drafts
+        .map((row) => row.customerPhoneRaw)
+        .filter((v): v is string => Boolean(v))
+        .flatMap((phoneRaw) => buildPhoneLookupCandidates(phoneRaw)),
+    ),
+  );
+
+  const phoneRows = phoneLookupValues.length
+    ? await db.customer.findMany({
+        where: {
+          phone: {
+            in: phoneLookupValues,
+          },
+        },
+        select: { id: true, phone: true },
+      })
+    : [];
+
+  const phoneToCustomerId = new Map<string, number>();
+  for (const row of phoneRows) {
+    if (!row.phone) continue;
+    phoneToCustomerId.set(String(row.phone), Number(row.id));
+  }
+
+  for (const row of drafts) {
+    if (!row.customerPhoneRaw) continue;
+
+    const matchedCustomerIds = Array.from(
+      new Set(
+        buildPhoneLookupCandidates(row.customerPhoneRaw)
+          .map((candidate) => phoneToCustomerId.get(candidate))
+          .filter((id): id is number => Number.isFinite(id)),
+      ),
+    );
+
+    if (matchedCustomerIds.length === 1) {
+      row.customerId = matchedCustomerIds[0];
+      continue;
+    }
+
+    if (matchedCustomerIds.length > 1) {
+      row.errors.push(`customer phone ${row.customerPhoneRaw} matched multiple customers.`);
+      continue;
+    }
+
+    row.errors.push(`customer phone ${row.customerPhoneRaw} not found.`);
+  }
+
   const uniqueCustomerIds = Array.from(
     new Set(
       drafts
@@ -269,7 +387,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const customerIdSet = new Set(customerRows.map((c) => Number(c.id)));
 
   for (const row of drafts) {
-    if (row.customerId && !customerIdSet.has(Number(row.customerId))) {
+    if (!row.customerId) {
+      if (!row.errors.some((msg) => msg.includes("customer phone"))) {
+        row.errors.push(
+          `customerRef "${row.customerRefRaw || ""}" could not be resolved to an existing customer.`,
+        );
+      }
+      continue;
+    }
+
+    if (!customerIdSet.has(Number(row.customerId))) {
       row.errors.push(`customerId ${row.customerId} not found.`);
     }
   }
@@ -282,7 +409,7 @@ export async function action({ request }: ActionFunctionArgs) {
       errors: row.errors,
     }));
 
-  const validRows = drafts.filter((row) => row.errors.length === 0);
+  const validRows = drafts.filter((row) => row.errors.length === 0 && Number(row.customerId) > 0);
   if (!validRows.length) {
     return json<ActionData>(
       {
@@ -347,6 +474,69 @@ export default function CreationOpeningArBatchesPage() {
   const busy = nav.state !== "idle";
   const invalidRows = actionData?.invalidRows ?? [];
 
+  const [rowsText, setRowsText] = React.useState("");
+  const [composerCustomer, setComposerCustomer] = React.useState<CustomerOption | null>(null);
+  const [composerAmount, setComposerAmount] = React.useState("");
+  const [composerDueDate, setComposerDueDate] = React.useState("");
+  const [composerRefNo, setComposerRefNo] = React.useState("");
+  const [composerLineNote, setComposerLineNote] = React.useState("");
+  const [composerError, setComposerError] = React.useState<string | null>(null);
+
+  const stagedRowCount = rowsText
+    .split(/\r?\n/)
+    .filter((line) => String(line || "").trim().length > 0).length;
+
+  const appendComposerRow = React.useCallback(() => {
+    if (!composerCustomer) {
+      setComposerError("Select a customer before adding a row.");
+      return;
+    }
+
+    const amountRaw = String(composerAmount || "").replace(/[^0-9.-]/g, "");
+    const amountParsed = Number(amountRaw);
+    const amount = Number.isFinite(amountParsed) ? r2(amountParsed) : Number.NaN;
+    if (!Number.isFinite(amount) || amount <= MONEY_EPS) {
+      setComposerError("Amount must be greater than 0.");
+      return;
+    }
+
+    const dueDate = String(composerDueDate || "").trim();
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      setComposerError("Due date must be YYYY-MM-DD.");
+      return;
+    }
+
+    const row = [
+      String(composerCustomer.id),
+      amount.toFixed(2),
+      sanitizeRowCell(dueDate),
+      sanitizeRowCell(composerRefNo),
+      sanitizeRowCell(composerLineNote),
+    ].join(",");
+
+    setRowsText((prev) => {
+      const cleanPrev = String(prev || "").trim();
+      return cleanPrev ? `${cleanPrev}\n${row}` : row;
+    });
+
+    setComposerAmount("");
+    setComposerDueDate("");
+    setComposerRefNo("");
+    setComposerLineNote("");
+    setComposerError(null);
+  }, [composerAmount, composerCustomer, composerDueDate, composerLineNote, composerRefNo]);
+
+  React.useEffect(() => {
+    if (!actionData?.ok) return;
+    setRowsText("");
+    setComposerCustomer(null);
+    setComposerAmount("");
+    setComposerDueDate("");
+    setComposerRefNo("");
+    setComposerLineNote("");
+    setComposerError(null);
+  }, [actionData]);
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
@@ -359,11 +549,15 @@ export default function CreationOpeningArBatchesPage() {
 
       <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
         <SoTAlert tone="info">
-          Paste one row per line using format:
+          Encode per customer and submit one batch. First column accepts
+          <span className="mx-1 font-mono">customerId</span>
+          or
+          <span className="mx-1 font-mono">phone</span>
+          in CSV/tab/pipe rows:
           <span className="ml-1 font-mono">
-            customerId,amount,dueDate(YYYY-MM-DD),refNo,note
+            customerRef,amount,dueDate(YYYY-MM-DD),refNo,itemDetails
           </span>
-          . You can also use tab-separated or <span className="font-mono">|</span>-separated rows.
+          .
         </SoTAlert>
 
         {actionData?.ok ? (
@@ -383,7 +577,7 @@ export default function CreationOpeningArBatchesPage() {
         ) : null}
 
         <SoTCard>
-          <Form method="post" className="space-y-3">
+          <Form method="post" className="space-y-4">
             <input type="hidden" name="intent" value="submitBatch" />
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -409,13 +603,91 @@ export default function CreationOpeningArBatchesPage() {
               </SoTFormField>
             </div>
 
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <div>
+                <h3 className="text-sm font-medium text-slate-900">Quick Add Row (Select Customer)</h3>
+                <p className="text-xs text-slate-600">
+                  Use this when encoding per customer. It appends rows directly to the batch textarea.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="md:col-span-2">
+                  <SoTFormField label="Customer">
+                    <CustomerPicker
+                      value={composerCustomer}
+                      onChange={(c) => {
+                        setComposerCustomer(c as CustomerOption | null);
+                        setComposerError(null);
+                      }}
+                      placeholder="Search existing customer by name / alias / phone"
+                    />
+                  </SoTFormField>
+                </div>
+
+                <SoTFormField label="Amount">
+                  <SoTInput
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={composerAmount}
+                    onChange={(e) => setComposerAmount(e.currentTarget.value)}
+                    placeholder="1500"
+                  />
+                </SoTFormField>
+
+                <SoTFormField label="Due Date (optional)">
+                  <SoTInput
+                    type="date"
+                    value={composerDueDate}
+                    onChange={(e) => setComposerDueDate(e.currentTarget.value)}
+                  />
+                </SoTFormField>
+
+                <SoTFormField label="Reference No (optional)">
+                  <SoTInput
+                    value={composerRefNo}
+                    onChange={(e) => setComposerRefNo(e.currentTarget.value)}
+                    placeholder="BOOK1-P1"
+                  />
+                </SoTFormField>
+
+                <div className="md:col-span-2 lg:col-span-2">
+                  <SoTFormField label="Item Details / Note (optional)">
+                    <SoTInput
+                      value={composerLineNote}
+                      onChange={(e) => setComposerLineNote(e.currentTarget.value)}
+                      placeholder="Optional item list or open-balance context"
+                    />
+                  </SoTFormField>
+                </div>
+              </div>
+
+              {composerError ? <SoTAlert tone="warning">{composerError}</SoTAlert> : null}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <SoTButton type="button" variant="secondary" onClick={appendComposerRow}>
+                  Add Row To Batch
+                </SoTButton>
+                <span className="text-xs text-slate-600">
+                  Staged rows: <span className="font-semibold text-slate-800">{stagedRowCount}</span>
+                </span>
+              </div>
+            </div>
+
             <SoTFormField label="Rows">
               <textarea
                 name="rowsText"
                 rows={12}
                 required
+                value={rowsText}
+                onChange={(e) => setRowsText(e.currentTarget.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-800 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                placeholder={`customerId,amount,dueDate,refNo,note\n101,1500,2026-03-20,BOOK1-P1,opening balance\n102,420,,BOOK1-P2,\n`}
+                placeholder={[
+                  "customerRef,amount,dueDate,refNo,itemDetails",
+                  "101,1500,2026-03-20,BOOK1-P1,open balance from ledger",
+                  "09171234567,420,,BOOK1-P2,",
+                ].join("\n")}
               />
             </SoTFormField>
 
