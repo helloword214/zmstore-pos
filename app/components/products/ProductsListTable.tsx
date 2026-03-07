@@ -1,5 +1,6 @@
-import type { ProductWithDetails } from "~/types";
 import { Link, useFetcher } from "@remix-run/react";
+import { clsx } from "clsx";
+import { memo, useEffect, useState } from "react";
 import {
   SoTTable,
   SoTTableHead,
@@ -7,14 +8,13 @@ import {
   SoTTh,
   SoTTd,
 } from "~/components/ui/SoTTable";
-import { clsx } from "clsx";
-import { memo, useEffect, useState } from "react";
+import type { ProductWithDetails } from "~/types";
 
-interface Props {
+type ProductsListTableProps = {
   products: ProductWithDetails[];
   highlightId?: number | null;
   actionFetcher: ReturnType<typeof useFetcher>;
-}
+};
 
 type PendingState = {
   kind: "toggle" | null;
@@ -31,11 +31,11 @@ function pluralize(word: string) {
   return word && !word.endsWith("s") ? `${word}s` : word;
 }
 
-function ProductTableBase({
+function ProductsListTableBase({
   products,
   highlightId,
   actionFetcher,
-}: Props) {
+}: ProductsListTableProps) {
   const [isDesktop, setIsDesktop] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return window.matchMedia("(min-width: 640px)").matches;
@@ -319,114 +319,78 @@ function ProductTableBase({
                   )}
                 </div>
 
-                <div className="w-full min-w-0 flex-1">
-                  <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                    <div className="min-w-0">
-                      <Link
-                        to={`/products/${product.id}`}
-                        className="truncate text-sm font-semibold text-indigo-700 hover:underline"
-                      >
-                        {product.name}
-                      </Link>
-                      {product.brand?.name ? (
-                        <div className="truncate text-[11px] text-slate-500">
-                          {product.brand.name}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="flex items-center gap-2 justify-self-end whitespace-nowrap">
-                      <span
-                        className={clsx(
-                          "inline-block h-2.5 w-2.5 rounded-full",
-                          product.isActive ? "bg-emerald-500" : "bg-rose-500"
-                        )}
-                        aria-label={product.isActive ? "Active" : "Inactive"}
-                      />
-                    </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-slate-900">
+                    {product.name}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {product.brand?.name || "No brand"} • {product.category?.name || "No category"}
                   </div>
 
-                  <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-700">
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                     {srpNum != null ? (
-                      <span className="truncate">
-                        <strong className="font-mono tabular-nums">
-                          ₱{srpNum.toFixed(2)}
-                        </strong>
-                        <span className="text-slate-500">
-                          {" "}
-                          / {product.packingUnitName || "unit"}
-                        </span>
+                      <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-slate-700">
+                        ₱{srpNum.toFixed(2)} / {product.packingUnitName || "unit"}
                       </span>
                     ) : null}
                     {product.allowPackSale && priceNum != null ? (
-                      <span className="truncate text-slate-600">
-                        Retail{" "}
-                        <span className="font-mono tabular-nums">
-                          ₱{priceNum.toFixed(2)}
-                        </span>
-                        <span className="text-slate-400">
-                          {" "}
-                          / {product.unitName}
-                        </span>
+                      <span className="rounded-lg bg-indigo-50 px-2 py-0.5 text-indigo-700">
+                        Retail ₱{priceNum.toFixed(2)} / {product.unitName}
                       </span>
                     ) : null}
                   </div>
+                </div>
+              </div>
 
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-700">
-                    {stockNum != null ? (
-                      <span className="truncate">
-                        <strong>Stock:</strong>{" "}
-                        <span className="font-mono tabular-nums">{stockNum}</span>{" "}
-                        {product.packingUnitName || ""}
-                      </span>
-                    ) : null}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                <div className="flex flex-wrap gap-2">
+                  {stockNum != null ? (
+                    <span>
+                      Stock: <strong className="font-mono">{stockNum}</strong>
+                    </span>
+                  ) : null}
+                  {product.allowPackSale && packingStockNum != null ? (
+                    <span>
+                      Retail: <strong className="font-mono">{packingStockNum}</strong>
+                    </span>
+                  ) : null}
+                  {stockNum != null &&
+                  minStockNum != null &&
+                  stockNum < minStockNum ? (
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                      Low stock
+                    </span>
+                  ) : null}
+                </div>
 
-                    {product.allowPackSale && packingStockNum != null ? (
-                      <span className="truncate text-slate-500">
-                        Retail:{" "}
-                        <span className="font-mono tabular-nums">
-                          {packingStockNum}
-                        </span>{" "}
-                        {product.unitName}
-                      </span>
-                    ) : null}
-
-                    {minStockNum != null &&
-                    stockNum != null &&
-                    stockNum < minStockNum ? (
-                      <span className="rounded-full border border-rose-200 bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                        Low
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <Link
-                      to={`/products/${product.id}`}
-                      className="inline-flex h-8 items-center rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-medium text-indigo-700"
-                    >
-                      View
-                    </Link>
-
-                    <button
-                      type="button"
+                <div className="flex items-center gap-2">
+                  <button
+                    className={clsx(
+                      "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors duration-150",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1",
+                      product.isActive
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-rose-200 bg-rose-50 text-rose-700",
+                      isTogglePending(product.id) && "cursor-not-allowed opacity-50"
+                    )}
+                    disabled={isTogglePending(product.id)}
+                    onClick={() => submitToggle(product)}
+                    aria-label={product.isActive ? "Set inactive" : "Set active"}
+                    title={product.isActive ? "Set inactive" : "Set active"}
+                  >
+                    <span
                       className={clsx(
-                        "inline-flex h-8 items-center rounded-xl border px-2.5 text-xs font-medium",
-                        product.isActive
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-rose-200 bg-rose-50 text-rose-700",
-                        isTogglePending(product.id) && "opacity-50"
+                        "inline-block h-2.5 w-2.5 rounded-full",
+                        product.isActive ? "bg-emerald-500" : "bg-rose-500"
                       )}
-                      onClick={() => submitToggle(product)}
-                      disabled={isTogglePending(product.id)}
-                    >
-                      {isTogglePending(product.id)
-                        ? "Updating"
-                        : product.isActive
-                        ? "Deactivate"
-                        : "Activate"}
-                    </button>
-                  </div>
+                    />
+                  </button>
+                  <Link
+                    to={`/products/${product.id}`}
+                    className="inline-flex h-8 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-medium text-indigo-700 transition-colors duration-150 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    View
+                  </Link>
                 </div>
               </div>
             </li>
@@ -437,5 +401,5 @@ function ProductTableBase({
   );
 }
 
-export const ProductTable = memo(ProductTableBase);
-ProductTable.displayName = "ProductTable";
+export const ProductsListTable = memo(ProductsListTableBase);
+
