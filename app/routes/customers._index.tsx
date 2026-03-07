@@ -210,13 +210,6 @@ export default function CustomersIndex() {
             right={
               <div className="flex flex-wrap items-center gap-2">
                 <SoTLinkButton
-                  to="/creation/opening-ar-batches"
-                  onMouseDown={clearDebounce}
-                  variant="secondary"
-                >
-                  Opening Balance Batch
-                </SoTLinkButton>
-                <SoTLinkButton
                   to={`/customers/new${ctxSuffix}`}
                   onMouseDown={clearDebounce}
                   variant="primary"

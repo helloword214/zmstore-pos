@@ -89,7 +89,8 @@ Identity operations note:
 13. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
 14. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
 15. Opening balance receivable onboarding uses admin staging (`creation.opening-ar-batches.tsx`) and manager-only bulk decision lane (`store.clearance-opening-batches.tsx`).
-16. Opening balance batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
+16. Admin entry is in dashboard creation shortcuts; encode supports customer picker flow and bulk `customerRef` rows (`customerId` or phone).
+17. Opening balance batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
 
 ## B. Supporting (Context / Detailed Rationale)
 

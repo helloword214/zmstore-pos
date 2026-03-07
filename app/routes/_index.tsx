@@ -26,6 +26,14 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "indigo",
   },
   {
+    to: "/creation/opening-ar-batches",
+    title: "Opening Balance Batch",
+    description:
+      "Encode existing customer receivables and submit a manager-approval batch.",
+    eyebrow: "AR Onboarding",
+    tone: "amber",
+  },
+  {
     to: "/creation/employees/new",
     title: "Create Employee",
     description:
