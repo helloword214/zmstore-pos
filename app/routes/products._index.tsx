@@ -10,8 +10,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import type { LoaderData, ProductWithDetails } from "~/types";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
-import { TagCheckbox } from "~/components/ui/TagCheckbox";
-import { ProductTable } from "~/components/ui/ProductTable";
+import { ProductsListTable } from "~/components/products/ProductsListTable";
 import { Pagination } from "~/components/ui/Pagination";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -30,7 +29,7 @@ import {
   uploadKeyPrefix,
   validateImageUpload,
 } from "~/features/uploads/upload-policy";
-import { generateSKU } from "~/utils/skuHelpers";
+import { runProductUpsertAction } from "~/features/products/product-upsert-action.server";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 
@@ -213,69 +212,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const uploadSessionKey =
     resolveUploadSessionKey(formData.get("uploadSessionKey")?.toString()) ??
     createUploadSessionKey();
-  const name = formData.get("name")?.toString().trim() || "";
-  const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-  const parseMoneyNumber = (value: FormDataEntryValue | null, fallback = 0) => {
-    const raw = String(value ?? "").trim();
-    if (!raw) return fallback;
-    const cleaned = raw.replace(/[^0-9.-]/g, "");
-    if (!cleaned || cleaned === "." || cleaned === "-" || cleaned === "-.") {
-      return fallback;
-    }
-    const parsed = Number.parseFloat(cleaned);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
-
-  const priceRaw = parseMoneyNumber(formData.get("price"), 0);
-  const price = r2(priceRaw);
-  const unitId = formData.get("unitId")
-    ? parseInt(formData.get("unitId")!.toString())
-    : undefined;
-
-  const packingUnitId = formData.get("packingUnitId")
-    ? parseInt(formData.get("packingUnitId")!.toString())
-    : undefined;
-
-  const categoryId = formData.get("categoryId")
-    ? Number(formData.get("categoryId"))
-    : undefined;
-
-  const category = categoryId
-    ? await db.category.findUnique({ where: { id: categoryId } })
-    : null;
-
-  const categoryNameFromDb = category?.name || "";
-
-  const brandIdRaw = formData.get("brandId")?.toString();
-  const brandName = formData.get("brandName")?.toString().trim() || "";
-  const stock = r2(parseMoneyNumber(formData.get("stock"), 0));
-  const packingStockRaw = formData.get("packingStock")?.toString() || "0";
-  const packingStock = r2(parseMoneyNumber(formData.get("packingStock"), 0));
-  const dealerPriceRaw = parseMoneyNumber(formData.get("dealerPrice"), 0);
-  const dealerPrice = r2(dealerPriceRaw);
-
-  const srpRaw = parseMoneyNumber(formData.get("srp"), 0);
-  const srp = r2(srpRaw);
-  const packingSizeRaw = parseMoneyNumber(formData.get("packingSize"), 0);
-  const packingSize = r2(packingSizeRaw);
-  const expiration = formData.get("expirationDate")?.toString();
-  const replenishAt = formData.get("replenishAt")?.toString();
-  const imageTag = formData.get("imageTag")?.toString().trim();
   const imageUrlInput = formData.get("imageUrl")?.toString().trim();
   const imageFile = readOptionalUpload(formData.get("imageFile"));
   const requestedSlot = normalizeProductPhotoSlot(formData.get("slot")?.toString());
   const productPhotoUploads = collectProductPhotoUploads(formData, actionType, imageFile);
-  const description = formData.get("description")?.toString();
-  const barcode = formData.get("barcode")?.toString() || undefined;
-  const minStock = formData.get("minStock")
-    ? parseMoneyNumber(formData.get("minStock"), 0)
-    : undefined;
-  const locRaw = (formData.get("locationId") ?? "").toString().trim();
-  const customLocationName = (formData.get("customLocationName") ?? "")
-    .toString()
-    .trim();
-  const isActive = formData.get("isActive")?.toString() !== "false"; // default true
-  const allowPackSale = formData.get("allowPackSale") === "true";
 
   // if updating, load existing imageUrl so we can clean up on replace
   const existingProduct = id
@@ -298,25 +238,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   let finalImageUrl: string | undefined = imageUrlInput || undefined;
   let finalImageKey: string | undefined;
-
-  const sku = formData.get("sku")?.toString().trim() || "";
-  const finalSku =
-    sku ||
-    generateSKU({ category: categoryNameFromDb, brand: brandName, name });
-
-  // ** NEW **: parse multi-value fields
-  const indicationIdsRaw = (formData.getAll("indicationIds") as string[])
-    .map(Number)
-    .filter((n) => !isNaN(n));
-
-  const targetIdsRaw = (formData.getAll("targetIds") as string[])
-    .map(Number)
-    .filter((n) => !isNaN(n));
-
-  const newIndications = formData.getAll("newIndications") as string[];
-  const newTargets = formData.getAll("newTargets") as string[];
-
-  const decimals = (packingStockRaw.split(".")[1] || "").length;
 
   //deletaion LOGIC
 
@@ -648,383 +569,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     return json({ success: true, action: "toggled" });
   }
-  // 🔐 Required field validation
-  if (!name) {
-    return json(
-      { success: false, error: "Product name is required." },
-      { status: 400 }
-    );
-  }
-
-  if (!categoryId) {
-    return json(
-      { success: false, error: "Category must be selected." },
-      { status: 400 }
-    );
-  }
-
-  if (allowPackSale && (!price || price <= 0)) {
-    return json(
-      {
-        success: false,
-        error: "Retail price is required if retail sale is allowed.",
-        field: "price",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!unitId) {
-    return json(
-      { success: false, error: "Retail unit is required." },
-      { status: 400 }
-    );
-  }
-
-  if (!packingSize || packingSize <= 0) {
-    return json(
-      {
-        success: false,
-        error: "Packing Size is required.",
-        field: "packingSize",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!dealerPrice || dealerPrice <= 0) {
-    return json(
-      {
-        success: false,
-        error: "Cost Price is required.",
-        field: "dealerPrice",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!packingUnitId) {
-    return json(
-      {
-        success: false,
-        error: "Packing Unit is required.",
-        field: "packingUnitId",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!srp || srp <= 0) {
-    return json(
-      { success: false, error: "Whole Unit Price is required.", field: "srp" },
-      { status: 400 }
-    );
-  }
-
-  //stock lessthan 0 validation
-  if (
-    price < 0 ||
-    stock < 0 ||
-    packingStock < 0 ||
-    dealerPrice < 0 ||
-    srp < 0 ||
-    (minStock !== undefined && minStock < 0)
-  ) {
-    return json(
-      {
-        success: false,
-        error:
-          "Please enter valid non-negative numbers for price, stock, and packing.",
-      },
-      { status: 400 }
-    );
-  }
-
-  // 🔴 Keep decimal precision validation
-
-  if (decimals > 2) {
-    return json(
-      {
-        success: false,
-        error: "Packing stock cannot have more than 2 decimal places.",
-        field: "packingStock",
-      },
-      { status: 400 }
-    );
-  }
-
-  // packing validation
-  // ✅ Validate retail unit (e.g., kg, capsule)
-  if (unitId) {
-    const valid = await db.unit.findUnique({ where: { id: unitId } });
-    if (!valid) {
-      return json(
-        { success: false, error: "Invalid retail unit selected." },
-        { status: 400 }
-      );
-    }
-  }
-
-  // ✅ Validate packing unit (e.g., sack, bottle)
-  if (packingUnitId) {
-    const valid = await db.packingUnit.findUnique({
-      where: { id: packingUnitId },
-    });
-    if (!valid) {
-      return json(
-        { success: false, error: "Invalid packing unit selected." },
-        { status: 400 }
-      );
-    }
-  }
-
-  // Resolve or create brand
-  let resolvedBrandId = brandIdRaw ? Number(brandIdRaw) : undefined;
-  if (!resolvedBrandId && brandName) {
-    if (!categoryId) {
-      return json(
-        {
-          success: false,
-          error: "Please pick a category first.",
-          field: "categoryId",
-        },
-        { status: 400 }
-      );
-    }
-    const existing = await db.brand.findFirst({
-      where: { name: { equals: brandName, mode: "insensitive" }, categoryId },
-    });
-    if (existing) {
-      return json(
-        { success: false, error: `Brand already exists.`, field: "brandName" },
-        { status: 400 }
-      );
-    }
-    const nb = await db.brand.create({
-      data: {
-        name: brandName.trim(),
-        category: { connect: { id: categoryId } },
-      },
-    });
-    resolvedBrandId = nb.id;
-  }
-  let resolvedLocationId: number | null = null;
-  const isNumericId = /^\d+$/.test(locRaw);
-  if (customLocationName && (locRaw === "__custom__" || !isNumericId)) {
-    // create-or-get by name (case-insensitive)
-    const existing = await db.location.findFirst({
-      where: { name: { equals: customLocationName, mode: "insensitive" } },
-    });
-    const loc =
-      existing ??
-      (await db.location.create({ data: { name: customLocationName } }));
-    resolvedLocationId = loc.id;
-  } else if (isNumericId) {
-    resolvedLocationId = Number(locRaw);
-  } else {
-    resolvedLocationId = null;
-  }
-
-  const createdIndicationIds: number[] = [];
-  for (const name of newIndications.map((s) => s.trim()).filter(Boolean)) {
-    const existing = await db.indication.findFirst({
-      where: { name: { equals: name, mode: "insensitive" }, categoryId },
-    });
-    if (!existing) {
-      const ind = await db.indication.create({
-        data: { name, category: { connect: { id: categoryId! } } },
-      });
-      createdIndicationIds.push(ind.id);
-    } else {
-      createdIndicationIds.push(existing.id);
-    }
-  }
-
-  const createdTargetIds: number[] = [];
-  for (const name of newTargets.map((s) => s.trim()).filter(Boolean)) {
-    const existing = await db.target.findFirst({
-      where: { name: { equals: name, mode: "insensitive" }, categoryId },
-    });
-    if (!existing) {
-      const tgt = await db.target.create({
-        data: { name, category: { connect: { id: categoryId! } } },
-      });
-      createdTargetIds.push(tgt.id);
-    } else {
-      createdTargetIds.push(existing.id);
-    }
-  }
-
-  const indicationIds = Array.from(
-    new Set([...indicationIdsRaw, ...createdIndicationIds])
-  );
-  const targetIds = Array.from(new Set([...targetIdsRaw, ...createdTargetIds]));
-
-  // Build the shared data object
-  const commonData = {
-    name,
-    price,
-    sku: finalSku,
-    barcode,
-    stock,
-    dealerPrice,
-    srp,
-    packingSize,
-    packingStock,
-    expirationDate: expiration ? new Date(expiration) : undefined,
-    replenishAt: replenishAt ? new Date(replenishAt) : undefined,
-    imageTag,
-    imageUrl: finalImageUrl,
-    imageKey: finalImageKey,
-    description,
-    minStock,
-    isActive,
-    allowPackSale,
-    location:
-      resolvedLocationId != null
-        ? { connect: { id: resolvedLocationId } }
-        : undefined,
-    unit: unitId ? { connect: { id: unitId } } : undefined,
-    category: categoryId ? { connect: { id: categoryId } } : undefined,
-    packingUnit: packingUnitId ? { connect: { id: packingUnitId } } : undefined,
-    brand: resolvedBrandId ? { connect: { id: resolvedBrandId } } : undefined,
-  };
-
-  try {
-    if (id) {
-      // ─ UPDATE ─ clear old joins, then recreate from the IDs
-
-      const indIds = [
-        ...new Set(
-          [...(indicationIds ?? []), ...(createdIndicationIds ?? [])].map(
-            Number
-          )
-        ),
-      ];
-      const tgtIds = [
-        ...new Set(
-          [...(targetIds ?? []), ...(createdTargetIds ?? [])].map(Number)
-        ),
-      ];
-
-      await db.product.update({
-        where: { id: Number(id) },
-        data: {
-          ...commonData,
-          productIndications: {
-            deleteMany: {}, // scoped to this product
-            create: indIds.map((indId) => ({
-              indication: { connect: { id: indId } },
-            })),
-          },
-          productTargets: {
-            deleteMany: {},
-            create: tgtIds.map((tId) => ({ target: { connect: { id: tId } } })),
-          },
-        },
-      });
-
-      if (processedPhotoUploads.length > 0) {
-        const persisted = await persistProductPhotos(Number(id), existingProduct?.photos ?? []);
-        finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
-        finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
-
-        await db.product.update({
-          where: { id: Number(id) },
-          data: {
-            imageUrl: persisted.cover?.fileUrl ?? null,
-            imageKey: persisted.cover?.fileKey ?? null,
-          },
-        });
-
-        const keysToDelete = new Set(persisted.replacedKeys);
-        if (
-          existingProduct?.imageKey &&
-          !existingProduct.photos.some((photo) => photo.fileKey === existingProduct.imageKey) &&
-          existingProduct.imageKey !== persisted.cover?.fileKey
-        ) {
-          keysToDelete.add(existingProduct.imageKey);
-        }
-        for (const oldKey of keysToDelete) {
-          try {
-            await storage.delete(oldKey);
-          } catch (error) {
-            console.warn("delete old image failed", error);
-          }
-        }
-      } else if (
-        finalImageUrl &&
-        existingProduct?.imageUrl &&
-        existingProduct.imageUrl !== finalImageUrl
-      ) {
-        const oldKey =
-          existingProduct.imageKey ??
-          (existingProduct.imageUrl.startsWith("/uploads/")
-            ? existingProduct.imageUrl.slice("/uploads/".length)
-            : undefined);
-        if (oldKey) {
-          try {
-            await storage.delete(oldKey);
-          } catch (error) {
-            console.warn("delete old image failed", error);
-          }
-        }
-      }
-      return json({
-        success: true,
-        action: "updated",
-        id: Number(id),
-        imageUrl: finalImageUrl,
-      });
-    } else {
-      // ─ CREATE ─ just create with connections, no deleteMany
-
-      const createdProduct = await db.product.create({
-        data: {
-          ...commonData,
-          productIndications: {
-            create: [...indicationIds, ...createdIndicationIds].map(
-              (indId) => ({
-                indication: { connect: { id: indId } },
-              })
-            ),
-          },
-          productTargets: {
-            create: [...targetIds, ...createdTargetIds].map((tId) => ({
-              target: { connect: { id: tId } },
-            })),
-          },
-        },
-      });
-
-      if (processedPhotoUploads.length > 0) {
-        const persisted = await persistProductPhotos(createdProduct.id, []);
-        finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
-        finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
-
-        await db.product.update({
-          where: { id: createdProduct.id },
-          data: {
-            imageUrl: persisted.cover?.fileUrl ?? null,
-            imageKey: persisted.cover?.fileKey ?? null,
-          },
-        });
-      }
-
-      return json({
-        success: true,
-        action: "created",
-        id: createdProduct.id,
-        imageUrl: finalImageUrl,
-      });
-    }
-  } catch (err: any) {
-    console.error("[❌ Product action error]:", err);
-    return json(
-      { success: false, error: err.message || "Saving failed" },
-      { status: 500 }
-    );
-  }
+  return runProductUpsertAction({
+    formData,
+    existingProduct,
+    processedPhotoUploads,
+    persistProductPhotos,
+  });
 };
 
 // ---------------------- Components ----------------------------------
@@ -1822,18 +1372,29 @@ export default function ProductsPage() {
                 <div className="max-h-[300px] overflow-y-auto overscroll-contain pr-1">
                   <div className="flex flex-wrap gap-2">
                     {filteredIndications.map((ind) => (
-                      <TagCheckbox
+                      <button
                         key={ind.id}
-                        label={ind.name}
-                        value={ind.name}
-                        checked={filterIndications.includes(ind.name)}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...filterIndications, ind.name]
-                            : filterIndications.filter((name) => name !== ind.name);
-                          setFilterIndications(updated);
+                        type="button"
+                        onClick={() => {
+                          if (filterIndications.includes(ind.name)) {
+                            setFilterIndications(
+                              filterIndications.filter((name) => name !== ind.name)
+                            );
+                            return;
+                          }
+                          setFilterIndications([...filterIndications, ind.name]);
                         }}
-                      />
+                        className={clsx(
+                          "inline-flex h-8 items-center rounded-xl border px-3 text-xs font-medium transition-colors duration-150",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1",
+                          filterIndications.includes(ind.name)
+                            ? "border-indigo-600 bg-indigo-600 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                        )}
+                        aria-pressed={filterIndications.includes(ind.name)}
+                      >
+                        {ind.name}
+                      </button>
                     ))}
                   </div>
                   {filteredIndications.length === 0 ? (
@@ -1855,7 +1416,7 @@ export default function ProductsPage() {
                 className="mt-1"
               />
             ) : (
-              <ProductTable
+              <ProductsListTable
                 products={paginatedProducts}
                 highlightId={highlightId}
                 actionFetcher={actionFetcher}

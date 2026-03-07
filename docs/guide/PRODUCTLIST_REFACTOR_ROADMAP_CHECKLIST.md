@@ -2,7 +2,7 @@
 
 Status: DRAFT (Execution Checklist)  
 Owner: POS Platform  
-Last Reviewed: 2026-03-02
+Last Reviewed: 2026-03-07
 
 Legend:
 
@@ -22,14 +22,14 @@ Checklist:
    - `products.new.tsx` (create)
    - `products.$productId.tsx` (detail)
    - `products.$productId.edit.tsx` (edit)
-3. `[IN_PROGRESS]` Extract shared product form/validation helpers to avoid duplicated behavior.
+3. `[DONE]` Extract shared product form/validation helpers to avoid duplicated behavior.
 4. `[DONE]` Keep pack/retail rules unchanged (`0.25` fractions, manual `open-pack`, warning-only floor).
 5. `[DONE]` Add stable deep-link navigation from list rows to detail route.
 6. `[DONE]` Preserve SKU/barcode current behavior:
    - SKU auto when blank, manual allowed
    - barcode optional
    - duplicate barcode -> regenerate/replace and retry save
-7. `[TODO]` Mark legacy productlist UI components as deprecated once replacement is stable.
+7. `[DONE]` Mark legacy productlist UI components as deprecated once replacement is stable.
 8. `[DONE]` Update UI conformance entries for touched product routes.
 9. `[DONE]` Standardize route-level dropdown controls to shared SoT components (`SelectInput`/`SoTDropdown`) and add lint guard against native `<select>` regression in `app/routes/**/*.tsx`.
 
