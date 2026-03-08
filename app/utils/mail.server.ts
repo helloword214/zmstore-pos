@@ -9,7 +9,9 @@ type SmtpConfig = {
   from: string;
 };
 
-let cachedTransporter: nodemailer.Transporter | null = null;
+type MailTransporter = ReturnType<typeof nodemailer.createTransport>;
+
+let cachedTransporter: MailTransporter | null = null;
 let cachedKey: string | null = null;
 
 function readSmtpConfig(): SmtpConfig | null {

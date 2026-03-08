@@ -87,7 +87,6 @@ export function toCode39Svg(rawText: string, opts: Code39Options = {}): string {
     // 9 elements alternating bar/space
     let w = 0;
     for (let i = 0; i < pattern.length; i++) {
-      const isBar = i % 2 === 0;
       const ww = pattern[i] === "w" ? wide : narrow;
       w += ww;
     }

@@ -7,7 +7,7 @@ type CustomerLite = {
   lastName: string;
   alias?: string | null;
   phone?: string | null;
-  addresses?: any[];
+  addresses?: Array<{ id?: number }>;
 };
 
 export function useCustomerSearch(params?: {
@@ -52,9 +52,11 @@ export function useCustomerSearch(params?: {
           setItems(data.items);
           setOpen(true);
         }
-      } catch (err) {
-        if ((err as any)?.name !== "AbortError")
-          console.warn("Search error:", err);
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        console.warn("Search error:", err);
       } finally {
         if (lastIssuedRef.current === q) setLoading(false);
       }

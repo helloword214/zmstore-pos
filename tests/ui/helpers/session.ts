@@ -45,10 +45,12 @@ export async function bootstrapSession(page: Page, context: BrowserContext) {
   if (localStorageEntries.length === 0) return;
 
   await page.goto(baseURL, { waitUntil: "domcontentloaded" });
-  await page.evaluate((entries: Array<[string, string]>) => {
-    for (const [key, value] of entries) {
+  await page.evaluate((entries: string[][]) => {
+    for (const entry of entries) {
+      const key = entry[0] ?? "";
+      const value = entry[1] ?? "";
+      if (!key) continue;
       window.localStorage.setItem(key, value);
     }
-  }, localStorageEntries);
+  }, localStorageEntries as string[][]);
 }
-

@@ -104,7 +104,7 @@ export default function ReceiptsIndex() {
                     )}
                   </td>
                   <td className="p-2 text-right">
-                    {peso(o.totalBeforeDiscount)}
+                    {peso(Number(o.totalBeforeDiscount ?? 0))}
                   </td>
                   <td className="p-2 text-right">
                     <a

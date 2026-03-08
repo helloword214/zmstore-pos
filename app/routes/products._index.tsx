@@ -512,13 +512,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { status: 400 }
       );
     }
-    if (!prod.packingSize || prod.packingSize <= 0) {
+    const packingSize = Number(prod.packingSize ?? 0);
+    const wholeStock = Number(prod.stock ?? 0);
+
+    if (!Number.isFinite(packingSize) || packingSize <= 0) {
       return json(
         { success: false, error: "Packing size is not set." },
         { status: 400 }
       );
     }
-    if (prod.stock == null || prod.stock < packs) {
+    if (!Number.isFinite(wholeStock) || wholeStock < packs) {
       return json(
         { success: false, error: "Not enough whole stock to open." },
         { status: 400 }
@@ -526,7 +529,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     // keep two-decimal precision
-    const incrementBy = Math.round(packs * prod.packingSize * 100) / 100;
+    const incrementBy = Math.round(packs * packingSize * 100) / 100;
 
     await db.product.update({
       where: { id },
@@ -826,18 +829,9 @@ export default function ProductsPage() {
         Math.floor(Number(submittedForm?.get("packs") || "1"))
       );
 
-      setProducts((prev) =>
-        prev.map((p) => {
-          if (p.id !== openedId) return p;
-          const packSize = Number(p.packingSize ?? 0);
-          const add = Math.round(packs * packSize * 100) / 100;
-          return {
-            ...p,
-            stock: Math.max(0, (p.stock ?? 0) - packs),
-            packingStock: Number(((p.packingStock ?? 0) + add).toFixed(2)),
-          };
-        })
-      );
+      if (Number.isFinite(openedId) && openedId > 0 && packs > 0) {
+        revalidator.revalidate();
+      }
 
       setSuccessMsg(`Unpacked ${packs} → retail stock`);
       setShowAlert(true);
