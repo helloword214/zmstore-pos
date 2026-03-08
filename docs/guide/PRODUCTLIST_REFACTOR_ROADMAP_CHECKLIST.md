@@ -95,3 +95,11 @@ Acceptance criteria:
 2. `[DONE]` Keep `PRODUCTLIST_REFACTOR_DIRECTION.md` aligned with approved target direction.
 3. `[DONE]` Keep `PRODUCTLIST_REFACTOR_DECISION_LOG.md` updated for new decisions.
 4. `[DONE]` Keep `ui/UI_SOT.md` and `ui/UI_CONFORMANCE_MATRIX.md` updated when UI flows change.
+
+## Post-Phase 2 Cleanup Backlog (Next Task)
+
+Context (2026-03-08):
+Phase 2 patch was completed and force-committed because full-repo `CHECK` currently fails from unrelated pre-existing lint/type errors.
+
+1. `[TODO]` Restore clean baseline for full-repo `CHECK` (`npm run typecheck`, `npm run lint`) by fixing existing non-phase errors.
+2. `[TODO]` Audit and remove unused/legacy routes or files (including `app/routes/cart.tsx` if confirmed unused), with explicit approval before deletion.
