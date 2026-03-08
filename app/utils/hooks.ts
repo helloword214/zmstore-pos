@@ -17,7 +17,9 @@ export function useLocalStorageState<T>(key: string, initial: T) {
   React.useEffect(() => {
     try {
       window.localStorage.setItem(key, JSON.stringify(state));
-    } catch {}
+    } catch {
+      // Ignore storage write failures (quota/private mode).
+    }
   }, [key, state]);
 
   return [state, setState] as const;

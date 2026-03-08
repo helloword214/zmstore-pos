@@ -3,6 +3,11 @@ import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { db } from "~/utils/db.server";
 import { toE164PH } from "~/utils/phone";
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return "Failed to create customer.";
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST")
     return json({ ok: false, error: "POST only" }, { status: 405 });
@@ -104,9 +109,9 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
     return json({ ok: true, customer });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return json(
-      { ok: false, error: e?.message || "Failed to create customer." },
+      { ok: false, error: getErrorMessage(e) },
       { status: 400 }
     );
   }

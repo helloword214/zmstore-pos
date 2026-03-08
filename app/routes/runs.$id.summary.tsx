@@ -19,6 +19,7 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { loadRunRecap } from "~/services/runRecap.server";
+import type { FrozenOrderItem } from "~/services/frozenPricing.server";
 import { r2 as r2Money } from "~/utils/money";
 
 const r2 = (n: number) => r2Money(Number(n) || 0);
@@ -447,7 +448,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const orderKey = `PARENT:${o.id}`;
     if (voidedReceiptKeys.has(orderKey) || parentVoidedMap.get(o.id)) continue;
 
-    const orderItems = (o.items || []).map((it: any) => ({
+    const orderItems: FrozenOrderItem[] = (o.items || []).map((it: any) => ({
       qty: Number(it.qty ?? 0),
       unitKind: it.unitKind === "RETAIL" ? "RETAIL" : "PACK",
       baseUnitPrice: Number(it.baseUnitPrice ?? it.unitPrice ?? 0),

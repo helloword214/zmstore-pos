@@ -61,9 +61,7 @@ export function Button({
   };
 
   // Prefer theme if provided; otherwise use fallbacks
-  const themed = (theme as any)?.buttons?.[normalizedVariant] as
-    | string
-    | undefined;
+  const themed = theme.buttons?.[normalizedVariant];
   const variantClasses = themed ?? fallbackByVariant[normalizedVariant];
 
   return (

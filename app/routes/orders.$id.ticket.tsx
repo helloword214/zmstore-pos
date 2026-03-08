@@ -184,7 +184,7 @@ export default function DeliveryTicket() {
         </table>
         <div className="row total">
           <div>Items Total:</div>
-          <div className="mono">{fmt(order.totalBeforeDiscount)}</div>
+          <div className="mono">{fmt(Number(order.totalBeforeDiscount ?? 0))}</div>
         </div>
       </div>
 

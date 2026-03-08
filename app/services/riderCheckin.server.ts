@@ -165,7 +165,7 @@ export async function handleSendClearance(args: {
 
       const frozenTotal = Number(
         (o.items || [])
-          .reduce((s, it) => s + Number(it.lineTotal ?? 0), 0)
+          .reduce((s: number, it: any) => s + Number(it.lineTotal ?? 0), 0)
           .toFixed(2),
       );
 
@@ -224,7 +224,7 @@ export async function handleSendClearance(args: {
       });
 
       const frozenLines = (o.items || [])
-        .map((it) => {
+        .map((it: any) => {
           const pid = Number(it.productId ?? 0);
           const qty = Math.max(0, Number(it.qty ?? 0));
           if (!pid || qty <= 0) return null;
@@ -334,7 +334,7 @@ export async function handleSendClearance(args: {
         new Set<number>(
           (usable || [])
             .map((ln: any): number => Number(ln?.productId ?? 0))
-            .filter((x): x is number => Number.isFinite(x) && x > 0),
+            .filter((x: number): x is number => Number.isFinite(x) && x > 0),
         ),
       );
 

@@ -3,7 +3,10 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import { computeUnitPriceForCustomer } from "~/services/pricing";
+import {
+  computeUnitPriceForCustomer,
+  type UnitKind,
+} from "~/services/pricing";
 
 type ReqBody = {
   customerId: number | null;
@@ -93,10 +96,10 @@ export async function action({ request }: ActionFunctionArgs) {
         ? basePack
         : baseRetail;
 
-    const eff = await computeUnitPriceForCustomer(db as any, {
+    const eff = await computeUnitPriceForCustomer(db, {
       customerId,
       productId: it.productId,
-      unitKind: it.unitKind === "RETAIL" ? "RETAIL" : "PACK",
+      unitKind: (it.unitKind === "RETAIL" ? "RETAIL" : "PACK") as UnitKind,
       baseUnitPrice,
     });
 

@@ -1,5 +1,19 @@
 // Format receipt text output for thermal printer
-export function formatReceipt(order: any) {
+type ReceiptItem = {
+  qty: number | string;
+  productName: string;
+  unitPrice: number | string;
+  lineTotal: number | string;
+};
+
+type ReceiptOrder = {
+  receiptNo: string | number;
+  paidAt: string | number | Date;
+  items: ReceiptItem[];
+  grandTotal: number | string;
+};
+
+export function formatReceipt(order: ReceiptOrder) {
   const lines = [
     "ZM Store POS",
     "=====================",

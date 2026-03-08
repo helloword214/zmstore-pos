@@ -220,7 +220,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function CashierQueue() {
-  const { pickups, meId } = useLoaderData<typeof loader>() as any;
+  const { pickups, meId } = useLoaderData<typeof loader>();
   const MY_ID = String(meId || "");
   const nav = useNavigation();
   const actionData = useActionData<typeof action>();

@@ -11,6 +11,12 @@ type Customer = {
   phone?: string | null;
 };
 
+type CreateCustomerResponse = {
+  ok: boolean;
+  customer?: Customer;
+  error?: string;
+};
+
 function displayName(c: Customer) {
   const mid = c.middleName ? ` ${c.middleName}` : "";
   const base = `${c.firstName}${mid} ${c.lastName}`.trim();
@@ -32,7 +38,7 @@ export function CustomerPicker({
     withAddresses: false,
   });
 
-  const createFx = useFetcher<any>();
+  const createFx = useFetcher<CreateCustomerResponse>();
   const detailsRef = React.useRef<HTMLDetailsElement | null>(null);
 
   // Inline “create customer” fields
@@ -44,8 +50,9 @@ export function CustomerPicker({
 
   // Use newly-created customer immediately
   React.useEffect(() => {
-    if (createFx.data?.ok && createFx.data?.customer) {
-      onChange(createFx.data.customer as Customer);
+    const createdCustomer = createFx.data?.customer;
+    if (createFx.data?.ok && createdCustomer) {
+      onChange(createdCustomer);
       setOpen(false);
       setQ("");
       setFirstName("");
@@ -208,7 +215,8 @@ export function CustomerPicker({
                       type="button"
                       className="rounded-lg border px-3 py-1.5 text-sm"
                       onClick={() => {
-                        const c = createFx.data.customer as Customer;
+                        const c = createFx.data?.customer;
+                        if (!c) return;
                         onChange(c);
                         setOpen(false);
                         setQ("");
@@ -220,7 +228,7 @@ export function CustomerPicker({
                         detailsRef.current?.removeAttribute("open");
                       }}
                     >
-                      Use “{displayName(createFx.data.customer as Customer)}”
+                      Use “{displayName(createFx.data.customer)}”
                     </button>
                   ) : null}
                 </div>

@@ -219,21 +219,6 @@ export function applyDiscounts(
       // Overrides are not stackable by default (stackable=false)
     }
 
-    const isOverride = (
-      r: Rule
-    ): r is Extract<Rule, { kind: "PRICE_OVERRIDE" }> =>
-      r.kind === "PRICE_OVERRIDE";
-    const isPercent = (r: Rule): r is Extract<Rule, { kind: "PERCENT_OFF" }> =>
-      r.kind === "PERCENT_OFF";
-
-    // usage
-    if (override && isOverride(override)) {
-      /* use override.priceOverride */
-    }
-    for (const p of percents.filter(isPercent)) {
-      /* use p.percentOff */
-    }
-
     // Apply all percentage discounts (stackable, multiplicative)
     for (const p of percents) {
       if (p.kind !== "PERCENT_OFF") continue; // 👈 narrow here
@@ -443,8 +428,8 @@ export async function fetchActiveCustomerRules(
     // FIXED_DISCOUNT → convert using base for that unit kind
     const base = computeBaseForFixedDiscount({
       unitKind: r.unitKind as any,
-      productPrice: r.product?.price ?? 0,
-      productSrp: r.product?.srp ?? 0,
+      productPrice: Number(r.product?.price ?? 0),
+      productSrp: Number(r.product?.srp ?? 0),
       packingSize: (r.product as any)?.packingSize ?? 0,
     });
     const override = Math.max(0, r2(base - v));
@@ -530,8 +515,8 @@ export async function fetchCustomerRulesAt(
     // FIXED_DISCOUNT -> use correct base
     const base = computeBaseForFixedDiscount({
       unitKind: r.unitKind as any,
-      productPrice: r.product?.price ?? 0,
-      productSrp: r.product?.srp ?? 0,
+      productPrice: Number(r.product?.price ?? 0),
+      productSrp: Number(r.product?.srp ?? 0),
       packingSize: (r.product as any)?.packingSize ?? 0,
     });
     const override = Math.max(0, r2(base - v));

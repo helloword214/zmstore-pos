@@ -20,14 +20,14 @@ export function makeFormFieldSetter(
  * Example: Returns a setter that supports numbers if needed
  */
 export function makeTypedFormFieldSetter<T>(
-  field: string,
+  field: keyof T,
   setFormData: React.Dispatch<React.SetStateAction<T>>,
-  coerce?: (val: string | number) => any // optional coercion
+  coerce?: (val: string | number) => T[keyof T]
 ) {
   return (val: string | number) => {
     setFormData((prev) => ({
       ...prev,
-      [field]: coerce ? coerce(val) : val,
+      [field]: coerce ? coerce(val) : (val as unknown as T[keyof T]),
     }));
   };
 }

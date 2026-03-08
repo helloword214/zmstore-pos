@@ -96,10 +96,39 @@ Acceptance criteria:
 3. `[DONE]` Keep `PRODUCTLIST_REFACTOR_DECISION_LOG.md` updated for new decisions.
 4. `[DONE]` Keep `ui/UI_SOT.md` and `ui/UI_CONFORMANCE_MATRIX.md` updated when UI flows change.
 
-## Post-Phase 2 Cleanup Backlog (Next Task)
+## Post-Phase 2 Cleanup Backlog (Current Task Board)
 
 Context (2026-03-08):
-Phase 2 patch was completed and force-committed because full-repo `CHECK` currently fails from unrelated pre-existing lint/type errors.
+Phase 2 patch was completed and force-committed because full-repo `CHECK` failed from unrelated pre-existing lint/type errors.
 
-1. `[TODO]` Restore clean baseline for full-repo `CHECK` (`npm run typecheck`, `npm run lint`) by fixing existing non-phase errors.
-2. `[TODO]` Audit and remove unused/legacy routes or files (including `app/routes/cart.tsx` if confirmed unused), with explicit approval before deletion.
+### Today Progress (2026-03-08)
+
+1. `[DONE]` Baseline `CHECK` captured before cleanup:
+   - `npm run lint` -> 13 errors
+   - `npm run typecheck` -> 31 errors
+2. `[DONE]` Removed confirmed unused legacy/dev routes:
+   - `app/routes/ordersTest.tsx`
+   - `app/routes/dev.slip-test.tsx`
+   - `app/routes/dev.stock-check.tsx`
+   - `app/routes/brand.check.tsx`
+   - `app/routes/brands.api.tsx`
+3. `[DONE]` Re-ran `CHECK` after deletion batch:
+   - `npm run lint` -> 13 errors (no change)
+   - `npm run typecheck` -> 29 errors (improved from 31)
+4. `[DONE]` Removed second batch of unused legacy routes/endpoints (explicit `GO` approved):
+   - `app/routes/cart.tsx`
+   - `app/routes/api.customer-pricing.tsx`
+   - `app/routes/products.api.ts`
+   - `app/routes/resources.customers-search.tsx`
+   - `app/routes/resources.pricing.allowed.ts`
+5. `[DONE]` Re-ran full-repo `CHECK` after second deletion batch:
+   - `npm run lint` -> 12 errors (improved from 13)
+   - `npm run typecheck` -> 27 errors (improved from 29)
+6. `[DONE]` Patch 3 lint/type stabilization completed:
+   - `npm run lint` -> 0 errors
+   - `npm run typecheck` -> 0 errors
+
+### Remaining Today (Pending)
+
+1. `[TODO]` Audit remaining compatibility redirect/resource routes and decide keep vs remove with explicit approval.
+2. `[TODO]` Record final "today done vs not done" snapshot after next patch/check cycle.
