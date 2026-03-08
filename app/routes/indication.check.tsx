@@ -16,13 +16,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
   }
 
-  // Check existing by compound unique
-  const existing = await db.indication.findUnique({
-    where: {
-      name_categoryId: {
-        name: trimmedName,
-        categoryId: parsedCategoryId,
+  const category = await db.category.findUnique({
+    where: { id: parsedCategoryId },
+    select: { id: true, name: true, isActive: true },
+  });
+
+  if (!category) {
+    return json({ error: "Category not found." }, { status: 404 });
+  }
+
+  if (!category.isActive) {
+    return json(
+      {
+        error: `Category "${category.name}" is archived. Unarchive it before adding indications.`,
       },
+      { status: 400 }
+    );
+  }
+
+  const existing = await db.indication.findFirst({
+    where: {
+      categoryId: parsedCategoryId,
+      name: { equals: trimmedName, mode: "insensitive" },
     },
   });
 

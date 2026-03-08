@@ -17,7 +17,7 @@ import { makeLocalEan13 } from "~/utils/barcode";
 
 type IdName = { id: number; name: string };
 
-type Category = IdName;
+type Category = IdName & { isActive: boolean };
 type Brand = IdName & { categoryId: number | null };
 type Unit = IdName;
 type PackingUnit = IdName;
@@ -316,6 +316,11 @@ export function ProductUpsertForm({
         value: String(brand.id),
       }));
   }, [refs.brands, formData.categoryId]);
+
+  const selectedCategory = useMemo(
+    () => refs.categories.find((category) => String(category.id) === formData.categoryId) ?? null,
+    [refs.categories, formData.categoryId]
+  );
 
   const targetOptions = useMemo(() => {
     const source = refs.targets.filter((target) => {
@@ -638,25 +643,34 @@ export function ProductUpsertForm({
         </FormGroupRow>
 
         <FormGroupRow>
-          <SelectInput
-            label="Category"
-            value={formData.categoryId}
-            onChange={(value) =>
-              setFormData((prev) => ({
-                ...prev,
-                categoryId: String(value),
-              }))
-            }
-            options={[
-              { label: "-- Category --", value: "" },
-              ...refs.categories.map((category) => ({
-                label: category.name,
-                value: String(category.id),
-              })),
-            ]}
-            error={errors.categoryId}
-          />
-          <input type="hidden" name="categoryId" value={formData.categoryId} />
+          <div className="space-y-2">
+            <SelectInput
+              label="Category"
+              value={formData.categoryId}
+              onChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  categoryId: String(value),
+                }))
+              }
+              options={[
+                { label: "-- Category --", value: "" },
+                ...refs.categories.map((category) => ({
+                  label: category.isActive ? category.name : `${category.name} (Archived)`,
+                  value: String(category.id),
+                })),
+              ]}
+              error={errors.categoryId}
+            />
+            <input type="hidden" name="categoryId" value={formData.categoryId} />
+
+            {selectedCategory && !selectedCategory.isActive ? (
+              <p className="text-xs font-medium text-amber-700">
+                This product currently uses an archived category. You can keep it, or switch to an
+                active category.
+              </p>
+            ) : null}
+          </div>
 
           <div>
             <ComboInput

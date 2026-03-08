@@ -2,7 +2,7 @@
 
 Status: DRAFT (Discussion Log)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-08
 
 ## Purpose
 
@@ -21,13 +21,14 @@ Maintain a compact, session-resilient log of refactor decisions so implementatio
 9. Near-term deployment direction is single-store per deployment (fast path).
 10. LPG-specialized semantics should move toward a generic returnable-container model (not LPG-only).
 11. Barcode is optional in product flow; when generated code conflicts, operator regenerates/enters another code (no hard-block policy change beyond unique enforcement).
+12. Category lifecycle policy is archive-only (no hard delete); archived categories are hidden from default product/category choices while existing product links remain valid.
+13. Full-repo `CHECK` currently has unrelated pre-existing lint/type debt; Phase 2 delivery used `FORCE-COMMIT` and cleanup is tracked as next-task backlog.
 
 ## Deferred Decisions (Not Blocking Phase 1)
 
 1. Final schema names for generic container fields/entities.
-2. Whether category deletion is hard-delete vs archive-only as default policy.
-3. Whether expiration should be mandatory by category/profile in later phases.
-4. Exact UI placement and information architecture for category master management.
+2. Whether expiration should be mandatory by category/profile in later phases.
+3. Exact UI placement and information architecture for category master management.
 
 ## Open Questions (Future Scale)
 

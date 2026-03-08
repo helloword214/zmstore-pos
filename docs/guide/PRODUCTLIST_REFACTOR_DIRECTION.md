@@ -2,7 +2,7 @@
 
 Status: DRAFT (Discussion Working Doc)  
 Owner: POS Platform  
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-08
 
 ## Purpose
 
@@ -15,7 +15,7 @@ This doc is directional (target-state planning), not a replacement for current c
 1. `products._index.tsx` is monolithic (list + create/edit workflows + related behaviors in one route).
 2. Product list and product creation live in the same route/UI surface, making maintenance and testing harder.
 3. There is no stable product detail route per item for deep-linking and future view workflows.
-4. Category acts as the mother classification for product options, but category management is not yet first-class in current admin option flows.
+4. Category acts as the mother classification for product options, and lifecycle management is now first-class in admin option flows (create/edit/archive with archive-only policy).
 
 ## Direction Summary
 
@@ -146,6 +146,7 @@ Suggested applicability matrix:
 1. Add category create/edit/archive in admin option management.
 2. Enforce dependency guards before destructive operations.
 3. Align product creation/edit forms to new category master flows.
+4. Status update (2026-03-08): implemented on `creation._index.tsx` + category resource endpoints with archive-only lifecycle and product-form/action guard alignment.
 
 ### Phase 3: Generic Returnable-Container Model
 

@@ -2,7 +2,7 @@
 
 Status: LOCKED  
 Owner: POS Platform  
-Last Reviewed: 2026-03-01
+Last Reviewed: 2026-03-08
 
 ## Purpose
 
@@ -78,6 +78,9 @@ Auxiliary:
 1. `app/routes/products._index.tsx` treats `Brand`, `Location`, `Target`, and `Indication` as selection/filter data only.
 2. Product list route does not expose destructive mutation actions for brand/location/target/indication.
 3. Brand/location/target/indication master-data lifecycle changes should be handled from dedicated admin master-data workspace routes.
+4. Category lifecycle is managed in `app/routes/creation._index.tsx` via create/rename/archive/unarchive.
+5. Category hard delete is disabled in admin creation endpoints; policy is archive-only.
+6. Archive action preserves product/brand/indication/target links and hides archived categories from default operator choices.
 
 ## Selling Modes (Current Runtime Contract)
 
@@ -182,6 +185,9 @@ From `/products` action validation (used by dedicated create/edit routes):
 3. non-negative numeric guard is enforced
 4. `packingStock` decimal precision is validated up to 2 decimals in form/action logic
 5. Product list route does not host create/edit modal; create/edit happens on dedicated routes.
+6. Product create form exposes active categories only.
+7. Product edit form includes current archived category (if already linked) to preserve edit compatibility without forcing immediate remap.
+8. New product assignment to archived category is blocked at action validation.
 
 ### Product Photo Slots (Current)
 

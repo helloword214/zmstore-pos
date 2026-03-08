@@ -2,7 +2,7 @@
 
 Status: DRAFT (Execution Checklist)  
 Owner: POS Platform  
-Last Reviewed: 2026-03-07
+Last Reviewed: 2026-03-08
 
 Legend:
 
@@ -45,11 +45,11 @@ Objective: make category fully admin-managed dynamic master data per store deplo
 
 Checklist:
 
-1. `[TODO]` Implement category create/edit/archive flows in admin options.
-2. `[TODO]` Add dependency guards before destructive operations.
-3. `[TODO]` Keep `Brand/Indication/Target` category-scoped integrity.
-4. `[TODO]` Align product create/edit flows with updated category lifecycle.
-5. `[TODO]` Document archive/delete policy and operator guidance.
+1. `[DONE]` Implement category create/edit/archive flows in admin options.
+2. `[DONE]` Add dependency guards before destructive operations.
+3. `[DONE]` Keep `Brand/Indication/Target` category-scoped integrity.
+4. `[DONE]` Align product create/edit flows with updated category lifecycle.
+5. `[DONE]` Document archive/delete policy and operator guidance.
 
 Acceptance criteria:
 
@@ -91,7 +91,15 @@ Acceptance criteria:
 
 ## Documentation Sync Checklist (All Phases)
 
-1. `[TODO]` Keep `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` aligned with actual behavior.
-2. `[TODO]` Keep `PRODUCTLIST_REFACTOR_DIRECTION.md` aligned with approved target direction.
-3. `[TODO]` Keep `PRODUCTLIST_REFACTOR_DECISION_LOG.md` updated for new decisions.
-4. `[TODO]` Keep `ui/UI_SOT.md` and `ui/UI_CONFORMANCE_MATRIX.md` updated when UI flows change.
+1. `[DONE]` Keep `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` aligned with actual behavior.
+2. `[DONE]` Keep `PRODUCTLIST_REFACTOR_DIRECTION.md` aligned with approved target direction.
+3. `[DONE]` Keep `PRODUCTLIST_REFACTOR_DECISION_LOG.md` updated for new decisions.
+4. `[DONE]` Keep `ui/UI_SOT.md` and `ui/UI_CONFORMANCE_MATRIX.md` updated when UI flows change.
+
+## Post-Phase 2 Cleanup Backlog (Next Task)
+
+Context (2026-03-08):
+Phase 2 patch was completed and force-committed because full-repo `CHECK` currently fails from unrelated pre-existing lint/type errors.
+
+1. `[TODO]` Restore clean baseline for full-repo `CHECK` (`npm run typecheck`, `npm run lint`) by fixing existing non-phase errors.
+2. `[TODO]` Audit and remove unused/legacy routes or files (including `app/routes/cart.tsx` if confirmed unused), with explicit approval before deletion.

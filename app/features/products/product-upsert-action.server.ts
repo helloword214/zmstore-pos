@@ -58,6 +58,22 @@ export async function runProductUpsertAction({
   persistProductPhotos: PersistProductPhotos;
 }) {
   const id = formData.get("id")?.toString();
+  const productId = id ? Number(id) : null;
+  if (id && (!Number.isFinite(productId) || !productId || productId <= 0)) {
+    return json({ success: false, error: "Invalid product ID." }, { status: 400 });
+  }
+
+  const currentProduct = productId
+    ? await db.product.findUnique({
+        where: { id: productId },
+        select: { id: true, categoryId: true },
+      })
+    : null;
+
+  if (productId && !currentProduct) {
+    return json({ success: false, error: "Product not found." }, { status: 404 });
+  }
+
   const name = formData.get("name")?.toString().trim() || "";
   const priceRaw = parseMoneyNumber(formData.get("price"), 0);
   const price = r2(priceRaw);
@@ -74,7 +90,10 @@ export async function runProductUpsertAction({
     : undefined;
 
   const category = categoryId
-    ? await db.category.findUnique({ where: { id: categoryId } })
+    ? await db.category.findUnique({
+        where: { id: categoryId },
+        select: { id: true, name: true, isActive: true },
+      })
     : null;
   const categoryNameFromDb = category?.name || "";
 
@@ -137,6 +156,23 @@ export async function runProductUpsertAction({
   if (!categoryId) {
     return json(
       { success: false, error: "Category must be selected." },
+      { status: 400 }
+    );
+  }
+
+  if (!category) {
+    return json({ success: false, error: "Invalid category selected." }, { status: 400 });
+  }
+
+  const keepingCurrentArchivedCategory =
+    Boolean(currentProduct) && currentProduct?.categoryId === categoryId;
+  if (!category.isActive && !keepingCurrentArchivedCategory) {
+    return json(
+      {
+        success: false,
+        error: `Category "${category.name}" is archived. Select an active category.`,
+        field: "categoryId",
+      },
       { status: 400 }
     );
   }
@@ -262,6 +298,16 @@ export async function runProductUpsertAction({
         { status: 400 }
       );
     }
+    if (!category.isActive) {
+      return json(
+        {
+          success: false,
+          error: `Cannot create brand under archived category "${category.name}".`,
+          field: "brandName",
+        },
+        { status: 400 }
+      );
+    }
     const existing = await db.brand.findFirst({
       where: { name: { equals: brandName, mode: "insensitive" }, categoryId },
     });
@@ -297,6 +343,16 @@ export async function runProductUpsertAction({
   }
 
   const createdIndicationIds: number[] = [];
+  if (newIndications.some((value) => value.trim()) && !category.isActive) {
+    return json(
+      {
+        success: false,
+        error: `Cannot create indications under archived category "${category.name}".`,
+        field: "categoryId",
+      },
+      { status: 400 }
+    );
+  }
   for (const item of newIndications.map((value) => value.trim()).filter(Boolean)) {
     const existing = await db.indication.findFirst({
       where: { name: { equals: item, mode: "insensitive" }, categoryId },
@@ -312,6 +368,16 @@ export async function runProductUpsertAction({
   }
 
   const createdTargetIds: number[] = [];
+  if (newTargets.some((value) => value.trim()) && !category.isActive) {
+    return json(
+      {
+        success: false,
+        error: `Cannot create targets under archived category "${category.name}".`,
+        field: "categoryId",
+      },
+      { status: 400 }
+    );
+  }
   for (const item of newTargets.map((value) => value.trim()).filter(Boolean)) {
     const existing = await db.target.findFirst({
       where: { name: { equals: item, mode: "insensitive" }, categoryId },
@@ -361,7 +427,7 @@ export async function runProductUpsertAction({
   };
 
   try {
-    if (id) {
+    if (productId) {
       const indIds = [
         ...new Set(
           [...(indicationIds ?? []), ...(createdIndicationIds ?? [])].map(Number)
@@ -374,7 +440,7 @@ export async function runProductUpsertAction({
       ];
 
       await db.product.update({
-        where: { id: Number(id) },
+        where: { id: productId },
         data: {
           ...commonData,
           productIndications: {
@@ -393,12 +459,12 @@ export async function runProductUpsertAction({
       });
 
       if (processedPhotoUploads.length > 0) {
-        const persisted = await persistProductPhotos(Number(id), existingProduct?.photos ?? []);
+        const persisted = await persistProductPhotos(productId, existingProduct?.photos ?? []);
         finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
         finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
 
         await db.product.update({
-          where: { id: Number(id) },
+          where: { id: productId },
           data: {
             imageUrl: persisted.cover?.fileUrl ?? null,
             imageKey: persisted.cover?.fileKey ?? null,
@@ -442,7 +508,7 @@ export async function runProductUpsertAction({
       return json({
         success: true,
         action: "updated",
-        id: Number(id),
+        id: productId,
         imageUrl: finalImageUrl,
       });
     }
