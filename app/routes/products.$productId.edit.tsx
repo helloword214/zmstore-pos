@@ -15,14 +15,15 @@ export async function loader({ params }: LoaderFunctionArgs) {
     throw new Response("Invalid product ID", { status: 400 });
   }
 
-  const [refs, initialProduct] = await Promise.all([
-    getProductFormReferences(),
-    getProductInitialData(productId),
-  ]);
+  const initialProduct = await getProductInitialData(productId);
 
   if (!initialProduct) {
     throw new Response("Product not found", { status: 404 });
   }
+
+  const refs = await getProductFormReferences({
+    includeCategoryId: initialProduct.categoryId ?? null,
+  });
 
   const uploadSessionKey = createUploadSessionKey();
   return json({ refs, initialProduct, uploadSessionKey });

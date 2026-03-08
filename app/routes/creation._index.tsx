@@ -26,18 +26,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
   const url = new URL(request.url);
   const catParam = url.searchParams.get("cat");
+  const showArchived = url.searchParams.get("showArchived") === "1";
 
   const [categories, units, packingUnits, locations] = await Promise.all([
-    db.category.findMany({ orderBy: { name: "asc" } }),
+    db.category.findMany({
+      select: { id: true, name: true, isActive: true },
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    }),
     db.unit.findMany({ orderBy: { name: "asc" } }),
     db.packingUnit.findMany({ orderBy: { name: "asc" } }),
     db.location.findMany({ orderBy: { name: "asc" } }),
   ]);
 
+  const visibleCategories = showArchived
+    ? categories
+    : categories.filter((category) => category.isActive);
+
+  const requestedCategoryId =
+    catParam && Number.isFinite(Number(catParam)) ? Number(catParam) : null;
+
   const activeCategoryId =
-    catParam && Number.isFinite(Number(catParam))
-      ? Number(catParam)
-      : categories[0]?.id ?? null;
+    requestedCategoryId &&
+    visibleCategories.some((category) => category.id === requestedCategoryId)
+      ? requestedCategoryId
+      : visibleCategories[0]?.id ?? null;
 
   const [brands, indications, targets] = activeCategoryId
     ? await Promise.all([
@@ -58,6 +70,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return json({
     categories,
+    visibleCategories,
+    showArchived,
     units,
     packingUnits,
     locations,
@@ -76,6 +90,7 @@ type UpsertDeleteFetcherData = {
 };
 
 type Kind =
+  | "category"
   | "unit"
   | "packingUnit"
   | "location"
@@ -89,6 +104,8 @@ type GlobalTab = "units" | "packingUnits" | "locations";
 export default function CreationIndex() {
   const {
     categories,
+    visibleCategories,
+    showArchived,
     units,
     packingUnits,
     locations,
@@ -104,7 +121,7 @@ export default function CreationIndex() {
   const [messageTone, setMessageTone] = React.useState<"success" | "warning">("warning");
   const [categoryTab, setCategoryTab] = React.useState<CategoryTab>("brands");
   const [globalTab, setGlobalTab] = React.useState<GlobalTab>("units");
-  const catSelectId = React.useId();
+  const [newCategoryName, setNewCategoryName] = React.useState("");
 
   React.useEffect(() => {
     if (!fetcher.data?.message) return;
@@ -113,13 +130,27 @@ export default function CreationIndex() {
   }, [fetcher.data]);
 
   function setCategory(id: number) {
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (!visibleCategories.some((category) => category.id === id)) return;
     const next = new URLSearchParams(sp);
     next.set("cat", String(id));
     setSp(next, { replace: true });
   }
 
-  const activeCategoryName =
-    categories.find((category) => category.id === activeCategoryId)?.name ?? "Not selected";
+  function setShowArchived(nextShowArchived: boolean) {
+    const next = new URLSearchParams(sp);
+    if (nextShowArchived) {
+      next.set("showArchived", "1");
+    } else {
+      next.delete("showArchived");
+    }
+    setSp(next, { replace: true });
+  }
+
+  const activeCategory =
+    categories.find((category) => category.id === activeCategoryId) ?? null;
+  const activeCategoryName = activeCategory?.name ?? "Not selected";
+  const activeCategoryArchived = Boolean(activeCategory && !activeCategory.isActive);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -141,10 +172,11 @@ export default function CreationIndex() {
         <SoTCard interaction="static">
           <p className="text-sm font-semibold text-slate-900">How to use this page</p>
           <p className="mt-1 text-xs text-slate-600">
-            Manage global options on the left. On the right, choose one category and edit one option type at a time.
+            Manage global options on the left. On the right, manage category lifecycle (active or archived), then edit one category option type at a time.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <SoTStatusPill tone="info">Global: Units / Packing / Locations</SoTStatusPill>
+            <SoTStatusPill tone="info">Category lifecycle: Create / Rename / Archive</SoTStatusPill>
             <SoTStatusPill tone="info">Category: Brands / Indications / Targets</SoTStatusPill>
           </div>
         </SoTCard>
@@ -273,13 +305,160 @@ export default function CreationIndex() {
           <section className="lg:col-span-7">
             <SoTEntityFormPanel title="Category Option Workspace">
               <div className="space-y-4">
+                <SoTCard interaction="form" className="border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">Category Master</p>
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={showArchived}
+                        onChange={(event) => setShowArchived(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                      />
+                      Show archived
+                    </label>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-12">
+                    <div className="md:col-span-9">
+                      <SoTInput
+                        label="Add Category"
+                        value={newCategoryName}
+                        placeholder="e.g. Grocery"
+                        onChange={(event) => setNewCategoryName(event.target.value)}
+                      />
+                    </div>
+                    <div className="md:col-span-3 md:flex md:items-end">
+                      <SoTButton
+                        type="button"
+                        className="h-10 w-full"
+                        onClick={() => {
+                          const name = newCategoryName.trim();
+                          if (!name) return;
+                          fetcher.submit(
+                            { kind: "category", name },
+                            { method: "post", action: "/resources/creation/upsert" }
+                          );
+                          setNewCategoryName("");
+                        }}
+                      >
+                        Add Category
+                      </SoTButton>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 max-h-[260px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <SoTTable>
+                      <SoTTableHead>
+                        <SoTTableRow>
+                          <SoTTh>Category</SoTTh>
+                          <SoTTh align="center">Status</SoTTh>
+                          <SoTTh align="right">Action</SoTTh>
+                        </SoTTableRow>
+                      </SoTTableHead>
+                      <tbody>
+                        {visibleCategories.length === 0 ? (
+                          <SoTTableEmptyRow
+                            colSpan={3}
+                            message="No categories available for current filter."
+                          />
+                        ) : (
+                          visibleCategories.map((category) => (
+                            <SoTTableRow key={category.id}>
+                              <SoTTd className="font-medium text-slate-900">
+                                {category.name}
+                              </SoTTd>
+                              <SoTTd align="center">
+                                <SoTStatusPill tone={category.isActive ? "success" : "warning"}>
+                                  {category.isActive ? "Active" : "Archived"}
+                                </SoTStatusPill>
+                              </SoTTd>
+                              <SoTTd align="right">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <SoTButton
+                                    type="button"
+                                    variant="secondary"
+                                    size="compact"
+                                    onClick={() => setCategory(category.id)}
+                                  >
+                                    Use
+                                  </SoTButton>
+                                  <SoTButton
+                                    type="button"
+                                    variant="secondary"
+                                    size="compact"
+                                    onClick={() => {
+                                      const edited = window.prompt(
+                                        "Rename category",
+                                        category.name
+                                      );
+                                      const nextName = (edited ?? "").trim();
+                                      if (!nextName || nextName === category.name) return;
+                                      fetcher.submit(
+                                        {
+                                          intent: "update",
+                                          kind: "category",
+                                          id: category.id,
+                                          name: nextName,
+                                        },
+                                        {
+                                          method: "post",
+                                          action: "/resources/creation/upsert",
+                                        }
+                                      );
+                                    }}
+                                  >
+                                    Rename
+                                  </SoTButton>
+                                  <SoTButton
+                                    type="button"
+                                    variant={category.isActive ? "danger" : "primary"}
+                                    size="compact"
+                                    onClick={() => {
+                                      if (
+                                        !window.confirm(
+                                          category.isActive
+                                            ? `Archive "${category.name}"? It will be hidden from product form choices.`
+                                            : `Unarchive "${category.name}" and make it available again?`
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      fetcher.submit(
+                                        {
+                                          intent: category.isActive
+                                            ? "archive"
+                                            : "unarchive",
+                                          kind: "category",
+                                          id: category.id,
+                                        },
+                                        {
+                                          method: "post",
+                                          action: "/resources/creation/upsert",
+                                        }
+                                      );
+                                    }}
+                                  >
+                                    {category.isActive ? "Archive" : "Unarchive"}
+                                  </SoTButton>
+                                </div>
+                              </SoTTd>
+                            </SoTTableRow>
+                          ))
+                        )}
+                      </tbody>
+                    </SoTTable>
+                  </div>
+                </SoTCard>
+
                 <SoTFormField label="Category Context">
                   <SelectInput
-                    id={catSelectId}
                     value={activeCategoryId ?? ""}
                     onChange={(value) => setCategory(Number(value))}
-                    options={categories.map((category) => ({
-                      label: category.name,
+                    options={visibleCategories.map((category) => ({
+                      label: category.isActive
+                        ? category.name
+                        : `${category.name} (Archived)`,
                       value: category.id,
                     }))}
                   />
@@ -289,8 +468,22 @@ export default function CreationIndex() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Active Category
                   </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{activeCategoryName}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-900">{activeCategoryName}</p>
+                    {activeCategory ? (
+                      <SoTStatusPill tone={activeCategory.isActive ? "success" : "warning"}>
+                        {activeCategory.isActive ? "Active" : "Archived"}
+                      </SoTStatusPill>
+                    ) : null}
+                  </div>
                 </SoTCard>
+
+                {activeCategoryArchived ? (
+                  <SoTAlert tone="warning">
+                    Selected category is archived. Unarchive it first to add, edit, or delete
+                    brand/indication/target options.
+                  </SoTAlert>
+                ) : null}
 
                 {!activeCategoryId ? (
                   <SoTAlert tone="info">Select a category to manage category options.</SoTAlert>
@@ -331,6 +524,7 @@ export default function CreationIndex() {
                         addPlaceholder="e.g. Del Monte"
                         emptyMessage="No brands found for selected category."
                         categoryId={activeCategoryId}
+                        disabled={activeCategoryArchived}
                         onAdd={(name) =>
                           fetcher.submit(
                             {
@@ -374,6 +568,7 @@ export default function CreationIndex() {
                         addPlaceholder="e.g. Fattening"
                         emptyMessage="No indications found for selected category."
                         categoryId={activeCategoryId}
+                        disabled={activeCategoryArchived}
                         onAdd={(name) =>
                           fetcher.submit(
                             {
@@ -417,6 +612,7 @@ export default function CreationIndex() {
                         addPlaceholder="e.g. Broiler"
                         emptyMessage="No targets found for selected category."
                         categoryId={activeCategoryId}
+                        disabled={activeCategoryArchived}
                         onAdd={(name) =>
                           fetcher.submit(
                             {
@@ -470,6 +666,7 @@ function CompactOptionSection(props: {
   addPlaceholder: string;
   emptyMessage: string;
   categoryId?: number | null;
+  disabled?: boolean;
   onAdd: (name: string) => void;
   onDelete: (id: number) => void;
   onUpdate: (id: number, name: string) => void;
@@ -514,6 +711,7 @@ function CompactOptionSection(props: {
             value={search}
             placeholder={`Search ${props.title.toLowerCase()}`}
             onChange={(e) => setSearch(e.target.value)}
+            disabled={props.disabled}
           />
         </div>
 
@@ -523,6 +721,7 @@ function CompactOptionSection(props: {
             value={newName}
             placeholder={props.addPlaceholder}
             onChange={(e) => setNewName(e.target.value)}
+            disabled={props.disabled}
           />
         </div>
 
@@ -530,6 +729,7 @@ function CompactOptionSection(props: {
           <SoTButton
             type="button"
             className="h-10 w-full"
+            disabled={props.disabled}
             onClick={() => {
               const value = newName.trim();
               if (!value) return;
@@ -550,12 +750,14 @@ function CompactOptionSection(props: {
                 label={`Edit ${props.title.slice(0, -1) || props.title}`}
                 value={editingName}
                 onChange={(e) => setEditingName(e.target.value)}
+                disabled={props.disabled}
               />
             </div>
             <div className="md:col-span-4 flex items-end gap-2">
               <SoTButton
                 type="button"
                 className="w-full"
+                disabled={props.disabled}
                 onClick={() => {
                   const value = editingName.trim();
                   if (!value || editingId == null) return;
@@ -570,6 +772,7 @@ function CompactOptionSection(props: {
                 type="button"
                 variant="secondary"
                 className="w-full"
+                disabled={props.disabled}
                 onClick={() => {
                   setEditingId(null);
                   setEditingName("");
@@ -609,6 +812,7 @@ function CompactOptionSection(props: {
                         type="button"
                         variant="secondary"
                         size="compact"
+                        disabled={props.disabled}
                         onClick={() => {
                           setEditingId(row.id);
                           setEditingName(row.name);
@@ -621,6 +825,7 @@ function CompactOptionSection(props: {
                         type="button"
                         variant="danger"
                         size="compact"
+                        disabled={props.disabled}
                         onClick={() => {
                           if (!confirm(`Delete "${row.name}"?`)) return;
                           props.onDelete(row.id);

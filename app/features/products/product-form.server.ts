@@ -4,10 +4,22 @@ import type {
   ProductFormReferenceData,
 } from "~/components/products/ProductUpsertForm";
 
-export async function getProductFormReferences(): Promise<ProductFormReferenceData> {
+export async function getProductFormReferences(options?: {
+  includeCategoryId?: number | null;
+}): Promise<ProductFormReferenceData> {
+  const includeCategoryId = options?.includeCategoryId ?? null;
+
   const [categories, brands, units, packingUnits, indications, targets, locations] =
     await Promise.all([
-      db.category.findMany({ orderBy: { name: "asc" } }),
+      db.category.findMany({
+        where: includeCategoryId
+          ? {
+              OR: [{ isActive: true }, { id: includeCategoryId }],
+            }
+          : { isActive: true },
+        select: { id: true, name: true, isActive: true },
+        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      }),
       db.brand.findMany({ orderBy: { name: "asc" } }),
       db.unit.findMany({ orderBy: { name: "asc" } }),
       db.packingUnit.findMany({ orderBy: { name: "asc" } }),

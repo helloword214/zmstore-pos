@@ -7,6 +7,7 @@ export const loader = () =>
   json({ ok: false, message: "POST only" }, { status: 405 });
 
 type Kind =
+  | "category"
   | "unit"
   | "packingUnit"
   | "location"
@@ -23,6 +24,17 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, message: "Invalid id." }, { status: 400 });
 
   try {
+    if (kind === "category") {
+      return json(
+        {
+          ok: false,
+          message:
+            "Category hard delete is disabled. Use archive/unarchive in Product Option Library.",
+        },
+        { status: 403 }
+      );
+    }
+
     if (kind === "unit") {
       const c = await db.product.count({ where: { unitId: id } });
       if (c)

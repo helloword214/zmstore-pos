@@ -14,12 +14,28 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  const existing = await db.target.findUnique({
-    where: {
-      name_categoryId: {
-        name,
-        categoryId,
+  const category = await db.category.findUnique({
+    where: { id: categoryId },
+    select: { id: true, name: true, isActive: true },
+  });
+
+  if (!category) {
+    return json({ error: "Category not found." }, { status: 404 });
+  }
+
+  if (!category.isActive) {
+    return json(
+      {
+        error: `Category "${category.name}" is archived. Unarchive it before adding targets.`,
       },
+      { status: 400 }
+    );
+  }
+
+  const existing = await db.target.findFirst({
+    where: {
+      categoryId,
+      name: { equals: name, mode: "insensitive" },
     },
   });
 
