@@ -127,8 +127,25 @@ Phase 2 patch was completed and force-committed because full-repo `CHECK` failed
 6. `[DONE]` Patch 3 lint/type stabilization completed:
    - `npm run lint` -> 0 errors
    - `npm run typecheck` -> 0 errors
+7. `[DONE]` Compatibility alias route audit and cleanup completed (explicit `GO` approved):
+   - removed settings redirect aliases:
+     - `app/routes/settings._index.tsx`
+     - `app/routes/settings.areas.tsx`
+     - `app/routes/settings.provinces.tsx`
+     - `app/routes/settings.riders.tsx`
+     - `app/routes/settings.vehicles.tsx`
+   - removed settings resource aliases:
+     - `app/routes/resources.settings.upsert.ts`
+     - `app/routes/resources.settings.delete.ts`
+   - kept active dispatch bridge:
+     - `app/routes/orders.$id.dispatch.tsx`
+8. `[DONE]` Re-ran full-repo `CHECK` after compatibility cleanup:
+   - `npm run lint` -> 0 errors
+   - `npm run typecheck` -> 0 errors
 
 ### Remaining Today (Pending)
 
-1. `[TODO]` Audit remaining compatibility redirect/resource routes and decide keep vs remove with explicit approval.
-2. `[TODO]` Record final "today done vs not done" snapshot after next patch/check cycle.
+1. `[DONE]` Final today snapshot:
+   - Route cleanup: completed (legacy/dev + compatibility aliases removed)
+   - Full-repo `CHECK`: green (`lint` + `typecheck`)
+   - Open product roadmap items are Phase 3/4 strategic tasks (not part of today's cleanup execution).
