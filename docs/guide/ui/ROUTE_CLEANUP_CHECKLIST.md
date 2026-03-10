@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-10)
 
 1. Active routes tracked from UI matrix: `46`
-2. `DONE`: `13`
-3. `PENDING`: `33`
+2. `DONE`: `19`
+3. `PENDING`: `27`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -74,21 +74,21 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/cashier._index.tsx` | PENDING | 3 | type cleanup pending |
 | `app/routes/cashier.pos._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
-| `app/routes/store.dispatch.tsx` | PENDING | 12 | high-priority cleanup candidate |
+| `app/routes/store.dispatch.tsx` | DONE | 0 | cleaned (typed dispatch filters/orderBy + UI state mapping) |
 | `app/routes/runs._index.tsx` | DONE | 0 | cleaned in PR #50 |
 | `app/routes/runs.new.tsx` | DONE | 0 | cleaned |
-| `app/routes/runs.$id.dispatch.tsx` | PENDING | 11 | high-priority cleanup candidate |
+| `app/routes/runs.$id.dispatch.tsx` | DONE | 0 | cleaned (typed loadout snapshot parsing + enum-safe revert/dispatch updates) |
 | `app/routes/runs.$id.summary.tsx` | PENDING | 10 | high-priority cleanup candidate |
 | `app/routes/runs.$id.rider-checkin.tsx` | PENDING | 37 | critical high-volume cleanup |
 | `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/store.clearance_.$caseId.tsx` | PENDING | 9 | high-priority cleanup candidate |
-| `app/routes/runs.$id.remit.tsx` | PENDING | 12 | high-priority cleanup candidate |
+| `app/routes/runs.$id.remit.tsx` | DONE | 0 | cleaned (typed clearance/status handling in remit loader/action) |
 | `app/routes/cashier.delivery._index.tsx` | PENDING | 4 | type cleanup pending |
-| `app/routes/cashier.delivery.$runId.tsx` | PENDING | 49 | critical high-volume cleanup |
-| `app/routes/delivery-remit.$id.tsx` | PENDING | 15 | high-priority cleanup candidate |
+| `app/routes/cashier.delivery.$runId.tsx` | DONE | 0 | cleaned (typed remit helpers, no route-level any bypass) |
+| `app/routes/delivery-remit.$id.tsx` | DONE | 0 | cleaned (typed freeze-line mapping + enum-safe remit writes) |
 | `app/routes/ar._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/ar.customers.$id.tsx` | PENDING | 2 | type cleanup pending |
-| `app/routes/cashier.shift.tsx` | PENDING | 11 | high-priority cleanup candidate |
+| `app/routes/cashier.shift.tsx` | DONE | 0 | cleaned (typed shift status/drawer tx + isolation enum handling) |
 | `app/routes/cashier.shift-history.tsx` | PENDING | 5 | type cleanup pending |
 | `app/routes/store.cashier-shifts.tsx` | PENDING | 32 | critical high-volume cleanup |
 | `app/routes/store.cashier-variances.tsx` | PENDING | 7 | type cleanup pending |
@@ -115,8 +115,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/cashier.delivery.$runId.tsx`
-2. `app/routes/runs.$id.rider-checkin.tsx`
-3. `app/routes/store.cashier-shifts.tsx`
+1. `app/routes/runs.$id.rider-checkin.tsx`
+2. `app/routes/store.cashier-shifts.tsx`
+3. `app/routes/runs.$id.summary.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.

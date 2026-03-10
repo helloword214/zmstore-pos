@@ -1,5 +1,4 @@
 // app/routes/cashier.delivery.$runId.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 // NOTE: Customer settlement truth = (CASH + RIDER_SHORTAGE bridge) per Order. Cash drawer truth = Order.payments (CASH).
 import { json, redirect } from "@remix-run/node";
@@ -124,6 +123,50 @@ type FrozenCommercialLine = {
   discountAmount: number | null;
 };
 
+type FrozenCommercialLineInput = {
+  qty?: unknown;
+  unitPrice?: unknown;
+  lineTotal?: unknown;
+  baseUnitPrice?: unknown;
+  discountAmount?: unknown;
+};
+
+type PaymentLike = {
+  method?: unknown;
+  amount?: unknown;
+  refNo?: unknown;
+};
+
+type AuthIdentityLike = {
+  userId?: unknown;
+  id?: unknown;
+  shiftId?: unknown;
+} | null;
+
+type SnapshotRowLike = {
+  orderId?: unknown;
+  isCredit?: unknown;
+  cashCollected?: unknown;
+};
+
+type FreezeFirstOrderInput = Parameters<typeof resolveFinalTotalFreezeFirst>[1];
+
+type FreezeFirstOrderLike = {
+  id: number;
+  customerId: number | null;
+  createdAt: Date | null;
+  subtotal: unknown;
+  totalBeforeDiscount: unknown;
+  items: Array<{
+    id: number;
+    productId: number;
+    name: string;
+    qty: unknown;
+    unitPrice: unknown;
+    lineTotal?: unknown;
+  }>;
+};
+
 const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
   raw === "REJECT"
     ? "REJECT"
@@ -135,19 +178,90 @@ const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
     ? "APPROVE_HYBRID"
     : null;
 
-const normalizeFrozenLines = (linesIn: any[] | null | undefined) =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const toSnapshotRow = (value: unknown): SnapshotRowLike | null => {
+  if (!isRecord(value)) return null;
+  return {
+    orderId: value.orderId,
+    isCredit: value.isCredit,
+    cashCollected: value.cashCollected,
+  };
+};
+
+const parseIsCreditFromReceiptNote = (note: string | null | undefined) => {
+  if (!note) return false;
+  try {
+    const parsed: unknown = JSON.parse(note);
+    if (!isRecord(parsed)) return false;
+    return typeof parsed.isCredit === "boolean" ? parsed.isCredit : false;
+  } catch {
+    return false;
+  }
+};
+
+const parseRoadReceiptIdFromOrderCode = (orderCode: string | null) => {
+  if (!orderCode) return null;
+  // Accept both old "RS-" prefix and deterministic "RS-RUN{runId}-RR{id}".
+  const m = String(orderCode).match(/-RR(\d+)$/);
+  if (!m) return null;
+  const id = Number(m[1]);
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+const toFreezeFirstOrder = (order: FreezeFirstOrderLike): FreezeFirstOrderInput => ({
+  id: order.id,
+  customerId: order.customerId ?? null,
+  createdAt: order.createdAt ?? new Date(),
+  subtotal:
+    order.subtotal == null || !Number.isFinite(Number(order.subtotal))
+      ? null
+      : Number(order.subtotal),
+  totalBeforeDiscount:
+    order.totalBeforeDiscount == null ||
+    !Number.isFinite(Number(order.totalBeforeDiscount))
+      ? null
+      : Number(order.totalBeforeDiscount),
+  items: (order.items ?? []).map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    name: item.name,
+    qty: Number(item.qty ?? 0),
+    unitPrice: Number(item.unitPrice ?? 0),
+    lineTotal:
+      item.lineTotal == null || !Number.isFinite(Number(item.lineTotal))
+        ? undefined
+        : Number(item.lineTotal),
+  })),
+});
+
+const sumFrozenLineTotals = (
+  lines: ReadonlyArray<FrozenCommercialLineInput> | null | undefined
+) =>
+  (lines ?? []).reduce((sum, line) => {
+    const lineTotal = Number(line.lineTotal ?? NaN);
+    if (Number.isFinite(lineTotal)) return sum + lineTotal;
+    const qty = Number(line.qty ?? 0);
+    const unitPrice = Number(line.unitPrice ?? 0);
+    return sum + qty * unitPrice;
+  }, 0);
+
+const normalizeFrozenLines = (
+  linesIn: ReadonlyArray<FrozenCommercialLineInput> | null | undefined
+) =>
   (linesIn ?? []).map(
     (ln): FrozenCommercialLine => ({
-      qty: Math.max(0, Number((ln as any)?.qty ?? 0)),
-      unitPrice: Math.max(0, Number((ln as any)?.unitPrice ?? 0)),
-      lineTotal: Math.max(0, Number((ln as any)?.lineTotal ?? 0)),
+      qty: Math.max(0, Number(ln.qty ?? 0)),
+      unitPrice: Math.max(0, Number(ln.unitPrice ?? 0)),
+      lineTotal: Math.max(0, Number(ln.lineTotal ?? 0)),
       baseUnitPrice:
-        (ln as any)?.baseUnitPrice != null
-          ? Math.max(0, Number((ln as any).baseUnitPrice))
+        ln.baseUnitPrice != null
+          ? Math.max(0, Number(ln.baseUnitPrice))
           : null,
       discountAmount:
-        (ln as any)?.discountAmount != null
-          ? Math.max(0, Number((ln as any).discountAmount))
+        ln.discountAmount != null
+          ? Math.max(0, Number(ln.discountAmount))
           : null,
     })
   );
@@ -179,34 +293,41 @@ const sumSystemDiscountFromFrozen = (linesIn: FrozenCommercialLine[]) =>
 
 // Cash expected vs actual must be CASH-only.
 // Non-cash (fund transfer/card) is still a Payment, but not rider cash remit.
-const sumCashPayments = (payments: any[] | null | undefined) =>
+const sumCashPayments = (payments: ReadonlyArray<PaymentLike> | null | undefined) =>
   (payments ?? []).reduce((sum, p) => {
-    const method = String((p as any)?.method ?? "").toUpperCase();
-    const amt = Number((p as any)?.amount ?? 0);
+    const method = String(p.method ?? "").toUpperCase();
+    const amt = Number(p.amount ?? 0);
     if (method !== "CASH") return sum;
     return sum + (Number.isFinite(amt) ? amt : 0);
   }, 0);
 
 // Bridge: shortage settlement line posted by cashier when rider comes up short.
 // This is NOT cash drawer money; it's "internal credit" to keep customer fully settled.
-const sumShortageBridgePayments = (payments: any[] | null | undefined) =>
+const sumShortageBridgePayments = (
+  payments: ReadonlyArray<PaymentLike> | null | undefined
+) =>
   (payments ?? []).reduce((sum, p) => {
-    const method = String((p as any)?.method ?? "").toUpperCase();
+    const method = String(p.method ?? "").toUpperCase();
     if (method !== "INTERNAL_CREDIT") return sum;
-    const ref = String((p as any)?.refNo ?? "").toUpperCase();
+    const ref = String(p.refNo ?? "").toUpperCase();
     // accept both current canonical and legacy formats
     const isShort =
       ref === "RIDER_SHORTAGE" || ref.startsWith("RIDER-SHORTAGE");
     if (!isShort) return sum;
-    const amt = Number((p as any)?.amount ?? 0);
+    const amt = Number(p.amount ?? 0);
     return sum + (Number.isFinite(amt) ? amt : 0);
   }, 0);
 
 // Normalize auth identity across routes (some older routes used me.id).
 // Prefer userId, fallback to id for back-compat.
-const getAuthUserId = (me: any) => {
+const getAuthUserId = (me: AuthIdentityLike) => {
   const v = Number(me?.userId ?? me?.id ?? 0);
   return Number.isFinite(v) && v > 0 ? v : 0;
+};
+
+const getAuthShiftId = (me: AuthIdentityLike) => {
+  const shiftId = Number(me?.shiftId ?? 0);
+  return Number.isFinite(shiftId) && shiftId > 0 ? shiftId : null;
 };
 
 const isVarianceClearedBySchema = (v: {
@@ -240,7 +361,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const me = await requireOpenShift(request);
 
   // Lock identity for delivery remit: per CASHIER userId
-  const myUserId = getAuthUserId(me as any);
+  const myUserId = getAuthUserId(me);
   const myToken = String(myUserId || "");
 
   const runId = Number(params.runId);
@@ -434,25 +555,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   for (const r of parentReceipts) {
     const oid = Number(r.parentOrderId ?? 0);
     if (!oid) continue;
-    const total = (r.lines || []).reduce((s, ln) => {
-      // lineTotal is already frozen; use it if present
-      const lt = Number((ln as any).lineTotal ?? NaN);
-      if (Number.isFinite(lt)) return s + lt;
-      const qty = Number((ln as any).qty ?? 0);
-      const up = Number((ln as any).unitPrice ?? 0);
-      return s + qty * up;
-    }, 0);
+    const total = sumFrozenLineTotals(r.lines);
     const cash = Math.max(0, Number(r.cashCollected ?? 0));
     // IMPORTANT: for PARENT receipts, do NOT infer credit from cashCollected.
     // Default CASH unless meta explicitly says isCredit=true (same as summary/remit).
-    let isCredit = false;
-    try {
-      const meta = r.note ? JSON.parse(r.note) : null;
-      if (meta && typeof meta.isCredit === "boolean") isCredit = meta.isCredit;
-    } catch {
-      // ignore malformed legacy note payload
-    }
-    const normalizedLines = normalizeFrozenLines(r.lines as any[]);
+    const isCredit = parseIsCreditFromReceiptNote(r.note);
+    const normalizedLines = normalizeFrozenLines(r.lines);
     // ✅ Aggregate per parent orderId (avoid overwrite if multiple receipts exist)
     const prev = parentReceiptByOrderId.get(oid);
     parentReceiptByOrderId.set(oid, {
@@ -498,19 +606,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   >();
   for (const rr of roadReceipts) {
-    const total = (rr.lines || []).reduce((s, ln) => {
-      const lt = Number((ln as any).lineTotal ?? NaN);
-      if (Number.isFinite(lt)) return s + lt;
-      const qty = Number((ln as any).qty ?? 0);
-      const up = Number((ln as any).unitPrice ?? 0);
-      return s + qty * up;
-    }, 0);
+    const total = sumFrozenLineTotals(rr.lines);
     const cash = Math.max(0, Number(rr.cashCollected ?? 0));
     roadReceiptById.set(rr.id, {
       total: r2(total),
       cash: r2(cash),
       receiptKey: String(rr.receiptKey || `ROAD:${rr.id}`).slice(0, 64),
-      lines: normalizeFrozenLines(rr.lines as any[]),
+      lines: normalizeFrozenLines(rr.lines),
     });
   }
 
@@ -518,7 +620,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: {
       runId,
       status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-    } as any,
+    },
     select: {
       receiptKey: true,
       status: true,
@@ -542,12 +644,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
   const caseByReceiptKey = new Map<string, CaseInfo>();
   for (const c of cases || []) {
-    const rk = String((c as any).receiptKey || "").slice(0, 64).trim();
+    const rk = String(c.receiptKey || "").slice(0, 64).trim();
     if (!rk) continue;
-    const status = String((c as any).status || "");
+    const status = String(c.status || "");
     if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
 
-    const d = (c as any)?.decisions?.[0];
+    const d = c.decisions[0];
     const approvedBargainDiscount = r2(
       Math.max(0, Number(d?.overrideDiscountApproved ?? 0))
     );
@@ -568,16 +670,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const parseRoadReceiptIdFromOrderCode = (orderCode: string | null) => {
-    if (!orderCode) return null;
-    // Accept both old "RS-" prefix and your deterministic "RS-RUN{runId}-RR{id}"
-    // As long as it ends with -RR{digits}, we can resolve.
-    const m = String(orderCode).match(/-RR(\d+)$/);
-    if (!m) return null;
-    const id = Number(m[1]);
-    return Number.isFinite(id) && id > 0 ? id : null;
-  };
-
   // ────────────────────────────────────────────────
   // Source of truth maps for rider cash (ROAD + PARENT)
   // ────────────────────────────────────────────────
@@ -590,23 +682,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // ────────────────────────────────────────────────
   // Expected CASH / AR for this run (computed for BOTH CLOSED and SETTLED)
   // ────────────────────────────────────────────────
-  const rawSnap = run.riderCheckinSnapshot as any;
+  const rawSnap = run.riderCheckinSnapshot;
   const parentOverrideMap = new Map<number, boolean>(); // legacy fallback
   const parentPaymentMap = new Map<number, number>(); // legacy fallback
 
-  if (rawSnap && typeof rawSnap === "object") {
+  if (isRecord(rawSnap)) {
     if (Array.isArray(rawSnap.parentOverrides)) {
-      for (const row of rawSnap.parentOverrides) {
-        const oid = Number(row?.orderId ?? 0);
+      for (const rawRow of rawSnap.parentOverrides) {
+        const row = toSnapshotRow(rawRow);
+        if (!row) continue;
+        const oid = Number(row.orderId ?? 0);
         if (!oid) continue;
-        parentOverrideMap.set(oid, !!row?.isCredit);
+        parentOverrideMap.set(oid, !!row.isCredit);
       }
     }
     if (Array.isArray(rawSnap.parentPayments)) {
-      for (const row of rawSnap.parentPayments) {
-        const oid = Number(row?.orderId ?? 0);
+      for (const rawRow of rawSnap.parentPayments) {
+        const row = toSnapshotRow(rawRow);
+        if (!row) continue;
+        const oid = Number(row.orderId ?? 0);
         if (!oid) continue;
-        const amt = Number(row?.cashCollected ?? 0);
+        const amt = Number(row.cashCollected ?? 0);
         if (!Number.isFinite(amt) || amt < 0) continue;
         parentPaymentMap.set(oid, amt);
       }
@@ -644,9 +740,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const allProductIds = Array.from(
       new Set(
         mappedOrders
-          .flatMap((o) =>
-            (o.items ?? []).map((it: any) => Number(it.productId))
-          )
+          .flatMap((o) => (o.items ?? []).map((it) => Number(it.productId)))
           .filter((n) => Number.isFinite(n) && n > 0)
       )
     );
@@ -697,21 +791,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           // legacy fallback when ROAD receipt not resolvable
           const { finalTotal } = await resolveFinalTotalFreezeFirst(
             db,
-            {
-              id: o.id,
-              customerId: (o as any).customerId ?? null,
-              createdAt: o.createdAt ?? new Date(),
-              subtotal: o.subtotal ?? null,
-              totalBeforeDiscount: o.totalBeforeDiscount ?? null,
-              items: (o.items ?? []).map((it: any) => ({
-                id: it.id,
-                productId: it.productId,
-                name: it.name,
-                qty: it.qty,
-                unitPrice: it.unitPrice,
-                lineTotal: it.lineTotal,
-              })),
-            } as any,
+            toFreezeFirstOrder(o),
             byProductId
           );
           finalTotalNum = Number(finalTotal ?? 0);
@@ -724,30 +804,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         // legacy fallback ONLY when no parent receipt exists
         const { finalTotal } = await resolveFinalTotalFreezeFirst(
           db,
-          {
-            id: o.id,
-            customerId: (o as any).customerId ?? null,
-            createdAt: o.createdAt ?? new Date(),
-            subtotal: o.subtotal ?? null,
-            totalBeforeDiscount: o.totalBeforeDiscount ?? null,
-            items: (o.items ?? []).map((it: any) => ({
-              id: it.id,
-              productId: it.productId,
-              name: it.name,
-              qty: it.qty,
-              unitPrice: it.unitPrice,
-              lineTotal: it.lineTotal,
-            })),
-          } as any,
+          toFreezeFirstOrder(o),
           byProductId
         );
         finalTotalNum = Number(finalTotal ?? 0);
       }
 
       // ✅ CASH-only: actual cash received for this order
-      const cashierReceivedCash = sumCashPayments(o.payments as any);
+      const cashierReceivedCash = sumCashPayments(o.payments);
       // ✅ Bridge: non-cash settlement line for rider shortage
-      const bridgePaid = sumShortageBridgePayments(o.payments as any);
+      const bridgePaid = sumShortageBridgePayments(o.payments);
 
       if (!isRoadside) {
         // ✅ Parent cash + totals: if RunReceipt exists, use it (frozen)
@@ -790,8 +856,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
 
       const commercialLines = isRoadside
-        ? roadReceipt?.lines ?? normalizeFrozenLines(o.items as any[])
-        : parentReceipt?.lines ?? normalizeFrozenLines(o.items as any[]);
+        ? roadReceipt?.lines ?? normalizeFrozenLines(o.items)
+        : parentReceipt?.lines ?? normalizeFrozenLines(o.items);
       systemDiscount = sumSystemDiscountFromFrozen(commercialLines);
 
       const receiptKey = isRoadside
@@ -913,7 +979,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Auto-promote only when BALANCED.
   // If there is shortage/overage, require explicit clearance flow (Manager → Rider → Cashier finalize).
   const autoSettleAllowed = Math.abs(cashShort) < EPS;
-  let runStatus = run.status as string;
+  let runStatus: string = run.status;
   if (
     runStatus === "CLOSED" &&
     autoSettleAllowed &&
@@ -1053,14 +1119,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const r2 = (n: number) =>
     Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
-  const parseRoadReceiptIdFromOrderCode = (orderCode: string | null) => {
-    if (!orderCode) return null;
-    const m = String(orderCode).match(/-RR(\d+)$/);
-    if (!m) return null;
-    const id = Number(m[1]);
-    return Number.isFinite(id) && id > 0 ? id : null;
-  };
-
   // ✅ Same truth: use PARENT RunReceipt lines when present
   const parentReceipts = await db.runReceipt.findMany({
     where: { runId, kind: "PARENT", parentOrderId: { not: null } },
@@ -1078,21 +1136,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   for (const r of parentReceipts) {
     const oid = Number(r.parentOrderId ?? 0);
     if (!oid) continue;
-    const total = (r.lines || []).reduce((s, ln) => {
-      const lt = Number((ln as any).lineTotal ?? NaN);
-      if (Number.isFinite(lt)) return s + lt;
-      const qty = Number((ln as any).qty ?? 0);
-      const up = Number((ln as any).unitPrice ?? 0);
-      return s + qty * up;
-    }, 0);
+    const total = sumFrozenLineTotals(r.lines);
     const cash = Math.max(0, Number(r.cashCollected ?? 0));
-    let isCredit = false;
-    try {
-      const meta = r.note ? JSON.parse(r.note) : null;
-      if (meta && typeof meta.isCredit === "boolean") isCredit = meta.isCredit;
-    } catch {
-      // ignore malformed legacy note payload
-    }
+    const isCredit = parseIsCreditFromReceiptNote(r.note);
     const prev = parentReceiptByOrderId.get(oid);
     parentReceiptByOrderId.set(oid, {
       total: r2((prev?.total || 0) + total),
@@ -1112,13 +1158,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   });
   const roadReceiptById = new Map<number, { total: number; cash: number }>();
   for (const rr of roadReceipts) {
-    const total = (rr.lines || []).reduce((s, ln) => {
-      const lt = Number((ln as any).lineTotal ?? NaN);
-      if (Number.isFinite(lt)) return s + lt;
-      const qty = Number((ln as any).qty ?? 0);
-      const up = Number((ln as any).unitPrice ?? 0);
-      return s + qty * up;
-    }, 0);
+    const total = sumFrozenLineTotals(rr.lines);
     const cash = Math.max(0, Number(rr.cashCollected ?? 0));
     roadReceiptById.set(rr.id, { total: r2(total), cash: r2(cash) });
   }
@@ -1145,9 +1185,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const allProductIds = Array.from(
       new Set(
         mappedOrders
-          .flatMap((o) =>
-            (o.items ?? []).map((it: any) => Number(it.productId))
-          )
+          .flatMap((o) => (o.items ?? []).map((it) => Number(it.productId)))
           .filter((n) => Number.isFinite(n) && n > 0)
       )
     );
@@ -1182,21 +1220,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       } else {
         const { finalTotal } = await resolveFinalTotalFreezeFirst(
           db,
-          {
-            id: o.id,
-            customerId: (o as any).customerId ?? null,
-            createdAt: (o as any).createdAt ?? new Date(),
-            subtotal: o.subtotal ?? null,
-            totalBeforeDiscount: o.totalBeforeDiscount ?? null,
-            items: (o.items ?? []).map((it: any) => ({
-              id: it.id,
-              productId: it.productId,
-              name: it.name,
-              qty: it.qty,
-              unitPrice: it.unitPrice,
-              lineTotal: it.lineTotal,
-            })),
-          } as any,
+          toFreezeFirstOrder(o),
           byProductId
         );
         orderFinal = Number(finalTotal ?? 0);
@@ -1207,26 +1231,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // legacy fallback only when receipt missing (or roadside)
       const { finalTotal } = await resolveFinalTotalFreezeFirst(
         db,
-        {
-          id: o.id,
-          customerId: (o as any).customerId ?? null,
-          createdAt: (o as any).createdAt ?? new Date(),
-          subtotal: o.subtotal ?? null,
-          totalBeforeDiscount: o.totalBeforeDiscount ?? null,
-          items: (o.items ?? []).map((it: any) => ({
-            id: it.id,
-            productId: it.productId,
-            name: it.name,
-            qty: it.qty,
-            unitPrice: it.unitPrice,
-            lineTotal: it.lineTotal,
-          })),
-        } as any,
+        toFreezeFirstOrder(o),
         byProductId
       );
       orderFinal = Number(finalTotal ?? 0);
     }
-    const alreadyPaidCash = sumCashPayments(o.payments as any);
+    const alreadyPaidCash = sumCashPayments(o.payments);
 
     let riderCash = 0;
 
@@ -1295,9 +1305,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   // ✅ Multi-cashier audit: stamp closing shiftId when available
-  const shiftIdNum = Number((me as any)?.shiftId ?? 0);
-  const shiftId =
-    Number.isFinite(shiftIdNum) && shiftIdNum > 0 ? shiftIdNum : null;
+  const shiftId = getAuthShiftId(me);
 
   await db.$transaction(async (tx) => {
     await tx.deliveryRun.update({

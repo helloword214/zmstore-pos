@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -17,6 +16,7 @@ import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SelectInput } from "~/components/ui/SelectInput";
+import { Prisma } from "@prisma/client";
 
 type ActionData =
   | { ok: true; redirectedTo: string }
@@ -53,9 +53,21 @@ function parseSortDir(raw: string | null): SortDir {
   return v === "asc" ? "asc" : "desc";
 }
 
+function buildDispatchOrderBy(
+  sort: SortKey,
+  dir: SortDir
+): Prisma.OrderOrderByWithRelationInput[] {
+  if (sort === "amount") {
+    return [{ totalBeforeDiscount: dir }, { subtotal: dir }, { id: "desc" }];
+  }
+  if (sort === "printedAt") return [{ printedAt: dir }, { id: "desc" }];
+  if (sort === "stagedAt") return [{ stagedAt: dir }, { id: "desc" }];
+  return [{ id: dir }];
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   // Store Manager (or Admin) lang ang pwede dito
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"] as any);
+  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
 
   const url = new URL(request.url);
   const q = String(url.searchParams.get("q") || "").trim();
@@ -64,18 +76,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const take = clampTake(Number(url.searchParams.get("take") || 50), 50);
 
   // Build orderBy
-  const orderBy: any[] = [];
-  if (sort === "amount") {
-    // pick a stable amount column you already have (fallback-safe)
-    // Prefer totalBeforeDiscount (often includes discounts logic), then subtotal.
-    orderBy.push({ totalBeforeDiscount: dir });
-    orderBy.push({ subtotal: dir });
-    orderBy.push({ id: "desc" });
-  } else {
-    orderBy.push({ [sort]: dir });
-    // stable tie-breaker
-    if (sort !== "id") orderBy.push({ id: "desc" });
-  }
+  const orderBy = buildDispatchOrderBy(sort, dir);
 
   const forDispatch = await db.order.findMany({
     where: {
@@ -85,15 +86,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ...(q
         ? {
             OR: [
-              { orderCode: { contains: q, mode: "insensitive" as any } },
-              { riderName: { contains: q, mode: "insensitive" as any } },
+              {
+                orderCode: {
+                  contains: q,
+                  mode: Prisma.QueryMode.insensitive,
+                },
+              },
+              {
+                riderName: {
+                  contains: q,
+                  mode: Prisma.QueryMode.insensitive,
+                },
+              },
               {
                 customer: {
                   OR: [
-                    { alias: { contains: q, mode: "insensitive" as any } },
-                    { firstName: { contains: q, mode: "insensitive" as any } },
-                    { lastName: { contains: q, mode: "insensitive" as any } },
-                    { phone: { contains: q, mode: "insensitive" as any } },
+                    {
+                      alias: {
+                        contains: q,
+                        mode: Prisma.QueryMode.insensitive,
+                      },
+                    },
+                    {
+                      firstName: {
+                        contains: q,
+                        mode: Prisma.QueryMode.insensitive,
+                      },
+                    },
+                    {
+                      lastName: {
+                        contains: q,
+                        mode: Prisma.QueryMode.insensitive,
+                      },
+                    },
+                    {
+                      phone: {
+                        contains: q,
+                        mode: Prisma.QueryMode.insensitive,
+                      },
+                    },
                   ],
                 },
               },
@@ -160,7 +191,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"] as any);
+  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
 
@@ -217,7 +248,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await tx.deliveryRunOrder.createMany({
         data: finalIds.map((orderId) => ({ runId: newRun!.id, orderId })),
         // if you have unique constraint (runId,orderId), this prevents duplicates
-        skipDuplicates: true as any,
+        skipDuplicates: true,
       });
       return newRun;
     });
@@ -247,7 +278,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     await db.deliveryRunOrder.createMany({
       data: finalIds.map((orderId) => ({ runId, orderId })),
-      skipDuplicates: true as any,
+      skipDuplicates: true,
     });
 
     return redirect(`/runs/${runId}/dispatch`);
@@ -262,7 +293,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function StoreDispatchQueuePage() {
   const { forDispatch, runOptions, q, sort, dir, take } = useLoaderData<
     typeof loader
-  >() as any;
+  >();
   const actionData = useActionData<ActionData>();
   const [sp] = useSearchParams();
   const needAssignOrderId = Number(sp.get("needAssignOrderId") || NaN);
@@ -281,7 +312,7 @@ export default function StoreDispatchQueuePage() {
     }
   }, [needAssignOrderId]);
 
-  const allIds = forDispatch.map((o: any) => o.id);
+  const allIds = forDispatch.map((o) => o.id);
   const selectedCount = selected.size;
   const selectedCsv = Array.from(selected).join(",");
   const allChecked =
@@ -294,7 +325,16 @@ export default function StoreDispatchQueuePage() {
     return "Newest";
   };
 
-  const customerLabel = (c: any) => {
+  const customerLabel = (
+    c:
+      | {
+          alias?: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+        }
+      | null
+      | undefined,
+  ) => {
     if (!c) return "—";
     const name = (
       String(c.alias || "").trim() ||
@@ -430,7 +470,7 @@ export default function StoreDispatchQueuePage() {
                   className="w-56"
                   options={[
                     { label: "— Assign to PLANNED run —", value: "" },
-                    ...runOptions.map((r: any) => ({
+                    ...runOptions.map((r) => ({
                       label: r.label,
                       value: String(r.id),
                     })),
@@ -514,7 +554,7 @@ export default function StoreDispatchQueuePage() {
                 hint="New delivery orders will appear here once staged."
               />
             ) : (
-              forDispatch.map((r: any) => (
+              forDispatch.map((r) => (
                 <div
                   key={r.id}
                   className={`px-4 py-3 hover:bg-slate-50/60 ${

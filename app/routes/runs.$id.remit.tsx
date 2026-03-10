@@ -1,5 +1,4 @@
 // app/routes/runs.$id.remit.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import * as React from "react";
@@ -190,7 +189,7 @@ type LoaderData = {
   run: {
     id: number;
     runCode: string;
-    status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
+    status: string;
     riderLabel: string | null;
   };
   recapRows: RecapRow[];
@@ -432,7 +431,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: {
       runId: id,
       status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-    } as any,
+    },
     select: {
       receiptKey: true,
       status: true,
@@ -449,13 +448,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
   const caseByReceiptKey = new Map<string, CaseInfo>();
   for (const c of cases || []) {
-    const rk = String((c as any).receiptKey || "").slice(0, 64);
+    const rk = String(c.receiptKey || "").slice(0, 64);
     if (!rk) continue;
 
-    const status = String((c as any).status || "");
+    const status = String(c.status || "");
     if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
 
-    const d = (c as any)?.decisions?.[0];
+    const d = c.decisions[0];
     caseByReceiptKey.set(rk, {
       status,
       decisionKind: parseDecisionKind(d?.kind),
@@ -795,7 +794,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     run: {
       id: run.id,
       runCode: run.runCode,
-      status: run.status as any,
+      status: run.status,
       riderLabel,
     },
     recapRows,
@@ -829,13 +828,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(formData.get("_intent") || "post-remit");
 
   // Pang-audit sa A/R approver (manager/admin)
+  const meIdentity = me as { alias?: string | null; name?: string | null };
   const approverLabel =
-    (me as any).alias?.trim?.() ||
-    (me as any).name?.trim?.() ||
-    (typeof (me as any).userId !== "undefined"
-      ? `USER#${(me as any).userId}`
-      : "MANAGER");
-  const managerApprovedById = Number((me as any).userId) || null;
+    meIdentity.alias?.trim() || meIdentity.name?.trim() || `USER#${me.userId}`;
+  const managerApprovedById = Number(me.userId) || null;
   if (!Number.isFinite(id)) {
     return json<ActionData>(
       { ok: false, error: "Invalid ID" },
@@ -886,7 +882,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // CCS v2.7 remit gate:
   // No remit while any receipt in this run is still pending clearance.
   const pendingClearanceCount = await db.clearanceCase.count({
-    where: { runId: id, status: "NEEDS_CLEARANCE" } as any,
+    where: { runId: id, status: "NEEDS_CLEARANCE" },
   });
   if (pendingClearanceCount > 0) {
     return json<ActionData>(
