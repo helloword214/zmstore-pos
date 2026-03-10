@@ -16,12 +16,14 @@ These docs support implementation and review but do not override canonical flow 
 2. `UI_CONFORMANCE_MATRIX.md`
 3. `Clearance CSS Alignment Rules.md`
 4. `Remit_Cleanup_Checklist.md`
+5. `ROUTE_CLEANUP_CHECKLIST.md`
 
 ## 3. Usage Order
 
 1. Start with `UI_AUTOMATION_GUIDE.md` for contract and gates.
 2. Use `UI_CONFORMANCE_MATRIX.md` for route-level conformance status.
-3. Use `Clearance CSS Alignment Rules.md` and `Remit_Cleanup_Checklist.md` for focused implementation checks.
+3. Use `ROUTE_CLEANUP_CHECKLIST.md` to track per-route cleanup completion (`DONE`/`PENDING`).
+4. Use `Clearance CSS Alignment Rules.md` and `Remit_Cleanup_Checklist.md` for focused implementation checks.
 
 ## 4. Execution Pairing
 
