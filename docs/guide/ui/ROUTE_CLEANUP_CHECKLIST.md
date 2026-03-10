@@ -1,0 +1,122 @@
+# Route Cleanup Checklist
+
+Status: ACTIVE  
+Owner: POS Platform  
+Last Updated: 2026-03-10
+
+## 1. Purpose
+
+Central tracker for route cleanup progress so the team can see, per route, which cleanup tasks are already completed and which are still pending.
+
+Scope in this file is cleanup hardening only:
+
+1. remove route-level `@typescript-eslint/no-explicit-any` bypass
+2. reduce/remove `as any` casts
+3. remove debug `console.log` traces in active route code
+
+Business behavior changes are out of scope for this checklist.
+
+## 2. Status Legend
+
+1. `DONE`: no current hits for cleanup markers in this route (`no-explicit-any`, `as any`, `console.log`)
+2. `PENDING`: route still has one or more cleanup markers
+3. `N/A`: route intentionally excluded from this pass (example: generated/internal-only path)
+
+## 3. Baseline Snapshot (2026-03-10)
+
+1. Active routes tracked from UI matrix: `46`
+2. `DONE`: `13`
+3. `PENDING`: `33`
+4. Scan markers:
+   - `@typescript-eslint/no-explicit-any`
+   - `as any`
+   - `console.log`
+5. Priority rule for execution:
+   - highest marker count first
+   - then by flow criticality (`REMIT`/`CHECKIN` routes before lower-risk routes)
+
+## 4. Cleanup Log (Merged Batches)
+
+1. 2026-03-08 - [PR #47](https://github.com/helloword214/zmstore-pos/pull/47)  
+   Scope: legacy/dev route deletion + baseline check restore  
+   Merge: `efa3eb85cb2b5b75b8a748d4fe5c3c0ce4af8f22`
+2. 2026-03-08 - [PR #48](https://github.com/helloword214/zmstore-pos/pull/48)  
+   Scope: compatibility alias route cleanup  
+   Merge: `ddd7276963690f3b0ac3f40be632e0b9ae09ec46`
+3. 2026-03-10 - [PR #49](https://github.com/helloword214/zmstore-pos/pull/49)  
+   Scope: `products._index.tsx` typing/log cleanup  
+   Merge: `eaf8a81cffe716887c9a44e7c6787f24154026d4`
+4. 2026-03-10 - [PR #50](https://github.com/helloword214/zmstore-pos/pull/50)  
+   Scope: `runs._index.tsx` typing cleanup  
+   Merge: pending (open at time of this snapshot)
+
+## 5. Route Checklist (Active Routes)
+
+| Route | Status | Marker Count | Notes |
+| --- | --- | --- | --- |
+| `app/routes/_index.tsx` | DONE | 0 | cleaned |
+| `app/routes/customers._index.tsx` | DONE | 0 | cleaned |
+| `app/routes/customers.new.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/customers.$id.tsx` | DONE | 0 | cleaned |
+| `app/routes/customers.$id_.edit.tsx` | DONE | 0 | cleaned |
+| `app/routes/customers.$id_.pricing.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/customers.$id_.pricing_.$ruleId.tsx` | DONE | 0 | cleaned |
+| `app/routes/creation._index.tsx` | DONE | 0 | cleaned |
+| `app/routes/creation.riders.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/creation.vehicles.tsx` | PENDING | 3 | type cleanup pending |
+| `app/routes/creation.provinces.tsx` | PENDING | 3 | type cleanup pending |
+| `app/routes/creation.areas.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/products._index.tsx` | DONE | 0 | cleaned in PR #49 |
+| `app/routes/products.new.tsx` | DONE | 0 | cleaned |
+| `app/routes/products.$productId.tsx` | DONE | 0 | cleaned |
+| `app/routes/products.$productId.edit.tsx` | DONE | 0 | cleaned |
+| `app/routes/login.tsx` | DONE | 0 | cleaned |
+| `app/routes/cashier._index.tsx` | PENDING | 3 | type cleanup pending |
+| `app/routes/cashier.pos._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/store.dispatch.tsx` | PENDING | 12 | high-priority cleanup candidate |
+| `app/routes/runs._index.tsx` | DONE | 0 | cleaned in PR #50 |
+| `app/routes/runs.new.tsx` | DONE | 0 | cleaned |
+| `app/routes/runs.$id.dispatch.tsx` | PENDING | 11 | high-priority cleanup candidate |
+| `app/routes/runs.$id.summary.tsx` | PENDING | 10 | high-priority cleanup candidate |
+| `app/routes/runs.$id.rider-checkin.tsx` | PENDING | 37 | critical high-volume cleanup |
+| `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/store.clearance_.$caseId.tsx` | PENDING | 9 | high-priority cleanup candidate |
+| `app/routes/runs.$id.remit.tsx` | PENDING | 12 | high-priority cleanup candidate |
+| `app/routes/cashier.delivery._index.tsx` | PENDING | 4 | type cleanup pending |
+| `app/routes/cashier.delivery.$runId.tsx` | PENDING | 49 | critical high-volume cleanup |
+| `app/routes/delivery-remit.$id.tsx` | PENDING | 15 | high-priority cleanup candidate |
+| `app/routes/ar._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/ar.customers.$id.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/cashier.shift.tsx` | PENDING | 11 | high-priority cleanup candidate |
+| `app/routes/cashier.shift-history.tsx` | PENDING | 5 | type cleanup pending |
+| `app/routes/store.cashier-shifts.tsx` | PENDING | 32 | critical high-volume cleanup |
+| `app/routes/store.cashier-variances.tsx` | PENDING | 7 | type cleanup pending |
+| `app/routes/cashier.charges.tsx` | PENDING | 6 | type cleanup pending |
+| `app/routes/store.cashier-ar.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/store.payroll.tsx` | PENDING | 11 | high-priority cleanup candidate |
+| `app/routes/store.rider-variances.tsx` | PENDING | 6 | type cleanup pending |
+| `app/routes/rider.variances.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/rider.variance.$id.tsx` | PENDING | 6 | type cleanup pending |
+| `app/routes/store.rider-charges.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/creation.opening-ar-batches.tsx` | PENDING | 7 | opening-balance path cleanup pending |
+| `app/routes/store.clearance-opening-batches.tsx` | PENDING | 11 | opening-balance path cleanup pending |
+
+## 6. Operating Rules
+
+1. One cleanup objective = one commit.
+2. Every touched route must update this checklist in the same PR.
+3. Every touched route must update `UI_CONFORMANCE_MATRIX.md` note in the same PR.
+4. `CHECK` must stay green:
+   - `npm run typecheck`
+   - `npm run lint`
+
+## 7. Next Recommended Batch
+
+Recommended next high-impact batch:
+
+1. `app/routes/cashier.delivery.$runId.tsx`
+2. `app/routes/runs.$id.rider-checkin.tsx`
+3. `app/routes/store.cashier-shifts.tsx`
+
+Reason: highest cleanup marker concentration and direct operational flow impact.
