@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -46,22 +45,46 @@ type ProductOption = {
   name: string;
 };
 
+type LoadoutSnapshotRow = {
+  productId: number | null;
+  name: string;
+  qty: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const parseLoadoutSnapshotRow = (value: unknown): LoadoutSnapshotRow | null => {
+  if (!isRecord(value)) return null;
+  return {
+    productId:
+      value.productId == null ? null : Number(value.productId) || null,
+    name: String(value.name ?? ""),
+    qty: Number(value.qty ?? 0) || 0,
+  };
+};
+
+const toLoadoutSnapshotJson = (
+  rows: LoadoutSnapshotRow[]
+): Prisma.InputJsonValue =>
+  rows.map((row) => ({
+    productId: row.productId,
+    name: row.name,
+    qty: row.qty,
+  }));
+
 type LoaderData = {
   run: {
     id: number;
     runCode: string;
-    status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
+    status: string;
   };
   // current selection (label-based) – nullable kapag wala pang naka-set
   riderName: string | null;
   vehicleId: number | null;
 
   // loadout snapshot for this run (pack items only)
-  loadoutSnapshot: Array<{
-    productId: number | null;
-    name: string;
-    qty: number;
-  }> | null;
+  loadoutSnapshot: LoadoutSnapshotRow[] | null;
 
   // UI helpers
   riderOptions: string[]; // labels only (alias / first+last)
@@ -247,12 +270,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const loadoutSnapshot = Array.isArray(run.loadoutSnapshot)
-    ? (run.loadoutSnapshot as any[]).map((row) => ({
-        productId:
-          row?.productId == null ? null : Number(row.productId) || null,
-        name: String(row?.name ?? ""),
-        qty: Number(row?.qty ?? 0) || 0,
-      }))
+    ? run.loadoutSnapshot
+        .map(parseLoadoutSnapshotRow)
+        .filter((row): row is LoadoutSnapshotRow => !!row)
     : null;
 
   // Even if old data had duplicates, we display aggregated for sanity.
@@ -338,7 +358,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     run: {
       id: run.id,
       runCode: run.runCode,
-      status: run.status as any,
+      status: run.status,
     },
     riderName,
     vehicleId: run.vehicleId ?? run.vehicle?.id ?? null,
@@ -359,17 +379,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 type ActionData = { ok: true } | { ok: false; error: string };
 
-function getPreDispatchFulfillmentStatus(): any {
+const toFulfillmentStatus = (
+  value: unknown
+): FulfillmentStatus | null => {
+  if (typeof value !== "string") return null;
+  return (Object.values(FulfillmentStatus) as string[]).includes(value)
+    ? (value as FulfillmentStatus)
+    : null;
+};
+
+function getPreDispatchFulfillmentStatus(): FulfillmentStatus | null {
   // Best-effort fallback across enum variations without breaking compile
-  const FS: any = FulfillmentStatus as any;
+  const fsMap = FulfillmentStatus as unknown as Record<string, unknown>;
   return (
-    FS.PLANNED ??
-    FS.PENDING ??
-    FS.OPEN ??
-    FS.READY ??
-    FS.PREPARED ??
-    FS.CREATED ??
-    FS.DRAFT ??
+    toFulfillmentStatus(fsMap.PLANNED) ??
+    toFulfillmentStatus(fsMap.PENDING) ??
+    toFulfillmentStatus(fsMap.OPEN) ??
+    toFulfillmentStatus(fsMap.READY) ??
+    toFulfillmentStatus(fsMap.PREPARED) ??
+    toFulfillmentStatus(fsMap.CREATED) ??
+    toFulfillmentStatus(fsMap.DRAFT) ??
     // if none exist, we at least clear dispatchedAt; status stays as-is
     null
   );
@@ -397,20 +426,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const loadoutJson = String(form.get("loadoutJson") ?? "") || "[]";
 
-  let loadoutSnapshot: Array<{
-    productId: number | null;
-    name: string;
-    qty: number;
-  }> = [];
+  let loadoutSnapshot: LoadoutSnapshotRow[] = [];
 
   try {
-    const parsed = JSON.parse(loadoutJson);
+    const parsed: unknown = JSON.parse(loadoutJson);
     if (Array.isArray(parsed)) {
-      loadoutSnapshot = parsed.map((l: any) => ({
-        productId: l?.productId == null ? null : Number(l.productId) || null,
-        name: typeof l?.name === "string" ? l.name : "",
-        qty: Math.max(0, Number(l?.qty ?? 0) || 0),
-      }));
+      loadoutSnapshot = parsed
+        .map(parseLoadoutSnapshotRow)
+        .filter((row): row is LoadoutSnapshotRow => !!row)
+        .map((row) => ({
+          ...row,
+          qty: Math.max(0, Number(row.qty ?? 0) || 0),
+        }));
     }
   } catch {
     // ignore invalid JSON -> treat as no loadout
@@ -571,7 +598,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         data: {
           riderId: riderEmployeeId,
           vehicleId: vehicleId && vehicleId > 0 ? vehicleId : null,
-          loadoutSnapshot: loadoutSnapshot as any,
+          loadoutSnapshot: toLoadoutSnapshotJson(loadoutSnapshot),
         },
       });
 
@@ -609,11 +636,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const extraSnapshot: Array<{ productId: number | null; qty: number }> =
         Array.isArray(runWithSnapshot.loadoutSnapshot)
-          ? (runWithSnapshot.loadoutSnapshot as any[]).map((row) => ({
-              productId:
-                row?.productId == null ? null : Number(row.productId) || null,
-              qty: Math.max(0, Number(row?.qty ?? 0) || 0),
-            }))
+          ? runWithSnapshot.loadoutSnapshot
+              .map(parseLoadoutSnapshotRow)
+              .filter((row): row is LoadoutSnapshotRow => !!row)
+              .map((row) => ({
+                productId: row.productId,
+                qty: Math.max(0, Number(row.qty ?? 0) || 0),
+              }))
           : [];
 
       // Fetch linked orders again (same source of truth as dispatch)
@@ -757,12 +786,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
         // 2) Reset linked orders back to pre-dispatch (best-effort)
         const pre = getPreDispatchFulfillmentStatus();
         for (const o of orders) {
+          const orderUpdateData: Prisma.OrderUpdateInput = {
+            dispatchedAt: null,
+          };
+          if (pre) {
+            orderUpdateData.fulfillmentStatus = pre;
+          }
           await tx.order.update({
             where: { id: o.id },
-            data: {
-              dispatchedAt: null,
-              ...(pre ? { fulfillmentStatus: pre } : {}),
-            } as any,
+            data: orderUpdateData,
           });
         }
 
@@ -1021,10 +1053,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
           // Do NOT infer credit from cashCollected.
           // Instead, stamp explicit isCredit in note based on the parent order truth.
           // (Adjust these fields if your Order schema uses different names.)
+          const orderRecord = o as Record<string, unknown>;
           const isCreditTruth =
-            Boolean((o as any).isOnCredit) ||
-            Boolean((o as any).releaseWithBalance) ||
-            Boolean((o as any).releasedWithBalance);
+            Boolean(o.isOnCredit) ||
+            Boolean(orderRecord.releaseWithBalance) ||
+            Boolean(orderRecord.releasedWithBalance);
 
           const noteMeta = {
             isCredit: isCreditTruth,
@@ -1075,7 +1108,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             dispatchedAt: now,
             riderId: riderEmployeeId,
             vehicleId: vehicleId && vehicleId > 0 ? vehicleId : null,
-            loadoutSnapshot: loadoutSnapshot as any, // EXTRA-only snapshot (PAD inferred from linked orders)
+            loadoutSnapshot: toLoadoutSnapshotJson(loadoutSnapshot), // EXTRA-only snapshot (PAD inferred from linked orders)
             // ✅ ensure fresh check-in state for this dispatch
             riderCheckinSnapshot: Prisma.DbNull,
             riderCheckinAt: null,

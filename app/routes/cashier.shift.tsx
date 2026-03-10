@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
@@ -6,7 +5,7 @@ import * as React from "react";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole, setShiftId, type SessionUser } from "~/utils/auth.server";
-import { CashDrawerTxnType } from "@prisma/client";
+import { CashDrawerTxnType, Prisma } from "@prisma/client";
 
 const DENOMS: Array<{ key: string; label: string; value: number }> = [
   { key: "d1000", label: "₱1,000", value: 1000 },
@@ -39,6 +38,8 @@ function computeCashCountTotal(count: CashCount) {
   return Math.round(sum * 100) / 100;
 }
 
+type OverdrawError = Error & { expected?: number };
+
 function buildClosingDenoms(count: CashCount) {
   // Match your schema doc: { bills: { "1000": 3, ... }, coins: { "25": 4, "10": 0, ... } }
   const bills: Record<string, number> = {};
@@ -64,6 +65,17 @@ function buildClosingDenoms(count: CashCount) {
 
   return { bills, coins };
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const toClosingDenomsJson = (count: CashCount): Prisma.InputJsonValue => {
+  const denoms = buildClosingDenoms(count);
+  return {
+    bills: denoms.bills,
+    coins: denoms.coins,
+  };
+};
 
 type LoaderData = {
   me: SessionUser & { shiftId: number | null };
@@ -182,7 +194,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         branchName: "—",
         deviceId: s.deviceId,
         openingFloat: s.openingFloat ? Number(s.openingFloat) : 0,
-        status: s.status as any,
+        status: s.status,
         countSubmitted: s.closingTotal != null,
         openingCounted:
           s.openingCounted != null ? Number(s.openingCounted) : null,
@@ -229,7 +241,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         openingFloat: openShift.openingFloat
           ? Number(openShift.openingFloat)
           : 0,
-        status: openShift.status as any,
+        status: openShift.status,
         countSubmitted: openShift.closingTotal != null,
         openingCounted:
           openShift.openingCounted != null
@@ -272,8 +284,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       byMethod: byMethod.map((r) => ({
         method: r.method,
         amount: Number(r._sum.amount ?? 0),
-        tendered: (r._sum.tendered as any) ? Number(r._sum.tendered) : null,
-        change: (r._sum.change as any) ? Number(r._sum.change) : null,
+        tendered: r._sum.tendered != null ? Number(r._sum.tendered) : null,
+        change: r._sum.change != null ? Number(r._sum.change) : null,
       })),
       grandAmount,
       cashSalesIn,
@@ -363,7 +375,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
-async function computeDrawerSnapshot(tx: typeof db, shiftId: number) {
+async function computeDrawerSnapshot(tx: Prisma.TransactionClient, shiftId: number) {
   // Cash sales in drawer = tendered - change for CASH payments
   const cash = await tx.payment.groupBy({
     by: ["method"],
@@ -460,7 +472,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         });
       },
-      { isolationLevel: "Serializable" as any },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     return redirect(`/cashier/shift?next=${encodeURIComponent(next)}`);
@@ -533,14 +545,14 @@ export async function action({ request }: ActionFunctionArgs) {
               throw new Error("SHIFT_CLOSED");
             }
             const openingFloat = Number(s2.openingFloat ?? 0);
-            const snap = await computeDrawerSnapshot(tx as any, me.shiftId!);
+            const snap = await computeDrawerSnapshot(tx, me.shiftId!);
             const expectedDrawerNow =
               openingFloat +
               snap.cashInTotal +
               snap.deposits -
               snap.withdrawals;
             if (amount > expectedDrawerNow + 0.005) {
-              const err: any = new Error("OVERDRAW");
+              const err = new Error("OVERDRAW") as OverdrawError;
               err.expected = expectedDrawerNow;
               throw err;
             }
@@ -559,9 +571,10 @@ export async function action({ request }: ActionFunctionArgs) {
             },
           });
         },
-        { isolationLevel: "Serializable" as any },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
-    } catch (e: any) {
+    } catch (error) {
+      const e = error as { message?: unknown; expected?: unknown };
       if (String(e?.message) === "SHIFT_CLOSED") {
         const { headers } = await setShiftId(request, null);
         return redirect(
@@ -600,11 +613,11 @@ export async function action({ request }: ActionFunctionArgs) {
     let countedCash = countedCashIn;
     if (denomsJsonRaw) {
       try {
-        const parsed = JSON.parse(denomsJsonRaw) as CashCount;
-        if (parsed && typeof parsed === "object") {
+        const parsed: unknown = JSON.parse(denomsJsonRaw);
+        if (isRecord(parsed)) {
           const normalized: CashCount = {};
           for (const d of DENOMS)
-            normalized[d.key] = safeQty((parsed as any)[d.key]);
+            normalized[d.key] = safeQty(parsed[d.key]);
           cashCount = normalized;
           countedCash = computeCashCountTotal(normalized);
         }
@@ -671,7 +684,7 @@ export async function action({ request }: ActionFunctionArgs) {
             // IMPORTANT: cashier does NOT close shift; manager closes in /store/cashier-shifts
             closingTotal: countedR2,
             closingDenoms: cashCount
-              ? (buildClosingDenoms(cashCount) as any)
+              ? toClosingDenomsJson(cashCount)
               : undefined,
             notes: notesIn,
             status: "SUBMITTED",
@@ -679,7 +692,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         });
       },
-      { isolationLevel: "Serializable" as any },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     // Keep shiftId; cashier stays in console (waiting for manager close)

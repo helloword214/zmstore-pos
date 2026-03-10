@@ -1,5 +1,4 @@
 // app/routes/delivery-remit.$id.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 // NOTE: Cashier remit is MONEY-ONLY for DELIVERY (no stock mutations, no sold-from-load).
 import { json, redirect } from "@remix-run/node";
@@ -48,6 +47,57 @@ type FrozenLine = {
   lineTotal: number;
   baseUnitPrice?: number | null;
   discountAmount?: number | null;
+};
+
+type FrozenLineInput = {
+  id?: unknown;
+  productId?: unknown;
+  name?: unknown;
+  qty?: unknown;
+  unitPrice?: unknown;
+  lineTotal?: unknown;
+  baseUnitPrice?: unknown;
+  discountAmount?: unknown;
+};
+
+type FrozenLineParseOptions = {
+  requireDiscountForBase?: boolean;
+  requirePositiveBase?: boolean;
+};
+
+const toFrozenLine = (
+  line: FrozenLineInput,
+  options: FrozenLineParseOptions = {},
+): FrozenLine => {
+  const discountAmount =
+    line.discountAmount != null ? Number(line.discountAmount) : null;
+  const hasDiscountAmount = discountAmount != null && Number.isFinite(discountAmount);
+
+  let baseUnitPrice =
+    line.baseUnitPrice != null ? Number(line.baseUnitPrice) : null;
+  if (options.requirePositiveBase) {
+    if (
+      baseUnitPrice == null ||
+      !Number.isFinite(baseUnitPrice) ||
+      baseUnitPrice <= 0
+    ) {
+      baseUnitPrice = null;
+    }
+  }
+  if (options.requireDiscountForBase && !hasDiscountAmount) {
+    baseUnitPrice = null;
+  }
+
+  return {
+    id: Number(line.id ?? 0),
+    productId: line.productId != null ? Number(line.productId) : null,
+    name: String(line.name ?? ""),
+    qty: Number(line.qty ?? 0),
+    unitPrice: Number(line.unitPrice ?? 0),
+    lineTotal: Number(line.lineTotal ?? 0),
+    baseUnitPrice,
+    discountAmount: hasDiscountAmount ? discountAmount : null,
+  };
 };
 
 function buildDiscountViewFromLines(linesIn: FrozenLine[]) {
@@ -289,17 +339,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // 1) roadside representation: originRunReceipt.lines
   const originLines: FrozenLine[] =
-    order.originRunReceipt?.lines?.map((ln: any) => ({
-      id: Number(ln.id),
-      productId: ln.productId != null ? Number(ln.productId) : null,
-      name: String(ln.name ?? ""),
-      qty: Number(ln.qty ?? 0),
-      unitPrice: Number(ln.unitPrice ?? 0),
-      lineTotal: Number(ln.lineTotal ?? 0),
-      baseUnitPrice: ln.baseUnitPrice != null ? Number(ln.baseUnitPrice) : null,
-      discountAmount:
-        ln.discountAmount != null ? Number(ln.discountAmount) : null,
-    })) ?? [];
+    order.originRunReceipt?.lines?.map((ln) => toFrozenLine(ln)) ?? [];
 
   // 2) normal run delivery order: find its PARENT receipt
   const parentReceipt = !order.originRunReceiptId
@@ -328,47 +368,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     : null;
 
   const parentLines: FrozenLine[] =
-    parentReceipt?.lines?.map((ln: any) => ({
-      id: Number(ln.id),
-      productId: ln.productId != null ? Number(ln.productId) : null,
-      name: String(ln.name ?? ""),
-      qty: Number(ln.qty ?? 0),
-      unitPrice: Number(ln.unitPrice ?? 0),
-      lineTotal: Number(ln.lineTotal ?? 0),
-      // Only keep baseUnitPrice if we also have explicit discountAmount.
-      // Otherwise we risk showing huge fake discounts in cashier remit.
-      baseUnitPrice:
-        ln.discountAmount != null && ln.baseUnitPrice != null
-          ? Number(ln.baseUnitPrice)
-          : null,
-      discountAmount:
-        ln.discountAmount != null ? Number(ln.discountAmount) : null,
-    })) ?? [];
+    parentReceipt?.lines?.map((ln) =>
+      toFrozenLine(ln, { requireDiscountForBase: true }),
+    ) ?? [];
 
   // 3) fallback legacy: order.items (but keep your SRP/price base display)
-  const fallbackLines: FrozenLine[] = ((order.items ?? []) as any[]).map(
-    (it) => {
-      const qty = Number(it.qty ?? 0);
-      const unit = Number(it.unitPrice ?? 0);
-      const lineFinal = it.lineTotal != null ? Number(it.lineTotal) : 0;
-
-      const storedBase =
-        it.baseUnitPrice != null ? Number(it.baseUnitPrice) : null;
-      const storedDisc =
-        it.discountAmount != null ? Number(it.discountAmount) : null;
-
-      return {
-        id: Number(it.id),
-        productId: it.productId != null ? Number(it.productId) : null,
-        name: String(it.name ?? ""),
-        qty,
-        unitPrice: unit,
-        lineTotal: lineFinal,
-        // IMPORTANT: don't fallback to product.srp/price here; it causes fake huge discounts.
-        baseUnitPrice: storedBase != null && storedBase > 0 ? storedBase : null,
-        discountAmount: storedDisc,
-      };
-    },
+  const fallbackLines: FrozenLine[] = (order.items ?? []).map((it) =>
+    toFrozenLine(it, { requirePositiveBase: true }),
   );
 
   const chosenLines =
@@ -384,7 +390,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // IMPORTANT: cashier should consider receipt lines as a valid freeze source.
   const hasFrozenLineTotalsFromItems =
     (order.items ?? []).length > 0 &&
-    (order.items as any[]).every((it) => it?.lineTotal != null);
+    order.items.every((it) => it.lineTotal != null);
   const hasFrozenFromOrder =
     order.totalBeforeDiscount != null || hasFrozenLineTotalsFromItems;
   const hasFrozenFromReceipts =
@@ -412,7 +418,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       runId = parentReceipt.runId != null ? Number(parentReceipt.runId) : null;
       riderCash = Number(parentReceipt.cashCollected ?? 0);
     } else {
-      const rc = await getRiderCashForDeliveryOrder(db as any, order.id);
+      const rc = await getRiderCashForDeliveryOrder(db, order.id);
       runId = rc.runId ?? null;
       riderCash = Number(rc.riderCash ?? 0);
     }
@@ -442,7 +448,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           where: {
             receiptKey: { in: caseKeys },
             status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-          } as any,
+          },
           select: {
             status: true,
             decisions: {
@@ -661,27 +667,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       })
     : null;
 
-  const receiptLines: FrozenLine[] = (
-    (originReceipt?.lines?.length
+  const receiptLineSource =
+    originReceipt?.lines?.length && originReceipt.lines.length > 0
       ? originReceipt.lines
-      : parentReceipt?.lines ?? []) as any[]
-  ).map((ln: any) => ({
-    id: Number(ln.id),
-    productId: ln.productId != null ? Number(ln.productId) : null,
-    name: String(ln.name ?? ""),
-    qty: Number(ln.qty ?? 0),
-    unitPrice: Number(ln.unitPrice ?? 0),
-    lineTotal: Number(ln.lineTotal ?? 0),
-    baseUnitPrice:
-      ln.discountAmount != null && ln.baseUnitPrice != null
-        ? Number(ln.baseUnitPrice)
-        : null,
-    discountAmount:
-      ln.discountAmount != null ? Number(ln.discountAmount) : null,
-  }));
+      : parentReceipt?.lines ?? [];
+  const receiptLines: FrozenLine[] = receiptLineSource.map((ln) =>
+    toFrozenLine(ln, { requireDiscountForBase: true }),
+  );
 
-  const finalTotalFromReceipt = hasAllFrozenLineTotals(receiptLines as any)
-    ? sumFrozenLineTotals(receiptLines as any)
+  const finalTotalFromReceipt = hasAllFrozenLineTotals(receiptLines)
+    ? sumFrozenLineTotals(receiptLines)
     : null;
 
   // 🔒 Guard: huwag payagan kung locked by another cashier (and lock not expired)
@@ -714,7 +709,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   {
     const hasFrozenLineTotalsFromItems =
       (order.items ?? []).length > 0 &&
-      (order.items as any[]).every((it) => it?.lineTotal != null);
+      order.items.every((it) => it.lineTotal != null);
     const hasFrozenFromOrder =
       order.totalBeforeDiscount != null || hasFrozenLineTotalsFromItems;
     const hasFrozenFromReceipts =
@@ -743,7 +738,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ? finalTotalFromReceipt
       : r2(
           (order.items ?? []).reduce(
-            (s, it) => s + Number((it as any)?.lineTotal ?? 0),
+            (s, it) => s + Number(it.lineTotal ?? 0),
             0,
           ),
         );
@@ -767,7 +762,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     riderRunId =
       parentReceipt.runId != null ? Number(parentReceipt.runId) : null;
   } else {
-    const rc = await getRiderCashForDeliveryOrder(db as any, order.id);
+    const rc = await getRiderCashForDeliveryOrder(db, order.id);
     riderCash = Number(rc.riderCash ?? 0);
     riderRunId = rc.runId != null ? Number(rc.runId) : null;
   }
@@ -891,7 +886,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         data: {
           orderId: order.id,
           // ✅ use existing enum (schema-safe)
-          method: "INTERNAL_CREDIT" as any,
+          method: "INTERNAL_CREDIT",
           amount: shortageSettlement,
           tendered: 0,
           change: 0,
@@ -920,7 +915,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           actual,
           variance,
           note: `AUTO: cashier shortage settlement for Order#${order.id}`,
-          status: "OPEN" as any,
+          status: "OPEN",
         },
         update: {
           // keep it OPEN; manager review will decide resolution
@@ -929,7 +924,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           actual,
           variance,
           note: `AUTO: cashier shortage settlement for Order#${order.id}`,
-          status: "OPEN" as any,
+          status: "OPEN",
         },
       });
     }
@@ -1072,9 +1067,7 @@ export default function RemitOrderPage() {
 
   // 🔒 UI hint: if missing frozen line totals, we should already be blocking "Post Remit"
   // but keep this defensive for visibility.
-  const missingLineTotals = Boolean(
-    (discountView as any)?.hasMissingLineTotals,
-  );
+  const missingLineTotals = Boolean(discountView?.hasMissingLineTotals);
   const backTo = fromRunId ? `/cashier/delivery/${fromRunId}` : "/cashier";
 
   return (
