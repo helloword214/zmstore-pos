@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
+import type { Prisma, RunStatus } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
@@ -20,7 +20,7 @@ import { requireRole } from "~/utils/auth.server";
 type Row = {
   id: number;
   runCode: string;
-  status: "PLANNED" | "DISPATCHED" | "CHECKED_IN" | "CLOSED" | "CANCELLED";
+  status: RunStatus;
   riderLabel: string | null;
   createdAt: string;
   dispatchedAt: string | null;
@@ -49,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // base where
-  const where: any = {};
+  const where: Prisma.DeliveryRunWhereInput = {};
   // If EMPLOYEE at galing sa /runs?mine=1 => filter by assigned rider (employee)
   if (me.role === "EMPLOYEE" && mine) {
     const userRow = await db.user.findUnique({
@@ -105,7 +105,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rows: Row[] = runs.map((r) => ({
     id: r.id,
     runCode: r.runCode,
-    status: r.status as any,
+    status: r.status,
     riderLabel: r.riderId ? map.get(r.riderId) ?? null : null,
     createdAt: r.createdAt.toISOString(),
     dispatchedAt: r.dispatchedAt ? r.dispatchedAt.toISOString() : null,
