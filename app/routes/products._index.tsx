@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { storage } from "~/utils/storage.server";
 import {
@@ -33,11 +32,26 @@ import { runProductUpsertAction } from "~/features/products/product-upsert-actio
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
 
-// === END Imports ===
-
 type SortBy = "recent" | "name-asc" | "price-asc" | "price-desc" | "stock-asc";
 
 type StatusFilter = "all" | "active" | "inactive";
+type ProductActionType =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "toggled"
+  | "open-pack"
+  | "delete-product";
+
+type ProductActionResult = {
+  success?: boolean;
+  error?: string;
+  field?: string;
+  action?: ProductActionType | string;
+  id?: number;
+  imageUrl?: string;
+};
+
 type ProductPhotoUpload = {
   slot: number;
   file: File;
@@ -50,6 +64,30 @@ type SavedProductPhotoUpload = {
   mimeType: string;
   sizeBytes: number;
 };
+
+type FetcherFormCarrier = {
+  submission?: { formData?: FormData } | null;
+  formData?: FormData | null;
+};
+
+function extractSubmittedForm(fetcher: unknown): FormData | undefined {
+  if (!fetcher || typeof fetcher !== "object") {
+    return undefined;
+  }
+  const carrier = fetcher as FetcherFormCarrier;
+  return carrier.submission?.formData ?? carrier.formData ?? undefined;
+}
+
+function createdAtMs(value: unknown): number {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+  return 0;
+}
 
 function collectProductPhotoUploads(
   formData: FormData,
@@ -92,10 +130,8 @@ export async function loader() {
     brands,
     units,
     packingUnits,
-    indications, // ✅ include this // //
-    ,
-    // / ← skip db.target.findMany() result (keep position)
-    locations, // ✅ now this matches db.location.findMany()
+    indications,
+    locations,
   ] = await Promise.all([
     db.product.findMany({
       include: {
@@ -117,13 +153,9 @@ export async function loader() {
       select: { id: true, name: true, categoryId: true },
       orderBy: { name: "asc" },
     }),
-    db.target.findMany({
-      select: { id: true, name: true, categoryId: true },
-      orderBy: { name: "asc" },
-    }),
     db.location.findMany({
       orderBy: { name: "asc" },
-    }), // ✅ fetch locations
+    }),
   ]);
 
   // Flatten the join tables into simple name arrays
@@ -192,8 +224,8 @@ export async function loader() {
     products: productsWithDetails,
     categories,
     brands,
-    units, // ✅ retail units (e.g. kg, capsule)
-    packingUnits, // ✅ containers (e.g. sack, bottle)
+    units,
+    packingUnits,
     indications,
     targets: targetsForFilter,
     locations,
@@ -239,7 +271,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   let finalImageUrl: string | undefined = imageUrlInput || undefined;
   let finalImageKey: string | undefined;
 
-  //deletaion LOGIC
+  // Delete product action
 
   if (actionType === "delete-product") {
     const idStr =
@@ -279,16 +311,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
 
       const fileSize = Number(upload.file.size) || 0;
-      console.log(
-        "[upload] slot=%d name=%s type=%s size=%dB limit=%dB (%dMB)",
-        upload.slot,
-        (upload.file as any).name,
-        upload.file.type,
-        fileSize,
-        maxBytes,
-        maxMb
-      );
-
       if (fileSize > maxBytes) {
         return json(
           {
@@ -328,9 +350,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           mimeType: saved.contentType,
           sizeBytes: saved.size,
         });
-        console.log(
-          `[upload] slot=${upload.slot} saved ${saved.key} (${saved.size}B) → ${saved.url}`
-        );
       } catch (error) {
         console.error("[image] processing failed", error);
         return json(
@@ -602,13 +621,7 @@ export default function ProductsPage() {
   const brands = initialBrands;
 
   // -fetcher for reloading after create/update/delete-
-  const actionFetcher = useFetcher<{
-    success?: boolean;
-    error?: string;
-    field?: string;
-    action?: "created" | "updated" | "deleted" | "toggled";
-    id?: number; //
-  }>();
+  const actionFetcher = useFetcher<ProductActionResult>();
 
   const [showAlert, setShowAlert] = useState(false);
   // — Filters & Paging —
@@ -701,7 +714,7 @@ export default function ProductsPage() {
   }, [validIndicationNames]);
 
   const targetOptions = useMemo(() => {
-    const filtered = targets.filter((t: any) => {
+    const filtered = targets.filter((t) => {
       const okCat =
         !filterCategory || String(t.categoryId ?? "") === filterCategory;
       const okBr = !filterBrand || String(t.brandId ?? "") === filterBrand;
@@ -785,24 +798,16 @@ export default function ProductsPage() {
 
   // Hoist stable snapshots so we don't depend on the whole fetcher
   const afData = actionFetcher.data;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const afSubmission = (actionFetcher as any)?.submission as
-    | { formData?: FormData }
-    | undefined;
-
-  // Remix sometimes exposes formData directly instead of submission
-  const submittedForm: FormData | undefined =
-    afSubmission?.formData ?? (actionFetcher as any)?.formData;
+  const submittedForm = extractSubmittedForm(actionFetcher);
 
   // Prevent duplicate handling (StrictMode / re-renders)
   const lastHandledRef = useRef<string>("");
-  const lastDeleteDataRef = useRef<any>(null);
+  const lastDeleteDataRef = useRef<ProductActionResult | null>(null);
 
   useEffect(() => {
     if (!afData) return;
 
-    const action =
-      (afData.action as string) ?? String(submittedForm?.get("_action") ?? "");
+    const action = afData.action ?? String(submittedForm?.get("_action") ?? "");
     const submittedId = String(
       afData.id ??
         submittedForm?.get("id") ??
@@ -855,10 +860,6 @@ export default function ProductsPage() {
       setSuccessMsg(msgMap[action] || "✅ Operation completed.");
 
       setErrorMsg("");
-
-      if ((afData as any)?.imageUrl) {
-        console.log("✅ Image uploaded →", (afData as any).imageUrl);
-      }
 
       // Optimistic delete (and STOP — no revalidate here to avoid flicker)
       if (action === "delete-product" || action === "deleted") {
@@ -932,7 +933,7 @@ export default function ProductsPage() {
           isActive: asBoolIfPresent("isActive"),
 
           //image
-          imageUrl: (afData as any)?.imageUrl ?? asStringIfPresent("imageUrl"),
+          imageUrl: afData.imageUrl ?? asStringIfPresent("imageUrl"),
         } as Partial<ProductWithDetails> & { id: number };
 
         setProducts((prev) => {
@@ -967,16 +968,10 @@ export default function ProductsPage() {
 
     // Error branch
     if (afData.error) {
-      const { field, error } = afData as any;
-      if (field) {
-        setErrorMsg(error);
-        setShowAlert(true);
-        setTimeout(() => setShowAlert(false), 2500);
-      } else {
-        setErrorMsg(afData.error);
-        setShowAlert(true);
-        setTimeout(() => setShowAlert(false), 2500);
-      }
+      const errorText = afData.field ? afData.error ?? "" : afData.error;
+      setErrorMsg(errorText);
+      setShowAlert(true);
+      setTimeout(() => setShowAlert(false), 2500);
       setSuccessMsg("");
     }
   }, [afData, submittedForm, revalidator]);
@@ -989,12 +984,8 @@ export default function ProductsPage() {
     if (lastDeleteDataRef.current === data) return;
     lastDeleteDataRef.current = data;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const submission = (actionFetcher as any)?.submission;
-    const form: FormData | undefined =
-      submission?.formData ?? (actionFetcher as any)?.formData;
-    const action =
-      (data.action as string) ?? String(form?.get("_action") ?? "");
+    const form = extractSubmittedForm(actionFetcher);
+    const action = data.action ?? String(form?.get("_action") ?? "");
 
     if (action !== "delete-product" && action !== "deleted") return;
 
@@ -1017,8 +1008,7 @@ export default function ProductsPage() {
   useEffect(() => {
     setProducts(
       [...initialProducts].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        (a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt)
       )
     );
   }, [initialProducts]);
@@ -1131,9 +1121,7 @@ export default function ProductsPage() {
       case "recent":
       default:
         arr.sort(
-          (a, b) =>
-            new Date(b.createdAt as any).getTime() -
-            new Date(a.createdAt as any).getTime()
+          (a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt)
         );
         break;
     }
