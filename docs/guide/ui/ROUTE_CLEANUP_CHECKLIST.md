@@ -112,6 +112,9 @@ Business behavior changes are out of scope for this checklist.
 25. 2026-03-11 - current batch S (`codex/cleanup-runs-summary`)  
    Scope: `rider._index.tsx`, `store.rider-charges.tsx` route-level any/cast cleanup  
    Merge: pending (this branch)
+26. 2026-03-11 - current batch T (`codex/cleanup-runs-summary`)  
+   Scope: `orders.$id.credit.tsx`, `orders.$id.receipt.tsx`, `store.rider-ar.tsx`, `orders.$id.dispatch.tsx`, `ar.customers.$id_.statement.tsx` route-level any/cast cleanup (outside active-route checklist scope)  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -184,7 +187,7 @@ Active-route cleanup in this checklist is complete (`PENDING: 0`).
 
 Recommended follow-up (outside active-route checklist scope):
 
-1. `app/routes/orders.$id.credit.tsx`
-2. `app/routes/orders.$id.receipt.tsx`
+1. `app/routes/resources.creation.upsert.ts`
+2. `app/routes/resources.creation.delete.ts`
 
-Reason: remaining global cleanup markers are concentrated in non-active order credit/receipt lanes.
+Reason: remaining route-level any bypass markers are now only in resource helper routes.

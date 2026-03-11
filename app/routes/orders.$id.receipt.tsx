@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -53,7 +52,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!order) throw new Response("Not found", { status: 404 });
   const receiptKey = `PARENT:${order.id}`;
   const clearanceCase = await db.clearanceCase.findUnique({
-    where: { receiptKey } as any,
+    where: { receiptKey },
     select: {
       id: true,
       status: true,
@@ -76,7 +75,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 
   const customerName = (() => {
-    const c: any = order.customer;
+    const c = order.customer;
     if (!c) return null;
     const full = [c.firstName, c.middleName, c.lastName]
       .filter(Boolean)
@@ -93,7 +92,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const featuredPayment = (() => {
     if (Number.isFinite(pid) && pid > 0) {
-      const p = (order.payments ?? []).find((x: any) => Number(x.id) === pid);
+      const p = (order.payments ?? []).find((x) => Number(x.id) === pid);
       if (p) return p;
     }
     return (order.payments ?? [])[0] ?? null; // latest
@@ -118,7 +117,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // 🔒 RECEIPT SoT: show ONLY frozen snapshot fields
   // No discount engine, no recompute from product SRP/price.
   // ─────────────────────────────────────────────
-  const lines: FrozenLine[] = (order.items ?? []).map((it: any) => ({
+  const lines: FrozenLine[] = (order.items ?? []).map((it) => ({
     id: Number(it.id),
     name: String(it.name ?? ""),
     qty: Number(it.qty ?? 0),
@@ -140,7 +139,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const hasMissingLineTotals =
     lines.length > 0 &&
-    (order.items ?? []).some((it: any) => it?.lineTotal == null);
+    (order.items ?? []).some((it) => it?.lineTotal == null);
 
   // Display totals:
   // - totalPayable is frozen sum(lineTotal)
@@ -159,7 +158,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }, 0);
 
   // Payments breakdown (customer-facing settled truth)
-  const payments = (order.payments ?? []) as any[];
+  const payments = order.payments ?? [];
   const paidToDate = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const remainingRaw = Math.max(
     0,
@@ -193,7 +192,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     remainingRaw - appliedClearanceDiscount - transferredToAr,
   );
 
-  const isCash = (p: any) => String(p?.method ?? "").toUpperCase() === "CASH";
+  const isCash = (p: (typeof payments)[number]) =>
+    String(p?.method ?? "").toUpperCase() === "CASH";
   const paidCash = payments
     .filter(isCash)
     .reduce((s, p) => s + Number(p.amount || 0), 0);
@@ -279,9 +279,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
     ui: {
       customerName,
-      customerPhone: (order.customer as any)?.phone
-        ? String((order.customer as any).phone)
-        : null,
+      customerPhone: order.customer?.phone ? String(order.customer.phone) : null,
     },
   });
 }
@@ -441,7 +439,7 @@ export default function ReceiptPage() {
 
   // CASH RECEIVED: prefer explicit query, else tendered from latest cash payment
   const cashPayments = (order.payments ?? []).filter(
-    (p: any) => String(p.method).toUpperCase() === "CASH",
+    (p) => String(p.method).toUpperCase() === "CASH",
   );
   const latestCash = cashPayments[0] ?? null;
   const cashFromPayment =
@@ -522,7 +520,7 @@ export default function ReceiptPage() {
 
           {/* Items */}
           <div className="border-y border-slate-200 py-1">
-            {lines.map((it: any) => {
+            {lines.map((it) => {
               const qty = Number(it.qty || 0);
               const unit = Number(it.unitPrice || 0);
               const lineTotal = Number(it.lineTotal || 0);

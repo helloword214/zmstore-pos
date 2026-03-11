@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -186,11 +185,11 @@ export default function CreditOrderPage() {
     order.customer
       ? {
           id: order.customer.id,
-          firstName: (order.customer as any).firstName ?? "",
-          middleName: (order.customer as any).middleName ?? null,
-          lastName: (order.customer as any).lastName ?? "",
-          alias: (order.customer as any).alias ?? null,
-          phone: (order.customer as any).phone ?? null,
+          firstName: order.customer.firstName ?? "",
+          middleName: order.customer.middleName ?? null,
+          lastName: order.customer.lastName ?? "",
+          alias: order.customer.alias ?? null,
+          phone: order.customer.phone ?? null,
         }
       : null
   );
