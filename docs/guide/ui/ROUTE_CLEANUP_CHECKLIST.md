@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `47`
-2. `DONE`: `24`
-3. `PENDING`: `23`
+2. `DONE`: `25`
+3. `PENDING`: `22`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -70,6 +70,9 @@ Business behavior changes are out of scope for this checklist.
 11. 2026-03-11 - current batch E (`codex/cleanup-runs-summary`)  
    Scope: `store.clearance-opening-batches.tsx` route-level any/cast cleanup + enum-safe batch decision/case status writes  
    Merge: pending (this branch)
+12. 2026-03-11 - current batch F (`codex/cleanup-runs-summary`)  
+   Scope: `store.clearance_.$caseId.tsx` route-level any/cast cleanup + typed decision/customer-label payloads and enum-safe write paths  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -102,7 +105,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/runs.$id.summary.tsx` | DONE | 0 | cleaned in current batch (typed summary loader parsing) |
 | `app/routes/runs.$id.rider-checkin.tsx` | DONE | 0 | cleaned in current batch (typed receipt/checkin loader+action parsing) |
 | `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
-| `app/routes/store.clearance_.$caseId.tsx` | PENDING | 9 | high-priority cleanup candidate |
+| `app/routes/store.clearance_.$caseId.tsx` | DONE | 0 | cleaned in current batch (typed decision lane + no route-level any bypass) |
 | `app/routes/runs.$id.remit.tsx` | DONE | 0 | cleaned (typed clearance/status handling in remit loader/action) |
 | `app/routes/cashier.delivery._index.tsx` | PENDING | 4 | type cleanup pending |
 | `app/routes/cashier.delivery.$runId.tsx` | DONE | 0 | cleaned (typed remit helpers, no route-level any bypass) |
@@ -136,8 +139,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/store.clearance_.$caseId.tsx`
-2. `app/routes/store.cashier-variances.tsx`
-3. `app/routes/creation.opening-ar-batches.tsx`
+1. `app/routes/store.cashier-variances.tsx`
+2. `app/routes/creation.opening-ar-batches.tsx`
+3. `app/routes/cashier.charges.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.

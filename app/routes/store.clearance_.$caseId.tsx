@@ -1,7 +1,5 @@
 /* app/routes/store.clearance.$caseId.tsx */
 /* STORE MANAGER — Commercial Clearance Case (Decision-enabled) */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -79,7 +77,18 @@ type DecisionAction = "APPROVE" | "REJECT";
 
 type ActionData = { ok: true } | { ok: false; error: string };
 
-function buildCustomerLabelFromOrder(o: any) {
+type OrderCustomerLabelInput = {
+  customerId: number | null;
+  customer: {
+    firstName: string;
+    middleName: string | null;
+    lastName: string;
+    alias: string | null;
+    phone: string | null;
+  } | null;
+};
+
+function buildCustomerLabelFromOrder(o: OrderCustomerLabelInput) {
   const c = o?.customer;
   const name =
     [c?.firstName, c?.middleName, c?.lastName]
@@ -94,7 +103,13 @@ function buildCustomerLabelFromOrder(o: any) {
   return `${name || fallback}${alias}${phone}`.trim();
 }
 
-function buildCustomerLabelFromReceipt(r: any) {
+type ReceiptCustomerLabelInput = {
+  customerName: string | null;
+  customerId: number | null;
+  customerPhone: string | null;
+};
+
+function buildCustomerLabelFromReceipt(r: ReceiptCustomerLabelInput) {
   const base =
     (r?.customerName && String(r.customerName).trim()) ||
     (r?.customerId ? `Customer #${r.customerId}` : "Walk-in / Unknown");
@@ -110,7 +125,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Invalid caseId", { status: 400 });
 
   const c = await db.clearanceCase.findUnique({
-    where: { id: caseId } as any,
+    where: { id: caseId },
     select: {
       id: true,
       status: true,
@@ -192,7 +207,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         status: c.order.status ?? null,
         customerId: c.order.customerId ?? null,
         releasedAt: c.order.releasedAt
-          ? new Date(c.order.releasedAt as any).toISOString()
+          ? c.order.releasedAt.toISOString()
           : null,
         releasedApprovedBy: c.order.releasedApprovedBy ?? null,
         customerLabel: buildCustomerLabelFromOrder(c.order),
@@ -214,7 +229,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     ? {
         kind: String(c.decisions[0].kind),
         decidedAt: c.decisions[0].decidedAt
-          ? new Date(c.decisions[0].decidedAt as any).toISOString()
+          ? c.decisions[0].decidedAt.toISOString()
           : null,
         note: c.decisions[0].note ?? null,
         approvedDiscount:
@@ -243,9 +258,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       id: Number(c.id),
       status: String(c.status ?? ""),
       origin: c.origin ?? null,
-      flaggedAt: c.flaggedAt
-        ? new Date(c.flaggedAt as any).toISOString()
-        : null,
+      flaggedAt: c.flaggedAt ? c.flaggedAt.toISOString() : null,
       note: c.note ?? null,
 
       frozenTotal,
@@ -329,7 +342,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     await db.$transaction(async (tx) => {
       const c = await tx.clearanceCase.findUnique({
-        where: { id: caseId } as any,
+        where: { id: caseId },
         select: {
           id: true,
           status: true,
@@ -385,7 +398,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         throw new Error("Selected decision requires a customer record.");
       }
 
-      const dData: any = {
+      const dData: Prisma.ClearanceDecisionUncheckedCreateInput = {
         caseId: c.id,
         kind: finalDecisionKind,
         decidedById: me.userId,
@@ -406,29 +419,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
 
       if (arBalance > MONEY_EPS) {
+        const customerArData: Prisma.CustomerArUncheckedCreateInput = {
+          customerId: Number(c.customerId),
+          clearanceDecisionId: Number(createdDecision.id),
+          ...(c.orderId ? { orderId: Number(c.orderId) } : {}),
+          ...(c.runId ? { runId: Number(c.runId) } : {}),
+          principal: new Prisma.Decimal(arBalance.toFixed(2)),
+          balance: new Prisma.Decimal(arBalance.toFixed(2)),
+          status: "OPEN",
+          ...(dueDate ? { dueDate } : {}),
+          note,
+        };
         await tx.customerAr.create({
-          data: {
-            customerId: Number(c.customerId),
-            clearanceDecisionId: Number(createdDecision.id),
-            ...(c.orderId ? { orderId: Number(c.orderId) } : {}),
-            ...(c.runId ? { runId: Number(c.runId) } : {}),
-            principal: new Prisma.Decimal(arBalance.toFixed(2)),
-            balance: new Prisma.Decimal(arBalance.toFixed(2)),
-            status: "OPEN",
-            ...(dueDate ? { dueDate } : {}),
-            note,
-          } as any,
+          data: customerArData,
         });
       }
 
       await tx.clearanceCase.update({
-        where: { id: c.id } as any,
-        data: { status: "DECIDED" } as any,
+        where: { id: c.id },
+        data: { status: "DECIDED" },
       });
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to save decision.";
     return json<ActionData>(
-      { ok: false, error: String(e?.message || "Failed to save decision.") },
+      { ok: false, error: message },
       { status: 400 },
     );
   }
