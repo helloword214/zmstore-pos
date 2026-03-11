@@ -1,6 +1,5 @@
 /* app/routes/cashier.$id.tsx */
 /* WALK-IN SETTLEMENT (PICKUP order) — Cashier page for claimLock + settlePayment */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* Patch: taga-sa-bato guard — block cashier settle if any lineTotal is missing (read-only totals). */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
@@ -65,7 +64,22 @@ function isMineLock(lockedBy: unknown, meId: string) {
 
 // 🔒 Make loader output explicit to avoid union/confusion in useLoaderData<>
 type LoaderData = {
-  order: any; // (you can narrow later if you like)
+  order: Prisma.OrderGetPayload<{
+    include: {
+      items: true;
+      payments: true;
+      customer: {
+        select: {
+          id: true;
+          firstName: true;
+          middleName: true;
+          lastName: true;
+          alias: true;
+          phone: true;
+        };
+      };
+    };
+  }>;
   isStale: boolean;
   lockExpiresAt: number | null;
   lockedByLabel: string | null;
@@ -161,7 +175,11 @@ function buildDiscountViewFromLines(linesIn: FrozenLine[]) {
   };
 }
 
-function formatCustomerLabel(c: any) {
+type OrderCustomer = LoaderData["order"]["customer"];
+
+type SettlementActionError = { id: number; reason: string };
+
+function formatCustomerLabel(c: OrderCustomer) {
   if (!c) return "No customer";
   const full =
     [c.firstName, c.middleName, c.lastName].filter(Boolean).join(" ").trim() ||
@@ -169,6 +187,38 @@ function formatCustomerLabel(c: any) {
   const alias = c.alias ? ` (${c.alias})` : "";
   const phone = c.phone ? ` • ${c.phone}` : "";
   return `${full || "Customer"}${alias}${phone}`.trim();
+}
+
+function extractRedirectToReceipt(actionData: unknown): string | null {
+  if (!actionData || typeof actionData !== "object") return null;
+  if (!("redirectToReceipt" in actionData)) return null;
+  const raw = actionData.redirectToReceipt;
+  return typeof raw === "string" && raw.trim() ? raw : null;
+}
+
+function extractActionErrorMessage(actionData: unknown): string | null {
+  if (!actionData || typeof actionData !== "object") return null;
+  if (!("error" in actionData)) return null;
+  const raw = actionData.error;
+  return typeof raw === "string" && raw.trim() ? raw : null;
+}
+
+function extractActionErrors(actionData: unknown): SettlementActionError[] {
+  if (!actionData || typeof actionData !== "object") return [];
+  if (!("errors" in actionData)) return [];
+  const raw = actionData.errors;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      if (!("id" in entry) || !("reason" in entry)) return null;
+      const id = Number(entry.id);
+      const reason =
+        typeof entry.reason === "string" ? entry.reason.trim() : "";
+      if (!Number.isFinite(id) || !reason) return null;
+      return { id, reason };
+    })
+    .filter((entry): entry is SettlementActionError => entry != null);
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -211,7 +261,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const receiptKey = `PARENT:${order.id}`;
 
   const clearanceCase = await db.clearanceCase.findUnique({
-    where: { receiptKey } as any,
+    where: { receiptKey },
     select: {
       id: true,
       status: true,
@@ -341,7 +391,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : null,
       note: clearanceCase?.note ?? null,
       flaggedAt: clearanceCase?.flaggedAt
-        ? new Date(clearanceCase.flaggedAt as any).toISOString()
+        ? clearanceCase.flaggedAt.toISOString()
         : null,
       snapshotCashCollected: r2(
         Math.max(0, Number(clearanceCase?.cashCollected ?? 0)),
@@ -517,7 +567,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const hasFrozenLineTotals =
       (order.items ?? []).length > 0 &&
-      (order.items as any[]).every((it) => it?.lineTotal != null);
+      (order.items ?? []).every((it) => it.lineTotal != null);
     if (!hasFrozenLineTotals) {
       return json(
         {
@@ -543,7 +593,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const alreadyPaid = sumAllPayments(order.payments);
     const frozenTotal = r2(
       (order.items ?? []).reduce(
-        (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+        (s: number, it) => s + Number(it.lineTotal ?? 0),
         0,
       ),
     );
@@ -566,7 +616,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     try {
       await db.$transaction(async (tx) => {
         const existing = await tx.clearanceCase.findUnique({
-          where: { receiptKey } as any,
+          where: { receiptKey },
           select: { id: true, status: true },
         });
         if (existing) {
@@ -587,7 +637,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             cashCollected: new Prisma.Decimal(snapshotCashCollected.toFixed(2)),
             orderId: order.id,
             customerId: order.customerId ?? null,
-          } as any,
+          },
           select: { id: true },
         });
 
@@ -595,14 +645,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
           data: {
             caseId: Number(created.id),
             type: sendIntent,
-          } as any,
+          },
         });
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to send clearance.";
       return json(
         {
           ok: false,
-          error: String(e?.message || "Failed to send clearance."),
+          error: message,
         },
         { status: 400 },
       );
@@ -697,7 +748,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // If any lineTotal is missing, cashier must NOT proceed (no recompute, no infer).
     const hasFrozenLineTotals =
       (order.items ?? []).length > 0 &&
-      (order.items as any[]).every((it) => it?.lineTotal != null);
+      (order.items ?? []).every((it) => it.lineTotal != null);
 
     if (!hasFrozenLineTotals) {
       return json(
@@ -720,7 +771,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // (Cashier is read-only on totals; do not recompute.)
     const total = r2(
       (order.items ?? []).reduce(
-        (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+        (s: number, it) => s + Number(it.lineTotal ?? 0),
         0,
       ),
     );
@@ -738,7 +789,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const receiptKey = `PARENT:${order.id}`;
     const clearanceCase = await db.clearanceCase.findUnique({
-      where: { receiptKey } as any,
+      where: { receiptKey },
       select: {
         id: true,
         status: true,
@@ -932,7 +983,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const retailStock = Number(p.packingStock ?? 0);
 
       // 🔒 Unit source of truth: OrderItem.unitKind (frozen)
-      const unitKind = String((it as any).unitKind || "PACK");
+      const unitKind = it.unitKind === "RETAIL" ? "RETAIL" : "PACK";
       if (unitKind === "RETAIL") {
         if (qty > retailStock) {
           errors.push({
@@ -1089,6 +1140,9 @@ export default function CashierOrder() {
   const { order, isStale, lockExpiresAt, lockedByLabel, canClaim, meId, clearance } =
     useLoaderData<LoaderData>();
   const actionData = useActionData<typeof action>();
+  const redirectToReceipt = extractRedirectToReceipt(actionData);
+  const actionErrorMessage = extractActionErrorMessage(actionData);
+  const actionErrors = extractActionErrors(actionData);
   const nav = useNavigation();
   const alreadyPaid = sumAllPayments(order.payments);
   const initialCashGivenFromSnapshot =
@@ -1108,10 +1162,10 @@ export default function CashierOrder() {
   // ...inside CashierOrder component (top of render state)
 
   React.useEffect(() => {
-    if (actionData && (actionData as any).redirectToReceipt) {
-      window.location.assign((actionData as any).redirectToReceipt);
+    if (redirectToReceipt) {
+      window.location.assign(redirectToReceipt);
     }
-  }, [actionData]);
+  }, [redirectToReceipt]);
   React.useEffect(() => {
     if (!lockExpiresAt) return;
     const id = setInterval(() => {
@@ -1124,7 +1178,7 @@ export default function CashierOrder() {
 
   // Build DiscountView (like delivery-remit) from frozen OrderItem fields
   const discountView = useMemo(() => {
-    const lines: FrozenLine[] = ((order.items ?? []) as any[]).map((it) => ({
+    const lines: FrozenLine[] = (order.items ?? []).map((it) => ({
       id: Number(it.id),
       productId: it.productId != null ? Number(it.productId) : null,
       name: String(it.name ?? ""),
@@ -1145,9 +1199,7 @@ export default function CashierOrder() {
   // ✅ YOU MISSED THIS LINE (fixes "Cannot find name 'rows'")
   const rows = (discountView.rows ?? []) as DiscountRow[];
 
-  const missingLineTotals = Boolean(
-    (discountView as any)?.hasMissingLineTotals,
-  );
+  const missingLineTotals = Boolean(discountView.hasMissingLineTotals);
 
   // 🔢 Use discounted total for payment figures (UI)
   // ✅ WALK-IN settlement truth: ALL payments count against remaining balance
@@ -1156,7 +1208,7 @@ export default function CashierOrder() {
   // UI payment math should also be based on frozen line totals (same as action)
   const effectiveTotal = r2(
     (order.items ?? []).reduce(
-      (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
+      (s: number, it) => s + Number(it.lineTotal ?? 0),
       0,
     ),
   );
@@ -1612,20 +1664,16 @@ export default function CashierOrder() {
                 )}
               </section>
 
-              {actionData &&
-              "errors" in actionData &&
-              actionData.errors?.length ? (
+              {actionErrors.length ? (
                 <div className="mx-4 mt-2 text-[11px] text-rose-700">
-                  {actionData.errors
-                    .map((e: any) => `Product #${e.id}: ${e.reason}`)
+                  {actionErrors
+                    .map((entry) => `Product #${entry.id}: ${entry.reason}`)
                     .join(" • ")}
                 </div>
               ) : null}
-              {actionData &&
-              "error" in actionData &&
-              (actionData as any).error ? (
+              {actionErrorMessage ? (
                 <div className="mx-4 mt-2 text-[11px] text-rose-700">
-                  {(actionData as any).error}
+                  {actionErrorMessage}
                 </div>
               ) : null}
 
@@ -1668,7 +1716,7 @@ export default function CashierOrder() {
                     Customer
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                    {formatCustomerLabel((order as any).customer)}
+                    {formatCustomerLabel(order.customer)}
                   </div>
                   {projectedNeedsCustomerForAr && !hasCustomer ? (
                     <div className="mt-1 text-xs text-amber-800">

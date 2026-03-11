@@ -24,8 +24,8 @@ Business behavior changes are out of scope for this checklist.
 
 ## 3. Baseline Snapshot (2026-03-11)
 
-1. Active routes tracked from UI matrix: `47`
-2. `DONE`: `25`
+1. Active routes tracked from UI matrix: `48`
+2. `DONE`: `26`
 3. `PENDING`: `22`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
@@ -73,6 +73,9 @@ Business behavior changes are out of scope for this checklist.
 12. 2026-03-11 - current batch F (`codex/cleanup-runs-summary`)  
    Scope: `store.clearance_.$caseId.tsx` route-level any/cast cleanup + typed decision/customer-label payloads and enum-safe write paths  
    Merge: pending (this branch)
+13. 2026-03-11 - current batch G (`codex/cleanup-runs-summary`)  
+   Scope: `cashier.$id.tsx` route-level any/cast cleanup + typed loader/action payload parsing and clearance settlement guards  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -97,6 +100,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/login.tsx` | DONE | 0 | cleaned |
 | `app/routes/cashier._index.tsx` | PENDING | 3 | type cleanup pending |
 | `app/routes/cashier.pos._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/cashier.$id.tsx` | DONE | 0 | cleaned in current batch (typed settlement/clearance flow + no route-level any bypass) |
 | `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/store.dispatch.tsx` | DONE | 0 | cleaned (typed dispatch filters/orderBy + UI state mapping) |
 | `app/routes/runs._index.tsx` | DONE | 0 | cleaned in PR #50 |
@@ -139,8 +143,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/store.cashier-variances.tsx`
-2. `app/routes/creation.opening-ar-batches.tsx`
-3. `app/routes/cashier.charges.tsx`
+1. `app/routes/store._index.tsx`
+2. `app/routes/orders.new.tsx`
+3. `app/routes/store.cashier-variances.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
