@@ -1,5 +1,4 @@
 /* app/routes/store.payroll.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
@@ -24,8 +23,10 @@ import {
   Prisma,
   RiderChargePaymentMethod,
   RiderChargeStatus,
+  RiderVarianceStatus,
   CashierChargePaymentMethod,
   CashierChargeStatus,
+  CashierVarianceStatus,
 } from "@prisma/client";
 
 // ---------------------------
@@ -43,7 +44,7 @@ const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 const hasPlanTag = (note: string | null | undefined) =>
   String(note ?? "").includes(PLAN_TAG);
 
-const getAuthUserId = (me: any) => {
+const getAuthUserId = (me: { userId?: unknown; id?: unknown }) => {
   const v = Number(me?.userId ?? me?.id ?? 0);
   return Number.isFinite(v) && v > 0 ? v : 0;
 };
@@ -332,7 +333,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
-  const recordedByUserId = getAuthUserId(me as any) || null;
+  const recordedByUserId = getAuthUserId(me) || null;
 
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
@@ -473,85 +474,99 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
 
-      // recompute paid/remaining for this charge (cheap + safe)
-      const agg =
-        kind === "RIDER"
-          ? await tx.riderChargePayment.aggregate({
-              where: { chargeId: c.id },
-              _sum: { amount: true },
-            })
-          : await tx.cashierChargePayment.aggregate({
-              where: { chargeId: c.id },
-              _sum: { amount: true },
-            });
-      const paid2 = Number((agg as any)._sum?.amount ?? 0);
-      const rem2 = Math.max(0, c.total - paid2);
-
-      const nextStatus =
-        rem2 <= 0.009
-          ? "SETTLED"
-          : paid2 > 0.009
-          ? "PARTIALLY_SETTLED"
-          : "OPEN";
-
       if (kind === "RIDER") {
+        // recompute paid/remaining for this charge (cheap + safe)
+        const agg = await tx.riderChargePayment.aggregate({
+          where: { chargeId: c.id },
+          _sum: { amount: true },
+        });
+        const paid2 = Number(agg._sum.amount ?? 0);
+        const rem2 = Math.max(0, c.total - paid2);
+        const nextStatus: RiderChargeStatus =
+          rem2 <= 0.009
+            ? RiderChargeStatus.SETTLED
+            : paid2 > 0.009
+              ? RiderChargeStatus.PARTIALLY_SETTLED
+              : RiderChargeStatus.OPEN;
+
         await tx.riderCharge.update({
           where: { id: c.id },
           data: {
-            status: nextStatus as any,
-            settledAt: nextStatus === "SETTLED" ? now : null,
+            status: nextStatus,
+            settledAt: nextStatus === RiderChargeStatus.SETTLED ? now : null,
           },
         });
-      } else {
-        await tx.cashierCharge.update({
-          where: { id: c.id },
-          data: {
-            status: nextStatus as any,
-            settledAt: nextStatus === "SETTLED" ? now : null,
-          },
-        });
-      }
 
-      // keep variance sync behavior (ledger → variance state)
-      if (c.varianceId) {
-        if (kind === "RIDER") {
-          if (nextStatus === "SETTLED") {
+        // keep variance sync behavior (ledger -> variance state)
+        if (c.varianceId) {
+          if (nextStatus === RiderChargeStatus.SETTLED) {
             await tx.riderRunVariance.updateMany({
               where: {
                 id: c.varianceId,
                 status: {
                   in: [
-                    "OPEN",
-                    "MANAGER_APPROVED",
-                    "RIDER_ACCEPTED",
-                    "PARTIALLY_SETTLED",
-                  ] as any,
+                    RiderVarianceStatus.OPEN,
+                    RiderVarianceStatus.MANAGER_APPROVED,
+                    RiderVarianceStatus.RIDER_ACCEPTED,
+                    RiderVarianceStatus.PARTIALLY_SETTLED,
+                  ],
                 },
               },
-              data: { status: "CLOSED" as any, resolvedAt: now },
+              data: { status: RiderVarianceStatus.CLOSED, resolvedAt: now },
             });
-          } else if (nextStatus === "PARTIALLY_SETTLED") {
+          } else if (nextStatus === RiderChargeStatus.PARTIALLY_SETTLED) {
             await tx.riderRunVariance.updateMany({
               where: {
                 id: c.varianceId,
                 status: {
-                  in: ["OPEN", "MANAGER_APPROVED", "RIDER_ACCEPTED"] as any,
+                  in: [
+                    RiderVarianceStatus.OPEN,
+                    RiderVarianceStatus.MANAGER_APPROVED,
+                    RiderVarianceStatus.RIDER_ACCEPTED,
+                  ],
                 },
               },
-              data: { status: "PARTIALLY_SETTLED" as any },
+              data: { status: RiderVarianceStatus.PARTIALLY_SETTLED },
             });
           }
-        } else {
-          // Cashier variance statuses do not have PARTIALLY_SETTLED; close only when fully settled.
-          if (nextStatus === "SETTLED") {
-            await tx.cashierShiftVariance.updateMany({
-              where: {
-                id: c.varianceId,
-                status: { in: ["OPEN", "MANAGER_APPROVED"] as any },
+        }
+      } else {
+        // recompute paid/remaining for this charge (cheap + safe)
+        const agg = await tx.cashierChargePayment.aggregate({
+          where: { chargeId: c.id },
+          _sum: { amount: true },
+        });
+        const paid2 = Number(agg._sum.amount ?? 0);
+        const rem2 = Math.max(0, c.total - paid2);
+        const nextStatus: CashierChargeStatus =
+          rem2 <= 0.009
+            ? CashierChargeStatus.SETTLED
+            : paid2 > 0.009
+              ? CashierChargeStatus.PARTIALLY_SETTLED
+              : CashierChargeStatus.OPEN;
+
+        await tx.cashierCharge.update({
+          where: { id: c.id },
+          data: {
+            status: nextStatus,
+            settledAt: nextStatus === CashierChargeStatus.SETTLED ? now : null,
+          },
+        });
+
+        // Cashier variance statuses do not have PARTIALLY_SETTLED; close only when fully settled.
+        if (c.varianceId && nextStatus === CashierChargeStatus.SETTLED) {
+          await tx.cashierShiftVariance.updateMany({
+            where: {
+              id: c.varianceId,
+              status: {
+                in: [
+                  CashierVarianceStatus.OPEN,
+                  CashierVarianceStatus.MANAGER_APPROVED,
+                ],
               },
-              data: { status: "CLOSED" as any, resolvedAt: now },
-            });
-          }
+            },
+            data: { status: CashierVarianceStatus.CLOSED, resolvedAt: now },
+          });
         }
       }
 
