@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
+import { CustomerArStatus } from "@prisma/client";
 import {
   Form,
   Link,
@@ -524,9 +524,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
           where: { id: row.id },
           data: {
             balance: newBalance,
-            status: newBalance <= EPS ? "SETTLED" : "PARTIALLY_SETTLED",
+            status:
+              newBalance <= EPS
+                ? CustomerArStatus.SETTLED
+                : CustomerArStatus.PARTIALLY_SETTLED,
             settledAt: newBalance <= EPS ? new Date() : null,
-          } as any,
+          },
         });
 
         remainingToApply = r2(remainingToApply - apply);
@@ -539,7 +542,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       change = Math.max(0, r2(remainingToApply));
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: msg }, { status: 400 });
   }

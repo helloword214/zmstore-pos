@@ -1,6 +1,5 @@
 /* app/routes/store.clearance.tsx */
 /* STORE MANAGER — Commercial Clearance Inbox (Walk-in + Delivery) */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -21,6 +20,7 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, peso } from "~/utils/money";
+import { ClearanceCaseStatus } from "@prisma/client";
 import {
   extractOpeningBatchRefFromReceiptKey,
   isOpeningArReceiptKey,
@@ -67,8 +67,25 @@ type LoaderData = {
   };
 };
 
-function buildCustomerLabelFromOrder(o: any) {
-  const c = o?.customer;
+type OrderCustomerLabelSource = {
+  customerId: number | null;
+  customer: {
+    firstName: string;
+    middleName: string | null;
+    lastName: string;
+    alias: string | null;
+    phone: string | null;
+  } | null;
+};
+
+type ReceiptCustomerLabelSource = {
+  customerId: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
+};
+
+function buildCustomerLabelFromOrder(o: OrderCustomerLabelSource) {
+  const c = o.customer;
   const name =
     [c?.firstName, c?.middleName, c?.lastName]
       .filter(Boolean)
@@ -76,17 +93,17 @@ function buildCustomerLabelFromOrder(o: any) {
       .trim() || "";
   const alias = c?.alias ? ` (${c.alias})` : "";
   const phone = c?.phone ? ` • ${c.phone}` : "";
-  const fallback = o?.customerId
+  const fallback = o.customerId
     ? `Customer #${o.customerId}`
     : "Walk-in / Unknown";
   return `${name || fallback}${alias}${phone}`.trim();
 }
 
-function buildCustomerLabelFromReceipt(r: any) {
+function buildCustomerLabelFromReceipt(r: ReceiptCustomerLabelSource) {
   const base =
-    (r?.customerName && String(r.customerName).trim()) ||
-    (r?.customerId ? `Customer #${r.customerId}` : "Walk-in / Unknown");
-  const phone = r?.customerPhone ? ` • ${r.customerPhone}` : "";
+    (r.customerName && String(r.customerName).trim()) ||
+    (r.customerId ? `Customer #${r.customerId}` : "Walk-in / Unknown");
+  const phone = r.customerPhone ? ` • ${r.customerPhone}` : "";
   return `${base}${phone}`.trim();
 }
 
@@ -99,7 +116,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Use ClearanceCase.status=NEEDS_CLEARANCE as the manager inbox.
   // This keeps the UI aligned with the CCS workflow (claims/decisions/AR).
   const cases = await db.clearanceCase.findMany({
-    where: { status: "NEEDS_CLEARANCE" } as any,
+    where: { status: ClearanceCaseStatus.NEEDS_CLEARANCE },
     select: {
       id: true,
       receiptKey: true,
@@ -150,29 +167,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 250,
   });
 
-  const walkInAll: WalkInRow[] = cases
-    .filter((c: any) => c?.order?.id && !c?.runReceipt?.id)
-    .map((c: any) => {
-      const o = c.order;
+  const walkInAll: WalkInRow[] = cases.flatMap((c) => {
+    const o = c.order;
+    if (!o || c.runReceipt?.id) return [];
       // Prefer ClearanceCase snapshot, fallback to order sums if needed.
-      const frozenTotal = r2(
-        Number(c?.frozenTotal ?? 0) ||
-          (o.items || []).reduce(
-            (s: number, it: any) => s + Number(it?.lineTotal ?? 0),
-            0,
-          ),
-      );
+    const frozenTotal = r2(
+      Number(c.frozenTotal ?? 0) ||
+        (o.items ?? []).reduce((s, it) => s + Number(it.lineTotal ?? 0), 0),
+    );
       // CCS SoT: prefer ClearanceCase.cashCollected as "paid so far" snapshot,
       // fallback to payments sum for older/backfill gaps.
-      const paidFallback = (o.payments || []).reduce(
-        (s: number, p: any) => s + Number(p?.amount ?? 0),
-        0,
-      );
-      const paidSoFar = r2(
-        Math.max(0, Number(c?.cashCollected ?? 0) || paidFallback),
-      );
-      const balance = r2(Math.max(0, frozenTotal - paidSoFar));
-      return {
+    const paidFallback = (o.payments ?? []).reduce(
+      (s, p) => s + Number(p.amount ?? 0),
+      0,
+    );
+    const paidSoFar = r2(Math.max(0, Number(c.cashCollected ?? 0) || paidFallback));
+    const balance = r2(Math.max(0, frozenTotal - paidSoFar));
+    return [
+      {
         caseId: Number(c.id),
         orderId: Number(o.id),
         orderCode: String(o.orderCode ?? `#${o.id}`),
@@ -182,48 +194,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
         balance,
         releasedAt: o.releasedAt ? new Date(o.releasedAt).toISOString() : null,
         releasedApprovedBy: o.releasedApprovedBy ?? null,
-      };
-    });
+      },
+    ];
+  });
   // UI cap (keep list small)
   const walkIn = walkInAll.slice(0, 120);
 
-  const deliveryAll: DeliveryRow[] = cases
-    .filter((c: any) => c?.runReceipt?.id)
-    .map((c: any) => {
-      const r = c.runReceipt;
-      const frozenTotal = r2(
-        Number(c?.frozenTotal ?? 0) ||
-          (r.lines || []).reduce(
-            (s: number, ln: any) => s + Number(ln?.lineTotal ?? 0),
-            0,
-          ),
-      );
-      const cashCollected = r2(
-        Math.max(0, Number(c?.cashCollected ?? r.cashCollected ?? 0)),
-      );
-      const balance = r2(Math.max(0, frozenTotal - cashCollected));
-      return {
+  const deliveryAll: DeliveryRow[] = cases.flatMap((c) => {
+    const r = c.runReceipt;
+    if (!r?.id) return [];
+    const frozenTotal = r2(
+      Number(c.frozenTotal ?? 0) ||
+        (r.lines ?? []).reduce((s, ln) => s + Number(ln.lineTotal ?? 0), 0),
+    );
+    const cashCollected = r2(Math.max(0, Number(c.cashCollected ?? r.cashCollected ?? 0)));
+    const balance = r2(Math.max(0, frozenTotal - cashCollected));
+    return [
+      {
         caseId: Number(c.id),
         runCode: String(r.run?.runCode ?? `RUN#${r.runId}`),
-        receiptKey: String(
-          r.receiptKey || `${String(r.kind || "ROAD")}-RR${r.id}`,
-        ),
+        receiptKey: String(r.receiptKey || `${String(r.kind || "ROAD")}-RR${r.id}`),
         customerLabel: buildCustomerLabelFromReceipt(r),
         frozenTotal,
         cashCollected,
         balance,
         kind: coerceReceiptKind(r.kind),
-      };
-    });
+      },
+    ];
+  });
   const delivery = deliveryAll.slice(0, 120);
 
   const openingBalancePending = cases.filter(
-    (c: any) =>
-      !c?.order?.id && !c?.runReceipt?.id && isOpeningArReceiptKey(c?.receiptKey),
+    (c) => !c.order?.id && !c.runReceipt?.id && isOpeningArReceiptKey(c.receiptKey),
   );
   const openingBatchRefs = new Set<string>();
   for (const row of openingBalancePending) {
-    const ref = extractOpeningBatchRefFromReceiptKey(String(row?.receiptKey || ""));
+    const ref = extractOpeningBatchRefFromReceiptKey(String(row.receiptKey || ""));
     if (ref) openingBatchRefs.add(ref);
   }
 

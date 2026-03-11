@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `51`
-2. `DONE`: `39`
-3. `PENDING`: `12`
+2. `DONE`: `44`
+3. `PENDING`: `7`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -103,6 +103,9 @@ Business behavior changes are out of scope for this checklist.
 22. 2026-03-11 - current batch P (`codex/cleanup-runs-summary`)  
    Scope: `cashier.shift-history.tsx`, `cashier.delivery._index.tsx`, `creation.vehicles.tsx`, `creation.provinces.tsx`, `cashier._index.tsx` route-level any/cast cleanup  
    Merge: pending (this branch)
+23. 2026-03-11 - current batch Q (`codex/cleanup-runs-summary`)  
+   Scope: `store.clearance.tsx`, `rider.variances.tsx`, `ar.customers.$id.tsx`, `store.cashier-ar.tsx`, `ar._index.tsx` route-level any/cast cleanup  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -139,23 +142,23 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/runs.$id.dispatch.tsx` | DONE | 0 | cleaned (typed loadout snapshot parsing + enum-safe revert/dispatch updates) |
 | `app/routes/runs.$id.summary.tsx` | DONE | 0 | cleaned in current batch (typed summary loader parsing) |
 | `app/routes/runs.$id.rider-checkin.tsx` | DONE | 0 | cleaned in current batch (typed receipt/checkin loader+action parsing) |
-| `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/store.clearance.tsx` | DONE | 0 | cleaned in current batch (enum-safe clearance-case filter + typed walk-in/delivery mapping) |
 | `app/routes/store.clearance_.$caseId.tsx` | DONE | 0 | cleaned in current batch (typed decision lane + no route-level any bypass) |
 | `app/routes/runs.$id.remit.tsx` | DONE | 0 | cleaned (typed clearance/status handling in remit loader/action) |
 | `app/routes/cashier.delivery._index.tsx` | DONE | 0 | cleaned in current batch (typed remit list row/cash-map parsing + no route-level any bypass) |
 | `app/routes/cashier.delivery.$runId.tsx` | DONE | 0 | cleaned (typed remit helpers, no route-level any bypass) |
 | `app/routes/delivery-remit.$id.tsx` | DONE | 0 | cleaned (typed freeze-line mapping + enum-safe remit writes) |
-| `app/routes/ar._index.tsx` | PENDING | 1 | type cleanup pending |
-| `app/routes/ar.customers.$id.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/ar._index.tsx` | DONE | 0 | cleaned in current batch (removed route-level any bypass) |
+| `app/routes/ar.customers.$id.tsx` | DONE | 0 | cleaned in current batch (enum-safe A/R status updates + typed error handling) |
 | `app/routes/cashier.shift.tsx` | DONE | 0 | cleaned (typed shift status/drawer tx + isolation enum handling) |
 | `app/routes/cashier.shift-history.tsx` | DONE | 0 | cleaned in current batch (enum-safe shift status filters + typed cash-count parsing) |
 | `app/routes/store.cashier-shifts.tsx` | DONE | 0 | cleaned in current batch (typed shift aggregates + enum-safe actions) |
 | `app/routes/store.cashier-variances.tsx` | DONE | 0 | cleaned in current batch (typed variance status filters + denomination parsing) |
 | `app/routes/cashier.charges.tsx` | DONE | 0 | cleaned in current batch (enum-safe variance filters/status updates + typed denomination parsing) |
-| `app/routes/store.cashier-ar.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/store.cashier-ar.tsx` | DONE | 0 | cleaned in current batch (typed cashier identity mapping + no route-level any bypass) |
 | `app/routes/store.payroll.tsx` | DONE | 0 | cleaned in current batch (typed payroll deduction settlement + variance sync) |
 | `app/routes/store.rider-variances.tsx` | DONE | 0 | cleaned in current batch (enum-safe variance filters/transitions + typed manager actor id) |
-| `app/routes/rider.variances.tsx` | PENDING | 2 | type cleanup pending |
+| `app/routes/rider.variances.tsx` | DONE | 0 | cleaned in current batch (typed session actor + enum-safe rider variance filters) |
 | `app/routes/rider.variance.$id.tsx` | DONE | 0 | cleaned in current batch (typed rider actor mapping + enum-safe acceptance checks/transitions) |
 | `app/routes/store.rider-charges.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/store.clearance-opening-batches.tsx` | DONE | 0 | cleaned in current batch (typed opening-batch decision lane + status transitions) |
@@ -173,8 +176,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/store.clearance.tsx`
-2. `app/routes/rider.variances.tsx`
-3. `app/routes/ar.customers.$id.tsx`
+1. `app/routes/customers.new.tsx`
+2. `app/routes/creation.riders.tsx`
+3. `app/routes/cashier.pos._index.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
