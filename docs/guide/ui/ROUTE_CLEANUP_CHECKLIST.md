@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `51`
-2. `DONE`: `33`
-3. `PENDING`: `18`
+2. `DONE`: `34`
+3. `PENDING`: `17`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -97,6 +97,9 @@ Business behavior changes are out of scope for this checklist.
 20. 2026-03-11 - current batch N (`codex/cleanup-runs-summary`)  
    Scope: `store.rider-variances.tsx` route-level any/cast cleanup + enum-safe variance filters/transitions + typed manager actor id  
    Merge: pending (this branch)
+21. 2026-03-11 - current batch O (`codex/cleanup-runs-summary`)  
+   Scope: `rider.variance.$id.tsx` route-level any/cast cleanup + enum-safe rider acceptance checks/transitions  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -150,7 +153,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/store.payroll.tsx` | DONE | 0 | cleaned in current batch (typed payroll deduction settlement + variance sync) |
 | `app/routes/store.rider-variances.tsx` | DONE | 0 | cleaned in current batch (enum-safe variance filters/transitions + typed manager actor id) |
 | `app/routes/rider.variances.tsx` | PENDING | 2 | type cleanup pending |
-| `app/routes/rider.variance.$id.tsx` | PENDING | 6 | type cleanup pending |
+| `app/routes/rider.variance.$id.tsx` | DONE | 0 | cleaned in current batch (typed rider actor mapping + enum-safe acceptance checks/transitions) |
 | `app/routes/store.rider-charges.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/store.clearance-opening-batches.tsx` | DONE | 0 | cleaned in current batch (typed opening-batch decision lane + status transitions) |
 
@@ -167,8 +170,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/orders.$id.credit.tsx`
-2. `app/routes/rider.variance.$id.tsx`
-3. `app/routes/orders.$id.receipt.tsx`
+1. `app/routes/cashier.shift-history.tsx`
+2. `app/routes/cashier.delivery._index.tsx`
+3. `app/routes/creation.vehicles.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.

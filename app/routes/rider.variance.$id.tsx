@@ -1,11 +1,16 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import { EmployeeRole, RiderChargeStatus, Prisma } from "@prisma/client";
+import {
+  EmployeeRole,
+  RiderChargeStatus,
+  RiderVarianceResolution,
+  RiderVarianceStatus,
+  Prisma,
+} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -78,14 +83,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Invalid variance id", { status: 400 });
 
   const userRow = await db.user.findUnique({
-    where: { id: (me as any).userId },
+    where: { id: me.userId },
     include: { employee: true },
   });
   if (!userRow) throw new Response("User not found", { status: 404 });
 
   const emp = userRow.employee;
   if (!emp) throw new Response("Employee profile not linked", { status: 403 });
-  if ((emp.role as EmployeeRole) !== "RIDER")
+  if (emp.role !== EmployeeRole.RIDER)
     throw new Response("Rider access only", { status: 403 });
 
   const v = await db.riderRunVariance.findUnique({
@@ -110,8 +115,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const rawVar = Number(v.variance ?? 0);
   const canAccept =
-    String(v.status ?? "") === "MANAGER_APPROVED" &&
-    String(v.resolution ?? "") === "CHARGE_RIDER" &&
+    v.status === RiderVarianceStatus.MANAGER_APPROVED &&
+    v.resolution === RiderVarianceResolution.CHARGE_RIDER &&
     !v.riderAcceptedAt &&
     rawVar < 0; // ✅ charge rider accept only for shortages
 
@@ -122,7 +127,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const data: LoaderData = {
     me: {
-      userId: (me as any).userId,
+      userId: me.userId,
       employeeId: emp.id,
       name: fullName,
       alias: emp.alias ?? null,
@@ -158,14 +163,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     throw new Response("Invalid variance id", { status: 400 });
 
   const userRow = await db.user.findUnique({
-    where: { id: (me as any).userId },
+    where: { id: me.userId },
     include: { employee: true },
   });
   if (!userRow) throw new Response("User not found", { status: 404 });
 
   const emp = userRow.employee;
   if (!emp) throw new Response("Employee profile not linked", { status: 403 });
-  if ((emp.role as EmployeeRole) !== "RIDER")
+  if (emp.role !== EmployeeRole.RIDER)
     throw new Response("Rider access only", { status: 403 });
 
   const fd = await request.formData();
@@ -198,8 +203,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // accept only if manager approved + charge rider + not yet accepted
   if (
-    String(v.status ?? "") !== "MANAGER_APPROVED" ||
-    String(v.resolution ?? "") !== "CHARGE_RIDER" ||
+    v.status !== RiderVarianceStatus.MANAGER_APPROVED ||
+    v.resolution !== RiderVarianceResolution.CHARGE_RIDER ||
     v.riderAcceptedAt
   ) {
     throw new Response("Variance is not eligible for acceptance", {
@@ -208,14 +213,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const now = new Date();
-  const riderAcceptedById = Number((me as any).userId) || null;
+  const riderAcceptedById = me.userId;
 
   await db.$transaction(async (tx) => {
     // 1) variance acceptance
     await tx.riderRunVariance.update({
       where: { id },
       data: {
-        status: "RIDER_ACCEPTED" as any,
+        status: RiderVarianceStatus.RIDER_ACCEPTED,
         riderAcceptedAt: now,
         riderAcceptedById,
       },
