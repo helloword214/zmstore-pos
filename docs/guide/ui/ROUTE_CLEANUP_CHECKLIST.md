@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `51`
-2. `DONE`: `49`
-3. `PENDING`: `2`
+2. `DONE`: `51`
+3. `PENDING`: `0`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -109,6 +109,9 @@ Business behavior changes are out of scope for this checklist.
 24. 2026-03-11 - current batch R (`codex/cleanup-runs-summary`)  
    Scope: `customers.new.tsx`, `customers.$id_.pricing.tsx`, `creation.riders.tsx`, `creation.areas.tsx`, `cashier.pos._index.tsx` route-level any/cast cleanup  
    Merge: pending (this branch)
+25. 2026-03-11 - current batch S (`codex/cleanup-runs-summary`)  
+   Scope: `rider._index.tsx`, `store.rider-charges.tsx` route-level any/cast cleanup  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -138,7 +141,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/orders.new.tsx` | DONE | 0 | cleaned in current batch (typed incoming payload validation + enum-safe create payloads) |
 | `app/routes/pad-order._index.tsx` | DONE | 0 | cleaned in current batch (typed fetcher/customer/barcode handling + no route-level any bypass) |
 | `app/routes/cashier.$id.tsx` | DONE | 0 | cleaned in current batch (typed settlement/clearance flow + no route-level any bypass) |
-| `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/rider._index.tsx` | DONE | 0 | cleaned in current batch (enum-safe rider role gate + typed payment aggregation; no route-level any bypass) |
 | `app/routes/store.dispatch.tsx` | DONE | 0 | cleaned (typed dispatch filters/orderBy + UI state mapping) |
 | `app/routes/runs._index.tsx` | DONE | 0 | cleaned in PR #50 |
 | `app/routes/runs.new.tsx` | DONE | 0 | cleaned |
@@ -163,7 +166,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/store.rider-variances.tsx` | DONE | 0 | cleaned in current batch (enum-safe variance filters/transitions + typed manager actor id) |
 | `app/routes/rider.variances.tsx` | DONE | 0 | cleaned in current batch (typed session actor + enum-safe rider variance filters) |
 | `app/routes/rider.variance.$id.tsx` | DONE | 0 | cleaned in current batch (typed rider actor mapping + enum-safe acceptance checks/transitions) |
-| `app/routes/store.rider-charges.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/store.rider-charges.tsx` | DONE | 0 | cleaned in current batch (removed route-level any bypass) |
 | `app/routes/store.clearance-opening-batches.tsx` | DONE | 0 | cleaned in current batch (typed opening-batch decision lane + status transitions) |
 
 ## 6. Operating Rules
@@ -177,9 +180,11 @@ Business behavior changes are out of scope for this checklist.
 
 ## 7. Next Recommended Batch
 
-Recommended next high-impact batch:
+Active-route cleanup in this checklist is complete (`PENDING: 0`).
 
-1. `app/routes/rider._index.tsx`
-2. `app/routes/store.rider-charges.tsx`
+Recommended follow-up (outside active-route checklist scope):
 
-Reason: highest cleanup marker concentration and direct operational flow impact.
+1. `app/routes/orders.$id.credit.tsx`
+2. `app/routes/orders.$id.receipt.tsx`
+
+Reason: remaining global cleanup markers are concentrated in non-active order credit/receipt lanes.

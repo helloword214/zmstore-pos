@@ -1,5 +1,4 @@
 /* app/routes/rider._index.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
@@ -48,7 +47,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!emp) {
     throw new Response("Employee profile not linked", { status: 403 });
   }
-  if ((emp.role as EmployeeRole) !== "RIDER") {
+  if (emp.role !== EmployeeRole.RIDER) {
     throw new Response("Rider access only", { status: 403 });
   }
 
@@ -84,10 +83,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
   const outstandingCharges = openCharges.reduce((sum, ch) => {
     const amt = Number(ch.amount ?? 0);
-    const paid = (ch.payments ?? []).reduce(
-      (s: number, p: any) => s + Number(p.amount ?? 0),
-      0
-    );
+    const paid = (ch.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
     const bal = Math.max(0, amt - paid);
     return sum + bal;
   }, 0);
