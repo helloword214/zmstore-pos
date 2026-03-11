@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
@@ -6,7 +5,7 @@ import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import type { Prisma } from "@prisma/client";
-import { CashDrawerTxnType } from "@prisma/client";
+import { CashDrawerTxnType, CashierShiftStatus } from "@prisma/client";
 import { SelectInput } from "~/components/ui/SelectInput";
 
 const CASH_COUNT_MARKER = "CASH_COUNT_JSON:";
@@ -36,7 +35,7 @@ function parseCashCountFromNotes(notes: string | null) {
     if (!obj || typeof obj !== "object") return null;
     const parts: string[] = [];
     for (const d of DENOMS) {
-      const q = Number((obj as any)[d.key] ?? 0);
+      const q = Number(obj[d.key] ?? 0);
       if (Number.isFinite(q) && q > 0)
         parts.push(`${d.label}×${Math.floor(q)}`);
     }
@@ -142,6 +141,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
           ...(to ? { lte: manilaEndOfDay(to) } : {}),
         }
       : undefined;
+  const openStatuses: CashierShiftStatus[] = [
+    CashierShiftStatus.PENDING_ACCEPT,
+    CashierShiftStatus.OPEN,
+    CashierShiftStatus.OPENING_DISPUTED,
+    CashierShiftStatus.SUBMITTED,
+    CashierShiftStatus.RECOUNT_REQUIRED,
+  ];
 
   // Build filters
   const where: Prisma.CashierShiftWhereInput = {
@@ -149,17 +155,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ...(status === "open"
       ? {
           status: {
-            in: [
-              "PENDING_ACCEPT",
-              "OPEN",
-              "OPENING_DISPUTED",
-              "SUBMITTED",
-              "RECOUNT_REQUIRED",
-            ] as any,
+            in: openStatuses,
           },
         }
       : status === "closed"
-      ? { status: "FINAL_CLOSED" as any }
+      ? { status: CashierShiftStatus.FINAL_CLOSED }
       : {}),
     ...(openedAtRange ? { openedAt: openedAtRange } : {}),
     ...(me.role === "ADMIN" && cashierId ? { cashierId } : {}),
@@ -337,7 +337,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         id: s.id,
         openedAt: s.openedAt.toISOString(),
         closedAt: s.closedAt ? s.closedAt.toISOString() : null,
-        status: (s as any).status ?? (s.closedAt ? "FINAL_CLOSED" : "OPEN"),
+        status: s.status,
         openingFloat: s.openingFloat ? s.openingFloat.toString() : null,
         closingTotal: s.closingTotal ? s.closingTotal.toString() : null,
         deviceId: s.deviceId,

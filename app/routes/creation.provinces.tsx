@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import type { Prisma } from "@prisma/client";
 import {
   Form,
   Link,
@@ -68,19 +68,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const status = parseStatus(url.searchParams.get("status"));
   const requestedPage = parsePage(url.searchParams.get("page"));
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.ProvinceWhereInput = {};
   if (q) {
     where.name = { contains: q, mode: "insensitive" };
   }
   if (status === "active") where.isActive = true;
   if (status === "inactive") where.isActive = false;
 
-  const total = await db.province.count({ where: where as any });
+  const total = await db.province.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(requestedPage, totalPages);
 
   const provinces = await db.province.findMany({
-    where: where as any,
+    where,
     orderBy: [{ name: "asc" }],
     select: { id: true, name: true, code: true, isActive: true },
     skip: (page - 1) * PAGE_SIZE,
@@ -223,9 +223,10 @@ export async function action({ request }: ActionFunctionArgs) {
       { ok: false, error: "Unknown intent." },
       { status: 400 }
     );
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : "Operation failed.";
     return json<ActionData>(
-      { ok: false, error: e?.message || "Operation failed." },
+      { ok: false, error: errorMessage },
       { status: 500 }
     );
   }
