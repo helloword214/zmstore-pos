@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `47`
-2. `DONE`: `20`
-3. `PENDING`: `27`
+2. `DONE`: `21`
+3. `PENDING`: `26`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -55,8 +55,11 @@ Business behavior changes are out of scope for this checklist.
 6. 2026-03-10 - [PR #52](https://github.com/helloword214/zmstore-pos/pull/52)  
    Scope: remit/dispatch/shift route typing cleanup  
    Merge: `b69ec7b2af43e00e5746ae44cbbba89315f7a0b5`
-7. 2026-03-11 - current batch (`codex/cleanup-runs-summary`)  
+7. 2026-03-11 - current batch A (`codex/cleanup-runs-summary`)  
    Scope: `runs.$id.summary.tsx` route-level any/cast cleanup + typed snapshot/case parsing  
+   Merge: pending (this branch)
+8. 2026-03-11 - current batch B (`codex/cleanup-runs-summary`)  
+   Scope: `runs.$id.rider-checkin.tsx` route-level any/cast cleanup + typed loader/action payload parsing  
    Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
@@ -88,7 +91,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/runs.new.tsx` | DONE | 0 | cleaned |
 | `app/routes/runs.$id.dispatch.tsx` | DONE | 0 | cleaned (typed loadout snapshot parsing + enum-safe revert/dispatch updates) |
 | `app/routes/runs.$id.summary.tsx` | DONE | 0 | cleaned in current batch (typed summary loader parsing) |
-| `app/routes/runs.$id.rider-checkin.tsx` | PENDING | 37 | critical high-volume cleanup |
+| `app/routes/runs.$id.rider-checkin.tsx` | DONE | 0 | cleaned in current batch (typed receipt/checkin loader+action parsing) |
 | `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/store.clearance_.$caseId.tsx` | PENDING | 9 | high-priority cleanup candidate |
 | `app/routes/runs.$id.remit.tsx` | DONE | 0 | cleaned (typed clearance/status handling in remit loader/action) |
@@ -124,8 +127,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/runs.$id.rider-checkin.tsx`
-2. `app/routes/store.cashier-shifts.tsx`
-3. `app/routes/store.payroll.tsx`
+1. `app/routes/store.cashier-shifts.tsx`
+2. `app/routes/store.payroll.tsx`
+3. `app/routes/store.clearance-opening-batches.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
