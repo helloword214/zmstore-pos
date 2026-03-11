@@ -1,5 +1,4 @@
 /* app/routes/store.cashier-shifts.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -16,7 +15,15 @@ import { SelectInput } from "~/components/ui/SelectInput";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { peso, toNum } from "~/utils/money";
-import { CashDrawerTxnType } from "@prisma/client";
+import {
+  CashDrawerTxnType,
+  CashierChargeStatus,
+  CashierShiftStatus,
+  CashierVarianceResolution,
+  CashierVarianceStatus,
+  Prisma,
+  UserRole,
+} from "@prisma/client";
 
 const EPS = 0.005;
 const CASHIER_CHARGE_TAG = "CASHIER_SHIFT_VARIANCE";
@@ -43,7 +50,10 @@ function escapeHtml(input: string) {
 }
 
 async function computeExpectedDrawerForShift(
-  tx: typeof db,
+  tx: Pick<
+    Prisma.TransactionClient,
+    "payment" | "customerArPayment" | "cashDrawerTxn"
+  >,
   shiftId: number,
   openingFloat: number,
 ) {
@@ -70,8 +80,8 @@ async function computeExpectedDrawerForShift(
 
   let deposits = 0;
   let withdrawals = 0;
-  for (const row of txByType as any[]) {
-    const amt = r2(toNum((row as any)?._sum?.amount));
+  for (const row of txByType) {
+    const amt = r2(toNum(row._sum.amount));
     if (row.type === CashDrawerTxnType.CASH_IN) deposits += amt;
     if (
       row.type === CashDrawerTxnType.CASH_OUT ||
@@ -136,12 +146,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Cashier list
   const cashierUsers = await db.user.findMany({
-    where: { role: "CASHIER" as any },
+    where: { role: UserRole.CASHIER },
     include: { employee: true },
     orderBy: { id: "asc" },
     take: 100,
   });
-  const cashiers: CashierOption[] = cashierUsers.map((u: any) => {
+  const cashiers: CashierOption[] = cashierUsers.map((u) => {
     const emp = u.employee;
     const name =
       emp && (emp.firstName || emp.lastName)
@@ -155,7 +165,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rows = await db.cashierShift.findMany({
     where: { closedAt: null },
     // Prefer urgent states first (disputes/pending), then newest.
-    orderBy: [{ status: "asc" as any }, { openedAt: "desc" }],
+    orderBy: [{ status: "asc" }, { openedAt: "desc" }],
     take: 50,
     include: {
       cashier: { include: { employee: true } },
@@ -163,63 +173,63 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   // ---- Expected drawer per shift ----
-  const shiftIds = (rows || []).map((s: any) => Number(s.id)).filter(Boolean);
+  const shiftIds = rows.map((s) => Number(s.id)).filter(Boolean);
 
   // CASH in from sales = tendered - change (not amount)
   const payByShift = shiftIds.length
     ? await db.payment.groupBy({
         by: ["shiftId"],
-        where: { shiftId: { in: shiftIds as any }, method: "CASH" },
+        where: { shiftId: { in: shiftIds }, method: "CASH" },
         _sum: { tendered: true, change: true },
       })
     : [];
   const arByShift = shiftIds.length
     ? await db.customerArPayment.groupBy({
         by: ["shiftId"],
-        where: { shiftId: { in: shiftIds as any } },
+        where: { shiftId: { in: shiftIds } },
         _sum: { amount: true },
       })
     : [];
 
   const payMap = new Map<number, { tendered: number; change: number }>();
-  for (const r of payByShift as any[]) {
-    const sid = Number((r as any).shiftId || 0);
+  for (const r of payByShift) {
+    const sid = Number(r.shiftId || 0);
     if (!sid) continue;
     payMap.set(sid, {
-      tendered: toNum((r as any)?._sum?.tendered),
-      change: toNum((r as any)?._sum?.change),
+      tendered: toNum(r._sum.tendered),
+      change: toNum(r._sum.change),
     });
   }
   const arMap = new Map<number, number>();
-  for (const r of arByShift as any[]) {
-    const sid = Number((r as any).shiftId || 0);
+  for (const r of arByShift) {
+    const sid = Number(r.shiftId || 0);
     if (!sid) continue;
-    arMap.set(sid, toNum((r as any)?._sum?.amount));
+    arMap.set(sid, toNum(r._sum.amount));
   }
 
   // Drawer txns: CASH_IN adds, CASH_OUT + DROP subtract
   const txByShift = shiftIds.length
     ? await db.cashDrawerTxn.groupBy({
         by: ["shiftId", "type"],
-        where: { shiftId: { in: shiftIds as any } },
+        where: { shiftId: { in: shiftIds } },
         _sum: { amount: true },
       })
     : [];
 
   const txMap = new Map<number, { in: number; out: number; drop: number }>();
-  for (const r of txByShift as any[]) {
-    const sid = Number((r as any).shiftId || 0);
+  for (const r of txByShift) {
+    const sid = Number(r.shiftId || 0);
     if (!sid) continue;
     const cur = txMap.get(sid) || { in: 0, out: 0, drop: 0 };
-    const amt = toNum((r as any)?._sum?.amount);
-    const type = (r as any).type as CashDrawerTxnType;
+    const amt = toNum(r._sum.amount);
+    const type = r.type;
     if (type === CashDrawerTxnType.CASH_IN) cur.in += amt;
     else if (type === CashDrawerTxnType.CASH_OUT) cur.out += amt;
     else if (type === CashDrawerTxnType.DROP) cur.drop += amt;
     txMap.set(sid, cur);
   }
 
-  const openShifts: OpenShiftRow[] = rows.map((s: any) => {
+  const openShifts: OpenShiftRow[] = rows.map((s) => {
     const emp = s.cashier?.employee;
     const name =
       emp && (emp.firstName || emp.lastName)
@@ -270,6 +280,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
+  type CloseResolution = "" | CashierVarianceResolution;
 
   if (act !== "open" && act !== "close" && act !== "resend") {
     return json({ ok: false, error: "Unknown action" }, { status: 400 });
@@ -315,8 +326,8 @@ export async function action({ request }: ActionFunctionArgs) {
         await tx.cashierShift.update({
           where: { id: shiftId },
           data: {
-            status: "PENDING_ACCEPT" as any,
-            ...(hasOpeningFloat ? { openingFloat: openingFloat as any } : null),
+            status: CashierShiftStatus.PENDING_ACCEPT,
+            ...(hasOpeningFloat ? { openingFloat: openingFloat ?? 0 } : null),
             // Reset acceptance fields so cashier can verify again
             openingCounted: null,
             openingVerifiedAt: null,
@@ -325,7 +336,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         });
       },
-      { isolationLevel: "Serializable" as any },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     return redirect("/store/cashier-shifts");
@@ -335,7 +346,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const shiftId = Number(fd.get("shiftId") || 0);
     const managerCountedRaw = String(fd.get("managerCounted") || "").trim();
     const managerCounted = Number(managerCountedRaw);
-    const requestedResolution = String(fd.get("resolution") || "").trim();
+    const requestedResolutionRaw = String(fd.get("resolution") || "").trim();
     const managerNote = String(fd.get("managerNote") || "").trim();
     const paperRefNo = String(fd.get("paperRefNo") || "").trim();
 
@@ -352,10 +363,16 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 400 },
       );
     }
-    if (
-      requestedResolution.length &&
-      !["CHARGE_CASHIER", "INFO_ONLY", "WAIVE"].includes(requestedResolution)
+    let requestedResolution: CloseResolution = "";
+    if (!requestedResolutionRaw.length) {
+      requestedResolution = "";
+    } else if (
+      requestedResolutionRaw === CashierVarianceResolution.CHARGE_CASHIER ||
+      requestedResolutionRaw === CashierVarianceResolution.INFO_ONLY ||
+      requestedResolutionRaw === CashierVarianceResolution.WAIVE
     ) {
+      requestedResolution = requestedResolutionRaw;
+    } else {
       return json(
         { ok: false, error: "Invalid manager decision selected." },
         { status: 400 },
@@ -396,7 +413,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
         const openingFloat = r2(toNum(s.openingFloat));
         const { expectedDrawer } = await computeExpectedDrawerForShift(
-          tx as any,
+          tx,
           shiftId,
           openingFloat,
         );
@@ -405,9 +422,9 @@ export async function action({ request }: ActionFunctionArgs) {
         const variance = r2(managerCountedR2 - expectedDrawer);
         const hasMismatch = Math.abs(variance) >= EPS;
         const isShort = variance < -EPS;
-        const resolution =
+        const resolution: CloseResolution =
           hasMismatch && !isShort && !requestedResolution
-            ? "INFO_ONLY"
+            ? CashierVarianceResolution.INFO_ONLY
             : requestedResolution;
 
         if (isShort && !resolution) {
@@ -452,11 +469,11 @@ export async function action({ request }: ActionFunctionArgs) {
           const managerApprovedAt = resolution ? now : null;
           const managerApprovedById = resolution ? me.userId : null;
           const nextStatus =
-            resolution === "WAIVE"
-              ? "WAIVED"
+            resolution === CashierVarianceResolution.WAIVE
+              ? CashierVarianceStatus.WAIVED
               : resolution
-              ? "MANAGER_APPROVED"
-              : "OPEN";
+                ? CashierVarianceStatus.MANAGER_APPROVED
+                : CashierVarianceStatus.OPEN;
 
           const varianceRow = await tx.cashierShiftVariance.upsert({
             where: { shiftId },
@@ -465,8 +482,8 @@ export async function action({ request }: ActionFunctionArgs) {
               expected: expectedDrawer,
               counted: managerCountedR2,
               variance,
-              status: nextStatus as any,
-              resolution: resolution ? (resolution as any) : null,
+              status: nextStatus,
+              resolution: resolution || null,
               note: shiftAuditNote,
               managerApprovedAt,
               managerApprovedById,
@@ -476,8 +493,8 @@ export async function action({ request }: ActionFunctionArgs) {
               expected: expectedDrawer,
               counted: managerCountedR2,
               variance,
-              status: nextStatus as any,
-              resolution: resolution ? (resolution as any) : null,
+              status: nextStatus,
+              resolution: resolution || null,
               note: shiftAuditNote,
               managerApprovedAt,
               managerApprovedById,
@@ -485,7 +502,7 @@ export async function action({ request }: ActionFunctionArgs) {
             },
           });
 
-          if (resolution === "CHARGE_CASHIER" && isShort) {
+          if (resolution === CashierVarianceResolution.CHARGE_CASHIER && isShort) {
             const amountToCharge = r2(Math.abs(variance));
             const chargeNote = [
               CASHIER_CHARGE_TAG,
@@ -505,7 +522,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 shiftId,
                 cashierId: s.cashierId,
                 amount: amountToCharge,
-                status: "OPEN" as any,
+                status: CashierChargeStatus.OPEN,
                 createdById: me.userId,
                 note: chargeNote,
               },
@@ -513,7 +530,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 shiftId,
                 cashierId: s.cashierId,
                 amount: amountToCharge,
-                status: "OPEN" as any,
+                status: CashierChargeStatus.OPEN,
                 note: chargeNote,
               },
             });
@@ -523,14 +540,14 @@ export async function action({ request }: ActionFunctionArgs) {
         await tx.cashierShift.update({
           where: { id: shiftId },
           data: {
-            status: "FINAL_CLOSED" as any,
+            status: CashierShiftStatus.FINAL_CLOSED,
             closedAt: now,
             finalClosedById: me.userId,
             notes: nextShiftNote,
           },
         });
       },
-      { isolationLevel: "Serializable" as any },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     return redirect("/store/cashier-shifts");
@@ -609,10 +626,13 @@ export async function action({ request }: ActionFunctionArgs) {
         });
         return { result: "created" as const, shiftId: Number(created.id) };
       },
-      { isolationLevel: "Serializable" as any },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
-  } catch (e: any) {
-    const message = String(e?.message || "Failed to open shift.");
+  } catch (e: unknown) {
+    const message =
+      e instanceof Error && e.message
+        ? e.message
+        : "Failed to open shift.";
     const status =
       message === "Selected user is not a CASHIER." ? 400 : 500;
     return json(

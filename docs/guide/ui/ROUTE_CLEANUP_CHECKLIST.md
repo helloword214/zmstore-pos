@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `47`
-2. `DONE`: `21`
-3. `PENDING`: `26`
+2. `DONE`: `22`
+3. `PENDING`: `25`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -60,6 +60,9 @@ Business behavior changes are out of scope for this checklist.
    Merge: pending (this branch)
 8. 2026-03-11 - current batch B (`codex/cleanup-runs-summary`)  
    Scope: `runs.$id.rider-checkin.tsx` route-level any/cast cleanup + typed loader/action payload parsing  
+   Merge: pending (this branch)
+9. 2026-03-11 - current batch C (`codex/cleanup-runs-summary`)  
+   Scope: `store.cashier-shifts.tsx` route-level any/cast cleanup + enum-safe manager close/resend transaction writes  
    Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
@@ -102,7 +105,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/ar.customers.$id.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/cashier.shift.tsx` | DONE | 0 | cleaned (typed shift status/drawer tx + isolation enum handling) |
 | `app/routes/cashier.shift-history.tsx` | PENDING | 5 | type cleanup pending |
-| `app/routes/store.cashier-shifts.tsx` | PENDING | 32 | critical high-volume cleanup |
+| `app/routes/store.cashier-shifts.tsx` | DONE | 0 | cleaned in current batch (typed shift aggregates + enum-safe actions) |
 | `app/routes/store.cashier-variances.tsx` | PENDING | 7 | type cleanup pending |
 | `app/routes/cashier.charges.tsx` | PENDING | 6 | type cleanup pending |
 | `app/routes/store.cashier-ar.tsx` | PENDING | 1 | type cleanup pending |
@@ -127,8 +130,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/store.cashier-shifts.tsx`
-2. `app/routes/store.payroll.tsx`
-3. `app/routes/store.clearance-opening-batches.tsx`
+1. `app/routes/store.payroll.tsx`
+2. `app/routes/store.clearance-opening-batches.tsx`
+3. `app/routes/store.clearance_.$caseId.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
