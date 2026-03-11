@@ -25,8 +25,8 @@ Business behavior changes are out of scope for this checklist.
 ## 3. Baseline Snapshot (2026-03-11)
 
 1. Active routes tracked from UI matrix: `48`
-2. `DONE`: `26`
-3. `PENDING`: `22`
+2. `DONE`: `27`
+3. `PENDING`: `21`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
    - `as any`
@@ -76,12 +76,16 @@ Business behavior changes are out of scope for this checklist.
 13. 2026-03-11 - current batch G (`codex/cleanup-runs-summary`)  
    Scope: `cashier.$id.tsx` route-level any/cast cleanup + typed loader/action payload parsing and clearance settlement guards  
    Merge: pending (this branch)
+14. 2026-03-11 - current batch H (`codex/cleanup-runs-summary`)  
+   Scope: `store._index.tsx` route-level any/cast cleanup + typed manager dashboard aggregate/grouped metric parsing  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
 | Route | Status | Marker Count | Notes |
 | --- | --- | --- | --- |
 | `app/routes/_index.tsx` | DONE | 0 | cleaned |
+| `app/routes/store._index.tsx` | DONE | 0 | cleaned in current batch (typed dashboard metrics + no route-level any bypass) |
 | `app/routes/customers._index.tsx` | DONE | 0 | cleaned |
 | `app/routes/customers.new.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/customers.$id.tsx` | DONE | 0 | cleaned |
@@ -127,7 +131,6 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/rider.variances.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/rider.variance.$id.tsx` | PENDING | 6 | type cleanup pending |
 | `app/routes/store.rider-charges.tsx` | PENDING | 1 | type cleanup pending |
-| `app/routes/creation.opening-ar-batches.tsx` | PENDING | 7 | opening-balance path cleanup pending |
 | `app/routes/store.clearance-opening-batches.tsx` | DONE | 0 | cleaned in current batch (typed opening-batch decision lane + status transitions) |
 
 ## 6. Operating Rules
@@ -143,8 +146,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/store._index.tsx`
-2. `app/routes/orders.new.tsx`
-3. `app/routes/store.cashier-variances.tsx`
+1. `app/routes/orders.new.tsx`
+2. `app/routes/store.cashier-variances.tsx`
+3. `app/routes/cashier.charges.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.

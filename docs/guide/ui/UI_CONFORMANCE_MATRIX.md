@@ -20,7 +20,7 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 
 | Route | Flow Area | Baseline | Reference Fit | Main drift | UX gap summary | Priority |
 | --- | --- | --- | --- | --- | --- | --- |
-| `app/routes/store._index.tsx` | Manager dashboard | ALIGNED | REMIT | compact inbox panel uses subtle color accents and simple row actions | decision queues remain first with lower visual noise; monitor cards are toned down as secondary context | P2 |
+| `app/routes/store._index.tsx` | Manager dashboard | ALIGNED | REMIT | compact inbox panel uses subtle color accents and simple row actions, and dashboard loader metrics now avoid route-level `any` bypass for status/count and grouped cash math paths | decision queues remain first with lower visual noise; monitor cards are toned down as secondary context | P2 |
 | `app/routes/_index.tsx` | Admin dashboard | ALIGNED | REMIT | creation-only colorful shell and creation shortcuts are aligned to SoT card/button/focus patterns | admin lane is scoped to creation-only pages, with manager operations intentionally excluded | P2 |
 | `app/routes/customers._index.tsx` | Admin customer list | ALIGNED | REMIT | SoT customer directory is refreshed with compact metrics, action/search bar, and scrollable SoT table including profile/edit/pricing shortcuts under `ctx=admin` | keep list row metadata compact as customer volume grows | P2 |
 | `app/routes/customers.new.tsx` | Admin customer create | ALIGNED | REMIT | SoT non-dashboard header + card/action/form primitives are applied with admin-context back/redirect mapping and no-key Google Maps link-to-coordinate capture (`geoLat`/`geoLng`) | keep address-row metadata compact as map hints expand | P2 |
