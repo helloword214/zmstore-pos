@@ -1,11 +1,15 @@
-/* app/routes/cashier.charges.tsx */ /* eslint-disable @typescript-eslint/no-explicit-any */
+/* app/routes/cashier.charges.tsx */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import type { Prisma } from "@prisma/client";
+import {
+  CashierVarianceResolution,
+  CashierVarianceStatus,
+  type Prisma,
+} from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -78,11 +82,15 @@ function statusTone(status: string): "neutral" | "warning" | "success" {
   return "neutral";
 }
 
-function normalizeDenoms(raw: any): Denoms | null {
-  if (!raw || typeof raw !== "object") return null;
-  const bills = raw.bills && typeof raw.bills === "object" ? raw.bills : {};
-  const coins = raw.coins && typeof raw.coins === "object" ? raw.coins : {};
-  const clean = (o: Record<string, any>) => {
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v != null;
+}
+
+function normalizeDenoms(raw: unknown): Denoms | null {
+  if (!isRecord(raw)) return null;
+  const bills = isRecord(raw.bills) ? raw.bills : {};
+  const coins = isRecord(raw.coins) ? raw.coins : {};
+  const clean = (o: Record<string, unknown>) => {
     const out: Record<string, number> = {};
     for (const [k, v] of Object.entries(o)) {
       const n = Number(v);
@@ -104,18 +112,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Scope: cashier sees own shifts only. Admin may see all with ?all=1.
   const shiftScope: Prisma.CashierShiftWhereInput =
     canSeeAll && showAll ? {} : { cashierId: me.userId };
+  const historyStatuses: CashierVarianceStatus[] = [
+    CashierVarianceStatus.CLOSED,
+    CashierVarianceStatus.WAIVED,
+  ];
 
   // Open = manager already decided CHARGE_CASHIER, waiting cashier acknowledgement/close.
   const openWhere: Prisma.CashierShiftVarianceWhereInput = {
-    resolution: "CHARGE_CASHIER" as any,
-    status: "MANAGER_APPROVED" as any,
+    resolution: CashierVarianceResolution.CHARGE_CASHIER,
+    status: CashierVarianceStatus.MANAGER_APPROVED,
     shift: shiftScope,
   };
 
   // History = closed/waived/info-only etc (but we only show charge items here)
   const historyWhere: Prisma.CashierShiftVarianceWhereInput = {
-    resolution: "CHARGE_CASHIER" as any,
-    status: { in: ["CLOSED", "WAIVED"] as any },
+    resolution: CashierVarianceResolution.CHARGE_CASHIER,
+    status: { in: historyStatuses },
     shift: shiftScope,
   };
 
@@ -263,7 +275,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.cashierShiftVariance.update({
       where: { id },
       data: {
-        status: "CLOSED" as any,
+        status: CashierVarianceStatus.CLOSED,
         resolvedAt: now,
         note: merged,
       },
