@@ -1,8 +1,8 @@
 // app/routes/runs.$id.summary.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { ClearanceCaseStatus } from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
@@ -94,6 +94,55 @@ type CaseInfo = {
   decisionKind: DecisionKindUI | null;
   arBalance: number;
   overrideDiscount: number;
+};
+
+type ParentPaymentSnapshotRow = {
+  orderId: number;
+  cashCollected: number;
+};
+
+type PreFinalLoadoutRow = {
+  productId: number;
+  name: string;
+  qty: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const parseParentPayments = (value: unknown): ParentPaymentSnapshotRow[] => {
+  if (!isRecord(value) || !Array.isArray(value.parentPayments)) return [];
+
+  const rows: ParentPaymentSnapshotRow[] = [];
+  for (const item of value.parentPayments) {
+    if (!isRecord(item)) continue;
+    const orderId = Number(item.orderId ?? 0);
+    if (!Number.isFinite(orderId) || orderId <= 0) continue;
+    const cashCollected = Number(item.cashCollected ?? 0);
+    if (!Number.isFinite(cashCollected) || cashCollected < 0) continue;
+    rows.push({ orderId, cashCollected });
+  }
+  return rows;
+};
+
+const parseLoadoutSnapshotRows = (value: unknown): PreFinalLoadoutRow[] => {
+  const items = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.items)
+      ? value.items
+      : [];
+
+  const rows: PreFinalLoadoutRow[] = [];
+  for (const item of items) {
+    if (!isRecord(item)) continue;
+    const productId = Number(item.productId ?? 0);
+    if (!Number.isFinite(productId) || productId <= 0) continue;
+    const name = String(item.name ?? `#${productId}`);
+    const qty = Math.max(0, Number(item.qty ?? 0));
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    rows.push({ productId, name, qty });
+  }
+  return rows;
 };
 
 const sumLineDiscountTotal = (
@@ -239,11 +288,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const isFinalized =
     runStatus === "CHECKED_IN" || runStatus === "CLOSED" || runStatus === "SETTLED";
 
-  const recap = isFinalized
-    ? await loadRunRecap(db, id)
-    : { recapRows: [] as any[], hasDiffIssues: false };
-
-  const rawSnap = run.riderCheckinSnapshot as any;
+  const recapRows = isFinalized ? (await loadRunRecap(db, id)).recapRows : [];
   const parentPaymentMap = new Map<number, number>();
   const parentVoidedMap = new Map<number, boolean>();
   const voidedReceiptKeys = new Set<string>();
@@ -268,15 +313,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     parentPaymentMap.set(oid, r2((parentPaymentMap.get(oid) || 0) + add));
   }
 
-  if (rawSnap && typeof rawSnap === "object" && Array.isArray(rawSnap.parentPayments)) {
-    for (const row of rawSnap.parentPayments) {
-      const oid = Number(row?.orderId ?? 0);
-      if (!oid) continue;
-      if (parentPaymentMap.has(oid)) continue;
-      const amt = Number(row?.cashCollected ?? 0);
-      if (!Number.isFinite(amt) || amt < 0) continue;
-      parentPaymentMap.set(oid, r2(amt));
-    }
+  for (const row of parseParentPayments(run.riderCheckinSnapshot)) {
+    const oid = row.orderId;
+    if (parentPaymentMap.has(oid)) continue;
+    parentPaymentMap.set(oid, r2(row.cashCollected));
   }
 
   let riderLabel: string | null = null;
@@ -318,8 +358,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const cases = await db.clearanceCase.findMany({
     where: {
       runId: id,
-      status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-    } as any,
+      status: {
+        in: [ClearanceCaseStatus.NEEDS_CLEARANCE, ClearanceCaseStatus.DECIDED],
+      },
+    },
     select: {
       receiptKey: true,
       status: true,
@@ -342,13 +384,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const caseByReceiptKey = new Map<string, CaseInfo>();
   for (const c of cases || []) {
-    const rk = String((c as any).receiptKey || "").slice(0, 64);
+    const rk = String(c.receiptKey || "").slice(0, 64);
     if (!rk) continue;
 
-    const status = String((c as any).status || "");
+    const status = c.status;
     if (status !== "NEEDS_CLEARANCE" && status !== "DECIDED") continue;
 
-    const d = (c as any)?.decisions?.[0];
+    const d = c.decisions[0];
     const decisionKind = parseDecisionKind(d?.kind);
     if (status === "NEEDS_CLEARANCE") {
       clearancePending += 1;
@@ -371,18 +413,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   let preRows: Row[] = [];
   if (!isFinalized) {
-    const snapRaw = run.loadoutSnapshot as any;
-    const items = Array.isArray(snapRaw)
-      ? snapRaw
-      : Array.isArray(snapRaw?.items)
-        ? snapRaw.items
-        : [];
     const loadedByPid = new Map<number, { name: string; loaded: number }>();
-    for (const it of items) {
-      const pid = Number(it?.productId ?? 0);
-      if (!pid) continue;
-      const name = String(it?.name ?? `#${pid}`);
-      const qty = Math.max(0, Number(it?.qty ?? 0));
+    for (const it of parseLoadoutSnapshotRows(run.loadoutSnapshot)) {
+      const pid = it.productId;
+      const name = it.name;
+      const qty = it.qty;
       const cur = loadedByPid.get(pid);
       loadedByPid.set(pid, {
         name,
@@ -417,7 +452,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (!isFinalized) continue;
 
     const total = r2(
-      (rr.lines || []).reduce((sum, ln: any) => {
+      (rr.lines || []).reduce((sum, ln) => {
         const qty = Math.max(0, Number(ln.qty ?? 0));
         const up = Math.max(0, Number(ln.unitPrice ?? 0));
         const lt = ln.lineTotal != null ? Number(ln.lineTotal) : qty * up;
@@ -448,7 +483,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const orderKey = `PARENT:${o.id}`;
     if (voidedReceiptKeys.has(orderKey) || parentVoidedMap.get(o.id)) continue;
 
-    const orderItems: FrozenOrderItem[] = (o.items || []).map((it: any) => ({
+    const orderItems: FrozenOrderItem[] = (o.items || []).map((it) => ({
       qty: Number(it.qty ?? 0),
       unitKind: it.unitKind === "RETAIL" ? "RETAIL" : "PACK",
       baseUnitPrice: Number(it.baseUnitPrice ?? it.unitPrice ?? 0),
@@ -458,7 +493,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }));
 
     systemDiscount += sumLineDiscountTotal(
-      (o.items || []).map((it: any) => ({
+      (o.items || []).map((it) => ({
         qty: it.qty,
         discountAmount: it.discountAmount,
       })),
@@ -468,8 +503,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     const fp = getFrozenPricingFromOrder({
       id: Number(o.id),
-      subtotal: (o as any).subtotal,
-      totalBeforeDiscount: (o as any).totalBeforeDiscount,
+      subtotal: o.subtotal,
+      totalBeforeDiscount: o.totalBeforeDiscount,
       items: orderItems,
     });
     const orderTotal = r2(Math.max(0, Number(fp.computedSubtotal || 0)));
@@ -488,7 +523,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const rows: Row[] = isFinalized
-    ? recap.recapRows
+    ? recapRows
         .slice()
         .sort((a, b) => String(a.name).localeCompare(String(b.name)))
         .map((r) => ({

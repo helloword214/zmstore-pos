@@ -2,7 +2,7 @@
 
 Status: ACTIVE  
 Owner: POS Platform  
-Last Updated: 2026-03-10
+Last Updated: 2026-03-11
 
 ## 1. Purpose
 
@@ -22,10 +22,10 @@ Business behavior changes are out of scope for this checklist.
 2. `PENDING`: route still has one or more cleanup markers
 3. `N/A`: route intentionally excluded from this pass (example: generated/internal-only path)
 
-## 3. Baseline Snapshot (2026-03-10)
+## 3. Baseline Snapshot (2026-03-11)
 
-1. Active routes tracked from UI matrix: `46`
-2. `DONE`: `19`
+1. Active routes tracked from UI matrix: `47`
+2. `DONE`: `20`
 3. `PENDING`: `27`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
@@ -35,7 +35,7 @@ Business behavior changes are out of scope for this checklist.
    - highest marker count first
    - then by flow criticality (`REMIT`/`CHECKIN` routes before lower-risk routes)
 
-## 4. Cleanup Log (Merged Batches)
+## 4. Cleanup Log
 
 1. 2026-03-08 - [PR #47](https://github.com/helloword214/zmstore-pos/pull/47)  
    Scope: legacy/dev route deletion + baseline check restore  
@@ -48,7 +48,16 @@ Business behavior changes are out of scope for this checklist.
    Merge: `eaf8a81cffe716887c9a44e7c6787f24154026d4`
 4. 2026-03-10 - [PR #50](https://github.com/helloword214/zmstore-pos/pull/50)  
    Scope: `runs._index.tsx` typing cleanup  
-   Merge: pending (open at time of this snapshot)
+   Merge: `e8783a4a983caa4a8de17a91663089f74e8ef7b3`
+5. 2026-03-10 - [PR #51](https://github.com/helloword214/zmstore-pos/pull/51)  
+   Scope: route cleanup checklist tracker centralization  
+   Merge: `5eee63f46de8e7c5a77593bfe8f0bf33203d8b33`
+6. 2026-03-10 - [PR #52](https://github.com/helloword214/zmstore-pos/pull/52)  
+   Scope: remit/dispatch/shift route typing cleanup  
+   Merge: `b69ec7b2af43e00e5746ae44cbbba89315f7a0b5`
+7. 2026-03-11 - current batch (`codex/cleanup-runs-summary`)  
+   Scope: `runs.$id.summary.tsx` route-level any/cast cleanup + typed snapshot/case parsing  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -78,7 +87,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/runs._index.tsx` | DONE | 0 | cleaned in PR #50 |
 | `app/routes/runs.new.tsx` | DONE | 0 | cleaned |
 | `app/routes/runs.$id.dispatch.tsx` | DONE | 0 | cleaned (typed loadout snapshot parsing + enum-safe revert/dispatch updates) |
-| `app/routes/runs.$id.summary.tsx` | PENDING | 10 | high-priority cleanup candidate |
+| `app/routes/runs.$id.summary.tsx` | DONE | 0 | cleaned in current batch (typed summary loader parsing) |
 | `app/routes/runs.$id.rider-checkin.tsx` | PENDING | 37 | critical high-volume cleanup |
 | `app/routes/store.clearance.tsx` | PENDING | 2 | type cleanup pending |
 | `app/routes/store.clearance_.$caseId.tsx` | PENDING | 9 | high-priority cleanup candidate |
@@ -117,6 +126,6 @@ Recommended next high-impact batch:
 
 1. `app/routes/runs.$id.rider-checkin.tsx`
 2. `app/routes/store.cashier-shifts.tsx`
-3. `app/routes/runs.$id.summary.tsx`
+3. `app/routes/store.payroll.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
