@@ -1,12 +1,11 @@
 /* app/routes/store.cashier-variances.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import { Prisma } from "@prisma/client";
+import { CashierVarianceStatus, Prisma } from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTDataRow } from "~/components/ui/SoTDataRow";
@@ -25,6 +24,16 @@ import {
 type Denoms = {
   bills?: Record<string, number>;
   coins?: Record<string, number>;
+};
+
+type CashierUserLite = {
+  id: number;
+  email: string | null;
+  employee: {
+    firstName: string;
+    lastName: string;
+    alias: string | null;
+  } | null;
 };
 
 type LoaderData = {
@@ -76,7 +85,7 @@ function statusTone(status: string): "neutral" | "warning" | "success" {
   return "neutral";
 }
 
-function nameOfUser(u: any) {
+function nameOfUser(u: CashierUserLite) {
   const emp = u?.employee;
   return (
     emp?.alias ||
@@ -86,12 +95,16 @@ function nameOfUser(u: any) {
   );
 }
 
-function normalizeDenoms(raw: any): Denoms | null {
-  if (!raw || typeof raw !== "object") return null;
-  const bills = raw.bills && typeof raw.bills === "object" ? raw.bills : {};
-  const coins = raw.coins && typeof raw.coins === "object" ? raw.coins : {};
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v != null;
+}
+
+function normalizeDenoms(raw: unknown): Denoms | null {
+  if (!isRecord(raw)) return null;
+  const bills = isRecord(raw.bills) ? raw.bills : {};
+  const coins = isRecord(raw.coins) ? raw.coins : {};
   // ensure numeric
-  const clean = (o: Record<string, any>) => {
+  const clean = (o: Record<string, unknown>) => {
     const out: Record<string, number> = {};
     for (const [k, v] of Object.entries(o)) {
       const n = Number(v);
@@ -109,26 +122,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const tab = safeTab(url.searchParams.get("tab"));
 
   // Badge counts
+  const historyStatuses: CashierVarianceStatus[] = [
+    CashierVarianceStatus.WAIVED,
+    CashierVarianceStatus.CLOSED,
+    CashierVarianceStatus.MANAGER_APPROVED,
+  ];
   const [openCount, historyCount] = await Promise.all([
-    db.cashierShiftVariance.count({ where: { status: "OPEN" as any } }),
+    db.cashierShiftVariance.count({ where: { status: CashierVarianceStatus.OPEN } }),
     db.cashierShiftVariance.count({
       where: {
-        OR: [
-          { status: { in: ["WAIVED", "CLOSED"] as any } },
-          { status: "MANAGER_APPROVED" as any },
-        ],
+        status: { in: historyStatuses },
       },
     }),
   ]);
 
   const where: Prisma.CashierShiftVarianceWhereInput =
     tab === "open"
-      ? { status: "OPEN" as any }
+      ? { status: CashierVarianceStatus.OPEN }
       : {
-          OR: [
-            { status: { in: ["WAIVED", "CLOSED"] as any } },
-            { status: "MANAGER_APPROVED" as any },
-          ],
+          status: { in: historyStatuses },
         };
 
   const rows = await db.cashierShiftVariance.findMany({
