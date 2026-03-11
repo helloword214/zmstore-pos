@@ -24,8 +24,8 @@ Business behavior changes are out of scope for this checklist.
 
 ## 3. Baseline Snapshot (2026-03-11)
 
-1. Active routes tracked from UI matrix: `48`
-2. `DONE`: `27`
+1. Active routes tracked from UI matrix: `49`
+2. `DONE`: `28`
 3. `PENDING`: `21`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
@@ -79,6 +79,9 @@ Business behavior changes are out of scope for this checklist.
 14. 2026-03-11 - current batch H (`codex/cleanup-runs-summary`)  
    Scope: `store._index.tsx` route-level any/cast cleanup + typed manager dashboard aggregate/grouped metric parsing  
    Merge: pending (this branch)
+15. 2026-03-11 - current batch I (`codex/cleanup-runs-summary`)  
+   Scope: `orders.new.tsx` route-level any/cast cleanup + typed incoming-order payload parsing and enum-safe order item writes  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -104,6 +107,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/login.tsx` | DONE | 0 | cleaned |
 | `app/routes/cashier._index.tsx` | PENDING | 3 | type cleanup pending |
 | `app/routes/cashier.pos._index.tsx` | PENDING | 1 | type cleanup pending |
+| `app/routes/orders.new.tsx` | DONE | 0 | cleaned in current batch (typed incoming payload validation + enum-safe create payloads) |
 | `app/routes/cashier.$id.tsx` | DONE | 0 | cleaned in current batch (typed settlement/clearance flow + no route-level any bypass) |
 | `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/store.dispatch.tsx` | DONE | 0 | cleaned (typed dispatch filters/orderBy + UI state mapping) |
@@ -146,8 +150,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/orders.new.tsx`
-2. `app/routes/store.cashier-variances.tsx`
-3. `app/routes/cashier.charges.tsx`
+1. `app/routes/store.cashier-variances.tsx`
+2. `app/routes/creation.opening-ar-batches.tsx`
+3. `app/routes/pad-order._index.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
