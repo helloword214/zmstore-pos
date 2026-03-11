@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
@@ -141,9 +140,10 @@ export async function action({ request }: ActionFunctionArgs) {
         await tx.order.delete({ where: { id } });
       });
       return redirect("/cashier");
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : "Delete failed";
       return json(
-        { ok: false, error: e.message || "Delete failed" },
+        { ok: false, error: errorMessage },
         { status: 400 },
       );
     }

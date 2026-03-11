@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { json, redirect } from "@remix-run/node";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
@@ -59,6 +58,10 @@ type AddressPhotoUpload = {
   caption: string | null;
   file: File;
 };
+
+function isAddressRow(value: unknown): value is AddressRow {
+  return typeof value === "object" && value !== null;
+}
 
 function parseAddressPhotoUploads(formData: FormData, addressCount: number) {
   const uploads: AddressPhotoUpload[] = [];
@@ -160,11 +163,11 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  let addresses: any[] = [];
+  let addresses: AddressRow[] = [];
   try {
     const raw = String(fd.get("addressesJson") || "[]");
-    addresses = JSON.parse(raw);
-    if (!Array.isArray(addresses)) addresses = [];
+    const parsed: unknown = JSON.parse(raw);
+    addresses = Array.isArray(parsed) ? parsed.filter(isAddressRow) : [];
   } catch {
     addresses = [];
   }
@@ -355,7 +358,10 @@ type AddressRow = {
 
 type ActionData = { ok: false; message: string };
 
-function normalizeCoords(latRaw: string | number, lngRaw: string | number) {
+function normalizeCoords(
+  latRaw: string | number | null | undefined,
+  lngRaw: string | number | null | undefined
+) {
   const lat = Number(latRaw);
   const lng = Number(lngRaw);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
@@ -526,7 +532,7 @@ export default function NewCustomerPage() {
         cur.landmarkId = "";
       } else {
         // normal assign
-        (cur as any)[key] = value;
+        cur[key] = value;
       }
       next[idx] = cur;
       return next;
