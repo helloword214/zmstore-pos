@@ -24,8 +24,8 @@ Business behavior changes are out of scope for this checklist.
 
 ## 3. Baseline Snapshot (2026-03-11)
 
-1. Active routes tracked from UI matrix: `50`
-2. `DONE`: `30`
+1. Active routes tracked from UI matrix: `51`
+2. `DONE`: `31`
 3. `PENDING`: `20`
 4. Scan markers:
    - `@typescript-eslint/no-explicit-any`
@@ -88,6 +88,9 @@ Business behavior changes are out of scope for this checklist.
 17. 2026-03-11 - current batch K (`codex/cleanup-runs-summary`)  
    Scope: `creation.opening-ar-batches.tsx` route-level any/cast cleanup + typed opening-batch grouping and case/claim create payloads  
    Merge: pending (this branch)
+18. 2026-03-11 - current batch L (`codex/cleanup-runs-summary`)  
+   Scope: `pad-order._index.tsx` route-level any/cast cleanup + typed fetcher reset/customer pick/barcode handling  
+   Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)
 
@@ -115,6 +118,7 @@ Business behavior changes are out of scope for this checklist.
 | `app/routes/cashier._index.tsx` | PENDING | 3 | type cleanup pending |
 | `app/routes/cashier.pos._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/orders.new.tsx` | DONE | 0 | cleaned in current batch (typed incoming payload validation + enum-safe create payloads) |
+| `app/routes/pad-order._index.tsx` | DONE | 0 | cleaned in current batch (typed fetcher/customer/barcode handling + no route-level any bypass) |
 | `app/routes/cashier.$id.tsx` | DONE | 0 | cleaned in current batch (typed settlement/clearance flow + no route-level any bypass) |
 | `app/routes/rider._index.tsx` | PENDING | 1 | type cleanup pending |
 | `app/routes/store.dispatch.tsx` | DONE | 0 | cleaned (typed dispatch filters/orderBy + UI state mapping) |
@@ -157,8 +161,8 @@ Business behavior changes are out of scope for this checklist.
 
 Recommended next high-impact batch:
 
-1. `app/routes/pad-order._index.tsx`
-2. `app/routes/cashier.charges.tsx`
-3. `app/routes/store.rider-variances.tsx`
+1. `app/routes/cashier.charges.tsx`
+2. `app/routes/store.rider-variances.tsx`
+3. `app/routes/orders.$id.credit.tsx`
 
 Reason: highest cleanup marker concentration and direct operational flow impact.
