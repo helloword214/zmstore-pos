@@ -45,13 +45,14 @@ This addendum is binding target behavior for the next security patch objective.
 
 Route access targets:
 
-1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
+1. `/pad-order`, `/orders/new`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
    - never public
-2. `/orders/new`:
+2. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
+   - never public
 3. Retired legacy routes `/orders/:id/ack` and `/orders/:id/credit` must not be reintroduced.
 
 Release-with-balance approval policy:
@@ -72,8 +73,8 @@ This map is the primary route-level reference for canonical target behavior.
 
 | Stage | Role | Route file | Primary responsibility | SoT focus |
 | --- | --- | --- | --- | --- |
-| Order Pad | Cashier/Manager | `app/routes/pad-order._index.tsx` | Build cart, capture customer/channel, submit order create request | Client preflight only, no pricing authority |
-| Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority |
+| Order Pad | Cashier/Manager/Employee | `app/routes/pad-order._index.tsx` | Build cart, capture customer/channel, submit order create request | Client preflight only, no pricing authority |
+| Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority + creator audit (`createdById`, `createdByRole`) |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders and create/assign run | Order eligibility only, no AR authority |
 | Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
 | Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage | `runReceipt`, `clearanceCase/decision`, recap services |
@@ -122,6 +123,15 @@ Canonical print/payment proof paths remain:
 
 This retirement does not change AR authority: `customerAr` remains decision-backed from manager-approved clearance outcomes only.
 
+## Print Artifact Boundaries (Binding)
+
+1. `orders.$id.slip.tsx` is the pickup order slip path (order-taking paper; not settlement proof).
+2. `orders.$id.ticket.tsx` is the delivery ticket path (routing/address sheet; not settlement proof).
+3. `orders.$id.receipt.tsx` is the settlement proof path for cashier posting outcomes.
+4. `orders.new.tsx` selects initial print route by channel:
+   - `PICKUP` -> `slip`
+   - `DELIVERY` -> `ticket`
+
 ## Route SoT Guardrails
 
 | Route file | Must never do |
@@ -149,6 +159,7 @@ This retirement does not change AR authority: `customerAr` remains decision-back
 - Server validates stock/mode/base freshness and delivery constraints.
 - Customer policy discounts (if customer rules exist) are applied once.
 - Frozen snapshots (`unitKind`, `baseUnitPrice`, `discountAmount`, `lineTotal`) become downstream pricing authority.
+- Creator audit is stamped at create time (`Order.createdById`, `Order.createdByRole`).
 
 ### T1 Dispatch (`PLANNED -> DISPATCHED`)
 

@@ -20,7 +20,7 @@ Visual map for the canonical flow described in:
 
 ```mermaid
 flowchart TD
-    A0["Order Pad (/order-pad)"] --> A1["Order Create (/orders/new)"]
+    A0["Order Pad (/pad-order)"] --> A1["Order Create (/orders/new)"]
     A1 --> A2["Apply policy discounts (customer rules if present)"]
     A2 --> A3["Freeze OrderItem + Order pricing snapshots"]
     A3 --> A["Dispatch (PLANNED -> DISPATCHED)"]
@@ -187,13 +187,14 @@ Authority note:
 
 Target route authority to be enforced by follow-up code patch:
 
-1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
+1. `/pad-order`, `/orders/new`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
    - never public
-2. `/orders/new`:
+2. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
+   - never public
 3. Retired legacy routes `/orders/:id/ack` and `/orders/:id/credit` must not be reintroduced.
 4. Admin control-plane mutations remain admin-only:
    - `/products*`
@@ -218,6 +219,13 @@ Diagram authority remains unchanged:
 1. Cashier print/payment proof path uses `orders.$id.receipt.tsx` from active cashier posting lanes.
 2. AR proof printing remains in `ar.customers.$id.tsx`.
 3. No new node/hand-off was introduced by this cleanup.
+
+## 5d) Slip vs Ticket vs Receipt Semantics (Binding)
+
+1. `orders.$id.slip.tsx` = pickup order slip.
+2. `orders.$id.ticket.tsx` = delivery ticket (address/maps/rider handoff sheet).
+3. `orders.$id.receipt.tsx` = settlement/collection proof.
+4. Channel handoff from `orders.new.tsx`: pickup -> slip, delivery -> ticket.
 
 ## 6) Cashier Shift Audit Path (Current)
 

@@ -35,7 +35,7 @@ type IncomingItem = {
 };
 
 export const action: ActionFunction = async ({ request }) => {
-  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
+  const me = await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const url = new URL(request.url);
   const wantsJson = url.searchParams.get("respond") === "json";
 
@@ -505,6 +505,8 @@ export const action: ActionFunction = async ({ request }) => {
       expiryAt: expiry,
       printCount: 1,
       terminalId,
+      createdById: me.userId,
+      createdByRole: me.role,
       customerId, // ← link customer (optional even for pickup)
       // Snapshot delivery fields only for DELIVERY channel
       ...(channel === "DELIVERY"

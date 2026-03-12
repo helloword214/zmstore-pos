@@ -39,6 +39,7 @@ Out of scope:
 3. Downstream routes must read frozen values; no repricing after order creation.
 4. `pad-order._index.tsx` is view/preflight only; it is not pricing authority.
 5. Manager clearance override discount does not mutate frozen `OrderItem` values.
+6. Order creation must stamp actor audit on `Order` (`createdById`, `createdByRole`).
 
 ## Canonical Base Price Rules
 
@@ -150,3 +151,4 @@ Manager clearance override discount:
 3. `Order.subtotal` equals sum of frozen `lineTotal`.
 4. No downstream route recomputes payable totals from live product prices.
 5. Clearance decisions reference shortage settlement only, without editing frozen pricing.
+6. Order rows from create paths have creator audit fields populated (`createdById`, `createdByRole`).

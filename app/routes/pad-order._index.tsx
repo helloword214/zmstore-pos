@@ -50,8 +50,8 @@ type ResettableFetcher<T> = ReturnType<typeof useFetcher<T>> & {
 // Loader: fetch + normalize numerics, disable caching
 // ─────────────────────────────────────────────────────────────
 export const loader: LoaderFunction = async ({ request }) => {
-  // 🔒 Gate: only ADMIN and SELLER can access Order Pad
-  await requireRole(request, ["ADMIN", "CASHIER", "STORE_MANAGER"]);
+  // 🔒 Gate: operational order creation roles only
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const [categories, rawProducts] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true },
