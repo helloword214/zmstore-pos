@@ -57,7 +57,23 @@ type ResettableFetcher<T> = ReturnType<typeof useFetcher<T>> & {
 // ─────────────────────────────────────────────────────────────
 export const loader: LoaderFunction = async ({ request }) => {
   // 🔒 Gate: operational order creation roles only
-  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
+  const me = await requireRole(request, [
+    "CASHIER",
+    "STORE_MANAGER",
+    "EMPLOYEE",
+  ]);
+  const backTo =
+    me.role === "STORE_MANAGER"
+      ? "/store"
+      : me.role === "EMPLOYEE"
+      ? "/rider"
+      : "/cashier";
+  const backLabel =
+    me.role === "STORE_MANAGER"
+      ? "Manager Dashboard"
+      : me.role === "EMPLOYEE"
+      ? "Rider Dashboard"
+      : "Cashier Dashboard";
   const [categories, rawProducts] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true },
@@ -98,7 +114,7 @@ export const loader: LoaderFunction = async ({ request }) => {
   }));
 
   return json(
-    { categories, products },
+    { categories, products, backTo, backLabel },
     { headers: { "Cache-Control": "no-store" } },
   );
 };
@@ -148,7 +164,8 @@ function catIcon(name?: string | null): string {
 // Component
 // ─────────────────────────────────────────────────────────────
 export default function KioskPage() {
-  const { categories, products } = useLoaderData<typeof loader>();
+  const { categories, products, backTo, backLabel } =
+    useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
   // Local alias for the product item type coming from the loader
@@ -922,8 +939,8 @@ export default function KioskPage() {
       <SoTNonDashboardHeader
         title="Order Pad Workspace"
         subtitle="Build pickup or delivery orders from one live catalog."
-        backTo="/cashier"
-        backLabel="Cashier"
+        backTo={backTo}
+        backLabel={backLabel}
         maxWidthClassName="max-w-[1760px]"
       />
       <SoTPageHeader

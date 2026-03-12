@@ -235,14 +235,14 @@ export default function RiderDashboard() {
                 </span>
               </Link>
 
-              {/* My Orders – later pwede mo i-filter by createdBy = user.id */}
+              {/* Seller quick verify shortcut (replaces dead /orders link) */}
               <Link
-                to="/orders"
+                to="/pad-order"
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
-                <span>My Orders</span>
+                <span>Order Pad (SoT UI)</span>
                 <span className="text-xs text-slate-500">
-                  recent orders I created
+                  open latest pad-order page
                 </span>
               </Link>
 
