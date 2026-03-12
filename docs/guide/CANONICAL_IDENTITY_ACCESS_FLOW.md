@@ -126,14 +126,15 @@ Representative routes:
 
 Allowed audience:
 
-1. `login`: unauthenticated users.
+1. `login` and `login/otp`: unauthenticated users.
 2. `forgot-password` and `reset-password`: unauthenticated users with valid account email/token.
 
 Representative routes:
 
 1. `app/routes/login.tsx`
-2. `app/routes/forgot-password.tsx`
-3. `app/routes/reset-password.$token.tsx`
+2. `app/routes/login.otp.tsx`
+3. `app/routes/forgot-password.tsx`
+4. `app/routes/reset-password.$token.tsx`
 
 ### F) Operational Order Print + Create Routes (Security Hardening Target)
 
@@ -195,6 +196,23 @@ Release-with-balance approval target:
    - `RIDER -> CASHIER`
 5. Any switch involving `STORE_MANAGER` is blocked in normal role switch flow.
 6. Manager role assignment/revocation is a protected governance action and must use a separate secured flow.
+
+## Login Verification + Brute-Force Guard (Binding)
+
+1. Interactive sign-in is two-step for all active roles:
+   - step 1: `email/password` on `login`
+   - step 2: `email OTP` verification on `login/otp`
+2. OTP contract:
+   - 6-digit numeric code
+   - single-use challenge
+   - 5-minute expiry per issued/resend code
+   - max 5 verification attempts per challenge
+   - max 3 sends per challenge with 60-second resend cooldown
+3. Brute-force guard contract:
+   - enforce rate-limit state per account email and per source IP
+   - temporary lock for repeated failures (15-minute lock over 15-minute failure window)
+   - invalid credential responses remain generic
+4. Full authenticated session is issued only after OTP verification succeeds.
 
 ## Password Recovery (Binding)
 
@@ -293,16 +311,17 @@ Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
 
 Implemented in auth routes:
 
-1. `app/routes/login.tsx` now enforces email/password for all roles, including `CASHIER`.
-2. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
-3. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.
-4. `app/routes/creation.employees.tsx` is now the employee directory/manage surface (role switch, resend invite, activate/deactivate, compliance warnings).
-5. `app/routes/creation.employees_.$employeeId.edit.tsx` handles employee profile and compliance updates with document history preserved.
-6. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
-7. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
-8. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
-9. `app/routes/creation.opening-ar-batches.tsx` is admin staging only for high-volume opening balance receivable onboarding; manager approval remains required.
-10. `app/routes/store.clearance-opening-batches.tsx` is manager-only bulk decision lane for pending opening balance clearance rows.
+1. `app/routes/login.tsx` now validates `email/password`, enforces login rate-limit checks, and issues OTP challenge for all roles.
+2. `app/routes/login.otp.tsx` verifies/resends email OTP before creating authenticated session.
+3. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
+4. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.
+5. `app/routes/creation.employees.tsx` is now the employee directory/manage surface (role switch, resend invite, activate/deactivate, compliance warnings).
+6. `app/routes/creation.employees_.$employeeId.edit.tsx` handles employee profile and compliance updates with document history preserved.
+7. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
+8. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
+9. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
+10. `app/routes/creation.opening-ar-batches.tsx` is admin staging only for high-volume opening balance receivable onboarding; manager approval remains required.
+11. `app/routes/store.clearance-opening-batches.tsx` is manager-only bulk decision lane for pending opening balance clearance rows.
 
 ## Cross-Doc Contract
 

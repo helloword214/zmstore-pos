@@ -129,3 +129,47 @@ export async function sendPasswordSetupEmail(args: {
     note: "If you did not expect this account, contact your administrator.",
   });
 }
+
+export async function sendLoginOtpEmail(args: {
+  to: string;
+  otpCode: string;
+  expiresMinutes: number;
+}) {
+  const cfg = readSmtpConfig();
+
+  if (!cfg) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[auth] SMTP not configured. Login OTP for ${args.to}: ${args.otpCode} (expires in ${args.expiresMinutes} min)`,
+      );
+      return;
+    }
+    throw new Error(
+      "SMTP is not configured. Set SMTP_HOST/SMTP_PORT/SMTP_FROM (and SMTP_USER/SMTP_PASS if required).",
+    );
+  }
+
+  const transporter = getTransporter(cfg);
+  const subject = "Your login verification code";
+  const text = [
+    `Your login verification code is: ${args.otpCode}`,
+    "",
+    `This code expires in ${args.expiresMinutes} minutes.`,
+    "If you did not request this, ignore this email and contact your administrator.",
+  ].join("\n");
+
+  const html = `
+    <p>Your login verification code is:</p>
+    <p style="font-size:24px;font-weight:700;letter-spacing:4px">${args.otpCode}</p>
+    <p>This code expires in ${args.expiresMinutes} minutes.</p>
+    <p>If you did not request this, ignore this email and contact your administrator.</p>
+  `;
+
+  await transporter.sendMail({
+    from: cfg.from,
+    to: args.to,
+    subject,
+    text,
+    html,
+  });
+}
