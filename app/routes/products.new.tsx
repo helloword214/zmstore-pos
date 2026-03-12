@@ -1,11 +1,13 @@
-import { json } from "@remix-run/node";
+import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { ProductUpsertForm } from "~/components/products/ProductUpsertForm";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { createUploadSessionKey } from "~/features/uploads/upload-policy";
 import { getProductFormReferences } from "~/features/products/product-form.server";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const refs = await getProductFormReferences();
   const uploadSessionKey = createUploadSessionKey();
   return json({ refs, uploadSessionKey });

@@ -16,6 +16,7 @@ import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
 function asNumber(value: unknown): number | null {
@@ -43,7 +44,8 @@ type ProductActionResult = {
 
 const PRODUCT_PHOTO_SLOTS = [1, 2, 3, 4] as const;
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const productId = Number(params.productId);
   if (!Number.isFinite(productId) || productId <= 0) {
     throw new Response("Invalid product ID", { status: 400 });

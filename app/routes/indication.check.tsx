@@ -1,9 +1,11 @@
 // File: app/routes/indication.check.tsx
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
+import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  await requireRole(request, ["ADMIN"]);
   const { name, categoryId } = await request.json();
 
   const trimmedName = (name || "").trim();

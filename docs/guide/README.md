@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-12
 
 This folder contains both binding rules and historical implementation notes.
 Use the sections below to avoid outdated references.
@@ -22,6 +22,17 @@ Use these as source of truth for implementation and review:
 9. `Accounts Receivable — Canonical Source of Truth (SoT)`
 10. `RIDER_SHORTAGE_WORKFLOW.md`
 11. `RunReceipt_Architecture.md`
+
+Security hardening lookup note (2026-03-12):
+
+1. Route access targets are tracked in `CANONICAL_IDENTITY_ACCESS_FLOW.md` sections:
+   - `F) Operational Order Print + Create Routes (Security Hardening Target)`
+   - `G) Admin-Only Mutation Endpoints (Security Hardening Target)`
+   - `H) Legacy Credit Release Route (/orders/:id/credit) Policy`
+2. Flow-level security addendum is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section:
+   - `Security Access Hardening Addendum (Approved 2026-03-12)`
+3. Diagram alignment note is in `DIAGRAMS_DELIVERY_CSS_AR.md` section:
+   - `5b) Security Access Gate Addendum (Approved 2026-03-12)`
 
 Current route-level mapping coverage (canonical):
 

@@ -9,11 +9,13 @@ import {
 import { useEffect, useRef, useCallback } from "react";
 import { db } from "~/utils/db.server";
 import { toCode39Svg } from "~/utils/orderBarcode";
+import { requireRole } from "~/utils/auth.server";
 
 // ─────────────────────────────────────────────────────────────
 // Loader
 // ─────────────────────────────────────────────────────────────
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!id || Number.isNaN(id))
     throw new Response("Invalid ID", { status: 400 });
@@ -34,6 +36,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 //    with ?autoprint=1 (& keeps ?autoback=1 if present).
 // ─────────────────────────────────────────────────────────────
 export async function action({ request, params }: ActionFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!id || Number.isNaN(id)) {
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });

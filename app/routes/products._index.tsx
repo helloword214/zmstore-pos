@@ -1,4 +1,4 @@
-import { json, type ActionFunctionArgs } from "@remix-run/node";
+import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import { storage } from "~/utils/storage.server";
 import {
   useLoaderData,
@@ -31,6 +31,7 @@ import {
 import { runProductUpsertAction } from "~/features/products/product-upsert-action.server";
 import { clsx } from "clsx";
 import { Toast } from "~/components/ui/Toast";
+import { requireRole } from "~/utils/auth.server";
 
 type SortBy = "recent" | "name-asc" | "price-asc" | "price-desc" | "stock-asc";
 
@@ -123,7 +124,8 @@ function collectProductPhotoUploads(
     .map(([slot, file]) => ({ slot, file }));
 }
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const [
     products,
     categories,
@@ -234,6 +236,7 @@ export async function loader() {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  await requireRole(request, ["ADMIN"]);
   const formData = await request.formData();
   const toggleId = formData.get("toggleId");
   const newIsActive = formData.get("isActive");
