@@ -33,6 +33,8 @@ Security hardening lookup note (2026-03-12):
    - `Security Access Hardening Addendum (Approved 2026-03-12)`
 3. Diagram alignment note is in `DIAGRAMS_DELIVERY_CSS_AR.md` section:
    - `5b) Security Access Gate Addendum (Approved 2026-03-12)`
+4. Clearance pending counter alignment is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md`:
+   - `Clearance pending counter alignment rule`
 
 Current route-level mapping coverage (canonical):
 
