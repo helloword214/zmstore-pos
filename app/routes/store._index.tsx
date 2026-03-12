@@ -408,6 +408,14 @@ export default function StoreManagerDashboard() {
                     value={dispatch.stagedOrders}
                   />
                 </div>
+                {me.role === "STORE_MANAGER" ? (
+                  <Link
+                    to="/pad-order"
+                    className="mt-3 inline-flex items-center text-sm font-medium text-indigo-800 transition-colors duration-150 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Open order pad (SoT UI) →
+                  </Link>
+                ) : null}
                 <Link
                   to="/store/dispatch"
                   className="mt-3 inline-flex items-center text-sm font-medium text-sky-800 transition-colors duration-150 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"

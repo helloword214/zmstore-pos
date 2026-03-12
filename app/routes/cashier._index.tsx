@@ -324,6 +324,15 @@ export default function CashierDashboardPage() {
 
               <div className="mt-3 grid gap-2">
                 <Link
+                  to="/pad-order"
+                  className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  <span>Open Order Pad (SoT UI)</span>
+                  <span className="text-xs font-normal text-indigo-700">
+                    verify latest pad →
+                  </span>
+                </Link>
+                <Link
                   to={guardLink("/cashier/pos")}
                   className={
                     "flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 " +
