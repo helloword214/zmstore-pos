@@ -131,6 +131,9 @@ This retirement does not change AR authority: `customerAr` remains decision-back
 4. `orders.new.tsx` selects initial print route by channel:
    - `PICKUP` -> `slip`
    - `DELIVERY` -> `ticket`
+5. `pad-order._index.tsx` should keep this boundary visible in operator UX copy:
+   - pickup lane: order slip
+   - delivery lane: order ticket
 
 ## Route SoT Guardrails
 

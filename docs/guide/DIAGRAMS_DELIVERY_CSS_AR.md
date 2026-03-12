@@ -226,6 +226,7 @@ Diagram authority remains unchanged:
 2. `orders.$id.ticket.tsx` = delivery ticket (address/maps/rider handoff sheet).
 3. `orders.$id.receipt.tsx` = settlement/collection proof.
 4. Channel handoff from `orders.new.tsx`: pickup -> slip, delivery -> ticket.
+5. `pad-order._index.tsx` UI should reflect this handoff (pickup lane shows slip cue, delivery lane shows ticket cue).
 
 ## 6) Cashier Shift Audit Path (Current)
 
