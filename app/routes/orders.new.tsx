@@ -8,6 +8,7 @@ import {
   type Cart,
   type CartItem,
 } from "~/services/pricing";
+import { requireRole } from "~/utils/auth.server";
 
 // Small helpers
 const toNum = (v: unknown, d = 0) => {
@@ -34,6 +35,7 @@ type IncomingItem = {
 };
 
 export const action: ActionFunction = async ({ request }) => {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const url = new URL(request.url);
   const wantsJson = url.searchParams.get("respond") === "json";
 

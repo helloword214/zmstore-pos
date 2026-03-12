@@ -1,5 +1,6 @@
 // app/routes/api.customers.create.ts
 import { json, type ActionFunctionArgs } from "@remix-run/node";
+import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { toE164PH } from "~/utils/phone";
 
@@ -9,6 +10,7 @@ function getErrorMessage(err: unknown): string {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   if (request.method !== "POST")
     return json({ ok: false, error: "POST only" }, { status: 405 });
   const fd = await request.formData();

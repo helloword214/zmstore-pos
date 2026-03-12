@@ -6,10 +6,54 @@ import {
   useNavigate,
 } from "@remix-run/react";
 import * as React from "react";
+import { compare } from "bcryptjs";
 import { db } from "~/utils/db.server";
 import { CustomerPicker } from "~/components/CustomerPicker";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+type ManagerApproval = {
+  userId: number;
+  approverLabel: string;
+  usedCredential: "pin" | "password_fallback";
+};
+
+async function verifyStoreManagerApproval(
+  secretInput: string
+): Promise<ManagerApproval | null> {
+  const secret = secretInput.trim();
+  if (!secret) return null;
+
+  const managers = await db.user.findMany({
+    where: { role: "STORE_MANAGER", active: true },
+    select: { id: true, email: true, pinHash: true, passwordHash: true },
+    orderBy: { id: "asc" },
+  });
+
+  for (const manager of managers) {
+    if (manager.pinHash && (await compare(secret, manager.pinHash))) {
+      return {
+        userId: manager.id,
+        approverLabel: manager.email?.trim() || `STORE_MANAGER#${manager.id}`,
+        usedCredential: "pin",
+      };
+    }
+    if (
+      !manager.pinHash &&
+      manager.passwordHash &&
+      (await compare(secret, manager.passwordHash))
+    ) {
+      return {
+        userId: manager.id,
+        approverLabel: manager.email?.trim() || `STORE_MANAGER#${manager.id}`,
+        usedCredential: "password_fallback",
+      };
+    }
+  }
+  return null;
+}
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -31,6 +75,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id))
     return json({ ok: false, error: "Invalid ID" }, { status: 400 });
@@ -39,7 +84,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const customerId = Number(fd.get("customerId") || 0) || null;
   const dueDateRaw = String(fd.get("dueDate") || "").trim();
   const releaseNow = fd.get("releaseWithBalance") === "1";
-  const approver = String(fd.get("releaseApprovedBy") || "").trim() || null;
+  const releaseApprovalSecret = String(fd.get("releaseApprovedBy") || "").trim();
 
   if (!customerId) {
     return json(
@@ -47,10 +92,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
       { status: 400 }
     );
   }
-  if (releaseNow && !approver) {
+  if (releaseNow && !releaseApprovalSecret) {
     return json(
-      { ok: false, error: "Manager PIN/Name is required to release goods." },
+      { ok: false, error: "Store manager PIN is required to release goods." },
       { status: 400 }
+    );
+  }
+
+  const managerApproval = releaseNow
+    ? await verifyStoreManagerApproval(releaseApprovalSecret)
+    : null;
+  if (releaseNow && !managerApproval) {
+    return json(
+      { ok: false, error: "Invalid manager approval credential." },
+      { status: 403 }
     );
   }
 
@@ -158,8 +213,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
         where: { id: order.id },
         data: {
           releaseWithBalance: true,
-          releasedApprovedBy: approver,
+          releasedApprovedBy: managerApproval?.approverLabel ?? null,
           releasedAt: new Date(),
+        },
+      });
+      await tx.overrideLog.create({
+        data: {
+          kind: "AR_APPROVE",
+          orderId: order.id,
+          approvedBy: managerApproval?.approverLabel ?? "STORE_MANAGER",
+          reason:
+            managerApproval?.usedCredential === "password_fallback"
+              ? "releaseWithBalance approved via STORE_MANAGER password fallback. TODO: remove fallback after manager PIN provisioning task."
+              : `releaseWithBalance approved by STORE_MANAGER userId=${managerApproval?.userId ?? "unknown"} via PIN.`,
         },
       });
     }

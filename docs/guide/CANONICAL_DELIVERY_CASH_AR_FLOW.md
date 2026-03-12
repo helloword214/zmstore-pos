@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-03-12
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -38,6 +38,36 @@ Visual map reference:
 1. `STORE_MANAGER` is the only role allowed to perform manager-stage actions in this flow.
 2. `ADMIN` is creation/control-plane only and is not allowed in manager operational/commercial routes in this flow, including read-only access.
 3. `CASHIER` and `EMPLOYEE` are execution lanes only (cash posting/encoding/acknowledgement), never commercial decision authority.
+
+## Security Access Hardening Addendum (Approved 2026-03-12)
+
+This addendum is binding target behavior for the next security patch objective.
+
+Route access targets:
+
+1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/ack`:
+   - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+   - denied: `ADMIN`
+   - never public
+2. `/orders/new`:
+   - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+   - denied: `ADMIN`
+3. `/orders/:id/credit`:
+   - retained for now (legacy/low-usage) but not public
+   - allowed operational roles only (`CASHIER`, `STORE_MANAGER`, `EMPLOYEE`)
+   - denied: `ADMIN`
+
+Release-with-balance approval policy:
+
+1. Approval authority is server-verified `STORE_MANAGER` PIN.
+2. Free-text approver input is not authority.
+3. Approval writes must include audit anchors (`approvedByUserId`, `approvedAt`, actor snapshot).
+
+Security backlog (same objective family, separate implementation tasks):
+
+1. Add CSRF/origin checks on mutating endpoints in this flow.
+2. Add response security headers policy (CSP, frame, content-type, referrer, HSTS in production).
+3. Run dependency remediation wave for critical/high advisories before merge-ready hardening sign-off.
 
 ## Authoritative Route Map
 

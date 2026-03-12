@@ -8,6 +8,7 @@ import {
   buildCartFromOrderItems,
   fetchCustomerRulesAt,
 } from "~/services/pricing";
+import { requireRole } from "~/utils/auth.server";
 
 import type { Order } from "@prisma/client";
 
@@ -44,6 +45,7 @@ type LoaderData = {
 };
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 

@@ -1,8 +1,10 @@
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
+import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const body = await request.json();
   const name = (body.name || "").trim();
   const categoryId = Number(body.categoryId);

@@ -3,8 +3,10 @@ import { json } from "@remix-run/node";
 import { useLoaderData, useSearchParams } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["CASHIER", "STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 

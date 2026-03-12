@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-27
+Last Reviewed: 2026-03-12
 
 ## Purpose
 
@@ -134,6 +134,56 @@ Representative routes:
 1. `app/routes/login.tsx`
 2. `app/routes/forgot-password.tsx`
 3. `app/routes/reset-password.$token.tsx`
+
+### F) Operational Order Print + Create Routes (Security Hardening Target)
+
+Access policy approved on 2026-03-12 for follow-up code enforcement.
+
+Allowed roles:
+
+1. `/orders/:id/slip`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+2. `/orders/:id/ticket`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+3. `/orders/:id/ack`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+4. `/orders/new`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+
+Hard rules:
+
+1. These routes are never public.
+2. `ADMIN` is not allowed in these operational routes.
+
+### G) Admin-Only Mutation Endpoints (Security Hardening Target)
+
+Allowed role: `ADMIN` only.
+
+Endpoints:
+
+1. `/products*` route family (`products._index.tsx`, `products.new.tsx`, `products.$productId.tsx`, `products.$productId.edit.tsx`)
+2. `/resources/creation/upsert`
+3. `/resources/creation/delete`
+4. `/target/check`
+5. `/indication/check`
+6. `/api/customers/create`
+
+Hard rules:
+
+1. These are control-plane setup endpoints.
+2. `CASHIER`, `STORE_MANAGER`, and `EMPLOYEE` are not allowed.
+
+### H) Legacy Credit Release Route (`/orders/:id/credit`) Policy
+
+Route is retained for now (legacy/low-usage), but must be secured.
+
+Access target:
+
+1. Not public.
+2. Operational roles only: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`.
+3. `ADMIN` not allowed.
+
+Release-with-balance approval target:
+
+1. Manager PIN verification must be server-side against `STORE_MANAGER` account.
+2. Free-text approver name alone is not approval authority.
+3. Approval audit must capture `approvedByUserId`, `approvedAt`, and actor snapshot fields.
 
 ## Employee Role Lifecycle (Binding)
 

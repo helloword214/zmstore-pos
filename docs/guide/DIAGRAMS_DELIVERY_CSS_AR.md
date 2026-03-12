@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-03-12
 Diagram Version: v2.0
 
 ## Purpose
@@ -182,6 +182,28 @@ Authority note:
 | `store.payroll.tsx` | payroll deduction posting and status synchronization |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
+
+## 5b) Security Access Gate Addendum (Approved 2026-03-12)
+
+Target route authority to be enforced by follow-up code patch:
+
+1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/ack`:
+   - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+   - denied: `ADMIN`
+   - never public
+2. `/orders/new`:
+   - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+   - denied: `ADMIN`
+3. `/orders/:id/credit`:
+   - retained legacy route; secured (not public)
+   - operational roles only
+4. Admin control-plane mutations remain admin-only:
+   - `/products*`
+   - `/resources/creation/upsert`
+   - `/resources/creation/delete`
+   - `/target/check`
+   - `/indication/check`
+   - `/api/customers/create`
 
 ## 6) Cashier Shift Audit Path (Current)
 

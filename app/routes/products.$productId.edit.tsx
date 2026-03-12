@@ -8,8 +8,10 @@ import {
   getProductFormReferences,
   getProductInitialData,
 } from "~/features/products/product-form.server";
+import { requireRole } from "~/utils/auth.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const productId = Number(params.productId);
   if (!Number.isFinite(productId) || productId <= 0) {
     throw new Response("Invalid product ID", { status: 400 });

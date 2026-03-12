@@ -1,9 +1,12 @@
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
-export const loader = () =>
-  json({ ok: false, message: "POST only" }, { status: 405 });
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  await requireRole(request, ["ADMIN"]);
+  return json({ ok: false, message: "POST only" }, { status: 405 });
+};
 
 type Kind =
   | "category"
@@ -32,6 +35,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  await requireRole(request, ["ADMIN"]);
   const fd = await request.formData();
   const kind = String(fd.get("kind") || "") as Kind;
   const rawName = String(fd.get("name") || "").trim();
