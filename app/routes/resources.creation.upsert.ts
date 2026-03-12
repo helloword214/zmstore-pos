@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { db } from "~/utils/db.server";
@@ -23,6 +22,13 @@ function resolveIntent(value: FormDataEntryValue | null): Intent {
     return raw;
   }
   return "create";
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -415,9 +421,9 @@ export async function action({ request }: ActionFunctionArgs) {
       default:
         return json({ ok: false, message: "Unknown kind." }, { status: 400 });
     }
-  } catch (e: any) {
+  } catch (error: unknown) {
     return json(
-      { ok: false, message: e?.message ?? "Upsert failed." },
+      { ok: false, message: getErrorMessage(error, "Upsert failed.") },
       { status: 500 }
     );
   }
