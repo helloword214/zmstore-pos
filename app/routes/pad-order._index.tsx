@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
@@ -43,6 +42,10 @@ type CreateSlipResp =
       channel: "PICKUP" | "DELIVERY";
     }
   | { ok: false; errors: Array<{ id: number; mode?: string; reason: string }> };
+
+type ResettableFetcher<T> = ReturnType<typeof useFetcher<T>> & {
+  reset?: () => void;
+};
 // ─────────────────────────────────────────────────────────────
 // Loader: fetch + normalize numerics, disable caching
 // ─────────────────────────────────────────────────────────────
@@ -148,14 +151,15 @@ export default function KioskPage() {
 
   // If you're on Remix v2, using a key gives you an isolated fetcher instance:
   // const createSlip = useFetcher<CreateSlipResp>({ key: "create-slip" });
-  const createSlip = useFetcher<CreateSlipResp>();
+  const createSlip =
+    useFetcher<CreateSlipResp>() as ResettableFetcher<CreateSlipResp>;
 
   // Prevent re-handling the same success payload after rerenders/navigation
   const handledSuccessIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     // Remix v1 has no `reset`; Remix v2 does.
     // Call safely to avoid TS error and be a no-op on v1.
-    (createSlip as any)?.reset?.();
+    createSlip.reset?.();
     handledSuccessIdRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -186,6 +190,7 @@ export default function KioskPage() {
     open: custOpen,
     setOpen: setCustOpen,
   } = useCustomerSearch({ withAddresses: true });
+  type CustomerSearchItem = (typeof custItems)[number];
   const printLabel =
     channel === "DELIVERY"
       ? "Print ticket after create"
@@ -244,12 +249,11 @@ export default function KioskPage() {
   const productByBarcode = React.useMemo(() => {
     const m = new Map<string, (typeof products)[number]>();
     for (const p of products) {
-      const bc = (p as any).barcode?.trim?.();
-      if (bc) {
-        // normalize: remove spaces to match scanner payloads
-        const norm = bc.replace(/\s+/g, "");
-        m.set(norm, p);
-      }
+      const bc = String(p.barcode ?? "").trim();
+      if (!bc) continue;
+      // normalize: remove spaces to match scanner payloads
+      const norm = bc.replace(/\s+/g, "");
+      m.set(norm, p);
     }
     return m;
   }, [products]);
@@ -585,7 +589,7 @@ export default function KioskPage() {
       }
 
       // 🧹 Reset fetcher so future renders don't see old success
-      (createSlip as any)?.reset?.(); // Remix v2; harmless no-op on v1
+      createSlip.reset?.(); // Remix v2; harmless no-op on v1
     } else {
       setClientErrors([]);
       setErrorOpen(true);
@@ -647,7 +651,7 @@ export default function KioskPage() {
           t &&
           (t.tagName === "INPUT" ||
             t.tagName === "TEXTAREA" ||
-            (t as any).isContentEditable)
+            t.isContentEditable)
         )
           return;
         e.preventDefault();
@@ -1711,12 +1715,13 @@ export default function KioskPage() {
                 {custOpen && !selectedCustomer && custQ.trim() ? (
                   <div className="mt-2 max-h-56 overflow-auto divide-y divide-slate-100 rounded-lg border border-slate-200">
                     {custItems.length > 0 ? (
-                      custItems.map((h) => (
+                      custItems.map((h: CustomerSearchItem) => (
                         <button
                           key={h.id}
                           type="button"
                           onClick={() => {
-                            setSelectedCustomer(h as any);
+                            const picked = h as PickedCustomer;
+                            setSelectedCustomer(picked);
                             setCustomerId(h.id);
 
                             // Only prefill delivery fields when DELIVERY (avoid mixing walk-in)
@@ -1724,7 +1729,7 @@ export default function KioskPage() {
                               const name = `${h.firstName}${
                                 h.middleName ? " " + h.middleName : ""
                               } ${h.lastName}`.trim();
-                              const addr = (h as any).addresses?.[0] || null;
+                              const addr = picked.addresses?.[0] || null;
                               const addrText = addr
                                 ? `${addr.line1 ?? ""}${
                                     addr.barangay ? ", " + addr.barangay : ""

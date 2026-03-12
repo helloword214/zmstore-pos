@@ -1,5 +1,4 @@
 /* app/routes/store.cashier-ar.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
@@ -73,13 +72,23 @@ function statusTone(status: string): "neutral" | "warning" | "success" | "info" 
   return "neutral";
 }
 
-function nameOfUser(u: any) {
-  const emp = u?.employee;
+type CashierUserLite = {
+  id: number;
+  email: string | null;
+  employee: {
+    firstName: string;
+    lastName: string;
+    alias: string | null;
+  } | null;
+};
+
+function nameOfUser(u: CashierUserLite) {
+  const emp = u.employee;
   return (
     emp?.alias ||
     [emp?.firstName, emp?.lastName].filter(Boolean).join(" ") ||
-    u?.email ||
-    `User#${u?.id ?? "?"}`
+    u.email ||
+    `User#${u.id}`
   );
 }
 

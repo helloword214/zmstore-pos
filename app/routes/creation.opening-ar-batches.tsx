@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from "react";
 import { Prisma } from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
@@ -226,7 +225,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
 
   const rows = await db.clearanceCase.findMany({
-    where: { receiptKey: { startsWith: OPENING_AR_RECEIPT_PREFIX } } as any,
+    where: { receiptKey: { startsWith: OPENING_AR_RECEIPT_PREFIX } },
     select: {
       id: true,
       receiptKey: true,
@@ -255,7 +254,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         pending: row.status === "NEEDS_CLEARANCE" ? 1 : 0,
         decided: row.status === "DECIDED" ? 1 : 0,
         pendingBalance: row.status === "NEEDS_CLEARANCE" ? balance : 0,
-        latestAt: row.flaggedAt ? new Date(row.flaggedAt as any).toISOString() : null,
+        latestAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
       });
       continue;
     }
@@ -269,7 +268,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     if (row.flaggedAt) {
-      const iso = new Date(row.flaggedAt as any).toISOString();
+      const iso = row.flaggedAt.toISOString();
       if (!existing.latestAt || iso > existing.latestAt) existing.latestAt = iso;
     }
   }
@@ -325,7 +324,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const prefix = `OPENING_AR:${batchRef}:`;
   const existingBatch = await db.clearanceCase.count({
-    where: { receiptKey: { startsWith: prefix } } as any,
+    where: { receiptKey: { startsWith: prefix } },
   });
   if (existingBatch > 0) {
     return json<ActionData>(
@@ -440,37 +439,39 @@ export async function action({ request }: ActionFunctionArgs) {
   await db.$transaction(async (tx) => {
     for (const row of validRows) {
       const dueDateIso = row.dueDateRaw ? row.dueDateRaw : null;
+      const caseData: Prisma.ClearanceCaseUncheckedCreateInput = {
+        status: "NEEDS_CLEARANCE",
+        origin: "CASHIER",
+        receiptKey: buildOpeningArReceiptKey(batchRef, row.lineNo),
+        customerId: Number(row.customerId),
+        frozenTotal: new Prisma.Decimal(row.amount.toFixed(2)),
+        cashCollected: new Prisma.Decimal("0.00"),
+        flaggedById: me.userId,
+        flaggedAt: new Date(),
+        note: encodeOpeningBatchCaseNote(
+          {
+            batchRef,
+            lineNo: row.lineNo,
+            dueDate: dueDateIso,
+            refNo: row.refNo,
+            sourceLabel,
+            lineNote: row.lineNote,
+          },
+          batchNote,
+        ),
+      };
       const created = await tx.clearanceCase.create({
-        data: {
-          status: "NEEDS_CLEARANCE",
-          origin: "CASHIER",
-          receiptKey: buildOpeningArReceiptKey(batchRef, row.lineNo),
-          customerId: Number(row.customerId),
-          frozenTotal: new Prisma.Decimal(row.amount.toFixed(2)),
-          cashCollected: new Prisma.Decimal("0.00"),
-          flaggedById: me.userId,
-          flaggedAt: new Date(),
-          note: encodeOpeningBatchCaseNote(
-            {
-              batchRef,
-              lineNo: row.lineNo,
-              dueDate: dueDateIso,
-              refNo: row.refNo,
-              sourceLabel,
-              lineNote: row.lineNote,
-            },
-            batchNote,
-          ),
-        } as any,
+        data: caseData,
         select: { id: true },
       });
 
+      const claimData: Prisma.ClearanceClaimUncheckedCreateInput = {
+        caseId: Number(created.id),
+        type: "OPEN_BALANCE",
+        detail: row.lineNote,
+      };
       await tx.clearanceClaim.create({
-        data: {
-          caseId: Number(created.id),
-          type: "OPEN_BALANCE",
-          detail: row.lineNote,
-        } as any,
+        data: claimData,
       });
     }
   });

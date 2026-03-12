@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
@@ -279,9 +278,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     return json<ActionData>({ ok: false, message: "Unknown intent." }, { status: 400 });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : "Operation failed.";
     return json<ActionData>(
-      { ok: false, message: e?.message ?? "Operation failed." },
+      { ok: false, message: errorMessage },
       { status: 500 }
     );
   }

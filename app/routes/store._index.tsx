@@ -1,5 +1,4 @@
 /* app/routes/store._index.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
@@ -152,13 +151,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
 
     // Open shift variances (manager audit)
-    db.cashierShiftVariance.count({ where: { status: "OPEN" as any } }),
+    db.cashierShiftVariance.count({ where: { status: "OPEN" } }),
 
     // Exceptions
     db.riderRunVariance.count({
       where: { status: { in: ["OPEN", "MANAGER_APPROVED"] } },
     }),
-    db.cashierShiftVariance.count({ where: { status: "OPEN" as any } }),
+    db.cashierShiftVariance.count({ where: { status: "OPEN" } }),
     db.riderCharge.count({
       where: {
         status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
@@ -167,7 +166,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     db.cashierCharge.count({
       where: {
-        status: { in: ["OPEN", "PARTIALLY_SETTLED"] as any },
+        status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
         note: { contains: PLAN_TAG },
       },
     }),
@@ -180,10 +179,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // (we'll fix once CCS schema exists).
     db.runReceipt.count({
       where: {
-        run: { status: "CHECKED_IN" as any },
-        kind: { in: ["ROAD", "PARENT"] as any },
+        run: { status: "CHECKED_IN" },
+        kind: { in: ["ROAD", "PARENT"] },
         OR: [
-          { cashCollected: { lte: 0 as any } },
+          { cashCollected: { lte: 0 } },
           { note: { contains: '"isCredit":true' } },
           { note: { contains: '"isCredit": true' } },
         ],
@@ -191,17 +190,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
   ]);
 
-  const cashSalesToday = r2(toNum((cashSalesTodayAgg as any)?._sum?.amount));
+  const cashSalesToday = r2(toNum(cashSalesTodayAgg._sum.amount));
   const drawerTxnsToday = r2(
     (drawerTxnsTodayRows || []).reduce(
-      (acc: number, t: any) => acc + Math.abs(toNum(t.amount)),
+      (acc, t) => acc + Math.abs(toNum(t.amount)),
       0,
     ),
   );
 
   // Expected drawer total (open shifts):
   // openingFloat + CASH payments(in shift) + CASH_IN - CASH_OUT - DROP
-  const openShiftIdList = (openShiftRows || []).map((s: any) => Number(s.id));
+  const openShiftIdList = (openShiftRows || []).map((s) => Number(s.id));
   let expectedDrawerTotal = 0;
 
   if (openShiftIdList.length > 0) {
@@ -209,40 +208,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
       db.payment.groupBy({
         by: ["shiftId"],
         where: {
-          shiftId: { in: openShiftIdList as any },
+          shiftId: { in: openShiftIdList },
           method: "CASH",
         },
         _sum: { amount: true },
       }),
       db.cashDrawerTxn.groupBy({
         by: ["shiftId", "type"],
-        where: { shiftId: { in: openShiftIdList as any } },
+        where: { shiftId: { in: openShiftIdList } },
         _sum: { amount: true },
       }),
     ]);
 
     const openMap = new Map<number, number>(
-      (openShiftRows || []).map((s: any) => [
+      (openShiftRows || []).map((s) => [
         Number(s.id),
         toNum(s.openingFloat),
       ]),
     );
 
-    const payMap = new Map<number, number>(
-      (payByShift || []).map((r: any) => [
-        Number(r.shiftId),
-        toNum(r._sum?.amount),
-      ]),
-    );
+    const payMap = new Map<number, number>();
+    for (const r of payByShift || []) {
+      if (r.shiftId == null) continue;
+      payMap.set(Number(r.shiftId), toNum(r._sum?.amount));
+    }
 
     const txMap = new Map<number, { in: number; out: number; drop: number }>();
     for (const r of txByShift || []) {
-      const sid = Number((r as any).shiftId || 0);
+      const sid = Number(r.shiftId || 0);
       if (!sid) continue;
 
       const cur = txMap.get(sid) || { in: 0, out: 0, drop: 0 };
-      const amt = toNum((r as any)._sum?.amount);
-      const type = String((r as any).type || "");
+      const amt = toNum(r._sum?.amount);
+      const type = r.type;
 
       if (type === "CASH_IN") cur.in += amt;
       else if (type === "CASH_OUT") cur.out += amt;

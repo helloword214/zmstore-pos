@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // app/routes/runs.$id.rider-checkin.tsx
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
@@ -18,7 +17,7 @@ import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { CustomerPicker } from "~/components/CustomerPicker";
-import { Prisma, UnitKind } from "@prisma/client";
+import { ClearanceCaseStatus, Prisma, UnitKind } from "@prisma/client";
 import { loadRunReceiptCashMaps } from "~/services/runReceipts.server";
 import { loadRunRecap } from "~/services/runRecap.server";
 import { r2 as r2Money, MONEY_EPS } from "~/utils/money";
@@ -26,7 +25,6 @@ import {
   handleMarkVoided,
   handleSendClearance,
 } from "~/services/riderCheckin.server";
-import type { ClearanceCaseStatus } from "@prisma/client";
 import {
   ClearanceCard,
   clampCashToTotal,
@@ -103,6 +101,15 @@ type SoldLineUI = {
   unitKind: UIUnitKind;
 };
 
+type CustomerPickerValue = {
+  id: number;
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  alias?: string | null;
+  phone?: string | null;
+};
+
 type SoldReceiptUI = {
   key: string;
   // UI-only (derived): pending iff open ClearanceCase exists
@@ -121,7 +128,7 @@ type SoldReceiptUI = {
   customerId: number | null;
   customerName: string | null;
   customerPhone: string | null;
-  customerObj?: any | null; // for CustomerPicker controlled value
+  customerObj: CustomerPickerValue | null; // for CustomerPicker controlled value
   // ✅ receipt-level cash (one payment per customer receipt)
   cashReceived?: number | null;
   cashInput?: string; // raw string for smooth typing
@@ -206,6 +213,76 @@ const fmtIso = (d: Date | string | null | undefined) => {
   return Number.isFinite(x.getTime()) ? x.toISOString() : null;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const normalizeKey = (k: unknown) =>
+  String(k || "")
+    .slice(0, 64)
+    .trim();
+
+type SnapshotStockRow = { productId: number; returned: number };
+
+const parseSnapshotStockRows = (value: unknown): SnapshotStockRow[] => {
+  if (!isRecord(value) || !Array.isArray(value.stockRows)) return [];
+  return value.stockRows
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map((row) => ({
+      productId: Number(row.productId ?? 0),
+      returned: Math.max(0, Number(row.returned ?? 0)),
+    }))
+    .filter((row) => Number.isFinite(row.productId) && row.productId > 0);
+};
+
+type LoadoutSnapshotRow = { productId: number; name: string; qty: number };
+
+const parseLoadoutSnapshotRows = (value: unknown): LoadoutSnapshotRow[] => {
+  if (!Array.isArray(value)) return [];
+  const out: LoadoutSnapshotRow[] = [];
+  for (const row of value) {
+    if (!isRecord(row)) continue;
+    const productId = Number(row.productId ?? 0);
+    if (!Number.isFinite(productId) || productId <= 0) continue;
+    const qty = Math.max(0, Number(row.qty ?? 0));
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    out.push({
+      productId,
+      name: String(row.name ?? `#${productId}`),
+      qty,
+    });
+  }
+  return out;
+};
+
+const deriveClearanceIntent = (
+  intent: ClearanceIntentUI | "UNKNOWN" | undefined,
+  customerId: number | null | undefined,
+): ClearanceIntentUI =>
+  intent === "OPEN_BALANCE" || intent === "PRICE_BARGAIN"
+    ? intent
+    : customerId
+      ? "OPEN_BALANCE"
+      : "PRICE_BARGAIN";
+
+type StockRowsPayloadRow = { productId: number; returned: number };
+
+const parseStockRowsPayload = (value: unknown): StockRowsPayloadRow[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map((row) => ({
+      productId: Number(row.productId ?? 0),
+      returned: Math.max(0, Number(row.returned ?? 0)),
+    }))
+    .filter(
+      (row) =>
+        Number.isFinite(row.productId) &&
+        row.productId > 0 &&
+        Number.isFinite(row.returned) &&
+        row.returned >= 0,
+    );
+};
+
 // -------------------------------------------------------
 // Loader
 // -------------------------------------------------------
@@ -263,7 +340,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return redirect(`/runs/${id}/summary?note=invalid-status`);
   }
 
-  const rawSnap = run.riderCheckinSnapshot as any;
+  const snapshotStockRows = parseSnapshotStockRows(run.riderCheckinSnapshot);
   // ✅ Canonical cash maps (ROAD expected totals + PARENT cash accumulation)
   const cashMaps = await loadRunReceiptCashMaps(db, id);
 
@@ -276,8 +353,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const cases = await db.clearanceCase.findMany({
     where: {
       runId: id,
-      status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-    } as any,
+      status: {
+        in: [ClearanceCaseStatus.NEEDS_CLEARANCE, ClearanceCaseStatus.DECIDED],
+      },
+    },
     select: {
       id: true,
       receiptKey: true,
@@ -308,16 +387,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const caseByReceiptKey = new Map<string, CaseHydrate>();
   for (const c of cases || []) {
-    const rk =
-      typeof (c as any).receiptKey === "string"
-        ? String((c as any).receiptKey).slice(0, 64)
-        : "";
+    const rk = normalizeKey(c.receiptKey);
     if (!rk) continue;
-    const cid = Number((c as any).id);
-    const note =
-      typeof (c as any).note === "string" ? String((c as any).note) : undefined;
-    const rawType = (c as any)?.claims?.[0]?.type;
-    const rawDecision = (c as any)?.decisions?.[0];
+    const cid = Number(c.id);
+    const note = typeof c.note === "string" ? c.note : undefined;
+    const rawType = c.claims[0]?.type;
+    const rawDecision = c.decisions[0];
     const intent: CaseHydrate["intent"] =
       rawType === "PRICE_BARGAIN"
         ? "PRICE_BARGAIN"
@@ -342,12 +417,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         : null;
     const decisionArBalance =
       rawDecision?.arBalance != null ? Number(rawDecision.arBalance) : null;
-    const rawStatus = String((c as any).status || "");
-    if (rawStatus !== "NEEDS_CLEARANCE" && rawStatus !== "DECIDED") {
+    const rawStatus = c.status;
+    if (
+      rawStatus !== ClearanceCaseStatus.NEEDS_CLEARANCE &&
+      rawStatus !== ClearanceCaseStatus.DECIDED
+    ) {
       // CCS SoT: pending/settlement logic only recognizes NEEDS_CLEARANCE | DECIDED
       continue;
     }
-    const status: CaseHydrate["status"] = rawStatus;
+    const status: CaseHydrate["status"] =
+      rawStatus === ClearanceCaseStatus.NEEDS_CLEARANCE
+        ? "NEEDS_CLEARANCE"
+        : "DECIDED";
     caseByReceiptKey.set(rk, {
       caseId: cid,
       status,
@@ -372,22 +453,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const clearanceReason = ccs?.note
         ? String(ccs.note).slice(0, 200)
         : undefined;
-      const clearanceIntent: ClearanceIntentUI =
-        (ccs?.intent as any) ??
-        ((r.customerId
-          ? "OPEN_BALANCE"
-          : "PRICE_BARGAIN") as ClearanceIntentUI);
+      const clearanceIntent = deriveClearanceIntent(ccs?.intent, r.customerId);
       return {
         // ✅ keep receiptKey stable so action upserts same receipt instead of churn
         key: rk,
         needsClearance,
         clearancePending: pending,
         // ✅ keep literal union typing (Prisma enum is a string union)
-        clearanceCaseStatus: (pending
+        clearanceCaseStatus: pending
           ? "NEEDS_CLEARANCE"
           : decided
-          ? "DECIDED"
-          : undefined) as ClearanceCaseStatusUI | undefined,
+            ? "DECIDED"
+            : undefined,
         clearanceDecision: ccs?.decision ?? null,
         approvedDiscount: ccs?.approvedDiscount ?? null,
         decisionArBalance: ccs?.decisionArBalance ?? null,
@@ -484,15 +561,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // 1. LOAD SNAPSHOT (extra load sa dispatch)
   const loadedMap = new Map<number, { name: string; qty: number }>();
-  const loadSnap = Array.isArray(run.loadoutSnapshot)
-    ? (run.loadoutSnapshot as any[])
-    : [];
+  const loadSnap = parseLoadoutSnapshotRows(run.loadoutSnapshot);
 
   for (const row of loadSnap) {
-    const pid = Number(row?.productId ?? 0);
-    if (!pid) continue;
-    const name = String(row?.name ?? `#${pid}`);
-    const qty = Math.max(0, Number(row?.qty ?? 0));
+    const pid = row.productId;
+    const name = row.name;
+    const qty = row.qty;
     const prev = loadedMap.get(pid);
     loadedMap.set(pid, {
       // keep best-available name
@@ -586,11 +660,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const clearanceReason = ccs?.note
         ? String(ccs.note).slice(0, 200)
         : undefined;
-      const clearanceIntent: ClearanceIntentUI =
-        (ccs?.intent as any) ??
-        ((o.customerId
-          ? "OPEN_BALANCE"
-          : "PRICE_BARGAIN") as ClearanceIntentUI);
+      const clearanceIntent = deriveClearanceIntent(ccs?.intent, o.customerId);
 
       const lines: ParentLineUI[] = o.items.map((it, lineIdx) => {
         const pid = it.productId != null ? Number(it.productId) : null;
@@ -605,8 +675,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             : "PACK") as UIUnitKind,
           unitPrice: Number(it.unitPrice ?? 0),
           lineTotal: Number(it.lineTotal ?? 0),
-          baseUnitPrice: Number((it as any).baseUnitPrice ?? 0),
-          discountAmount: Number((it as any).discountAmount ?? 0),
+          baseUnitPrice: Number(it.baseUnitPrice ?? 0),
+          discountAmount: Number(it.discountAmount ?? 0),
         };
       });
 
@@ -655,19 +725,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // 4. Snapshot (previous returned) — sold comes from DB ROAD receipts (preferred)
   let existingReturnedRows: Array<{ productId: number; returned: number }> = [];
 
-  if (rawSnap && typeof rawSnap === "object") {
-    if (Array.isArray(rawSnap.stockRows)) {
-      existingReturnedRows = rawSnap.stockRows
-        .map((r: any) => ({
-          productId: Number(r?.productId ?? 0),
-          returned: Math.max(0, Number(r?.returned ?? 0)),
-        }))
-        .filter(
-          (r: { productId: number; returned: number }) =>
-            r.productId > 0 && allowedPids.has(r.productId),
-        );
-    }
-  }
+  existingReturnedRows = snapshotStockRows.filter((r) =>
+    allowedPids.has(r.productId),
+  );
 
   // 5. Unified PID list (parent PAD + extra)
   const allPids = new Set<number>(allowedPids);
@@ -736,7 +796,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       id: run.id,
       runCode: run.runCode,
       status: run.status,
-      riderCheckinAt: fmtIso((run as any).riderCheckinAt),
+      riderCheckinAt: fmtIso(run.riderCheckinAt),
       riderLabel,
     },
     rows,
@@ -753,7 +813,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   // Same guard as loader: only rider/employee/manager/admin can submit
   const me = await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
-  const actorId = Number((me as any)?.id ?? (me as any)?.userId ?? 0) || null;
+  const actorId =
+    Number.isFinite(me.userId) && Number(me.userId) > 0 ? Number(me.userId) : null;
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid id", { status: 400 });
@@ -906,7 +967,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   type ParentOrderSnapLite = {
     id: number;
     customerId: number | null;
-    items: Array<{ lineTotal: any }>;
+    items: Array<{ lineTotal: unknown }>;
   };
 
   const calcParentPayable = (o: ParentOrderSnapLite, rawPaid: unknown) => {
@@ -940,19 +1001,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return { totalFrozen: total, paidClamped, remaining };
   };
 
-  const normalizeKey = (k: unknown) =>
-    String(k || "")
-      .slice(0, 64)
-      .trim();
-
   // Parent payment map (raw from payload) — clamp happens via calcParentPayable
   const parentPaidRawByOrderId = new Map<number, number>();
   // (rawParentPayments populated below) but we want the map usable everywhere consistently.
 
-  const stockRows = parsedRows.map((r: any) => ({
-    productId: Number(r.productId),
-    returned: Math.max(0, Number(r.returned || 0)),
-  }));
+  const stockRows = parseStockRowsPayload(parsedRows);
 
   // ✅ New: road receipts (receipt-level cash) from UI
   const roadReceiptsJson = fd.get("roadReceiptsJson");
@@ -1007,9 +1060,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // Build parent raw paid map (used by unified calcParentPayable)
   for (const p of rawParentPayments || []) {
-    const oid = Number((p as any).orderId) || 0;
+    const oid = Number(p.orderId) || 0;
     if (!oid) continue;
-    const cashCollected = Number((p as any).cashCollected ?? 0);
+    const cashCollected = Number(p.cashCollected ?? 0);
     parentPaidRawByOrderId.set(
       oid,
       Number.isFinite(cashCollected) ? cashCollected : 0,
@@ -1026,7 +1079,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // validate ROAD keys (and reserved prefix)
   for (const r of roadReceipts || []) {
-    const rk = normalizeKey((r as any)?.key);
+    const rk = normalizeKey(r.key);
     if (!rk) throw new Response("ROAD receipt key missing.", { status: 400 });
     if (rk.startsWith("PARENT:")) {
       throw new Response(`Invalid ROAD receiptKey (reserved prefix): ${rk}`, {
@@ -1228,12 +1281,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
         await tx.clearanceCase.findMany({
           where: {
             runId: id,
-            status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-          } as any,
+            status: {
+              in: [
+                ClearanceCaseStatus.NEEDS_CLEARANCE,
+                ClearanceCaseStatus.DECIDED,
+              ],
+            },
+          },
           select: { receiptKey: true },
         })
       )
-        .map((c) => String((c as any).receiptKey || "").slice(0, 64).trim())
+        .map((c) => normalizeKey(c.receiptKey))
         .filter(Boolean);
 
       const keepKeys = Array.from(
@@ -1264,7 +1322,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // ✅ Unified payable + clamp + remaining (single SoT)
       const { paidClamped: paid, remaining } = calcParentPayable(
-        o as any,
+        o,
         parentPaidRawByOrderId.get(orderId) ?? 0,
       );
 
@@ -1336,7 +1394,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         product: { connect: { id: ln.pid } },
         name: ln.name,
         qty: new Prisma.Decimal(ln.qty),
-        unitKind: ln.unitKind as any,
+        unitKind: ln.unitKind === "RETAIL" ? UnitKind.RETAIL : UnitKind.PACK,
         unitPrice: new Prisma.Decimal(r2(ln.unitPrice).toFixed(2)),
         // ✅ use frozen lineTotal as payable (do NOT recompute)
         lineTotal: new Prisma.Decimal(r2(ln.lineTotal).toFixed(2)),
@@ -1399,7 +1457,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // ✅ Unified payable + clamp + remaining (single SoT)
       const { paidClamped: paid, remaining } = calcRoadPayable(
-        lines as any,
+        lines,
         Number.isFinite(cash) ? cash : 0,
       );
       const needsClearanceEffective = remaining > MONEY_EPS;
@@ -1538,13 +1596,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const pendingCasesForRun = await tx.clearanceCase.findMany({
         where: {
           runId: id,
-          status: "NEEDS_CLEARANCE",
-        } as any,
+          status: ClearanceCaseStatus.NEEDS_CLEARANCE,
+        },
         select: { receiptKey: true },
       });
       if (pendingCasesForRun.length > 0) {
         const pendingKeys = pendingCasesForRun
-          .map((c) => String((c as any).receiptKey || "").slice(0, 64))
+          .map((c) => normalizeKey(c.receiptKey))
           .filter(Boolean);
         throw new Response(
           `Submit blocked: may PENDING clearance pa (${pendingKeys
@@ -1558,8 +1616,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
         where: {
           runId: id,
           receiptKey: { in: receiptKeysToCheck },
-          status: { in: ["NEEDS_CLEARANCE", "DECIDED"] },
-        } as any,
+          status: {
+            in: [ClearanceCaseStatus.NEEDS_CLEARANCE, ClearanceCaseStatus.DECIDED],
+          },
+        },
         select: {
           receiptKey: true,
           status: true,
@@ -1580,14 +1640,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
       >();
       for (const c of cases || []) {
-        const rk = String((c as any).receiptKey || "").slice(0, 64);
+        const rk = normalizeKey(c.receiptKey);
         if (!rk) continue;
-        const rawStatus = String((c as any).status || "");
-        if (rawStatus !== "NEEDS_CLEARANCE" && rawStatus !== "DECIDED") {
+        const rawStatus = c.status;
+        if (
+          rawStatus !== ClearanceCaseStatus.NEEDS_CLEARANCE &&
+          rawStatus !== ClearanceCaseStatus.DECIDED
+        ) {
           continue;
         }
-        const status: "NEEDS_CLEARANCE" | "DECIDED" = rawStatus;
-        const last = (c as any)?.decisions?.[0]?.kind;
+        const status: "NEEDS_CLEARANCE" | "DECIDED" =
+          rawStatus === ClearanceCaseStatus.NEEDS_CLEARANCE
+            ? "NEEDS_CLEARANCE"
+            : "DECIDED";
+        const last = c.decisions[0]?.kind;
         const decision: ClearanceDecisionKindUI | null =
           last === "REJECT"
             ? "REJECT"
@@ -1631,7 +1697,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const o = parentOrderById.get(orderId);
         if (!o) continue;
         const { remaining } = calcParentPayable(
-          o as any,
+          o,
           parentPaidRawByOrderId.get(orderId) ?? 0,
         );
         if (remaining > MONEY_EPS) {
@@ -1677,7 +1743,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         );
         if (!lines.length) continue;
         const { remaining } = calcRoadPayable(
-          lines as any,
+          lines,
           Number(r.cashReceived ?? 0),
         );
         if (remaining > MONEY_EPS) {
@@ -1718,7 +1784,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
         status: isSubmit ? "CHECKED_IN" : run.status,
         ...(isSubmit ? { riderCheckinAt: new Date() } : {}),
         // Snapshot is RETURNS-ONLY (legacy)
-        riderCheckinSnapshot: { stockRows } as any,
+        riderCheckinSnapshot: {
+          stockRows: stockRows.map((row) => ({
+            productId: row.productId,
+            returned: row.returned,
+          })),
+        } satisfies Prisma.InputJsonValue,
       },
     });
   });
@@ -2484,10 +2555,13 @@ export default function RiderCheckinPage() {
             }
             // ✅ Only run guards for FINAL submit-checkin.
             // For save-draft, allow incomplete data.
-            const native = e.nativeEvent as any;
-            const submitter = native?.submitter as
-              | HTMLButtonElement
-              | undefined;
+            const native = e.nativeEvent as Event & {
+              submitter?: EventTarget | null;
+            };
+            const submitter =
+              native.submitter instanceof HTMLButtonElement
+                ? native.submitter
+                : undefined;
             const submitIntent =
               submitter?.getAttribute?.("value") || submitter?.value || "";
             const isFinal = submitIntent === "submit-checkin";
@@ -3198,7 +3272,7 @@ export default function RiderCheckinPage() {
                           const badge = renderDiscountBadgePreview(
                             ln.productId,
                             effectiveUnitPrice,
-                            (ln.unitKind ?? "PACK") as any,
+                            ln.unitKind ?? PACK,
                           );
 
                           return (
@@ -3667,7 +3741,7 @@ export default function RiderCheckinPage() {
                                     );
                                     const roadPayload = {
                                       key: rec.key,
-                                      clearanceIntent: intent as any,
+                                      clearanceIntent: intent,
                                       clearanceReason: msg,
                                       customerId: rec.customerId ?? null,
                                       customerName: rec.customerName ?? null,

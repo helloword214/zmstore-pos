@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { VehicleType } from "@prisma/client";
+import { VehicleType, type Prisma } from "@prisma/client";
 import { useFetcher, useLoaderData, useNavigate } from "@remix-run/react";
 import * as React from "react";
 import { SoTAlert } from "~/components/ui/SoTAlert";
@@ -53,6 +52,10 @@ function parseStatus(value: string | null): StatusFilter {
   return "all";
 }
 
+function isVehicleType(value: string): value is VehicleType {
+  return Object.values(VehicleType).includes(value as VehicleType);
+}
+
 function parsePage(value: string | null) {
   const parsed = Number(value ?? "1");
   if (!Number.isFinite(parsed) || parsed < 1) return 1;
@@ -89,27 +92,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const status = parseStatus(url.searchParams.get("status"));
   const requestedPage = parsePage(url.searchParams.get("page"));
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.VehicleWhereInput = {};
 
   if (q) {
-    where.OR = [
+    const orFilters: Prisma.VehicleWhereInput[] = [
       { name: { contains: q, mode: "insensitive" } },
       { notes: { contains: q, mode: "insensitive" } },
       { plateNumber: { contains: q, mode: "insensitive" } },
       { orNumber: { contains: q, mode: "insensitive" } },
       { crNumber: { contains: q, mode: "insensitive" } },
-      { type: { equals: q as VehicleType } },
     ];
+    if (isVehicleType(q)) {
+      orFilters.push({ type: { equals: q } });
+    }
+    where.OR = orFilters;
   }
   if (status === "active") where.active = true;
   if (status === "inactive") where.active = false;
 
-  const total = await db.vehicle.count({ where: where as any });
+  const total = await db.vehicle.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(requestedPage, totalPages);
 
   const vehicles = await db.vehicle.findMany({
-    where: where as any,
+    where,
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: {
       capacityProfiles: {
@@ -291,9 +297,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     return json<ActionData>({ ok: false, error: "Unknown intent." }, { status: 400 });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : "Operation failed.";
     return json<ActionData>(
-      { ok: false, error: e?.message ?? "Operation failed." },
+      { ok: false, error: errorMessage },
       { status: 500 }
     );
   }

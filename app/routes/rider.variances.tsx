@@ -1,12 +1,15 @@
 /* app/routes/rider.variances.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import type { EmployeeRole } from "@prisma/client";
+import {
+  EmployeeRole,
+  RiderVarianceResolution,
+  RiderVarianceStatus,
+} from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -41,7 +44,7 @@ const r2 = (n: number) =>
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireRole(request, ["EMPLOYEE"]);
 
-  const uid = Number((me as any).userId);
+  const uid = Number(me.userId);
   if (!Number.isFinite(uid) || uid <= 0) {
     throw new Response("Invalid user session", { status: 401 });
   }
@@ -54,14 +57,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const emp = userRow.employee;
   if (!emp) throw new Response("Employee profile not linked", { status: 403 });
-  if ((emp.role as EmployeeRole) !== "RIDER")
+  if (emp.role !== EmployeeRole.RIDER)
     throw new Response("Rider access only", { status: 403 });
 
   const pending = await db.riderRunVariance.findMany({
     where: {
       riderId: emp.id,
-      status: "MANAGER_APPROVED",
-      resolution: "CHARGE_RIDER",
+      status: RiderVarianceStatus.MANAGER_APPROVED,
+      resolution: RiderVarianceResolution.CHARGE_RIDER,
       riderAcceptedAt: null,
       // ✅ Charge rider accept list must be shortage-only
       variance: { lt: 0 },

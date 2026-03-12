@@ -1,5 +1,4 @@
 // app/routes/cashier._index.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
@@ -9,7 +8,11 @@ import {
   requireUser,
   type SessionUser,
 } from "~/utils/auth.server";
-import { CashierChargeStatus } from "@prisma/client";
+import {
+  CashierChargeStatus,
+  CashierVarianceResolution,
+  CashierVarianceStatus,
+} from "@prisma/client";
 import { db } from "~/utils/db.server";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -69,8 +72,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Cashier Charges = manager approved + charged to cashier, waiting cashier acknowledgement
     db.cashierShiftVariance.count({
       where: {
-        resolution: "CHARGE_CASHIER" as any,
-        status: "MANAGER_APPROVED" as any,
+        resolution: CashierVarianceResolution.CHARGE_CASHIER,
+        status: CashierVarianceStatus.MANAGER_APPROVED,
         shift: { cashierId: me.userId },
       },
     }),
@@ -90,7 +93,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const outstandingCharges = openCharges.reduce((sum, ch) => {
     const amt = Number(ch.amount ?? 0);
     const paid = (ch.payments ?? []).reduce(
-      (s: number, p: any) => s + Number(p.amount ?? 0),
+      (s: number, p) => s + Number(p.amount ?? 0),
       0
     );
     return sum + Math.max(0, amt - paid);

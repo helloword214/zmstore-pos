@@ -1,5 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Prisma } from "@prisma/client";
+import {
+  ClearanceCaseStatus,
+  ClearanceDecisionKind,
+  CustomerArStatus,
+  Prisma,
+} from "@prisma/client";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
@@ -63,7 +67,19 @@ type LoaderData = {
   } | null;
 };
 
-function toCustomerLabel(c: any, customerId: number | null) {
+function toCustomerLabel(
+  c:
+    | {
+        firstName?: string | null;
+        middleName?: string | null;
+        lastName?: string | null;
+        alias?: string | null;
+        phone?: string | null;
+      }
+    | null
+    | undefined,
+  customerId: number | null,
+) {
   const name = [c?.firstName, c?.middleName, c?.lastName]
     .filter(Boolean)
     .join(" ")
@@ -98,9 +114,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const rows = await db.clearanceCase.findMany({
     where: {
-      status: "NEEDS_CLEARANCE",
+      status: ClearanceCaseStatus.NEEDS_CLEARANCE,
       receiptKey: { startsWith: OPENING_AR_RECEIPT_PREFIX },
-    } as any,
+    },
     select: {
       id: true,
       receiptKey: true,
@@ -148,7 +164,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         refNo: decoded.meta?.refNo ?? null,
         lineNote: decoded.meta?.lineNote ?? null,
         autoRejectReason,
-        flaggedAt: row.flaggedAt ? new Date(row.flaggedAt as any).toISOString() : null,
+        flaggedAt: row.flaggedAt ? new Date(row.flaggedAt).toISOString() : null,
       } as BatchRow;
     })
     .filter((row): row is BatchRow => Boolean(row));
@@ -229,9 +245,9 @@ export async function action({ request }: ActionFunctionArgs) {
   await db.$transaction(async (tx) => {
     const cases = await tx.clearanceCase.findMany({
       where: {
-        status: "NEEDS_CLEARANCE",
+        status: ClearanceCaseStatus.NEEDS_CLEARANCE,
         receiptKey: { startsWith: prefix },
-      } as any,
+      },
       select: {
         id: true,
         customerId: true,
@@ -264,15 +280,21 @@ export async function action({ request }: ActionFunctionArgs) {
         await tx.clearanceDecision.create({
           data: {
             caseId,
-            kind: "REJECT",
+            kind: ClearanceDecisionKind.REJECT,
             decidedById: me.userId,
             note: reason.slice(0, 500),
-          } as any,
+          },
         });
         await tx.clearanceCase.update({
-          where: { id: caseId } as any,
-          data: { status: "DECIDED" } as any,
+          where: { id: caseId },
+          data: { status: ClearanceCaseStatus.DECIDED },
         });
+        rejectedCount += 1;
+        processedCount += 1;
+        continue;
+      }
+
+      if (!row.customerId) {
         rejectedCount += 1;
         processedCount += 1;
         continue;
@@ -282,11 +304,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const decision = await tx.clearanceDecision.create({
         data: {
           caseId,
-          kind: "APPROVE_OPEN_BALANCE",
+          kind: ClearanceDecisionKind.APPROVE_OPEN_BALANCE,
           decidedById: me.userId,
           note: approveNote.slice(0, 500),
           arBalance: new Prisma.Decimal(arBalance.toFixed(2)),
-        } as any,
+        },
         select: { id: true },
       });
 
@@ -305,15 +327,15 @@ export async function action({ request }: ActionFunctionArgs) {
           ...(row.runId ? { runId: Number(row.runId) } : {}),
           principal: new Prisma.Decimal(arBalance.toFixed(2)),
           balance: new Prisma.Decimal(arBalance.toFixed(2)),
-          status: "OPEN",
+          status: CustomerArStatus.OPEN,
           ...(dueDate ? { dueDate } : {}),
           note: arNoteParts.join(" • ").slice(0, 500),
-        } as any,
+        },
       });
 
       await tx.clearanceCase.update({
-        where: { id: caseId } as any,
-        data: { status: "DECIDED" } as any,
+        where: { id: caseId },
+        data: { status: ClearanceCaseStatus.DECIDED },
       });
 
       approvedCount += 1;

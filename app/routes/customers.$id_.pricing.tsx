@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // app/routes/customers.$id_.pricing.tsx
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
@@ -245,7 +244,7 @@ function ModeAwareValue({
 
 function formatRuleValue(
   mode: "FIXED_PRICE" | "FIXED_DISCOUNT" | "PERCENT_DISCOUNT",
-  raw: any
+  raw: unknown
 ) {
   const n = Number(raw ?? 0);
   if (mode === "PERCENT_DISCOUNT") return `${n.toFixed(2)}%`;

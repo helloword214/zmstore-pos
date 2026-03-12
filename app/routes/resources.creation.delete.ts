@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { db } from "~/utils/db.server";
@@ -14,6 +13,13 @@ type Kind =
   | "brand"
   | "indication"
   | "target";
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
 
 export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
@@ -104,9 +110,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     return json({ ok: false, message: "Unknown kind." }, { status: 400 });
-  } catch (e: any) {
+  } catch (error: unknown) {
     return json(
-      { ok: false, message: e?.message ?? "Delete failed." },
+      { ok: false, message: getErrorMessage(error, "Delete failed.") },
       { status: 500 }
     );
   }

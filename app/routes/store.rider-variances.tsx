@@ -1,12 +1,16 @@
 /* app/routes/store.rider-variances.tsx */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
-import { Prisma, RiderChargeStatus } from "@prisma/client";
+import {
+  Prisma,
+  RiderChargeStatus,
+  RiderVarianceResolution,
+  RiderVarianceStatus,
+} from "@prisma/client";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -61,6 +65,16 @@ function statusTone(status: string): "neutral" | "warning" | "success" | "info" 
   return "neutral";
 }
 
+function isRiderVarianceResolution(
+  value: string,
+): value is RiderVarianceResolution {
+  return (
+    value === RiderVarianceResolution.CHARGE_RIDER ||
+    value === RiderVarianceResolution.WAIVE ||
+    value === RiderVarianceResolution.INFO_ONLY
+  );
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
 
@@ -68,14 +82,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const tabRaw = String(url.searchParams.get("tab") || "open");
   const tab: LoaderData["tab"] =
     tabRaw === "awaiting" || tabRaw === "history" ? tabRaw : "open";
+  const historyStatuses: RiderVarianceStatus[] = [
+    RiderVarianceStatus.WAIVED,
+    RiderVarianceStatus.CLOSED,
+    RiderVarianceStatus.RIDER_ACCEPTED,
+  ];
 
   // Counts for badges / navbar alert consistency
   const [openCount, awaitingCount, historyCount] = await Promise.all([
-    db.riderRunVariance.count({ where: { status: "OPEN" } }),
+    db.riderRunVariance.count({
+      where: { status: RiderVarianceStatus.OPEN },
+    }),
     db.riderRunVariance.count({
       where: {
-        status: "MANAGER_APPROVED",
-        resolution: "CHARGE_RIDER",
+        status: RiderVarianceStatus.MANAGER_APPROVED,
+        resolution: RiderVarianceResolution.CHARGE_RIDER,
         riderAcceptedAt: null,
         variance: { lt: 0 }, // shortage-only
       },
@@ -84,34 +105,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
       where: {
         OR: [
           // explicit closed/waived
-          { status: { in: ["WAIVED", "CLOSED", "RIDER_ACCEPTED"] } },
+          { status: { in: historyStatuses } },
           // manager already approved info-only (cleared for cashier)
-          { status: "MANAGER_APPROVED", resolution: { in: ["INFO_ONLY"] } },
+          {
+            status: RiderVarianceStatus.MANAGER_APPROVED,
+            resolution: RiderVarianceResolution.INFO_ONLY,
+          },
         ],
       },
     }),
   ]);
 
   // Row filters per tab
-  const where =
+  const openWhere: Prisma.RiderRunVarianceWhereInput = {
+    status: RiderVarianceStatus.OPEN,
+  };
+  const awaitingWhere: Prisma.RiderRunVarianceWhereInput = {
+    status: RiderVarianceStatus.MANAGER_APPROVED,
+    resolution: RiderVarianceResolution.CHARGE_RIDER,
+    riderAcceptedAt: null,
+    variance: { lt: 0 },
+  };
+  const historyWhere: Prisma.RiderRunVarianceWhereInput = {
+    OR: [
+      { status: { in: historyStatuses } },
+      {
+        status: RiderVarianceStatus.MANAGER_APPROVED,
+        resolution: RiderVarianceResolution.INFO_ONLY,
+      },
+    ],
+  };
+  const where: Prisma.RiderRunVarianceWhereInput =
     tab === "open"
-      ? { status: "OPEN" as const }
+      ? openWhere
       : tab === "awaiting"
-      ? ({
-          status: "MANAGER_APPROVED" as const,
-          resolution: "CHARGE_RIDER" as const,
-          riderAcceptedAt: null,
-          variance: { lt: 0 },
-        } as const)
-      : ({
-          OR: [
-            { status: { in: ["WAIVED", "CLOSED", "RIDER_ACCEPTED"] as any } },
-            {
-              status: "MANAGER_APPROVED" as const,
-              resolution: "INFO_ONLY" as const,
-            },
-          ],
-        } as any);
+      ? awaitingWhere
+      : historyWhere;
 
   const rows = await db.riderRunVariance.findMany({
     where,
@@ -186,7 +215,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
   const id = Number(fd.get("id"));
-  const resolution = String(fd.get("resolution") || "");
+  const resolutionRaw = String(fd.get("resolution") || "");
   const note = String(fd.get("note") || "").trim();
 
   if (!Number.isFinite(id) || id <= 0)
@@ -194,9 +223,10 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent !== "manager-decide")
     throw new Response("Unsupported intent", { status: 400 });
 
-  if (!["CHARGE_RIDER", "WAIVE", "INFO_ONLY"].includes(resolution)) {
+  if (!isRiderVarianceResolution(resolutionRaw)) {
     throw new Response("Invalid resolution", { status: 400 });
   }
+  const resolution = resolutionRaw;
 
   const row = await db.riderRunVariance.findUnique({
     where: { id },
@@ -211,7 +241,11 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!row) throw new Response("Variance not found", { status: 404 });
 
   // only allow decision from OPEN (or allow re-decision while MANAGER_APPROVED if needed)
-  if (!["OPEN", "MANAGER_APPROVED"].includes(String(row.status ?? ""))) {
+  const editableStatuses: RiderVarianceStatus[] = [
+    RiderVarianceStatus.OPEN,
+    RiderVarianceStatus.MANAGER_APPROVED,
+  ];
+  if (!editableStatuses.includes(row.status)) {
     throw new Response("Variance is not editable", { status: 400 });
   }
 
@@ -221,16 +255,19 @@ export async function action({ request }: ActionFunctionArgs) {
   // - CHARGE_RIDER -> MANAGER_APPROVED (wait rider accept)
   // - INFO_ONLY   -> MANAGER_APPROVED (cashier can finalize; no rider accept needed)
   // - WAIVE       -> WAIVED (cleared)
-  const nextStatus = resolution === "WAIVE" ? "WAIVED" : "MANAGER_APPROVED";
-  const managerApprovedById = Number((me as any).userId) || null;
+  const nextStatus: RiderVarianceStatus =
+    resolution === RiderVarianceResolution.WAIVE
+      ? RiderVarianceStatus.WAIVED
+      : RiderVarianceStatus.MANAGER_APPROVED;
+  const managerApprovedById = Number(me.userId) || null;
 
   await db.$transaction(async (tx) => {
     // 1) update variance decision
     await tx.riderRunVariance.update({
       where: { id },
       data: {
-        resolution: resolution as any,
-        status: nextStatus as any,
+        resolution,
+        status: nextStatus,
         managerApprovedAt: now,
         managerApprovedById,
         note: note.length ? note : undefined,
@@ -238,7 +275,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     // 2) OPTION B ledger side-effects
-    if (resolution === "CHARGE_RIDER") {
+    if (resolution === RiderVarianceResolution.CHARGE_RIDER) {
       // ✅ Charge only for shortage (negative variance). If overage, no RiderCharge.
       const rawVar = Number(row.variance ?? 0);
       const amtNum = rawVar < 0 ? Math.abs(rawVar) : 0;
@@ -280,7 +317,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (resolution === "WAIVE") {
+    if (resolution === RiderVarianceResolution.WAIVE) {
       // if a charge already exists for this variance, waive it too
       await tx.riderCharge.updateMany({
         where: {

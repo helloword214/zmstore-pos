@@ -1,5 +1,4 @@
 // app/routes/cashier.delivery._index.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
@@ -89,7 +88,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const lockOwnerIds = new Set<number>();
   for (const run of runs) {
     for (const ro of run.orders) {
-      const o = ro.order as any;
+      const o = ro.order;
       if (!o) continue;
       if (o.status !== "UNPAID" && o.status !== "PARTIALLY_PAID") continue;
       const token = (o.lockedBy ?? "").trim();
@@ -152,18 +151,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const computedRows: RunRow[] = await Promise.all(
     runs.map(async (run) => {
+      type RunOrder = (typeof run.orders)[number]["order"];
       const riderLabel = run.riderId
         ? riderLabelMap.get(run.riderId) ?? null
         : null;
 
       const openOrders = run.orders
-        .map((ro: any) => ro.order)
+        .map((ro) => ro.order)
         .filter(
-          (o: any) =>
+          (o: RunOrder) =>
             o && (o.status === "UNPAID" || o.status === "PARTIALLY_PAID")
         );
       const openOrderCount = openOrders.filter(
-        (o: any) => !o.channel || o.channel === "DELIVERY"
+        (o: RunOrder) => !o.channel || o.channel === "DELIVERY"
       ).length;
       // ─────────────────────────────────────────
       // IMPORTANT CHANGE:
@@ -188,13 +188,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       let parentCashByOrderId: Map<number, number> = new Map();
       try {
         const maps = await loadRunReceiptCashMaps(db, run.id);
-        roadsideCashByOrderCode = maps.roadsideCashByOrderCode as any;
-        parentCashByOrderId = maps.parentCashByOrderId as any;
+        roadsideCashByOrderCode = maps.roadsideCashByOrderCode;
+        parentCashByOrderId = maps.parentCashByOrderId;
       } catch {
         // best-effort fallback: keep empty maps
       }
 
-      const getRiderCash = (o: any, total: number) => {
+      const getRiderCash = (o: RunOrder, total: number) => {
         const isRoadside =
           typeof o.orderCode === "string" && o.orderCode.startsWith("RS-");
         if (isRoadside) {
@@ -215,7 +215,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         const total = Number(o.totalBeforeDiscount ?? o.subtotal ?? 0);
         const paid = Array.isArray(o.payments)
-          ? o.payments.reduce((s: number, p: any) => {
+          ? o.payments.reduce((s: number, p) => {
               const a = Number(p?.amount ?? 0);
               return s + (Number.isFinite(a) ? a : 0);
             }, 0)
@@ -242,7 +242,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         const total = Number(o.totalBeforeDiscount ?? o.subtotal ?? 0);
         const paid = Array.isArray(o.payments)
-          ? o.payments.reduce((s: number, p: any) => {
+          ? o.payments.reduce((s: number, p) => {
               const a = Number(p?.amount ?? 0);
               return s + (Number.isFinite(a) ? a : 0);
             }, 0)

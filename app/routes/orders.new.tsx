@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { db } from "~/utils/db.server";
@@ -136,35 +135,44 @@ export const action: ActionFunction = async ({ request }) => {
     return json({ error: "`items` missing" }, { status: 400 });
   }
 
-  let items: IncomingItem[];
+  let parsedItems: unknown;
   try {
-    items = JSON.parse(itemsRaw);
-    if (!Array.isArray(items) || items.length === 0) {
-      return json(
-        { error: "`items` must be a non-empty array" },
-        { status: 400 },
-      );
-    }
+    parsedItems = JSON.parse(itemsRaw);
   } catch {
     return json({ error: "`items` is not valid JSON" }, { status: 400 });
   }
+  if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+    return json({ error: "`items` must be a non-empty array" }, { status: 400 });
+  }
 
-  // Basic shape check
-  for (const [i, it] of items.entries()) {
-    if (typeof it !== "object" || it == null) {
+  const items: IncomingItem[] = [];
+  for (const [i, rawItem] of parsedItems.entries()) {
+    if (typeof rawItem !== "object" || rawItem == null) {
       return json({ error: `items[${i}] invalid` }, { status: 400 });
     }
-    if (!Number.isFinite((it as any).id)) {
+    const itemRecord = rawItem as Record<string, unknown>;
+
+    const idRaw = itemRecord.id;
+    if (typeof idRaw !== "number" || !Number.isFinite(idRaw)) {
       return json({ error: `items[${i}].id missing/invalid` }, { status: 400 });
     }
-    if (!Number.isFinite((it as any).qty) || toNum((it as any).qty) <= 0) {
+
+    const qtyRaw = itemRecord.qty;
+    if (
+      typeof qtyRaw !== "number" ||
+      !Number.isFinite(qtyRaw) ||
+      toNum(qtyRaw) <= 0
+    ) {
       return json({ error: `items[${i}].qty must be > 0` }, { status: 400 });
     }
+
     // unitPrice is OPTIONAL now (freshness check only)
-    if ((it as any).unitPrice != null) {
+    const unitPriceRaw = itemRecord.unitPrice;
+    if (unitPriceRaw != null) {
       if (
-        !Number.isFinite((it as any).unitPrice) ||
-        toNum((it as any).unitPrice) <= 0
+        typeof unitPriceRaw !== "number" ||
+        !Number.isFinite(unitPriceRaw) ||
+        toNum(unitPriceRaw) <= 0
       ) {
         return json(
           { error: `items[${i}].unitPrice must be > 0 when provided` },
@@ -172,16 +180,26 @@ export const action: ActionFunction = async ({ request }) => {
         );
       }
     }
-    if (
-      (it as any).mode &&
-      (it as any).mode !== "retail" &&
-      (it as any).mode !== "pack"
-    ) {
+
+    const modeRaw = itemRecord.mode;
+    if (modeRaw && modeRaw !== "retail" && modeRaw !== "pack") {
       return json(
         { error: `items[${i}].mode must be "retail" or "pack"` },
         { status: 400 },
       );
     }
+
+    const normalizedItem: IncomingItem = { id: idRaw, qty: qtyRaw };
+    if (typeof itemRecord.name === "string") {
+      normalizedItem.name = itemRecord.name;
+    }
+    if (typeof unitPriceRaw === "number") {
+      normalizedItem.unitPrice = unitPriceRaw;
+    }
+    if (modeRaw === "retail" || modeRaw === "pack") {
+      normalizedItem.mode = modeRaw;
+    }
+    items.push(normalizedItem);
   }
 
   // Fetch fresh product rows for validation
@@ -253,7 +271,7 @@ export const action: ActionFunction = async ({ request }) => {
       Boolean(row.allowPackSale) && baseRetail > 0 && retailStock > 0;
 
     // Determine mode (prefer client-provided; else infer from price)
-    let mode: Mode | null = (it.mode as Mode) ?? null;
+    let mode: Mode | null = it.mode ?? null;
     if (!mode) {
       // If client provided a unitPrice, we can infer mode from it.
       if (clientUnitPrice != null) {
@@ -478,7 +496,7 @@ export const action: ActionFunction = async ({ request }) => {
   const created = await db.order.create({
     data: {
       status: "UNPAID",
-      channel: channel as any, // ok as-is; replace with OrderChannel if you prefer
+      channel,
       subtotal,
       totalBeforeDiscount,
       printedAt: now,
@@ -512,9 +530,7 @@ export const action: ActionFunction = async ({ request }) => {
           lineTotal: new Prisma.Decimal(r2(l.qty * l.unitPrice).toFixed(2)),
           product: { connect: { id: l.id } }, // satisfy required relation
           // ✅ Source of truth: store unit kind at creation (never infer using live prices later)
-          unitKind: (l.mode === "retail"
-            ? UnitKind.RETAIL
-            : UnitKind.PACK) as any,
+          unitKind: l.mode === "retail" ? UnitKind.RETAIL : UnitKind.PACK,
           // ✅ discount audit freeze (view-only in PAD; used later everywhere)
           baseUnitPrice: new Prisma.Decimal(
             r2(clamp0(l.baseUnitPrice)).toFixed(2),
