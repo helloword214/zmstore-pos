@@ -45,17 +45,14 @@ This addendum is binding target behavior for the next security patch objective.
 
 Route access targets:
 
-1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/ack`:
+1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
    - never public
 2. `/orders/new`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
-3. `/orders/:id/credit`:
-   - retained for now (legacy/low-usage) but not public
-   - allowed operational roles only (`CASHIER`, `STORE_MANAGER`, `EMPLOYEE`)
-   - denied: `ADMIN`
+3. Retired legacy routes `/orders/:id/ack` and `/orders/:id/credit` must not be reintroduced.
 
 Release-with-balance approval policy:
 
@@ -107,6 +104,23 @@ Clearance pending counter alignment rule:
 1. Manager dashboard "Clearance pending decisions" count must use the same SoT as inbox list: `clearanceCase.status = NEEDS_CLEARANCE`.
 2. Dashboard pending counter for `/store/clearance` includes only linked operational cases (`orderId` or `runReceiptId`).
 3. Opening-balance pending rows are tracked and processed in `/store/clearance-opening-batches`, not in the main clearance pending counter.
+
+## Legacy Route Retirement Addendum (Applied 2026-03-12)
+
+The following legacy routes were removed because they were no longer part of canonical cashier/payment flow:
+
+1. `app/routes/remit-summary.$id.tsx`
+2. `app/routes/remit-receipt.$id.tsx`
+3. `app/routes/receipts._index.tsx`
+4. `app/routes/orders.$id.ack.tsx`
+5. `app/routes/orders.$id.credit.tsx`
+
+Canonical print/payment proof paths remain:
+
+1. Walk-in and delivery cashier posting routes redirect to `app/routes/orders.$id.receipt.tsx`.
+2. AR payment posting and 58mm proof printing remain in `app/routes/ar.customers.$id.tsx`.
+
+This retirement does not change AR authority: `customerAr` remains decision-backed from manager-approved clearance outcomes only.
 
 ## Route SoT Guardrails
 
