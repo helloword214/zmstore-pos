@@ -337,12 +337,15 @@ model Order {
   printedAt  DateTime
   expiryAt   DateTime
   terminalId String?
+  createdById   Int?
+  createdByRole UserRole?
 
   // Relations
   items      OrderItem[]
   payments   Payment[]
   customerId Int?
   customer   Customer?   @relation(fields: [customerId], references: [id])
+  createdBy  User?       @relation("OrderCreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
 
   // (optional) Delivery address reference for delivery orders
   deliveryAddressId Int?
@@ -428,6 +431,8 @@ model Order {
   @@index([status])
   @@index([expiryAt])
   @@index([customerId])
+  @@index([createdById, createdAt])
+  @@index([createdByRole, createdAt])
   @@index([channel])
   @@index([fulfillmentStatus])
   @@index([deliveryAddressId])
@@ -1586,6 +1591,7 @@ model User {
   clearanceCasesFlagged       ClearanceCase[]     @relation("ClearanceFlaggedBy")
   clearanceDecisionsMade      ClearanceDecision[] @relation("ClearanceDecidedBy")
   customerArPaymentsProcessed CustomerArPayment[] @relation("CustomerArPaymentsProcessed")
+  ordersCreated              Order[]             @relation("OrderCreatedByUser")
 
   // v2.6: who voided a receipt
   voidedRunReceipts RunReceipt[] @relation("RunReceiptVoidedBy")

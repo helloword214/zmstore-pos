@@ -38,6 +38,11 @@ Security hardening lookup note (2026-03-12):
 5. Legacy receipt route retirement note is in:
    - `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section `Legacy Route Retirement Addendum (Applied 2026-03-12)`
    - `DIAGRAMS_DELIVERY_CSS_AR.md` section `5c) Legacy Receipt Route Retirement (Applied 2026-03-12)`
+6. Slip/ticket/receipt semantic boundary is in:
+   - `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section `Print Artifact Boundaries (Binding)`
+   - `DIAGRAMS_DELIVERY_CSS_AR.md` section `5d) Slip vs Ticket vs Receipt Semantics (Binding)`
+7. Order creator audit anchors are in:
+   - `CANONICAL_ORDER_PRICING_SOT.md` (`createdById`, `createdByRole` SoT rule + checklist)
 
 Current route-level mapping coverage (canonical):
 

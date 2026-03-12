@@ -1243,6 +1243,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           status: "UNPAID",
           paidAt: null,
           orderCode,
+          createdById: me.userId,
+          createdByRole: me.role,
           // ✅ Link back to source receipt (trace/debug + deterministic mapping)
           originRunReceiptId: rec.roadReceiptId,
           printedAt: new Date(),

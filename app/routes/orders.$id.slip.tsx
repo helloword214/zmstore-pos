@@ -96,7 +96,7 @@ export default function OrderSlipPage() {
     const handleAfterPrint = () => {
       if (backedRef.current) return;
       backedRef.current = true;
-      navigate("/order-pad");
+      navigate("/pad-order");
     };
     window.addEventListener("afterprint", handleAfterPrint);
     return () => window.removeEventListener("afterprint", handleAfterPrint);

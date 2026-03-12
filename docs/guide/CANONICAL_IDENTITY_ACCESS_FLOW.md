@@ -158,10 +158,11 @@ Access policy approved on 2026-03-12 for follow-up code enforcement.
 
 Allowed roles:
 
-1. `/orders/:id/slip`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
-2. `/orders/:id/ticket`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
-3. `/orders/:id/receipt`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
-4. `/orders/new`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+1. `/pad-order`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+2. `/orders/new`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+3. `/orders/:id/slip`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+4. `/orders/:id/ticket`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+5. `/orders/:id/receipt`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
 
 Hard rules:
 
@@ -197,6 +198,7 @@ Replacement authority:
 
 1. Order print/acknowledgment path is `/orders/:id/receipt`.
 2. Utang/kulang workflow stays in cashier clearance path (`cashier.$id.tsx` -> manager clearance routes).
+3. Order creator audit is stored on order rows (`createdById`, `createdByRole`).
 
 ## Employee Role Lifecycle (Binding)
 
