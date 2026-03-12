@@ -1525,6 +1525,11 @@ enum UserAuthState {
   ACTIVE
 }
 
+enum LoginRateLimitScope {
+  IP
+  EMAIL
+}
+
 enum CashDrawerTxnType {
   CASH_IN
   CASH_OUT
@@ -1597,6 +1602,7 @@ model User {
   roleAuditEvents           UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
   roleAuditEventsAuthored   UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
   passwordResetTokens       PasswordResetToken[]
+  loginOtpChallenges        LoginOtpChallenge[]
   employeeDocumentsUploaded EmployeeDocument[]   @relation("EmployeeDocumentsUploadedBy")
 
   lastLoginAt DateTime?
@@ -1658,6 +1664,44 @@ model PasswordResetToken {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@index([usedAt])
+}
+
+model LoginOtpChallenge {
+  id                 Int       @id @default(autoincrement())
+  userId             Int
+  codeHash           String
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  attemptCount       Int       @default(0)
+  sendCount          Int       @default(1)
+  lastSentAt         DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  requestedIp        String?   @db.VarChar(64)
+  requestedUserAgent String?   @db.VarChar(300)
+  consumedIp         String?   @db.VarChar(64)
+  consumedUserAgent  String?   @db.VarChar(300)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model LoginRateLimitState {
+  id            Int                 @id @default(autoincrement())
+  scope         LoginRateLimitScope
+  scopeKey      String
+  failCount     Int                 @default(0)
+  firstFailedAt DateTime?
+  lastFailedAt  DateTime?
+  blockedUntil  DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([scope, scopeKey])
+  @@index([blockedUntil])
 }
 
 // (Removed) UserLocation — legacy mapping; replaced by UserBranch/Branch

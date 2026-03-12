@@ -7,14 +7,29 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
+import { getPendingLogin, getUser, homePathFor, setPendingLogin } from "~/utils/auth.server";
+import {
+  checkLoginThrottle,
+  issueLoginOtpChallenge,
+  LOGIN_OTP_EXPIRES_MINUTES,
+  normalizeEmail,
+  registerAuthFailure,
+  requestIp,
+} from "~/utils/auth-login-guard.server";
 import { db } from "~/utils/db.server";
-import { createUserSession, getUser, homePathFor } from "~/utils/auth.server";
+import { sendLoginOtpEmail } from "~/utils/mail.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await getUser(request);
   if (me) {
     throw redirect(homePathFor(me.role));
   }
+
+  const pending = await getPendingLogin(request);
+  if (pending) {
+    throw redirect("/login/otp");
+  }
+
   return json({ ok: true });
 }
 
@@ -25,15 +40,25 @@ type ActionError = {
 
 export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
-  const email = String(fd.get("email") ?? "")
-    .trim()
-    .toLowerCase();
+  const email = normalizeEmail(String(fd.get("email") ?? ""));
   const password = String(fd.get("password") ?? "");
+  const ip = requestIp(request);
+  const userAgent = request.headers.get("user-agent");
 
   if (!email || !password) {
     return json<ActionError>(
       { field: { email: "Required", password: "Required" } },
-      { status: 400 }
+      { status: 400 },
+    );
+  }
+
+  const throttle = await checkLoginThrottle({ email, ip });
+  if (throttle.blocked) {
+    return json<ActionError>(
+      {
+        form: `Too many failed attempts. Try again in about ${Math.max(1, Math.ceil(throttle.retryAfterSeconds / 60))} minute(s).`,
+      },
+      { status: 429 },
     );
   }
 
@@ -41,6 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
     where: { email },
     select: {
       id: true,
+      email: true,
       active: true,
       authState: true,
       role: true,
@@ -56,21 +82,54 @@ export async function action({ request }: ActionFunctionArgs) {
       user.role !== "EMPLOYEE" &&
       user.role !== "CASHIER")
   ) {
+    await registerAuthFailure({ email, ip });
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
   }
 
   if (!user.passwordHash || !(await compare(password, user.passwordHash))) {
+    await registerAuthFailure({ email, ip });
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
   }
+
   if (user.authState !== "ACTIVE") {
     return json<ActionError>(
       { form: "Account setup is incomplete. Check your email and set your password first." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  const { headers } = await createUserSession(request, user.id);
-  return redirect(homePathFor(user.role), { headers });
+  if (!user.email) {
+    await registerAuthFailure({ email, ip });
+    return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
+  }
+
+  try {
+    const challenge = await issueLoginOtpChallenge({
+      userId: user.id,
+      requestIp: ip,
+      userAgent,
+    });
+
+    await sendLoginOtpEmail({
+      to: user.email,
+      otpCode: challenge.otpCode,
+      expiresMinutes: LOGIN_OTP_EXPIRES_MINUTES,
+    });
+
+    const { headers } = await setPendingLogin(request, {
+      userId: user.id,
+      challengeId: challenge.challengeId,
+      email,
+    });
+
+    return redirect("/login/otp", { headers });
+  } catch (error) {
+    console.error("[auth] login otp issue failed", error);
+    return json<ActionError>(
+      { form: "Sign-in verification is temporarily unavailable. Please try again." },
+      { status: 500 },
+    );
+  }
 }
 
 export default function LoginPage() {
@@ -84,7 +143,7 @@ export default function LoginPage() {
         <SoTCard className="w-full p-6">
           <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Use your email and password.
+            Use your email, password, and one-time verification code.
           </p>
 
           {actionData?.form ? (
@@ -121,7 +180,7 @@ export default function LoginPage() {
             </div>
 
             <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? "Checking credentials…" : "Continue"}
             </SoTButton>
           </Form>
 

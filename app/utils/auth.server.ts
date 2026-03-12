@@ -31,6 +31,12 @@ export type SessionUser = {
   shiftId?: number | null;
 };
 
+export type PendingLoginState = {
+  userId: number;
+  challengeId: number;
+  email: string;
+};
+
 function safeNext(raw: string | null | undefined, fallback = "/cashier") {
   if (!raw) return fallback;
   if (!raw.startsWith("/")) return fallback;
@@ -50,6 +56,53 @@ export function homePathFor(role: Role): string {
 export async function getAuthSession(request: Request) {
   const cookie = request.headers.get("Cookie");
   return authStorage.getSession(cookie);
+}
+
+function parsePositiveInt(raw: unknown): number | null {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) {
+    return null;
+  }
+  return value;
+}
+
+function clearPendingKeys(session: Awaited<ReturnType<typeof getAuthSession>>) {
+  session.unset("loginPendingUserId");
+  session.unset("loginChallengeId");
+  session.unset("loginPendingEmail");
+}
+
+export async function getPendingLogin(request: Request): Promise<PendingLoginState | null> {
+  const session = await getAuthSession(request);
+  const userId = parsePositiveInt(session.get("loginPendingUserId"));
+  const challengeId = parsePositiveInt(session.get("loginChallengeId"));
+  const emailRaw = session.get("loginPendingEmail");
+  const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : "";
+  if (!userId || !challengeId || !email) return null;
+  return { userId, challengeId, email };
+}
+
+export async function setPendingLogin(request: Request, pending: PendingLoginState) {
+  const session = await getAuthSession(request);
+  // Pending login is anonymous until OTP is verified.
+  session.unset("userId");
+  session.unset("role");
+  session.unset("branchIds");
+  session.unset("shiftId");
+  session.set("loginPendingUserId", pending.userId);
+  session.set("loginChallengeId", pending.challengeId);
+  session.set("loginPendingEmail", pending.email);
+  return {
+    headers: { "Set-Cookie": await authStorage.commitSession(session) },
+  };
+}
+
+export async function clearPendingLogin(request: Request) {
+  const session = await getAuthSession(request);
+  clearPendingKeys(session);
+  return {
+    headers: { "Set-Cookie": await authStorage.commitSession(session) },
+  };
 }
 
 export async function getUser(request: Request): Promise<SessionUser | null> {
@@ -77,6 +130,7 @@ export async function createUserSession(request: Request, userId: number) {
   });
 
   const session = await getAuthSession(request);
+  clearPendingKeys(session);
   session.set("userId", user.id);
   session.set("role", user.role as Role); // now also supports STORE_MANAGER
   session.set(
