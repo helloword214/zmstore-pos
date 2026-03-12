@@ -5,7 +5,6 @@ import {
   useRevalidator,
   useFetcher,
   useNavigate,
-  Form,
 } from "@remix-run/react";
 import * as React from "react";
 import { db } from "~/utils/db.server";
@@ -806,16 +805,16 @@ export default function KioskPage() {
   // ── UI helpers for nicer buttons ──────────────────────────
   // ✅ keep these names; only classes updated
   const btnBase =
-    "inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-sm transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200";
+    "inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200";
 
   const btnOutline =
-    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:shadow-none";
+    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:translate-y-[0.5px]";
 
   const btnDisabled =
     "border border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed";
 
   const priceChip =
-    "ml-2 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-inset ring-slate-200";
+    "ml-2 inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-inset ring-slate-200";
 
   function packAddLabel(p: {
     packingUnit?: { name?: string } | null;
@@ -963,39 +962,33 @@ export default function KioskPage() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Order Pad Workspace"
-        subtitle={`Build pickup or delivery orders from one live catalog. Assigned: ${assignedUser} (${assignedRole})`}
+        subtitle="Build pickup or delivery orders from one live catalog."
         backTo={backTo}
         backLabel={backLabel}
-        maxWidthClassName="max-w-[1760px]"
+        maxWidthClassName="max-w-[1560px]"
       />
-      <section className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1760px] flex-wrap items-center justify-end gap-2 px-5 py-3">
-          <span className="text-xs tabular-nums text-slate-600" aria-label="clock">
-            {clock}
-          </span>
-          <SoTButton
-            type="button"
-            variant="secondary"
-            onClick={resetOrderPadState}
-            title="Start a fresh cart"
-          >
-            New Order
-          </SoTButton>
-          <SoTButton type="button" variant="danger" onClick={clearCart}>
-            Clear Cart
-          </SoTButton>
-          <Form method="post" action="/logout">
-            <SoTButton type="submit" variant="secondary" title="Sign out">
-              Logout
-            </SoTButton>
-          </Form>
+      <section className="border-b border-slate-700 bg-slate-800">
+        <div className="mx-auto flex max-w-[1560px] flex-wrap items-center gap-2 px-5 py-3">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-200">
+            <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-700 px-2 py-0.5 uppercase tracking-wide text-slate-100">
+              {assignedRole}
+            </span>
+            <span className="truncate text-slate-300">
+              Assigned:{" "}
+              <span className="font-medium text-white">{assignedUser}</span>
+            </span>
+            <span className="hidden text-slate-500 sm:inline">•</span>
+            <span className="tabular-nums text-slate-200" aria-label="clock">
+              {clock}
+            </span>
+          </div>
         </div>
       </section>
-      <div className="mx-auto grid w-full max-w-[1760px] grid-cols-1 items-start gap-5 overflow-x-hidden px-4 pb-24 pt-5 md:grid-cols-[260px_minmax(0,1fr)_390px] md:px-5 md:pb-5 md:pt-5">
+      <div className="mx-auto grid w-full max-w-[1560px] grid-cols-1 items-start gap-4 overflow-x-hidden px-5 pb-24 pt-5 md:[--pad-panel-h:calc(100vh-19rem)] md:grid-cols-[240px_minmax(0,1fr)_360px] md:px-5 md:pb-6 md:pt-5">
 
       {/* Top controls (mobile only): chips + search */}
       <div className="md:hidden">
-        <SoTCard className="space-y-3 p-3">
+        <SoTCard interaction="form" className="space-y-4 p-4">
           {/* Compact scrollable pill bar with smart fades */}
           <div className="relative">
           {/* left fade (hidden at start) */}
@@ -1016,9 +1009,9 @@ export default function KioskPage() {
           >
             <button
               onClick={() => setActiveCat("")}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] ${
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm ${
                 activeCat === ""
-                  ? "border-indigo-600 bg-indigo-600 text-white"
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-900"
                   : "border-slate-200 bg-white text-slate-700"
               } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
             >
@@ -1031,14 +1024,14 @@ export default function KioskPage() {
                 <button
                   key={c.id}
                   onClick={() => setActiveCat(c.id)}
-                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] ${
+                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm ${
                     selected
-                      ? "border-indigo-600 bg-indigo-600 text-white"
+                      ? "border-indigo-200 bg-indigo-50 text-indigo-900"
                       : "border-slate-200 bg-white text-slate-700"
                   } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                   title={c.name}
                 >
-                  <span className="text-[14px] leading-none">
+                  <span className="text-sm leading-none">
                     {catIcon(c.name)}
                   </span>
                   <span className="font-medium max-w-[10ch] truncate">
@@ -1072,16 +1065,19 @@ export default function KioskPage() {
       </div>
 
       {/* LEFT: Sticky category sidebar (tablet/desktop) */}
-      <aside className="hidden md:block sticky top-4 self-start">
-        <SoTCard className="max-h-[calc(100vh-7rem)] overflow-auto p-3">
+      <aside className="hidden md:block self-start min-h-0">
+        <SoTCard
+          interaction="form"
+          className="h-[var(--pad-panel-h)] overflow-hidden p-4 md:flex md:flex-col"
+        >
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Categories
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
             <button
               className={`rounded-xl border px-3 py-2 text-left text-sm ${
                 activeCat === ""
-                  ? "border-indigo-600 bg-indigo-600 text-white"
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-900"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
               onClick={() => setActiveCat("")}
@@ -1093,7 +1089,7 @@ export default function KioskPage() {
                 key={c.id}
                 className={`rounded-xl border px-3 py-2 text-left text-sm ${
                   activeCat === c.id
-                    ? "border-indigo-600 bg-indigo-600 text-white"
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-900"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
                 onClick={() => setActiveCat(c.id)}
@@ -1107,32 +1103,47 @@ export default function KioskPage() {
 
       {/* Product grid */}
       <section>
-        <SoTCard className="space-y-3 overflow-hidden p-4">
-        {/* Search (tablet/desktop) */}
-        <div className="hidden md:flex items-end gap-2">
-          <div className="flex-1">
-            <SoTInput
-              label="Search"
-              name="search"
-              placeholder="Search products..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
+        <SoTCard
+          interaction="form"
+          className="overflow-hidden p-4 md:flex md:h-[var(--pad-panel-h)] md:flex-col"
+        >
+        <div className="space-y-4 md:shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Products
+            </h2>
+            <div className="text-sm text-slate-600">
+              Showing{" "}
+              <span className="font-medium">{pageItems.length}</span> of{" "}
+              <span className="font-medium">{total}</span>
+            </div>
           </div>
-          <div className="w-56">
-            <SelectInput
-              label="Brand"
-              name="brand"
-              value={String(activeBrand ?? "")}
-              onChange={(val) => setActiveBrand(val ? Number(val) : "")}
-              options={[
-                { label: "All brands", value: "", style: { color: "#6b7280" } },
-                ...brandOptions.map(([id, name]) => ({
-                  label: name,
-                  value: String(id),
-                })),
-              ]}
-            />
+          {/* Search (tablet/desktop) */}
+          <div className="hidden md:flex items-end gap-2">
+            <div className="flex-1">
+              <SoTInput
+                label="Search"
+                name="search"
+                placeholder="Search products..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <div className="w-56">
+              <SelectInput
+                label="Brand"
+                name="brand"
+                value={String(activeBrand ?? "")}
+                onChange={(val) => setActiveBrand(val ? Number(val) : "")}
+                options={[
+                  { label: "All brands", value: "", style: { color: "#6b7280" } },
+                  ...brandOptions.map(([id, name]) => ({
+                    label: name,
+                    value: String(id),
+                  })),
+                ]}
+              />
+            </div>
           </div>
         </div>
 
@@ -1141,21 +1152,9 @@ export default function KioskPage() {
         ) : (
           <div
             id="product-scroll"
-            className="overflow-y-auto pr-1"
-            style={{ maxHeight: "calc(100vh - 16rem)" }}
+            className="mt-4 overflow-y-auto pr-1 md:min-h-0 md:flex-1"
           >
-            {/* Sticky list header INSIDE the scroller for proper separation */}
-            <div className="sticky top-0 z-10 -mx-3 md:-mx-4 px-3 md:px-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
-              <div className="h-10 flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-slate-800">Products</h2>
-                <div className="hidden md:block text-sm text-slate-600">
-                  Showing{" "}
-                  <span className="font-medium">{pageItems.length}</span> of{" "}
-                  <span className="font-medium">{total}</span>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2 pt-2">
+            <div className="space-y-3">
               {pageItems.map((p: ProductItem) => {
                 // (all your original logic here unchanged)
                 const unit = p.unit?.name ?? "unit";
@@ -1188,12 +1187,12 @@ export default function KioskPage() {
                 return (
                   <div
                     key={p.id}
-                    className={`border border-slate-200 rounded-2xl p-3 bg-white shadow-sm hover:shadow ${
+                    className={`rounded-2xl border border-slate-200 bg-white p-4 transition-colors duration-150 hover:bg-slate-50 ${
                       cardDisabled ? "opacity-60" : ""
                     }`}
                     aria-disabled={cardDisabled}
                   >
-                    <div className="flex gap-3 items-start">
+                    <div className="flex items-start gap-4">
                       {/* Thumb */}
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                         {p.imageUrl ? (
@@ -1204,7 +1203,7 @@ export default function KioskPage() {
                             loading="lazy"
                           />
                         ) : (
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-xs text-slate-400">
                             No Img
                           </span>
                         )}
@@ -1219,14 +1218,14 @@ export default function KioskPage() {
                               {p.name}
                             </span>
                             <span
-                              className="flex-none text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200"
+                              className="flex-none rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700 ring-1 ring-inset ring-slate-200"
                               title={`Product ID: ${p.id}`}
                             >
                               #{p.id}
                             </span>
                             {isLowStock && (
                               <span
-                                className="flex-none text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                                className="flex-none rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200"
                                 title="Low stock"
                               >
                                 Low
@@ -1234,7 +1233,7 @@ export default function KioskPage() {
                             )}
                             {isOut && (
                               <span
-                                className="flex-none text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200"
+                                className="flex-none rounded-full bg-rose-50 px-1.5 py-0.5 text-xs text-rose-700 ring-1 ring-rose-200"
                                 title="Out of stock"
                               >
                                 Out
@@ -1242,14 +1241,14 @@ export default function KioskPage() {
                             )}
                           </div>
                           {p.brand?.name && (
-                            <div className="text-[11px] text-slate-500 truncate">
+                            <div className="text-xs text-slate-500 truncate">
                               {p.brand.name}
                             </div>
                           )}
                         </div>
 
                         {/* line 2: stocks & container */}
-                        <div className="mt-1 text-[11px] text-slate-700 flex flex-wrap items-center gap-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-700">
                           <span className="truncate">
                             <strong>Stock:</strong> {Math.max(0, packStock)}{" "}
                             {packUnit}
@@ -1275,13 +1274,13 @@ export default function KioskPage() {
                           {p.allowPackSale &&
                             !retailAvailable &&
                             packAvailable && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200">
                                 Retail empty — open {packUnit.toLowerCase()}{" "}
                                 needed
                               </span>
                             )}
                           {!packAvailable && retailAvailable && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                            <span className="rounded-full bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200">
                               Pack stock empty
                             </span>
                           )}
@@ -1444,7 +1443,7 @@ export default function KioskPage() {
                         {/* MOBILE: if in cart → show stepper; else small Add buttons */}
                         <div className="md:hidden flex flex-col items-end gap-1">
                           {!defaultMode ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200">
+                            <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-xs text-rose-700 ring-1 ring-rose-200">
                               Unavailable
                             </span>
                           ) : currentLine ? (
@@ -1474,7 +1473,7 @@ export default function KioskPage() {
                               {retailAvailable && (
                                 <button
                                   onClick={() => add(p, "retail")}
-                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                   title={`Add by ${unit}`}
                                 >
                                   + {unit}
@@ -1483,7 +1482,7 @@ export default function KioskPage() {
                               {packAvailable && (
                                 <button
                                   onClick={() => add(p, "pack")}
-                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                   title={`Add ${packUnit}`}
                                 >
                                   + {packUnit}
@@ -1515,14 +1514,17 @@ export default function KioskPage() {
       </section>
 
       {/* Cart panel */}
-      <aside className="hidden md:block sticky top-5 self-start">
-        <SoTCard className="h-fit overflow-hidden bg-white/95 p-0 backdrop-blur">
+      <aside className="hidden md:block self-start min-h-0">
+        <SoTCard
+          interaction="form"
+          className="h-[var(--pad-panel-h)] overflow-hidden bg-white p-0 md:flex md:flex-col"
+        >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
           <h2 className="font-semibold text-slate-900 tracking-tight flex items-center gap-2">
             🧾 <span>Order List</span>
             <span
-              className="ml-1 inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-700 ring-1 ring-inset ring-slate-200"
+              className="ml-1 inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-700 ring-1 ring-inset ring-slate-200"
               title="Lines in cart"
             >
               {Object.keys(cart).length}
@@ -1540,21 +1542,22 @@ export default function KioskPage() {
         </div>
 
         {items.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-500">
-            <div className="mx-auto mb-2 h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center">
-              🛒
+          <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-sm text-slate-500">
+            <div>
+              <div className="mx-auto mb-2 h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center">
+                🛒
+              </div>
+              Order is empty.
             </div>
-            Order is empty.
           </div>
         ) : (
-          <>
+          <div className="min-h-0 flex-1 overflow-auto custom-scrollbar">
             {/* Lines */}
-            <div className="max-h-[50vh] overflow-auto custom-scrollbar">
-              <ul className="divide-y divide-slate-200">
-                {items.map((it) => (
-                  <li key={it.key} className="px-4 py-3">
+            <ul className="divide-y divide-slate-200">
+              {items.map((it) => (
+                <li key={it.key} className="px-4 py-4">
                     {/* Two-row responsive layout: top = title + total, bottom = meta + controls */}
-                    <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 items-start">
+                    <div className="grid grid-cols-[1fr_auto] items-start gap-x-3 gap-y-3">
                       {/* Title (larger, wraps up to 2 lines) */}
                       <div className="min-w-0 col-span-1">
                         <div className="min-w-0">
@@ -1564,19 +1567,19 @@ export default function KioskPage() {
                           >
                             {it.name}
                           </span>
-                          <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-600 min-w-0">
-                            <span className="font-mono text-[11px] text-slate-500">
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-600">
+                            <span className="font-mono text-xs text-slate-500">
                               #{it.id}
                             </span>
                             {it.brandName ? (
                               <span className="truncate">{it.brandName}</span>
                             ) : null}
-                            <span className="text-[10px] uppercase text-slate-500">
+                            <span className="text-xs uppercase text-slate-500">
                               [{it.mode}]
                             </span>
                           </div>
                           {/* Moved unit-price caption here for consistent readability */}
-                          <div className="mt-0.5 text-xs text-slate-600">
+                          <div className="mt-1 text-xs text-slate-600">
                             {it.qty} × {peso(it.unitPrice)}
                             {it.mode === "retail" ? ` /${it.unitLabel}` : ""}
                           </div>
@@ -1588,7 +1591,7 @@ export default function KioskPage() {
                       </div>
 
                       {/* Controls (bottom-right) */}
-                      <div className="col-span-1 flex items-center justify-end gap-2">
+                      <div className="col-span-1 flex items-center justify-end gap-3">
                         {it.isKg && it.mode === "retail" ? (
                           <>
                             {/* Stepper: ±1kg, center shows value (no input spinners) */}
@@ -1677,20 +1680,19 @@ export default function KioskPage() {
                               return c;
                             })
                           }
-                          className="ml-1 px-2 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                          className="ml-1 h-9 rounded-lg border border-rose-200 bg-white px-2 text-sm text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                           aria-label="Remove line"
                         >
                           🗑
                         </button>
                       </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                </li>
+              ))}
+            </ul>
 
             {/* Subtotal */}
-            <div className="px-4 py-3 border-t border-slate-200 bg-white/80 backdrop-blur">
+            <div className="shrink-0 border-t border-slate-200 bg-slate-50/70 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-600">Subtotal</div>
                 <div className="font-semibold text-slate-900">
@@ -1699,13 +1701,13 @@ export default function KioskPage() {
               </div>
             </div>
             {/* Fulfillment */}
-            <div className="px-4 pt-3">
-              <div className="text-sm font-medium text-slate-800 mb-2">
+            <div className="shrink-0 space-y-3 px-4 py-4">
+              <div className="mb-2 text-sm font-medium text-slate-800">
                 Customer
               </div>
               {/* Customer picker (works for PICKUP + DELIVERY) */}
-              <div className="rounded-xl border border-slate-200 p-2">
-                <div className="text-xs text-slate-600 mb-1">
+              <div className="rounded-xl border border-slate-200 p-3">
+                <div className="mb-2 text-xs text-slate-600">
                   Optional for walk-in. Piliin lang kung kilala / may discount.
                 </div>
 
@@ -1738,18 +1740,19 @@ export default function KioskPage() {
                     />
                   </div>
                   {selectedCustomer ? (
-                    <button
+                    <SoTButton
                       type="button"
+                      variant="secondary"
+                      size="compact"
                       onClick={() => {
                         setSelectedCustomer(null);
                         setCustomerId(null);
                         setDeliveryAddressId(null);
                         setCustQ("");
                       }}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
                       Clear
-                    </button>
+                    </SoTButton>
                   ) : null}
                 </div>
 
@@ -1788,7 +1791,7 @@ export default function KioskPage() {
                             setCustQ("");
                             setCustOpen(false);
                           }}
-                          className="w-full text-left px-2 py-2 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                          className="w-full px-3 py-2 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         >
                           <div className="text-sm text-slate-900">
                             {h.firstName} {h.middleName || ""} {h.lastName}{" "}
@@ -1840,7 +1843,7 @@ export default function KioskPage() {
                 ) : null}
               </div>
 
-              <div className="mt-3 text-sm font-medium text-slate-800 mb-2">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Fulfillment
               </div>
               <div className="flex items-center gap-3 text-sm">
@@ -1906,7 +1909,7 @@ export default function KioskPage() {
                     onChange={(e) => setDeliverPhotoUrl(e.target.value)}
                     placeholder="https://..."
                   />
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-xs text-slate-500">
                     If you set either latitude or longitude, set both (server
                     validates).
                   </div>
@@ -1926,7 +1929,7 @@ export default function KioskPage() {
             </div>
 
             {/* Actions */}
-            <div className="px-4 pb-4">
+            <div className="shrink-0 px-4 pb-4">
               <createSlip.Form
                 method="post"
                 action="/orders/new?respond=json"
@@ -2015,13 +2018,13 @@ export default function KioskPage() {
                 </SoTButton>
               </createSlip.Form>
             </div>
-          </>
+          </div>
         )}
         </SoTCard>
       </aside>
 
       {/* FOOTER */}
-      <footer className="md:col-span-3">
+      <footer className="md:col-span-3 md:hidden">
         <SoTAlert tone="info">
           Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust
           qty • Use cart panel to switch pickup/delivery before create.
@@ -2087,7 +2090,7 @@ export default function KioskPage() {
               Show this code to the cashier
             </div>
             <div className="mt-3">
-              <div className="text-[11px] text-slate-500">Order Code</div>
+              <div className="text-xs text-slate-500">Order Code</div>
               <div className="font-mono text-2xl tracking-wider text-slate-900">
                 {justCreated.code}
               </div>
@@ -2202,25 +2205,25 @@ export default function KioskPage() {
             <div className="flex-1 overflow-auto">
               <ul className="divide-y divide-slate-200">
                 {items.map((it) => (
-                  <li key={it.key} className="px-4 py-3">
+                  <li key={it.key} className="px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       {/* Left: name + meta */}
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-900 line-clamp-2 break-words">
                           {it.name}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-600">
-                          <span className="font-mono text-[10px] text-slate-500">
+                        <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
+                          <span className="font-mono text-xs text-slate-500">
                             #{it.id}
                           </span>
                           {it.brandName ? (
                             <span className="truncate">{it.brandName}</span>
                           ) : null}
-                          <span className="uppercase text-[10px] text-slate-500">
+                          <span className="uppercase text-xs text-slate-500">
                             [{it.mode}]
                           </span>
                         </div>
-                        <div className="mt-0.5 text-[11px] text-slate-600">
+                        <div className="mt-1 text-xs text-slate-600">
                           {it.qty} × {peso(it.unitPrice)}
                           {it.mode === "retail" ? ` /${it.unitLabel}` : ""}
                         </div>
@@ -2233,7 +2236,7 @@ export default function KioskPage() {
                     </div>
 
                     {/* Controls */}
-                    <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="mt-3 flex items-center justify-between gap-2">
                       {/* qty controls */}
                       {it.isKg && it.mode === "retail" ? (
                         <div className="flex items-center gap-2">
@@ -2321,7 +2324,7 @@ export default function KioskPage() {
                             return c;
                           })
                         }
-                        className="ml-auto px-3 h-9 rounded-lg border border-red-100 bg-white text-sm text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                        className="ml-auto h-9 rounded-lg border border-rose-200 bg-white px-3 text-sm text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         aria-label="Remove line"
                       >
                         🗑
@@ -2432,12 +2435,12 @@ export default function KioskPage() {
       ) : null}
 
       {/* MOBILE BOTTOM BAR */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white">
         <div className="px-3 py-2 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setMobileCartOpen(true)}
-            className="flex-1 inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            className="flex-1 inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             title="View cart"
           >
             <span className="font-medium">View Cart</span>
