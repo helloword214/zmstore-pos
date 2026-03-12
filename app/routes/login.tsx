@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useNavigation, useOutlet } from "@remix-run/react";
 import { compare } from "bcryptjs";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
@@ -26,7 +26,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const pending = await getPendingLogin(request);
-  if (pending) {
+  const pathname = new URL(request.url).pathname;
+  const onBaseLoginRoute = pathname === "/login" || pathname === "/login/";
+  if (pending && onBaseLoginRoute) {
     throw redirect("/login/otp");
   }
 
@@ -133,9 +135,11 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function LoginPage() {
+  const outlet = useOutlet();
   const actionData = useActionData<ActionError>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  if (outlet) return outlet;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb] p-4">
