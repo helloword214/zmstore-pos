@@ -15,7 +15,6 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
-import { SoTPageHeader } from "~/components/ui/SoTPageHeader";
 import { TextInput } from "~/components/ui/TextInput";
 import { useCustomerSearch } from "~/hooks/useCustomerSearch";
 import { requireRole } from "~/utils/auth.server";
@@ -74,7 +73,19 @@ export const loader: LoaderFunction = async ({ request }) => {
       : me.role === "EMPLOYEE"
       ? "Rider Dashboard"
       : "Cashier Dashboard";
-  const [categories, rawProducts] = await Promise.all([
+  const [userRow, categories, rawProducts] = await Promise.all([
+    db.user.findUnique({
+      where: { id: me.userId },
+      include: {
+        employee: {
+          select: {
+            firstName: true,
+            lastName: true,
+            alias: true,
+          },
+        },
+      },
+    }),
     db.category.findMany({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -113,8 +124,17 @@ export const loader: LoaderFunction = async ({ request }) => {
     packingStock: p.packingStock == null ? 0 : Number(p.packingStock),
   }));
 
+  const employeeName = userRow?.employee
+    ? `${userRow.employee.firstName ?? ""} ${userRow.employee.lastName ?? ""}`.trim()
+    : "";
+  const alias = userRow?.employee?.alias?.trim() ?? "";
+  const assignedUser =
+    alias && employeeName
+      ? `${alias} (${employeeName})`
+      : alias || employeeName || userRow?.email || `User #${me.userId}`;
+
   return json(
-    { categories, products, backTo, backLabel },
+    { categories, products, backTo, backLabel, assignedUser, assignedRole: me.role },
     { headers: { "Cache-Control": "no-store" } },
   );
 };
@@ -164,8 +184,14 @@ function catIcon(name?: string | null): string {
 // Component
 // ─────────────────────────────────────────────────────────────
 export default function KioskPage() {
-  const { categories, products, backTo, backLabel } =
-    useLoaderData<typeof loader>();
+  const {
+    categories,
+    products,
+    backTo,
+    backLabel,
+    assignedUser,
+    assignedRole,
+  } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
   // Local alias for the product item type coming from the loader
@@ -938,47 +964,34 @@ export default function KioskPage() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Order Pad Workspace"
-        subtitle="Build pickup or delivery orders from one live catalog."
+        subtitle={`Build pickup or delivery orders from one live catalog. Assigned: ${assignedUser} (${assignedRole})`}
         backTo={backTo}
         backLabel={backLabel}
         maxWidthClassName="max-w-[1760px]"
       />
-      <SoTPageHeader
-        className="border-b border-slate-200 bg-white/80 backdrop-blur"
-        maxWidthClassName="max-w-[1760px]"
-        title="Terminal OP-01"
-        subtitle={
-          <span className="inline-flex items-center gap-2 text-xs text-slate-500">
-            <span>Authorized roles: CASHIER, STORE_MANAGER, EMPLOYEE</span>
-            <span aria-hidden="true" className="text-slate-300">
-              •
-            </span>
-            <span className="tabular-nums text-slate-700" aria-label="clock">
-              {clock}
-            </span>
+      <section className="border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-[1760px] flex-wrap items-center justify-end gap-2 px-5 py-3">
+          <span className="text-xs tabular-nums text-slate-600" aria-label="clock">
+            {clock}
           </span>
-        }
-        actions={
-          <>
-            <SoTButton
-              type="button"
-              variant="secondary"
-              onClick={resetOrderPadState}
-              title="Start a fresh cart"
-            >
-              New Order
+          <SoTButton
+            type="button"
+            variant="secondary"
+            onClick={resetOrderPadState}
+            title="Start a fresh cart"
+          >
+            New Order
+          </SoTButton>
+          <SoTButton type="button" variant="danger" onClick={clearCart}>
+            Clear Cart
+          </SoTButton>
+          <Form method="post" action="/logout">
+            <SoTButton type="submit" variant="secondary" title="Sign out">
+              Logout
             </SoTButton>
-            <SoTButton type="button" variant="danger" onClick={clearCart}>
-              Clear Cart
-            </SoTButton>
-            <Form method="post" action="/logout">
-              <SoTButton type="submit" variant="secondary" title="Sign out">
-                Logout
-              </SoTButton>
-            </Form>
-          </>
-        }
-      />
+          </Form>
+        </div>
+      </section>
       <div className="mx-auto w-full max-w-[1760px] grid grid-cols-1 items-start gap-4 overflow-x-hidden p-0 pb-20 md:grid-cols-[240px_minmax(0,1fr)_380px] md:p-4 md:pb-4">
 
       {/* Top controls (mobile only): chips + search */}
