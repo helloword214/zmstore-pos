@@ -10,6 +10,12 @@ import {
 import * as React from "react";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTPageHeader } from "~/components/ui/SoTPageHeader";
 import { TextInput } from "~/components/ui/TextInput";
 import { useCustomerSearch } from "~/hooks/useCustomerSearch";
 import { requireRole } from "~/utils/auth.server";
@@ -912,53 +918,51 @@ export default function KioskPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb] text-slate-900 mx-auto  p-0 md:p-4 grid gap-4 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_380px] items-start overflow-x-hidden">
-      {/* HEADER */}
-      <header className="md:col-span-3 sticky top-0 z-10 -mx-0 -mt-0 bg-white/85 backdrop-blur border-b border-slate-200">
-        <div className="h-14 mx-auto px-4 flex items-center justify-between">
-          <div className="text-sm leading-tight">
-            <div className="font-semibold tracking-tight text-slate-900">
-              Zaldy Merchandise
-            </div>
-            <div className="text-xs text-gray-600">Order Pad: OP-01</div>
-          </div>
-          <div
-            className="text-sm tabular-nums text-slate-700"
-            aria-label="clock"
-          >
-            {clock}
-          </div>
-          <div className="flex gap-2">
-            {/* New Order resets cart + search + filters */}
-            <button
-              onClick={() => {
-                resetOrderPadState();
-              }}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+    <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
+      <SoTNonDashboardHeader
+        title="Order Pad Workspace"
+        subtitle="Build pickup or delivery orders from one live catalog."
+        backTo="/cashier"
+        backLabel="Cashier"
+        maxWidthClassName="max-w-[1760px]"
+      />
+      <SoTPageHeader
+        className="border-b border-slate-200 bg-white/80 backdrop-blur"
+        maxWidthClassName="max-w-[1760px]"
+        title="Terminal OP-01"
+        subtitle={
+          <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+            <span>Authorized roles: CASHIER, STORE_MANAGER, EMPLOYEE</span>
+            <span aria-hidden="true" className="text-slate-300">
+              •
+            </span>
+            <span className="tabular-nums text-slate-700" aria-label="clock">
+              {clock}
+            </span>
+          </span>
+        }
+        actions={
+          <>
+            <SoTButton
+              type="button"
+              variant="secondary"
+              onClick={resetOrderPadState}
               title="Start a fresh cart"
             >
               New Order
-            </button>
-            {/* Clear now only clears cart (keeps filters/search) */}
-            <button
-              onClick={clearCart}
-              className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              Clear
-            </button>
-            {/* Logout */}
+            </SoTButton>
+            <SoTButton type="button" variant="danger" onClick={clearCart}>
+              Clear Cart
+            </SoTButton>
             <Form method="post" action="/logout">
-              <button
-                type="submit"
-                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                title="Sign out"
-              >
+              <SoTButton type="submit" variant="secondary" title="Sign out">
                 Logout
-              </button>
+              </SoTButton>
             </Form>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
+      <div className="mx-auto w-full max-w-[1760px] grid grid-cols-1 items-start gap-4 overflow-x-hidden p-0 pb-20 md:grid-cols-[240px_minmax(0,1fr)_380px] md:p-4 md:pb-4">
 
       {/* Top controls (mobile only): chips + search */}
       <div className="md:hidden flex flex-col gap-3 px-4">
@@ -1037,37 +1041,42 @@ export default function KioskPage() {
       </div>
 
       {/* LEFT: Sticky category sidebar (tablet/desktop) */}
-      <aside className="hidden md:block border border-slate-200 rounded-2xl p-3 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-auto bg-white shadow-sm">
-        <div className="font-semibold mb-2 text-slate-800">Categories</div>
-        <div className="flex flex-col gap-2">
-          <button
-            className={`px-3 py-2 rounded-xl text-sm text-left border ${
-              activeCat === ""
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
-            onClick={() => setActiveCat("")}
-          >
-            All
-          </button>
-          {categories.map((c: CategoryItem) => (
+      <aside className="hidden md:block sticky top-4 self-start">
+        <SoTCard className="max-h-[calc(100vh-7rem)] overflow-auto p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Categories
+          </div>
+          <div className="flex flex-col gap-2">
             <button
-              key={c.id}
-              className={`px-3 py-2 rounded-xl text-sm text-left border ${
-                activeCat === c.id
-                  ? "bg-indigo-600 text-white border-indigo-600"
+              className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                activeCat === ""
+                  ? "border-indigo-600 bg-indigo-600 text-white"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
-              onClick={() => setActiveCat(c.id)}
+              onClick={() => setActiveCat("")}
             >
-              {c.name}
+              All
             </button>
-          ))}
-        </div>
+            {categories.map((c: CategoryItem) => (
+              <button
+                key={c.id}
+                className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                  activeCat === c.id
+                    ? "border-indigo-600 bg-indigo-600 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
+                onClick={() => setActiveCat(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </SoTCard>
       </aside>
 
       {/* Product grid */}
-      <section className="border border-slate-200 rounded-2xl p-3 md:p-4 bg-white overflow-hidden shadow-sm">
+      <section>
+        <SoTCard className="overflow-hidden p-3 md:p-4">
         {/* Search (tablet/desktop) */}
         <div className="hidden md:flex gap-2 mb-3 items-end">
           <div className="flex-1">
@@ -1472,10 +1481,12 @@ export default function KioskPage() {
             ) : null}
           </div>
         )}
+        </SoTCard>
       </section>
 
       {/* Cart panel */}
-      <aside className="hidden md:block sticky top-3 h-fit rounded-2xl bg-white/95 backdrop-blur border border-slate-200 shadow-sm">
+      <aside className="hidden md:block sticky top-4 self-start">
+        <SoTCard className="h-fit overflow-hidden bg-white/95 p-0 backdrop-blur">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <h2 className="font-semibold text-slate-900 tracking-tight flex items-center gap-2">
@@ -1670,31 +1681,32 @@ export default function KioskPage() {
 
                 {/* Input (shared hook) */}
                 <div className="flex gap-2">
-                  <input
-                    value={
-                      selectedCustomer
-                        ? `${selectedCustomer.firstName}${
-                            selectedCustomer.middleName
-                              ? " " + selectedCustomer.middleName
-                              : ""
-                          } ${selectedCustomer.lastName}${
-                            selectedCustomer.phone
-                              ? " • " + selectedCustomer.phone
-                              : ""
-                          }`
-                        : custQ
-                    }
-                    onChange={(e) => {
-                      setSelectedCustomer(null);
-                      setCustomerId(null);
-                      setDeliveryAddressId(null);
-                      setCustQ(e.target.value);
-                      setCustOpen(Boolean(e.target.value.trim()));
-                    }}
-                    onFocus={() => custQ.trim() && setCustOpen(true)}
-                    placeholder="09xx… / name / alias"
-                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  />
+                  <div className="flex-1">
+                    <SoTInput
+                      value={
+                        selectedCustomer
+                          ? `${selectedCustomer.firstName}${
+                              selectedCustomer.middleName
+                                ? " " + selectedCustomer.middleName
+                                : ""
+                            } ${selectedCustomer.lastName}${
+                              selectedCustomer.phone
+                                ? " • " + selectedCustomer.phone
+                                : ""
+                            }`
+                          : custQ
+                      }
+                      onChange={(e) => {
+                        setSelectedCustomer(null);
+                        setCustomerId(null);
+                        setDeliveryAddressId(null);
+                        setCustQ(e.target.value);
+                        setCustOpen(Boolean(e.target.value.trim()));
+                      }}
+                      onFocus={() => custQ.trim() && setCustOpen(true)}
+                      placeholder="09xx… / name / alias"
+                    />
+                  </div>
                   {selectedCustomer ? (
                     <button
                       type="button"
@@ -1822,72 +1834,65 @@ export default function KioskPage() {
 
               {channel === "DELIVERY" && (
                 <div className="mt-3 grid grid-cols-1 gap-2">
-                  <label className="block text-xs text-slate-600">
-                    Deliver To (name — full address) *
-                    <input
-                      value={deliverTo}
-                      onChange={(e) => setDeliverTo(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                      placeholder="Juan Dela Cruz — #123 Purok 1, Brgy. Sample, City"
+                  <SoTInput
+                    label="Deliver To (name — full address) *"
+                    value={deliverTo}
+                    onChange={(e) => setDeliverTo(e.target.value)}
+                    placeholder="Juan Dela Cruz — #123 Purok 1, Brgy. Sample, City"
+                  />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <SoTInput
+                      label="Phone (optional)"
+                      value={deliverPhone}
+                      onChange={(e) => setDeliverPhone(e.target.value)}
+                      placeholder="09xx xxx xxxx"
                     />
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block text-xs text-slate-600">
-                      Phone (optional)
-                      <input
-                        value={deliverPhone}
-                        onChange={(e) => setDeliverPhone(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        placeholder="09xx xxx xxxx"
-                      />
-                    </label>
-                    <label className="block text-xs text-slate-600">
-                      Landmark (optional)
-                      <input
-                        value={deliverLandmark}
-                        onChange={(e) => setDeliverLandmark(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        placeholder="Near barangay hall"
-                      />
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block text-xs text-slate-600">
-                      Latitude (optional)
-                      <input
-                        value={deliverGeoLat}
-                        onChange={(e) => setDeliverGeoLat(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        placeholder="14.5995"
-                        inputMode="decimal"
-                      />
-                    </label>
-                    <label className="block text-xs text-slate-600">
-                      Longitude (optional)
-                      <input
-                        value={deliverGeoLng}
-                        onChange={(e) => setDeliverGeoLng(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        placeholder="120.9842"
-                        inputMode="decimal"
-                      />
-                    </label>
-                  </div>
-                  <label className="block text-xs text-slate-600">
-                    Photo URL (optional)
-                    <input
-                      value={deliverPhotoUrl}
-                      onChange={(e) => setDeliverPhotoUrl(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                      placeholder="https://…"
+                    <SoTInput
+                      label="Landmark (optional)"
+                      value={deliverLandmark}
+                      onChange={(e) => setDeliverLandmark(e.target.value)}
+                      placeholder="Near barangay hall"
                     />
-                  </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <SoTInput
+                      label="Latitude (optional)"
+                      value={deliverGeoLat}
+                      onChange={(e) => setDeliverGeoLat(e.target.value)}
+                      placeholder="14.5995"
+                      inputMode="decimal"
+                    />
+                    <SoTInput
+                      label="Longitude (optional)"
+                      value={deliverGeoLng}
+                      onChange={(e) => setDeliverGeoLng(e.target.value)}
+                      placeholder="120.9842"
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <SoTInput
+                    label="Photo URL (optional)"
+                    value={deliverPhotoUrl}
+                    onChange={(e) => setDeliverPhotoUrl(e.target.value)}
+                    placeholder="https://..."
+                  />
                   <div className="text-[11px] text-slate-500">
                     If you set either latitude or longitude, set both (server
                     validates).
                   </div>
                 </div>
               )}
+
+              <div className="mt-3">
+                <SoTAlert
+                  tone={channel === "DELIVERY" ? "info" : "warning"}
+                  title="Print Artifact"
+                >
+                  {channel === "DELIVERY"
+                    ? "Delivery orders print an Order Ticket for rider handoff and map routing."
+                    : "Pickup orders print an Order Slip for cashier order reference."}
+                </SoTAlert>
+              </div>
             </div>
 
             {/* Actions */}
@@ -1980,6 +1985,7 @@ export default function KioskPage() {
             </div>
           </>
         )}
+        </SoTCard>
       </aside>
 
       {/* FOOTER */}
@@ -1987,6 +1993,7 @@ export default function KioskPage() {
         Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust qty •
         Low stock badge legend coming next • v0.1
       </footer>
+      </div>
 
       {/* CAMERA SCANNER */}
       {scanOpen ? (
