@@ -867,7 +867,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json(
         {
           ok: false,
-          error: "Enter cash > 0. For full utang, use “Record as Credit”.",
+          error: "Enter cash > 0. For utang/kulang, send clearance first.",
         },
         { status: 400 },
       );
@@ -1115,8 +1115,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (printReceipt) {
       // Centralized print route:
       // - Fully paid (PAID + receiptNo) => OFFICIAL RECEIPT
-      // - Partial payment (PARTIALLY_PAID / isOnCredit) => ACK mode
-      // - Full credit (no payment) is handled by /orders/:id/credit flow, not here
+      // - Partial/open-balance outcomes => acknowledgment mode in /orders/:id/receipt
       const qs = new URLSearchParams({
         autoprint: "1",
         autoback: "1",
@@ -1538,30 +1537,9 @@ export default function CashierOrder() {
                 <h3 className="text-sm font-medium tracking-wide text-slate-800">
                   Payment
                 </h3>
-                {hasCustomer ? (
-                  <a
-                    href={`/orders/${order.id}/credit?returnTo=/cashier/${order.id}`}
-                    className={`text-xs ${
-                      waitingManagerDecision || hasClearanceCase
-                        ? "pointer-events-none text-slate-400"
-                        : "text-indigo-600 hover:underline"
-                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
-                    title={
-                      hasClearanceCase
-                        ? "Disabled while this order is under clearance flow."
-                        : "Record this as full utang / credit without taking payment"
-                    }
-                  >
-                    Record as Credit
-                  </a>
-                ) : (
-                  <span
-                    className="text-xs text-slate-400"
-                    title="Attach a customer first to allow utang/credit."
-                  >
-                    Record as Credit
-                  </span>
-                )}
+                <span className="text-xs text-slate-500">
+                  Use clearance for utang/kulang requests.
+                </span>
               </div>
 
               <section className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">

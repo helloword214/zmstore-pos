@@ -187,16 +187,14 @@ Authority note:
 
 Target route authority to be enforced by follow-up code patch:
 
-1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/ack`:
+1. `/orders/:id/slip`, `/orders/:id/ticket`, `/orders/:id/receipt`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
    - never public
 2. `/orders/new`:
    - allowed: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
    - denied: `ADMIN`
-3. `/orders/:id/credit`:
-   - retained legacy route; secured (not public)
-   - operational roles only
+3. Retired legacy routes `/orders/:id/ack` and `/orders/:id/credit` must not be reintroduced.
 4. Admin control-plane mutations remain admin-only:
    - `/products*`
    - `/resources/creation/upsert`
@@ -204,6 +202,22 @@ Target route authority to be enforced by follow-up code patch:
    - `/target/check`
    - `/indication/check`
    - `/api/customers/create`
+
+## 5c) Legacy Receipt Route Retirement (Applied 2026-03-12)
+
+Legacy non-canonical route chain was removed from code:
+
+1. `app/routes/remit-summary.$id.tsx`
+2. `app/routes/remit-receipt.$id.tsx`
+3. `app/routes/receipts._index.tsx`
+4. `app/routes/orders.$id.ack.tsx`
+5. `app/routes/orders.$id.credit.tsx`
+
+Diagram authority remains unchanged:
+
+1. Cashier print/payment proof path uses `orders.$id.receipt.tsx` from active cashier posting lanes.
+2. AR proof printing remains in `ar.customers.$id.tsx`.
+3. No new node/hand-off was introduced by this cleanup.
 
 ## 6) Cashier Shift Audit Path (Current)
 

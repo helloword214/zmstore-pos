@@ -160,7 +160,7 @@ Allowed roles:
 
 1. `/orders/:id/slip`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
 2. `/orders/:id/ticket`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
-3. `/orders/:id/ack`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
+3. `/orders/:id/receipt`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
 4. `/orders/new`: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`
 
 Hard rules:
@@ -186,21 +186,17 @@ Hard rules:
 1. These are control-plane setup endpoints.
 2. `CASHIER`, `STORE_MANAGER`, and `EMPLOYEE` are not allowed.
 
-### I) Legacy Credit Release Route (`/orders/:id/credit`) Policy
+### I) Retired Legacy Order Settlement Routes
 
-Route is retained for now (legacy/low-usage), but must be secured.
+The following routes are retired from active code as of 2026-03-12:
 
-Access target:
+1. `/orders/:id/ack`
+2. `/orders/:id/credit`
 
-1. Not public.
-2. Operational roles only: `CASHIER`, `STORE_MANAGER`, `EMPLOYEE`.
-3. `ADMIN` not allowed.
+Replacement authority:
 
-Release-with-balance approval target:
-
-1. Manager PIN verification must be server-side against `STORE_MANAGER` account.
-2. Free-text approver name alone is not approval authority.
-3. Approval audit must capture `approvedByUserId`, `approvedAt`, and actor snapshot fields.
+1. Order print/acknowledgment path is `/orders/:id/receipt`.
+2. Utang/kulang workflow stays in cashier clearance path (`cashier.$id.tsx` -> manager clearance routes).
 
 ## Employee Role Lifecycle (Binding)
 

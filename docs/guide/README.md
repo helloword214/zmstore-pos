@@ -26,15 +26,18 @@ Use these as source of truth for implementation and review:
 Security hardening lookup note (2026-03-12):
 
 1. Route access targets are tracked in `CANONICAL_IDENTITY_ACCESS_FLOW.md` sections:
-   - `F) Operational Order Print + Create Routes (Security Hardening Target)`
-   - `G) Admin-Only Mutation Endpoints (Security Hardening Target)`
-   - `H) Legacy Credit Release Route (/orders/:id/credit) Policy`
+   - `G) Operational Order Print + Create Routes (Security Hardening Target)`
+   - `H) Admin-Only Mutation Endpoints (Security Hardening Target)`
+   - `I) Retired Legacy Order Settlement Routes`
 2. Flow-level security addendum is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section:
    - `Security Access Hardening Addendum (Approved 2026-03-12)`
 3. Diagram alignment note is in `DIAGRAMS_DELIVERY_CSS_AR.md` section:
    - `5b) Security Access Gate Addendum (Approved 2026-03-12)`
 4. Clearance pending counter alignment is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md`:
    - `Clearance pending counter alignment rule`
+5. Legacy receipt route retirement note is in:
+   - `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section `Legacy Route Retirement Addendum (Applied 2026-03-12)`
+   - `DIAGRAMS_DELIVERY_CSS_AR.md` section `5c) Legacy Receipt Route Retirement (Applied 2026-03-12)`
 
 Current route-level mapping coverage (canonical):
 
