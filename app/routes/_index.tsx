@@ -119,15 +119,23 @@ export default function AdminDashboardIndex() {
         identityLine="Creation-only hub for customer, rider, pricing, and product-option records."
         sticky
         actions={
-          <Form method="post" action="/logout">
-            <button
-              type="submit"
+          <>
+            <Link
+              to="/account/security"
               className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              title="Sign out"
             >
-              Logout
-            </button>
-          </Form>
+              Account
+            </Link>
+            <Form method="post" action="/logout">
+              <button
+                type="submit"
+                className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                title="Sign out"
+              >
+                Logout
+              </button>
+            </Form>
+          </>
         }
       />
 

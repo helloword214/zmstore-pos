@@ -136,7 +136,23 @@ Representative routes:
 3. `app/routes/forgot-password.tsx`
 4. `app/routes/reset-password.$token.tsx`
 
-### F) Operational Order Print + Create Routes (Security Hardening Target)
+### F) Account Security Self-Service Route
+
+Allowed audience:
+
+1. Authenticated users (`ADMIN`, `STORE_MANAGER`, `CASHIER`, `EMPLOYEE`).
+
+Representative route:
+
+1. `app/routes/account.security.tsx`
+
+Hard rules:
+
+1. Route is never public.
+2. Authenticated user may only mutate own account security data.
+3. Manager/cashier PIN mutation is restricted to `STORE_MANAGER` and `CASHIER`.
+
+### G) Operational Order Print + Create Routes (Security Hardening Target)
 
 Access policy approved on 2026-03-12 for follow-up code enforcement.
 
@@ -152,7 +168,7 @@ Hard rules:
 1. These routes are never public.
 2. `ADMIN` is not allowed in these operational routes.
 
-### G) Admin-Only Mutation Endpoints (Security Hardening Target)
+### H) Admin-Only Mutation Endpoints (Security Hardening Target)
 
 Allowed role: `ADMIN` only.
 
@@ -170,7 +186,7 @@ Hard rules:
 1. These are control-plane setup endpoints.
 2. `CASHIER`, `STORE_MANAGER`, and `EMPLOYEE` are not allowed.
 
-### H) Legacy Credit Release Route (`/orders/:id/credit`) Policy
+### I) Legacy Credit Release Route (`/orders/:id/credit`) Policy
 
 Route is retained for now (legacy/low-usage), but must be secured.
 
@@ -228,6 +244,20 @@ Release-with-balance approval target:
    - system sets `authState = PENDING_PASSWORD`
    - system sends set-password email link
    - user becomes `ACTIVE` auth state only after password is set
+
+## Authenticated Account Security (Binding)
+
+1. `/account/security` is the canonical authenticated self-service security route.
+2. Password change contract:
+   - requires current password verification
+   - new password must be confirmed and differ from current password
+   - success increments `authVersion`
+3. Dashboard reset-link send action may issue reset token to actor's own account email only.
+4. PIN contract for `STORE_MANAGER` and `CASHIER`:
+   - exactly 6 numeric digits
+   - update is authorized by current password or current PIN
+   - PIN is stored in `pinHash`
+5. `ADMIN` and rider-lane `EMPLOYEE` accounts do not use manager/cashier PIN mutation flow.
 
 ## Manager Identity Model (Binding)
 
@@ -313,15 +343,16 @@ Implemented in auth routes:
 
 1. `app/routes/login.tsx` now validates `email/password`, enforces login rate-limit checks, and issues OTP challenge for all roles.
 2. `app/routes/login.otp.tsx` verifies/resends email OTP before creating authenticated session.
-3. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
-4. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.
-5. `app/routes/creation.employees.tsx` is now the employee directory/manage surface (role switch, resend invite, activate/deactivate, compliance warnings).
-6. `app/routes/creation.employees_.$employeeId.edit.tsx` handles employee profile and compliance updates with document history preserved.
-7. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
-8. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
-9. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
-10. `app/routes/creation.opening-ar-batches.tsx` is admin staging only for high-volume opening balance receivable onboarding; manager approval remains required.
-11. `app/routes/store.clearance-opening-batches.tsx` is manager-only bulk decision lane for pending opening balance clearance rows.
+3. `app/routes/account.security.tsx` provides authenticated self-service password update, reset-link send, and manager/cashier PIN update controls.
+4. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
+5. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.
+6. `app/routes/creation.employees.tsx` is now the employee directory/manage surface (role switch, resend invite, activate/deactivate, compliance warnings).
+7. `app/routes/creation.employees_.$employeeId.edit.tsx` handles employee profile and compliance updates with document history preserved.
+8. Employee creation/edit routes capture one primary employee address and store both master references and snapshot text.
+9. `app/routes/creation.vehicles.tsx` captures OR/CR/plate/LTO expiry metadata for registration monitoring.
+10. Employee document policy is monitoring-only (non-blocking), with warning badges focused on `VALID_ID` and rider license signals.
+11. `app/routes/creation.opening-ar-batches.tsx` is admin staging only for high-volume opening balance receivable onboarding; manager approval remains required.
+12. `app/routes/store.clearance-opening-batches.tsx` is manager-only bulk decision lane for pending opening balance clearance rows.
 
 ## Cross-Doc Contract
 

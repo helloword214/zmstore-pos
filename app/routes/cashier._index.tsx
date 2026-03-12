@@ -194,6 +194,11 @@ export default function CashierDashboardPage() {
                 ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
                 : "On-duty"}
             </SoTStatusPill>
+            <Link to="/account/security">
+              <SoTButton title="Account security" variant="secondary">
+                Account
+              </SoTButton>
+            </Link>
             <Form method="post" action="/logout">
               <SoTButton title="Sign out" variant="secondary">
                 Logout
