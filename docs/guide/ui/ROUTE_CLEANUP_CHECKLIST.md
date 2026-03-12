@@ -2,7 +2,7 @@
 
 Status: ACTIVE  
 Owner: POS Platform  
-Last Updated: 2026-03-11
+Last Updated: 2026-03-12
 
 ## 1. Purpose
 
@@ -109,14 +109,17 @@ Business behavior changes are out of scope for this checklist.
 24. 2026-03-11 - current batch R (`codex/cleanup-runs-summary`)  
    Scope: `customers.new.tsx`, `customers.$id_.pricing.tsx`, `creation.riders.tsx`, `creation.areas.tsx`, `cashier.pos._index.tsx` route-level any/cast cleanup  
    Merge: pending (this branch)
-25. 2026-03-11 - current batch S (`codex/cleanup-runs-summary`)  
+25. 2026-03-12 - current batch S (`codex/cleanup-runs-summary`)  
    Scope: `rider._index.tsx`, `store.rider-charges.tsx` route-level any/cast cleanup  
+   Commit: `97d4b48`  
    Merge: pending (this branch)
-26. 2026-03-11 - current batch T (`codex/cleanup-runs-summary`)  
+26. 2026-03-12 - current batch T (`codex/cleanup-runs-summary`)  
    Scope: `orders.$id.credit.tsx`, `orders.$id.receipt.tsx`, `store.rider-ar.tsx`, `orders.$id.dispatch.tsx`, `ar.customers.$id_.statement.tsx` route-level any/cast cleanup (outside active-route checklist scope)  
+   Commit: `76c9928`  
    Merge: pending (this branch)
 27. 2026-03-12 - current batch U (`codex/cleanup-runs-summary`)  
    Scope: `resources.creation.upsert.ts`, `resources.creation.delete.ts` route-level any/cast cleanup (resource helper routes; outside active-route checklist scope)  
+   Commit: `d18a9de`  
    Merge: pending (this branch)
 
 ## 5. Route Checklist (Active Routes)

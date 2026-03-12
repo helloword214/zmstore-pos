@@ -89,8 +89,8 @@ Target: reduce repeated notes and duplicate instructional text first, before add
 1. Batch A (Completed): former P1 run staging + cashier/rider variance/charge routes are now `PARTIAL`.
 2. Batch B (P2 active): dispatch summary, AR index/ledger, shift pages, payroll, and density cleanup on newly hardened variance/charge routes.
 3. Batch C (P3): final conformance polish on already aligned pages.
-4. Batch D (Completed, outside active baseline): non-active order/rider support routes (`orders.$id.credit.tsx`, `orders.$id.receipt.tsx`, `store.rider-ar.tsx`, `orders.$id.dispatch.tsx`, `ar.customers.$id_.statement.tsx`) removed route-level `any` bypass and legacy `as any` casts without behavior changes.
-5. Batch E (Completed, outside active baseline): resource helper routes (`resources.creation.upsert.ts`, `resources.creation.delete.ts`) removed route-level `any` bypass and switched delete/upsert error handling to `unknown`-safe extraction without behavior changes.
+4. Batch D (Completed, outside active baseline): non-active order/rider support routes (`orders.$id.credit.tsx`, `orders.$id.receipt.tsx`, `store.rider-ar.tsx`, `orders.$id.dispatch.tsx`, `ar.customers.$id_.statement.tsx`) removed route-level `any` bypass and legacy `as any` casts without behavior changes (`76c9928`).
+5. Batch E (Completed, outside active baseline): resource helper routes (`resources.creation.upsert.ts`, `resources.creation.delete.ts`) removed route-level `any` bypass and switched delete/upsert error handling to `unknown`-safe extraction without behavior changes (`d18a9de`).
 
 ## 6. UX Gap Checklist (Per Route Update)
 
