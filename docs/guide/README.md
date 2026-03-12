@@ -79,12 +79,13 @@ Current route-level mapping coverage (canonical):
 39. `login.otp.tsx`
 40. `forgot-password.tsx`
 41. `reset-password.$token.tsx`
-42. `products._index.tsx`
-43. `products.new.tsx`
-44. `products.$productId.tsx`
-45. `products.$productId.edit.tsx`
-46. `creation.opening-ar-batches.tsx`
-47. `store.clearance-opening-batches.tsx`
+42. `account.security.tsx`
+43. `products._index.tsx`
+44. `products.new.tsx`
+45. `products.$productId.tsx`
+46. `products.$productId.edit.tsx`
+47. `creation.opening-ar-batches.tsx`
+48. `store.clearance-opening-batches.tsx`
 
 Identity operations note:
 
@@ -94,18 +95,19 @@ Identity operations note:
 4. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
 5. `login.tsx` + `login.otp.tsx` are the canonical two-step sign-in routes (password then email OTP) for all roles.
 6. Login brute-force protection is canonical in auth flow (`email` + `IP` rate-limit state, temporary lock window, OTP attempt/send limits).
-7. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
-8. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
-9. Employee account creation captures one primary address using canonical address masters.
-10. Employee creation/edit captures optional profile compliance fields plus document history (`VALID_ID`, `DRIVER_LICENSE_SCAN`, `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `OTHER`).
-11. Employee compliance remains monitoring-only in current phase; warnings focus on `VALID_ID` and rider license signals, while HR docs remain optional records.
-12. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
-13. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
-14. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
-15. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
-16. Opening balance receivable onboarding uses admin staging (`creation.opening-ar-batches.tsx`) and manager-only bulk decision lane (`store.clearance-opening-batches.tsx`).
-17. Admin entry is in dashboard creation shortcuts; encode supports customer picker flow and bulk `customerRef` rows (`customerId` or phone).
-18. Opening balance batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
+7. `account.security.tsx` is the canonical authenticated self-service route for password update, reset-link send, and manager/cashier PIN update.
+8. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
+9. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
+10. Employee account creation captures one primary address using canonical address masters.
+11. Employee creation/edit captures optional profile compliance fields plus document history (`VALID_ID`, `DRIVER_LICENSE_SCAN`, `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `OTHER`).
+12. Employee compliance remains monitoring-only in current phase; warnings focus on `VALID_ID` and rider license signals, while HR docs remain optional records.
+13. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
+14. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
+15. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
+16. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
+17. Opening balance receivable onboarding uses admin staging (`creation.opening-ar-batches.tsx`) and manager-only bulk decision lane (`store.clearance-opening-batches.tsx`).
+18. Admin entry is in dashboard creation shortcuts; encode supports customer picker flow and bulk `customerRef` rows (`customerId` or phone).
+19. Opening balance batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
 
 ## B. Supporting (Context / Detailed Rationale)
 

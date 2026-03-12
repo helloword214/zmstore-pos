@@ -333,6 +333,11 @@ export default function StoreManagerDashboard() {
                 },
               ]}
             />
+            <Link to="/account/security">
+              <Button variant="tertiary" title="Account security">
+                Account
+              </Button>
+            </Link>
             <Form method="post" action="/logout">
               <Button variant="tertiary" title="Sign out">
                 Logout

@@ -134,6 +134,11 @@ export default function RiderDashboard() {
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <SoTStatusPill tone="success">On-duty</SoTStatusPill>
+            <Link to="/account/security">
+              <SoTButton type="button" variant="secondary">
+                Account
+              </SoTButton>
+            </Link>
             <form method="post" action="/logout">
               <SoTButton type="submit" variant="secondary">
                 Logout
