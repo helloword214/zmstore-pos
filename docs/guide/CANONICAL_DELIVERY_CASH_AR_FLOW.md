@@ -102,6 +102,12 @@ Role label interpretation rule:
 
 1. `Manager` in this table means `STORE_MANAGER` only (not `ADMIN`).
 
+Clearance pending counter alignment rule:
+
+1. Manager dashboard "Clearance pending decisions" count must use the same SoT as inbox list: `clearanceCase.status = NEEDS_CLEARANCE`.
+2. Dashboard pending counter for `/store/clearance` includes only linked operational cases (`orderId` or `runReceiptId`).
+3. Opening-balance pending rows are tracked and processed in `/store/clearance-opening-batches`, not in the main clearance pending counter.
+
 ## Route SoT Guardrails
 
 | Route file | Must never do |

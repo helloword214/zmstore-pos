@@ -2,6 +2,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
+import { ClearanceCaseStatus } from "@prisma/client";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -50,7 +51,7 @@ type LoaderData = {
     cashierShiftVariancesOpen: number; // OPEN
     payrollRiderAR: number; // tagged charges
     payrollCashierAR: number; // tagged charges
-    clearancePending: number; // Phase 1: CHECKED_IN receipts w/ credit signal
+    clearancePending: number; // SoT: pending manager inbox workload
   };
 };
 
@@ -171,20 +172,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     }),
 
-    // CCS Phase 1 (badge): best-effort "needs clearance" signal.
-    // We don’t have CCS decision records yet, so we surface obvious credit cases:
-    // - cashCollected <= 0, OR
-    // - receipt.note contains '"isCredit":true'
-    // NOTE: Partial payments with positive cash but still with balance may not be counted yet
-    // (we'll fix once CCS schema exists).
-    db.runReceipt.count({
+    // Manager inbox badge source-of-truth:
+    // pending commercial cases only (same anchor as /store/clearance list).
+    // Excludes opening-balance rows (those are shown in opening-batches lane).
+    db.clearanceCase.count({
       where: {
-        run: { status: "CHECKED_IN" },
-        kind: { in: ["ROAD", "PARENT"] },
+        status: ClearanceCaseStatus.NEEDS_CLEARANCE,
         OR: [
-          { cashCollected: { lte: 0 } },
-          { note: { contains: '"isCredit":true' } },
-          { note: { contains: '"isCredit": true' } },
+          { orderId: { not: null } },
+          { runReceiptId: { not: null } },
         ],
       },
     }),
