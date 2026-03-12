@@ -15,7 +15,6 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
-import { TextInput } from "~/components/ui/TextInput";
 import { useCustomerSearch } from "~/hooks/useCustomerSearch";
 import { requireRole } from "~/utils/auth.server";
 
@@ -992,21 +991,22 @@ export default function KioskPage() {
           </Form>
         </div>
       </section>
-      <div className="mx-auto w-full max-w-[1760px] grid grid-cols-1 items-start gap-4 overflow-x-hidden p-0 pb-20 md:grid-cols-[240px_minmax(0,1fr)_380px] md:p-4 md:pb-4">
+      <div className="mx-auto grid w-full max-w-[1760px] grid-cols-1 items-start gap-5 overflow-x-hidden px-4 pb-24 pt-5 md:grid-cols-[260px_minmax(0,1fr)_390px] md:px-5 md:pb-5 md:pt-5">
 
       {/* Top controls (mobile only): chips + search */}
-      <div className="md:hidden flex flex-col gap-3 px-4">
-        {/* Compact scrollable pill bar with smart fades */}
-        <div className="relative">
+      <div className="md:hidden">
+        <SoTCard className="space-y-3 p-3">
+          {/* Compact scrollable pill bar with smart fades */}
+          <div className="relative">
           {/* left fade (hidden at start) */}
           <div
-            className={`pointer-events-none absolute left-0 top-0 h-full w-6 bg-gradient-to-r from-[#f7f7fb] to-transparent transition-opacity ${
+            className={`pointer-events-none absolute left-0 top-0 h-full w-6 bg-gradient-to-r from-white to-transparent transition-opacity ${
               catFadeL ? "opacity-100" : "opacity-0"
             }`}
           />
           {/* right fade (hidden at end) */}
           <div
-            className={`pointer-events-none absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-[#f7f7fb] to-transparent transition-opacity ${
+            className={`pointer-events-none absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-white to-transparent transition-opacity ${
               catFadeR ? "opacity-100" : "opacity-0"
             }`}
           />
@@ -1048,26 +1048,27 @@ export default function KioskPage() {
               );
             })}
           </div>
-        </div>
+          </div>
 
-        <div className="flex gap-2">
-          <input
-            ref={searchRef}
-            name="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search products…"
-            className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-          />
-          <button
-            type="button"
-            onClick={openScannerMobile}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            title="Scan barcode"
-          >
-            📷
-          </button>
-        </div>
+          <div className="flex gap-2">
+            <input
+              ref={searchRef}
+              name="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search products..."
+              className="h-9 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+            />
+            <SoTButton
+              type="button"
+              variant="secondary"
+              onClick={openScannerMobile}
+              title="Scan barcode"
+            >
+              Scan
+            </SoTButton>
+          </div>
+        </SoTCard>
       </div>
 
       {/* LEFT: Sticky category sidebar (tablet/desktop) */}
@@ -1106,17 +1107,16 @@ export default function KioskPage() {
 
       {/* Product grid */}
       <section>
-        <SoTCard className="overflow-hidden p-3 md:p-4">
+        <SoTCard className="space-y-3 overflow-hidden p-4">
         {/* Search (tablet/desktop) */}
-        <div className="hidden md:flex gap-2 mb-3 items-end">
+        <div className="hidden md:flex items-end gap-2">
           <div className="flex-1">
-            <TextInput
+            <SoTInput
               label="Search"
               name="search"
-              placeholder="🔍 Search products…"
+              placeholder="Search products..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white shadow-sm focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
             />
           </div>
           <div className="w-56">
@@ -1142,7 +1142,7 @@ export default function KioskPage() {
           <div
             id="product-scroll"
             className="overflow-y-auto pr-1"
-            style={{ maxHeight: "calc(100vh - 14rem)" }}
+            style={{ maxHeight: "calc(100vh - 16rem)" }}
           >
             {/* Sticky list header INSIDE the scroller for proper separation */}
             <div className="sticky top-0 z-10 -mx-3 md:-mx-4 px-3 md:px-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
@@ -1515,7 +1515,7 @@ export default function KioskPage() {
       </section>
 
       {/* Cart panel */}
-      <aside className="hidden md:block sticky top-4 self-start">
+      <aside className="hidden md:block sticky top-5 self-start">
         <SoTCard className="h-fit overflow-hidden bg-white/95 p-0 backdrop-blur">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
@@ -1528,15 +1528,15 @@ export default function KioskPage() {
               {Object.keys(cart).length}
             </span>
           </h2>
-          <button
-            onClick={() => {
-              clearCart();
-            }}
-            className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+          <SoTButton
+            type="button"
+            variant="danger"
+            size="compact"
+            onClick={clearCart}
             disabled={items.length === 0}
           >
-            <span>Clear</span>
-          </button>
+            Clear
+          </SoTButton>
         </div>
 
         {items.length === 0 ? (
@@ -1992,8 +1992,10 @@ export default function KioskPage() {
                   />
                   <span>{printLabel}</span>
                 </label>
-                <button
-                  className="mt-2 w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                <SoTButton
+                  type="submit"
+                  variant="primary"
+                  className="mt-2 w-full"
                   disabled={
                     items.length === 0 ||
                     createSlip.state !== "idle" ||
@@ -2010,7 +2012,7 @@ export default function KioskPage() {
                     : printSlip
                     ? createAndPrintCta
                     : "Create Order"}
-                </button>
+                </SoTButton>
               </createSlip.Form>
             </div>
           </>
@@ -2019,9 +2021,11 @@ export default function KioskPage() {
       </aside>
 
       {/* FOOTER */}
-      <footer className="md:col-span-3 text-xs text-slate-600 border-t border-slate-200 pt-2 mt-2 px-4">
-        Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust qty •
-        Low stock badge legend coming next • v0.1
+      <footer className="md:col-span-3">
+        <SoTAlert tone="info">
+          Tips: <kbd>/</kbd> focus search • <kbd>+</kbd>/<kbd>−</kbd> adjust
+          qty • Use cart panel to switch pickup/delivery before create.
+        </SoTAlert>
       </footer>
       </div>
 
@@ -2100,12 +2104,13 @@ export default function KioskPage() {
               ) : null}
             </div>
             <div className="mt-4 flex justify-end">
-              <button
+              <SoTButton
+                type="button"
+                variant="secondary"
                 onClick={() => setJustCreated({ open: false })}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Done
-              </button>
+              </SoTButton>
             </div>
           </div>
         </div>
@@ -2146,12 +2151,13 @@ export default function KioskPage() {
               ))}
             </ul>
             <div className="mt-3 flex justify-end">
-              <button
+              <SoTButton
+                type="button"
+                variant="secondary"
                 onClick={() => setErrorOpen(false)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Close
-              </button>
+              </SoTButton>
             </div>
           </div>
         </div>
@@ -2182,14 +2188,14 @@ export default function KioskPage() {
               <h3 className="font-semibold text-slate-900">
                 Cart ({items.length})
               </h3>
-              <button
-                onClick={() => {
-                  clearCart();
-                }}
-                className="text-xs px-2 py-1 rounded-lg border border-red-100 text-red-600 bg-white hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              <SoTButton
+                type="button"
+                variant="danger"
+                size="compact"
+                onClick={clearCart}
               >
                 Clear
-              </button>
+              </SoTButton>
             </div>
 
             {/* Lines */}
@@ -2335,12 +2341,14 @@ export default function KioskPage() {
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
+                <SoTButton
+                  type="button"
+                  variant="secondary"
                   onClick={() => setMobileCartOpen(false)}
-                  className="rounded-xl border border-slate-300 bg-white text-sm text-slate-800 px-3 py-2 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  className="w-full"
                 >
                   Continue
-                </button>
+                </SoTButton>
                 <createSlip.Form
                   method="post"
                   action="/orders/new?respond=json"
@@ -2399,8 +2407,10 @@ export default function KioskPage() {
                       />
                     </>
                   )}
-                  <button
-                    className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  <SoTButton
+                    type="submit"
+                    variant="primary"
+                    className="w-full"
                     disabled={
                       items.length === 0 ||
                       createSlip.state !== "idle" ||
@@ -2413,7 +2423,7 @@ export default function KioskPage() {
                     }
                   >
                     {createSlip.state !== "idle" ? "Creating…" : "Create Order"}
-                  </button>
+                  </SoTButton>
                 </createSlip.Form>
               </div>
             </div>
@@ -2487,8 +2497,10 @@ export default function KioskPage() {
                 />
               </>
             )}
-            <button
-              className="w-full rounded-xl bg-indigo-600 text-white text-sm font-medium px-3 py-2 shadow-sm hover:bg-indigo-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            <SoTButton
+              type="submit"
+              variant="primary"
+              className="w-full"
               disabled={
                 items.length === 0 ||
                 createSlip.state !== "idle" ||
@@ -2501,7 +2513,7 @@ export default function KioskPage() {
               }
             >
               {createSlip.state !== "idle" ? "Creating…" : "Create"}
-            </button>
+            </SoTButton>
           </createSlip.Form>
         </div>
       </div>
