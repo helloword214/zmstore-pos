@@ -2,10 +2,21 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-12
+Last Reviewed: 2026-03-13
 
-This folder contains both binding rules and historical implementation notes.
-Use the sections below to avoid outdated references.
+This file is a router for `docs/guide`.
+It points readers to owner documents and must not become a secondary specification.
+
+Documentation architecture reference:
+
+1. `docs/Governance SOP/Documentation Architecture Standard.md`
+
+## 0. How To Use This Folder
+
+1. Start with the concern you are answering.
+2. Open the owner document for that concern first.
+3. Use diagram and supporting docs only after reading the owner doc.
+4. If two docs appear to define the same rule, prefer the owner doc listed here.
 
 ## A. Canonical (Binding)
 
@@ -18,106 +29,42 @@ Use these as source of truth for implementation and review:
 5. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
 6. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 7. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-8. `DIAGRAMS_DELIVERY_CSS_AR.md`
-9. `Accounts Receivable — Canonical Source of Truth (SoT)`
-10. `RIDER_SHORTAGE_WORKFLOW.md`
-11. `RunReceipt_Architecture.md`
+8. `Accounts Receivable — Canonical Source of Truth (SoT)`
+9. `RIDER_SHORTAGE_WORKFLOW.md`
+10. `RunReceipt_Architecture.md`
 
-Security hardening lookup note (2026-03-12):
+## B. Owner Doc Map
 
-1. Route access targets are tracked in `CANONICAL_IDENTITY_ACCESS_FLOW.md` sections:
-   - `G) Operational Order Print + Create Routes (Security Hardening Target)`
-   - `H) Admin-Only Mutation Endpoints (Security Hardening Target)`
-   - `I) Retired Legacy Order Settlement Routes`
-2. Flow-level security addendum is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section:
-   - `Security Access Hardening Addendum (Approved 2026-03-12)`
-3. Diagram alignment note is in `DIAGRAMS_DELIVERY_CSS_AR.md` section:
-   - `5b) Security Access Gate Addendum (Approved 2026-03-12)`
-4. Clearance pending counter alignment is in `CANONICAL_DELIVERY_CASH_AR_FLOW.md`:
-   - `Clearance pending counter alignment rule`
-5. Legacy receipt route retirement note is in:
-   - `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section `Legacy Route Retirement Addendum (Applied 2026-03-12)`
-   - `DIAGRAMS_DELIVERY_CSS_AR.md` section `5c) Legacy Receipt Route Retirement (Applied 2026-03-12)`
-6. Slip/ticket/receipt semantic boundary is in:
-   - `CANONICAL_DELIVERY_CASH_AR_FLOW.md` section `Print Artifact Boundaries (Binding)`
-   - `DIAGRAMS_DELIVERY_CSS_AR.md` section `5d) Slip vs Ticket vs Receipt Semantics (Binding)`
-7. Order creator audit anchors are in:
-   - `CANONICAL_ORDER_PRICING_SOT.md` (`createdById`, `createdByRole` SoT rule + checklist)
+Use this map to route by concern.
 
-Current route-level mapping coverage (canonical):
+| Concern | Owner document | Notes |
+| --- | --- | --- |
+| Role boundaries, route access, identity model | `CANONICAL_IDENTITY_ACCESS_FLOW.md` | Owner for role authority and access boundaries |
+| Upload/storage contract | `CANONICAL_UPLOAD_STORAGE_SOT.md` | Owner for file storage, keying, validation, lifecycle |
+| Order pricing freeze and creator audit anchors | `CANONICAL_ORDER_PRICING_SOT.md` | Owner for pricing freeze authority |
+| Product unit/pack/retail shape | `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` | Owner for product sell-shape and stock semantics |
+| End-to-end delivery -> cashier -> AR workflow | `CANONICAL_DELIVERY_CASH_AR_FLOW.md` | Owner for stage handoffs and route-stage mapping |
+| Cashier shift close, recount, variance, charge | `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` | Owner for cashier drawer accountability lifecycle |
+| Customer AR ledger and payment SoT | `Accounts Receivable — Canonical Source of Truth (SoT)` | Owner for AR ledger semantics |
+| Commercial clearance rules | `Commercial Clearance System V2` | Owner for clearance decision authority |
+| Rider shortage flow | `RIDER_SHORTAGE_WORKFLOW.md` | Owner for rider-accountability workflow |
+| Run receipt structure | `RunReceipt_Architecture.md` | Owner for run receipt architecture |
+| Flow visualization and handoff diagram | `DIAGRAMS_DELIVERY_CSS_AR.md` | Diagram only; use canonical docs for binding rules |
 
-1. `pad-order._index.tsx`
-2. `orders.new.tsx`
-3. `customers.$id_.pricing.tsx`
-4. `customers.$id_.pricing_.$ruleId.tsx`
-5. `store.dispatch.tsx`
-6. `runs.$id.dispatch.tsx`
-7. `runs.$id.summary.tsx`
-8. `runs.$id.rider-checkin.tsx`
-9. `store.clearance.tsx`
-10. `store.clearance_.$caseId.tsx`
-11. `runs.$id.remit.tsx`
-12. `cashier.delivery._index.tsx`
-13. `cashier.delivery.$runId.tsx`
-14. `delivery-remit.$id.tsx`
-15. `ar._index.tsx`
-16. `ar.customers.$id.tsx`
-17. `cashier.shift.tsx`
-18. `store.cashier-shifts.tsx`
-19. `store.cashier-variances.tsx`
-20. `cashier.charges.tsx`
-21. `store.cashier-ar.tsx`
-22. `store.payroll.tsx`
-23. `_index.tsx`
-24. `creation._index.tsx`
-25. `creation.employees.tsx`
-26. `creation.employees_.new.tsx`
-27. `creation.employees_.$employeeId.edit.tsx`
-28. `creation.riders.tsx`
-29. `creation.vehicles.tsx`
-30. `creation.areas.tsx`
-31. `creation.provinces.tsx`
-32. `customers._index.tsx`
-33. `customers.new.tsx`
-34. `customers.$id.tsx`
-35. `customers.$id_.edit.tsx`
-36. `customers.$id_.pricing.tsx`
-37. `customers.$id_.pricing_.$ruleId.tsx`
-38. `login.tsx`
-39. `login.otp.tsx`
-40. `forgot-password.tsx`
-41. `reset-password.$token.tsx`
-42. `account.security.tsx`
-43. `products._index.tsx`
-44. `products.new.tsx`
-45. `products.$productId.tsx`
-46. `products.$productId.edit.tsx`
-47. `creation.opening-ar-batches.tsx`
-48. `store.clearance-opening-batches.tsx`
+Quick lookup reminders:
 
-Identity operations note:
+1. security access targets and retired legacy order settlement routes -> `CANONICAL_IDENTITY_ACCESS_FLOW.md`
+2. clearance pending counter, legacy receipt-route retirement, and print artifact boundaries -> `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+3. cashier recount + paper reference + variance authority -> `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+4. creator audit anchors -> `CANONICAL_ORDER_PRICING_SOT.md`
 
-1. `creation.employees_.new.tsx` is the canonical admin surface for new employee account creation.
-2. `creation.employees.tsx` is the canonical employee directory/manage surface for normal `CASHIER <-> RIDER` role switching.
-3. `creation.employees_.$employeeId.edit.tsx` is the canonical profile/compliance update surface for existing employee accounts.
-4. `STORE_MANAGER` assignment/revocation remains a protected flow outside normal switching.
-5. `login.tsx` + `login.otp.tsx` are the canonical two-step sign-in routes (password then email OTP) for all roles.
-6. Login brute-force protection is canonical in auth flow (`email` + `IP` rate-limit state, temporary lock window, OTP attempt/send limits).
-7. `account.security.tsx` is the canonical authenticated self-service route for password update, reset-link send, and manager/cashier PIN update.
-8. `forgot-password.tsx` and `reset-password.$token.tsx` are the canonical self-service password recovery routes.
-9. Employee account creation is invite-based (`PENDING_PASSWORD` to `ACTIVE`) and requires email.
-10. Employee account creation captures one primary address using canonical address masters.
-11. Employee creation/edit captures optional profile compliance fields plus document history (`VALID_ID`, `DRIVER_LICENSE_SCAN`, `BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`, `PHOTO_2X2`, `RESUME`, `OTHER`).
-12. Employee compliance remains monitoring-only in current phase; warnings focus on `VALID_ID` and rider license signals, while HR docs remain optional records.
-13. Clearance docs (`BARANGAY_CLEARANCE`, `POLICE_CLEARANCE`, `NBI_CLEARANCE`) are hiring/reference records only and are stored without expiry tracking.
-14. Vehicle creation includes registration metadata (`plateNumber`, `orNumber`, `crNumber`, `ltoRegistrationExpiry`) for monitoring reminders.
-15. Customer address management supports optional location photos per address (`0..4` slots with optional caption), and uploads are non-blocking.
-16. Customer profile supports optional single profile photo upload from admin customer detail (`/customers/:id?ctx=admin`).
-17. Opening balance receivable onboarding uses admin staging (`creation.opening-ar-batches.tsx`) and manager-only bulk decision lane (`store.clearance-opening-batches.tsx`).
-18. Admin entry is in dashboard creation shortcuts; encode supports customer picker flow and bulk `customerRef` rows (`customerId` or phone).
-19. Opening balance batch processing defaults to approve-valid rows; invalid/manual exceptions are rejected without creating `customerAr` principal.
+## C. Diagrams / Visual Maps
 
-## B. Supporting (Context / Detailed Rationale)
+These visualize flow and route ownership but do not replace canonical owner docs.
+
+1. `DIAGRAMS_DELIVERY_CSS_AR.md`
+
+## D. Supporting (Context / Detailed Rationale)
 
 1. `ui/README.md`
 2. `ui/UI_SOT.md`
@@ -135,7 +82,6 @@ Identity operations note:
 14. `PRODUCTLIST_REFACTOR_DIRECTION.md`
 15. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
 16. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
-17. `WORKER_SCHEDULING_DUTY_SESSION_DRAFT.md`
 
 These help implementation but must not override Canonical docs.
 
@@ -145,12 +91,20 @@ Monitor/repair split rule:
 2. UI code edits belong to repair flow/runbook.
 3. Repeated route patterns should be extracted into SoT UI components first.
 
-## C. Deprecated or Plan-Only (Do Not Use as Authority)
+## E. Draft / Planned
+
+These preserve proposed direction but are not canonical authority.
+
+1. `WORKER_SCHEDULING_DUTY_SESSION_DRAFT.md`
+
+Use draft docs to preserve pending decisions, not to override canonical flows.
+
+## F. Deprecated or Plan-Only (Do Not Use as Authority)
 
 See `../archive/README.md` for the current deprecation list and superseding docs.
 Archived guide files now live under `../archive/guide/`.
 
-## D. Conflict Rule inside `docs/guide`
+## G. Conflict Rule inside `docs/guide`
 
 When two guide docs conflict, apply this order:
 
@@ -161,12 +115,17 @@ When two guide docs conflict, apply this order:
 5. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
 6. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 7. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-8. `DIAGRAMS_DELIVERY_CSS_AR.md`
-9. `Accounts Receivable — Canonical Source of Truth (SoT)`
-10. `RIDER_SHORTAGE_WORKFLOW.md`
-11. all other guide docs
+8. `Accounts Receivable — Canonical Source of Truth (SoT)`
+9. `RIDER_SHORTAGE_WORKFLOW.md`
+10. all other guide docs
 
-## E. Flow Change Sync Rule (Mandatory)
+Router reminder:
+
+1. When two docs conflict, prefer the owner document listed in section `B. Owner Doc Map`.
+2. Diagram and supporting docs must not win over canonical docs.
+3. Use diagram docs to understand handoff shape, not to override canonical rule text.
+
+## H. Flow Change Sync Rule (Mandatory)
 
 1. If code changes flow behavior, update the corresponding canonical guide docs in the same objective/PR.
 2. Minimum required docs for flow-affecting updates:

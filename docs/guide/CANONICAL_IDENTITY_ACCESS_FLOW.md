@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-12
+Last Reviewed: 2026-03-13
 
 ## Purpose
 
@@ -13,6 +13,34 @@ Defines canonical role authority boundaries for:
 3. operational/commercial authority ownership
 
 This document is the binding authority for role boundaries.
+
+## Owns
+
+This document owns:
+
+1. identity model boundaries between `User` and `Employee`
+2. role authority boundaries
+3. route-group access boundaries
+4. authenticated self-service identity/account-security boundaries
+5. account creation and employee profile/compliance authority boundaries
+
+## Does Not Own
+
+This document does not own:
+
+1. cashier shift lifecycle, recount, or variance close rules
+2. delivery -> cashier -> AR stage handoffs
+3. file-storage driver contracts and upload lifecycle behavior
+4. pricing freeze computation rules
+5. product sell-shape and stock semantics
+
+## Refer To
+
+1. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` for cashier shift lifecycle and recount authority
+2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md` for delivery/remit/cashier/AR stage flow
+3. `CANONICAL_UPLOAD_STORAGE_SOT.md` for file storage, upload validation, and object lifecycle rules
+4. `CANONICAL_ORDER_PRICING_SOT.md` for pricing freeze and creator-audit behavior
+5. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` for product stock/sell-shape behavior
 
 ## Core Identity Model
 
