@@ -72,6 +72,12 @@ export async function getProductInitialData(
 
   if (!product) return null;
 
+  const uniquePhotos = product.photos.filter((photo, index, list) => {
+    const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+    return firstIndex === index;
+  });
+  const coverPhoto = uniquePhotos[0] ?? null;
+
   return {
     id: product.id,
     name: product.name,
@@ -98,13 +104,8 @@ export async function getProductInitialData(
     locationName: product.location?.name ?? null,
     description: product.description,
     imageTag: product.imageTag,
-    imageUrl: product.imageUrl,
-    photoSlots: product.photos
-      .filter((photo, index, list) => {
-        const firstIndex = list.findIndex((item) => item.slot === photo.slot);
-        return firstIndex === index;
-      })
-      .map((photo) => ({
+    imageUrl: coverPhoto?.fileUrl ?? null,
+    photoSlots: uniquePhotos.map((photo) => ({
         slot: photo.slot,
         fileUrl: photo.fileUrl,
       })),

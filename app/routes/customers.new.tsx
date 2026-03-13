@@ -282,7 +282,6 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  const updatedAddressIds = new Set<number>();
   for (const upload of photoUploads) {
     const addressId = addressIdsByIndex.get(upload.addressIndex);
     if (!addressId) continue;
@@ -315,26 +314,9 @@ export async function action({ request }: ActionFunctionArgs) {
           uploadedAt: new Date(),
         },
       });
-      updatedAddressIds.add(addressId);
     } catch (error) {
       console.error("[customer-address-photo] create upload failed", error);
     }
-  }
-
-  for (const addressId of updatedAddressIds) {
-    const cover = await db.customerAddressPhoto.findFirst({
-      where: { customerAddressId: addressId },
-      orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
-      select: { fileUrl: true, fileKey: true },
-    });
-    await db.customerAddress.update({
-      where: { id: addressId },
-      data: {
-        photoUrl: cover?.fileUrl ?? null,
-        photoKey: cover?.fileKey ?? null,
-        photoUpdatedAt: cover ? new Date() : null,
-      },
-    });
   }
 
   return redirect(`/customers/${customerId}?ctx=admin`);

@@ -455,14 +455,6 @@ async function getOrCreateMap<T extends string>(
   return map;
 }
 
-async function getOrCreateGlobalTags() {
-  return Promise.all(
-    globalTags.map((name) =>
-      db.tag.upsert({ where: { name }, update: {}, create: { name } })
-    )
-  );
-}
-
 // ─────────────────────────────────────────
 // 3️⃣ Product Generator (Animal Feeds)
 // ─────────────────────────────────────────
@@ -472,7 +464,6 @@ async function makeFeedProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -497,7 +488,6 @@ async function makeFeedProducts({
     const packingUnitId = packingUnitMap["sack"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 2);
-    const selectedTags = pickRandom(tagList, 2);
     console.log("📌 indicationList is:", indicationList);
     console.log("📌 typeof:", typeof indicationList);
     console.log("📌 isArray?", Array.isArray(indicationList));
@@ -505,12 +495,6 @@ async function makeFeedProducts({
 
     if (!indicationList || indicationList.length === 0) {
       console.warn("⚠️ indicationList is empty for Feed Products!");
-    }
-
-    if (!Array.isArray(tagList)) {
-      throw new Error(
-        "❌ tagList is missing or not an array in makeFeedProducts"
-      );
     }
 
     products.push(
@@ -543,11 +527,6 @@ async function makeFeedProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -567,7 +546,6 @@ async function makeMedicineProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -594,14 +572,7 @@ async function makeMedicineProducts({
     const packingUnitId = packingUnitMap[i % 2 === 0 ? "bottle" : "vial"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 2);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    if (!Array.isArray(tagList)) {
-      throw new Error(
-        "❌ tagList is missing or not an array in makeMedicineProducts"
-      );
-    }
 
     products.push(
       db.product.create({
@@ -633,11 +604,6 @@ async function makeMedicineProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -657,7 +623,6 @@ async function makeLpgProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -683,7 +648,6 @@ async function makeLpgProducts({
     const packingUnitId = packingUnitMap["tank"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 1);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -716,11 +680,6 @@ async function makeLpgProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -741,7 +700,6 @@ async function makePetSupplyProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -768,7 +726,6 @@ async function makePetSupplyProducts({
     const packingUnitId = packingUnitMap["pack"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 2);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -801,11 +758,6 @@ async function makePetSupplyProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -826,7 +778,6 @@ async function makeRiceProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -852,7 +803,6 @@ async function makeRiceProducts({
     const packingUnitId = packingUnitMap["sack"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 1);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -885,11 +835,6 @@ async function makeRiceProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -910,7 +855,6 @@ async function makeEquipmentProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -938,7 +882,6 @@ async function makeEquipmentProducts({
     const packingUnitId = packingUnitMap["unit"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 1);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -971,11 +914,6 @@ async function makeEquipmentProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -996,7 +934,6 @@ async function makeBinhiProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -1022,7 +959,6 @@ async function makeBinhiProducts({
     const packingUnitId = packingUnitMap["sachet"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 1);
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -1055,11 +991,6 @@ async function makeBinhiProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -1080,7 +1011,6 @@ async function makeAgriProducts({
   unitMap,
   packingUnitMap,
   locationId,
-  tagList,
   targetList,
   indicationList,
   usedBarcodes,
@@ -1106,7 +1036,6 @@ async function makeAgriProducts({
     const packingUnitId = packingUnitMap["bottle"];
     const barcode = generateBarcode(usedBarcodes);
     const selectedTargets = pickRandom(targetList, 1); // always plants
-    const selectedTags = pickRandom(tagList, 2);
     const selectedIndications = pickRandom(indicationList ?? [], 2);
 
     products.push(
@@ -1139,11 +1068,6 @@ async function makeAgriProducts({
               target: { connect: { id: t.id } },
             })),
           },
-          productTags: {
-            create: selectedTags.map((t: any) => ({
-              tag: { connect: { id: t.id } },
-            })),
-          },
           productIndications: {
             create: selectedIndications.map((i: any) => ({
               indication: { connect: { id: i.id } },
@@ -1170,7 +1094,6 @@ async function seed() {
     db.user.deleteMany(),
     // ── M3/M2 artifacts first (may reference Product & Order)
     db.deliveryRunOrder.deleteMany(),
-    db.runAdhocSale.deleteMany(),
     db.stockMovement.deleteMany(),
 
     // ── Order graph
@@ -1178,20 +1101,14 @@ async function seed() {
     db.orderItem.deleteMany(),
     db.order.deleteMany(),
 
-    // ── Sales graph
-    db.saleItem.deleteMany(),
-    db.sale.deleteMany(),
-
     // ── Product-side many-to-many & details
     db.productIndication.deleteMany(),
     db.productTarget.deleteMany(),
-    db.productTag.deleteMany(),
 
     // ── Customers (if you want a clean slate for your product seeding run)
     //    Keep these if you prefer to retain customers/addresses.
     db.customerAddress.deleteMany(),
     db.customerItemPrice.deleteMany(),
-    db.cylinderLoan.deleteMany(),
     db.customer.deleteMany(),
 
     // ── Core catalog
@@ -1199,7 +1116,6 @@ async function seed() {
     db.brand.deleteMany(),
     db.target.deleteMany(),
     db.indication.deleteMany(),
-    db.tag.deleteMany(),
     db.category.deleteMany(),
 
     // ── Static refs
@@ -1217,18 +1133,15 @@ async function seed() {
 
     // ── Optional: if you also want a clean slate for fleet/workforce
     // Comment out if you want to keep them across seeds.
-    // db.overrideLog.deleteMany(),
     // db.deliveryRun.deleteMany(),
     db.vehicleCapacityProfile.deleteMany(),
     db.vehicle.deleteMany(),
     db.employee.deleteMany(),
   ]);
 
-  console.log("🏷️ Creating units, locations, tags...");
+  console.log("📦 Creating units and locations...");
   const unitMap = await getOrCreateMap("unit", unitNames);
   const packingUnitMap = await getOrCreateMap("packingUnit", packingUnitNames);
-
-  const tagList = await getOrCreateGlobalTags();
 
   // ─────────────────────────────────────────
   // NEW: Seed Pangasinan geo master data
@@ -1701,7 +1614,6 @@ async function seed() {
   console.log("🧪 DEBUG:", {
     unitKeys: Object.keys(unitMap),
     packingUnitKeys: Object.keys(packingUnitMap),
-    tagCount: tagList.length,
     targetCount: targetMapByCategory["Animal Feeds"]?.length ?? 0,
   });
 
@@ -1715,7 +1627,6 @@ async function seed() {
     targetList: targetMapByCategory["Animal Feeds"],
     indicationList: indicationMapByCategory["Animal Feeds"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Animal Feeds"],
   });
 
@@ -1729,7 +1640,6 @@ async function seed() {
     targetList: targetMapByCategory["Medicines"],
     indicationList: indicationMapByCategory["Medicines"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Medicines"],
   });
 
@@ -1743,7 +1653,6 @@ async function seed() {
     targetList: targetMapByCategory["LPG"],
     indicationList: indicationMapByCategory["LPG"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["LPG"],
   });
 
@@ -1757,7 +1666,6 @@ async function seed() {
     targetList: targetMapByCategory["Pet Supplies"],
     indicationList: indicationMapByCategory["Pet Supplies"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Pet Supplies"],
   });
 
@@ -1771,7 +1679,6 @@ async function seed() {
     targetList: targetMapByCategory["Rices & Grains"],
     indicationList: indicationMapByCategory["Rices & Grains"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Rices & Grains"],
   });
 
@@ -1785,7 +1692,6 @@ async function seed() {
     targetList: targetMapByCategory["Equipment"],
     indicationList: indicationMapByCategory["Equipment"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Equipment"],
   });
 
@@ -1799,7 +1705,6 @@ async function seed() {
     targetList: targetMapByCategory["Binhi (Seeds)"],
     indicationList: indicationMapByCategory["Binhi (Seeds)"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Binhi (Seeds)"],
   });
 
@@ -1813,7 +1718,6 @@ async function seed() {
     targetList: targetMapByCategory["Agriculture Products"],
     indicationList: indicationMapByCategory["Agriculture Products"],
     usedBarcodes,
-    tagList,
     nameList: productNamesByCategory["Agriculture Products"],
   });
 

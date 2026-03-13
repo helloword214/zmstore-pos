@@ -69,7 +69,7 @@ Stock fields:
 
 Auxiliary:
 
-1. `locationId`, `description`, `imageUrl`, `imageKey`, `expirationDate`, `replenishAt`, `imageTag`
+1. `locationId`, `description`, `expirationDate`, `replenishAt`, `imageTag`
 2. optional gallery photos: `ProductPhoto` (`slot` 1..4, metadata-first)
 3. tagging/relations: `ProductIndication`, `ProductTarget`
 
@@ -145,7 +145,7 @@ Mode selection and guards are evaluated from fresh product rows in `orders.new.t
 ## LPG Hooks in Schema (Current Status)
 
 1. `OrderItem` includes optional LPG-specific fields: `isLpg`, `lpgSwapKind`, `lpgEmptyReturned`, `lpgLoaned`.
-2. `CylinderLoan` table exists to track borrowed cylinders per customer.
+2. No dedicated cylinder-loan ledger remains in the active schema.
 3. Current `products._index.tsx`, `pad-order._index.tsx`, and `orders.new.tsx` flows are still driven by generic `PACK`/`RETAIL` logic.
 4. Dedicated swap/loan runtime lifecycle is not a required/default behavior in active order-create path.
 5. Treat current LPG fields as specialized hooks to be generalized in future refactor.
@@ -194,7 +194,7 @@ From `/products` action validation (used by dedicated create/edit routes):
 1. Product supports up to 4 optional photos (`slot` 1..4).
 2. Any slot may remain empty.
 3. New upload to an occupied slot replaces that slot metadata/object reference.
-4. Product cover fields (`imageUrl`, `imageKey`) mirror the lowest available slot photo.
+4. Product cover preview is derived from the lowest occupied photo slot.
 5. Product detail route is view-only for photos; upload/replace happens in product create/edit forms.
 
 ## Stock Movement Semantics (Current)

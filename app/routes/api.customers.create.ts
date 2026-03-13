@@ -42,7 +42,6 @@ export async function action({ request }: ActionFunctionArgs) {
   const addrCity = String(fd.get("addrCity") || "").trim();
   const addrProvince = String(fd.get("addrProvince") || "").trim();
   const addrLandmark = String(fd.get("addrLandmark") || "").trim() || null;
-  const addrPhotoUrl = String(fd.get("addrPhotoUrl") || "").trim() || null;
   const latRaw = fd.get("addrGeoLat");
   const lngRaw = fd.get("addrGeoLng");
   const geoLat =
@@ -78,7 +77,6 @@ export async function action({ request }: ActionFunctionArgs) {
                     landmark: addrLandmark,
                     geoLat,
                     geoLng,
-                    photoUrl: addrPhotoUrl,
                   },
                 ],
               },
@@ -103,7 +101,6 @@ export async function action({ request }: ActionFunctionArgs) {
             landmark: true,
             geoLat: true,
             geoLng: true,
-            photoUrl: true,
           },
           orderBy: { id: "desc" },
           take: 5,

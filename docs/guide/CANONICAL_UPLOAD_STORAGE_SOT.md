@@ -70,7 +70,7 @@ This document does not own:
 1. Use lower-case structural segments only.
 2. Never include PII in key paths (name, phone, email, address text).
 3. Include entity scope in path (parent id and child id where relevant).
-4. Use explicit artifact segments (`profile`, `photos`, `documents`, `primary`, `images`).
+4. Use explicit artifact segments (`profile`, `photos`, `documents`, `images`).
 5. If any free-form segment is required, sanitize to `[a-z0-9_-]` only.
 
 ### B. Implemented Prefixes (As-Is, 2026-03-03)
@@ -79,10 +79,8 @@ This document does not own:
 2. Customer address photos: `customers/<customerId>/addresses/<addressId>/photos`
 3. Employee document uploads: `employees/<employeeId>/documents/<docType>`
 4. Product image uploads:
-   1. Existing product: `products/<productId>/primary`
-   2. Pre-create draft cover path: `products/draft/<uploadSessionKey>/primary`
-   3. Existing product gallery slot path: `products/<productId>/images/slot-<slot>`
-   4. Pre-create draft gallery slot path: `products/draft/<uploadSessionKey>/images/slot-<slot>`
+   1. Existing product gallery slot path: `products/<productId>/images/slot-<slot>`
+   2. Pre-create draft gallery slot path: `products/draft/<uploadSessionKey>/images/slot-<slot>`
 
 ### C. Draft Session Key Contract (Binding)
 
@@ -94,9 +92,9 @@ This document does not own:
 ## Data Model Contract (Binding)
 
 1. Product supports optional gallery photos via `ProductPhoto` with slot uniqueness (`productId + slot`) and fixed range `1..4`.
-2. `Product.imageUrl`/`Product.imageKey` remain as cover-image mirror fields (lowest available slot).
+2. Product cover preview is derived from the lowest occupied `ProductPhoto.slot`; no mirrored cover-image columns remain on `Product`.
 3. Customer profile photo uses `Customer.photoUrl` and `Customer.photoKey`.
-4. Customer address gallery is modeled by `CustomerAddressPhoto` with slot uniqueness (`customerAddressId + slot`).
+4. Customer address photos are modeled only by `CustomerAddressPhoto` with slot uniqueness (`customerAddressId + slot`); address cover preview is derived from the lowest occupied slot.
 5. Employee compliance documents are stored as append-only history rows in `EmployeeDocument`.
 
 ## Lifecycle Rules (Binding)

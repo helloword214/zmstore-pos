@@ -115,11 +115,6 @@ export async function runCleanup(options = {}) {
           where: { runId: { in: runIds } },
         })
       ).count;
-      deleted.runAdhocSalesByRun = (
-        await db.runAdhocSale.deleteMany({
-          where: { runId: { in: runIds } },
-        })
-      ).count;
       deleted.runOrderLinksByRun = (
         await db.deliveryRunOrder.deleteMany({
           where: { runId: { in: runIds } },

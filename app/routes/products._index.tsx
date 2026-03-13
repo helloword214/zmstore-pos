@@ -144,6 +144,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         location: true,
         productIndications: { include: { indication: true } },
         productTargets: { include: { target: true } },
+        photos: {
+          select: {
+            slot: true,
+            fileUrl: true,
+            uploadedAt: true,
+          },
+          orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -161,39 +169,48 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
 
   // Flatten the join tables into simple name arrays
-  const productsWithDetails = products.map((p) => ({
-    ...p,
+  const productsWithDetails = products.map((p) => {
+    const { photos, ...productRow } = p;
+    const uniquePhotos = photos.filter((photo, index, list) => {
+      const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+      return firstIndex === index;
+    });
 
-    // Retail unit
-    unitId: p.unit?.id ?? null,
-    unitName: p.unit?.name ?? "",
+    return {
+      ...productRow,
+      imageUrl: uniquePhotos[0]?.fileUrl ?? null,
 
-    // Packing unit (container)
-    packingUnitId: p.packingUnit?.id ?? null,
-    packingUnitName: p.packingUnit?.name ?? "",
+      // Retail unit
+      unitId: p.unit?.id ?? null,
+      unitName: p.unit?.name ?? "",
 
-    // Storage location
-    locationId: p.location?.id ?? null,
-    locationName: p.location?.name ?? "",
+      // Packing unit (container)
+      packingUnitId: p.packingUnit?.id ?? null,
+      packingUnitName: p.packingUnit?.name ?? "",
 
-    // Tags and relations
-    indications: p.productIndications.map((pi) => ({
-      id: pi.indication.id,
-      name: pi.indication.name,
-    })),
-    targets: (() => {
-      const seen = new Set<string>();
-      return p.productTargets
-        .map((pt) => pt.target)
-        .filter((t) => {
-          const key = String(t.id);
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .map((t) => ({ id: t.id, name: t.name }));
-    })(),
-  }));
+      // Storage location
+      locationId: p.location?.id ?? null,
+      locationName: p.location?.name ?? "",
+
+      // Tags and relations
+      indications: p.productIndications.map((pi) => ({
+        id: pi.indication.id,
+        name: pi.indication.name,
+      })),
+      targets: (() => {
+        const seen = new Set<string>();
+        return p.productTargets
+          .map((pt) => pt.target)
+          .filter((t) => {
+            const key = String(t.id);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .map((t) => ({ id: t.id, name: t.name }));
+      })(),
+    };
+  });
 
   const targetsForFilter: {
     id: number;
@@ -247,18 +264,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const uploadSessionKey =
     resolveUploadSessionKey(formData.get("uploadSessionKey")?.toString()) ??
     createUploadSessionKey();
-  const imageUrlInput = formData.get("imageUrl")?.toString().trim();
   const imageFile = readOptionalUpload(formData.get("imageFile"));
   const requestedSlot = normalizeProductPhotoSlot(formData.get("slot")?.toString());
   const productPhotoUploads = collectProductPhotoUploads(formData, actionType, imageFile);
 
-  // if updating, load existing imageUrl so we can clean up on replace
+  // if updating, load existing photos so we can clean up on replace
   const existingProduct = id
     ? await db.product.findUnique({
         where: { id: Number(id) },
         select: {
-          imageUrl: true,
-          imageKey: true,
           photos: {
             select: {
               slot: true,
@@ -271,8 +285,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       })
     : null;
 
-  let finalImageUrl: string | undefined = imageUrlInput || undefined;
-  let finalImageKey: string | undefined;
+  let finalImageUrl: string | undefined;
 
   // Delete product action
 
@@ -369,7 +382,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (processedPhotoUploads.length > 0) {
     const coverUpload = [...processedPhotoUploads].sort((a, b) => a.slot - b.slot)[0];
     finalImageUrl = coverUpload?.fileUrl ?? finalImageUrl;
-    finalImageKey = coverUpload?.fileKey ?? finalImageKey;
   }
 
   const persistProductPhotos = async (
@@ -454,33 +466,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
-    if (!finalImageUrl || !finalImageKey) {
-      return json(
-        { success: false, error: "Failed to process image." },
-        { status: 400 }
-      );
-    }
-
     const persisted = await persistProductPhotos(productId, existingProduct.photos ?? []);
     const coverImageUrl = persisted.cover?.fileUrl ?? null;
-    const coverImageKey = persisted.cover?.fileKey ?? null;
-
-    await db.product.update({
-      where: { id: productId },
-      data: {
-        imageUrl: coverImageUrl,
-        imageKey: coverImageKey,
-      },
-    });
 
     const keysToDelete = new Set(persisted.replacedKeys);
-    if (
-      existingProduct.imageKey &&
-      !existingProduct.photos.some((photo) => photo.fileKey === existingProduct.imageKey) &&
-      existingProduct.imageKey !== coverImageKey
-    ) {
-      keysToDelete.add(existingProduct.imageKey);
-    }
 
     for (const oldKey of keysToDelete) {
       try {
@@ -491,13 +480,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     finalImageUrl = coverImageUrl ?? finalImageUrl;
-    finalImageKey = coverImageKey ?? finalImageKey;
 
     return json({
       success: true,
       action: "upload-product-photo-slot",
       id: productId,
-      imageUrl: finalImageUrl,
+      ...(finalImageUrl !== undefined ? { imageUrl: finalImageUrl } : {}),
     });
   }
 
@@ -934,10 +922,11 @@ export default function ProductsPage() {
           // booleans only if present
           allowPackSale: asBoolIfPresent("allowPackSale"),
           isActive: asBoolIfPresent("isActive"),
-
-          //image
-          imageUrl: afData.imageUrl ?? asStringIfPresent("imageUrl"),
         } as Partial<ProductWithDetails> & { id: number };
+
+        if (Object.prototype.hasOwnProperty.call(afData, "imageUrl")) {
+          patch.imageUrl = afData.imageUrl ?? null;
+        }
 
         setProducts((prev) => {
           if (!patch.id) return prev;

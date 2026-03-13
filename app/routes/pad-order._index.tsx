@@ -102,7 +102,14 @@ export const loader: LoaderFunction = async ({ request }) => {
         minStock: true, // Decimal | number | string | null
         categoryId: true,
         brand: { select: { id: true, name: true } },
-        imageUrl: true,
+        photos: {
+          select: {
+            slot: true,
+            fileUrl: true,
+            uploadedAt: true,
+          },
+          orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+        },
         unit: { select: { name: true } }, // retail unit
         packingUnit: { select: { name: true } }, // pack unit
         barcode: true,
@@ -112,15 +119,23 @@ export const loader: LoaderFunction = async ({ request }) => {
     }),
   ]);
 
-  const products = rawProducts.map((p) => ({
-    ...p,
-    price: p.price == null ? 0 : Number(p.price),
-    srp: p.srp == null ? 0 : Number(p.srp),
-    stock: p.stock == null ? null : Number(p.stock),
-    minStock: p.minStock == null ? null : Number(p.minStock),
-    packingSize: p.packingSize == null ? 0 : Number(p.packingSize),
-    packingStock: p.packingStock == null ? 0 : Number(p.packingStock),
-  }));
+  const products = rawProducts.map((p) => {
+    const uniquePhotos = p.photos.filter((photo, index, list) => {
+      const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+      return firstIndex === index;
+    });
+
+    return {
+      ...p,
+      imageUrl: uniquePhotos[0]?.fileUrl ?? null,
+      price: p.price == null ? 0 : Number(p.price),
+      srp: p.srp == null ? 0 : Number(p.srp),
+      stock: p.stock == null ? null : Number(p.stock),
+      minStock: p.minStock == null ? null : Number(p.minStock),
+      packingSize: p.packingSize == null ? 0 : Number(p.packingSize),
+      packingStock: p.packingStock == null ? 0 : Number(p.packingStock),
+    };
+  });
 
   const employeeName = userRow?.employee
     ? `${userRow.employee.firstName ?? ""} ${userRow.employee.lastName ?? ""}`.trim()

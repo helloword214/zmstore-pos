@@ -22,6 +22,7 @@ export type Location = PrismaLocation;
 export type ProductWithDetails = PrismaProduct & {
   indications: { id: number; name: string }[];
   targets: { id: number; name: string }[];
+  imageUrl?: string | null;
 
   categoryId?: number | null;
   brandId?: number | null;
