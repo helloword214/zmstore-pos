@@ -1,6 +1,7 @@
 # AI Governance SOP — Evolution & Improvement Guide
 
-Version: 1.0  
+Version: 1.1  
+Changelog: v1.1 adds documentation-sprawl and mixed-concern governance guidance.  
 Purpose: Guide for safely evolving the AI Governance SOP based on real project observations.
 
 ---
@@ -83,6 +84,22 @@ Enterprise governance improves through evidence. Rules created without real inci
 - Introduce or clarify **explicit override rules**.
 - Do not weaken default safety behavior.
 
+### 2.6 Documentation Sprawl / Mixed Concern Docs
+
+**Signal:**
+
+- The same rule appears in multiple docs with different depth or wording.
+- A doc mixes unrelated concerns because it was convenient to place everything in one container.
+- Teammates cannot quickly tell which document owns a rule.
+- Router docs, diagram docs, or draft docs start behaving like alternate canonical specs.
+
+**Action:**
+
+- Identify the owner document for the concern and strengthen it.
+- Move duplicate rule detail out of secondary docs and replace it with cross-references.
+- Add or tighten documentation architecture rules so owner docs, router docs, diagrams, and drafts stay within clear boundaries.
+- Prefer one owner doc plus aligned references over multiple partial rule containers.
+
 ---
 
 ## 3. When to Upgrade the SOP
@@ -161,6 +178,7 @@ If it feels invisible, it is probably too weak.
 
 This guide supports:
 
+- `Documentation Architecture Standard.md`
 - `AI Governance SOP.md`
 - `Chat Execution Rules.md`
 
