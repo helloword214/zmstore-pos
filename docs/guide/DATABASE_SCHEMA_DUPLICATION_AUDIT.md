@@ -239,6 +239,8 @@ Observed shape:
 Current interpretation:
 
 1. legacy in original login purpose does not mean dead in current self-service security behavior
+2. current team memory suggests this PIN is also tied to manager/cashier approval or balance-check security prompts
+3. this field is intentionally deferred until that approval/security-check behavior is fully reviewed end-to-end
 
 Future review question:
 
@@ -265,9 +267,40 @@ The highest-signal remaining schema cleanup targets are now bridge or legacy-in-
 
 Suggested next review targets:
 
-1. auth lifecycle decision: `User.pinHash`
-2. standalone product photo metadata decision: `imageTag`
+1. deferred auth lifecycle decision: `User.pinHash`
+2. deferred standalone product photo metadata decision: `imageTag`
 3. future storage-hardening review: `fileKey`-first URL derivation strategy
+
+## Deferred / Decision Pending
+
+These items are not forgotten; they are intentionally parked until the related runtime behavior is more stable or fully mapped.
+
+### 1. `User.pinHash`
+
+Why deferred:
+
+1. not used for interactive login anymore
+2. still active in authenticated account-security PIN mutation flow
+3. likely still connected to manager/cashier approval or balance security checks from earlier implementation decisions
+4. removing it before confirming those approval flows would be risky
+
+Required before any cleanup decision:
+
+1. trace all approval/security-check prompts that may still depend on PIN behavior
+2. decide whether the product direction is `keep PIN`, `retire PIN`, or `replace with password-only re-auth`
+3. update the owner auth doc in the same objective if the lifecycle changes
+
+### 2. `imageTag`
+
+Why deferred:
+
+1. it is smaller-risk than `pinHash`, but still needs a business meaning check
+2. removing metadata fields without confirming user-facing purpose can create silent regressions
+
+Required before any cleanup decision:
+
+1. confirm whether `imageTag` still has active product or reporting meaning
+2. if not, verify there is no admin workflow depending on it before removal
 
 ## Migration-History Drift Signals
 
@@ -320,10 +353,15 @@ Suggested goal:
 
 Suggested first-pass focus:
 
-1. product image bridge
-2. customer address photo bridge
-3. `pinHash` lifecycle decision
-4. old sales/override/adhoc candidate tables
+1. `pinHash` lifecycle decision
+2. `imageTag` meaning check
+3. future storage-hardening direction
+
+Broader follow-up note:
+
+1. a wider duplicate / redundancy / schema-drift scan is still expected later
+2. that larger scan is better done once the application behavior is more complete and stable
+3. this document should act as the carry-forward shortlist until that broader scan happens
 
 ## Anti-Assumption Rule for Future Cleanup
 
