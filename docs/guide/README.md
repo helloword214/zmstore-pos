@@ -135,6 +135,7 @@ Identity operations note:
 14. `PRODUCTLIST_REFACTOR_DIRECTION.md`
 15. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
 16. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
+17. `WORKER_SCHEDULING_DUTY_SESSION_DRAFT.md`
 
 These help implementation but must not override Canonical docs.
 
