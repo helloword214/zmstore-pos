@@ -2,15 +2,15 @@
 
 Status: LOCKED  
 Owner: POS Platform  
-Last Reviewed: 2026-03-03
+Last Reviewed: 2026-03-13
 
 ## Purpose
 
 Define one authoritative contract for file uploads so implementation stays consistent, auditable, and safe across admin forms.
 
-## Scope Boundary
+## Owns
 
-In scope:
+This document owns:
 
 1. `app/utils/storage.server.ts`
 2. `app/features/uploads/upload-policy.ts`
@@ -23,10 +23,21 @@ In scope:
 9. `app/routes/products.$productId.tsx`
 10. Upload metadata fields in `prisma/schema.prisma`
 
-Out of scope:
+## Does Not Own
 
-1. CDN/image transformation strategy beyond current server-side processing.
-2. IDOR authorization hardening rollout plan (tracked separately).
+This document does not own:
+
+1. business authority for cashier variance, delivery flow, AR flow, or payroll
+2. role-access boundaries and account authority
+3. product pricing or sell-shape rules
+4. CDN/image transformation strategy beyond current server-side processing
+5. IDOR authorization hardening rollout plan (tracked separately)
+
+## Refer To
+
+1. `CANONICAL_IDENTITY_ACCESS_FLOW.md` for employee document policy and role authority boundaries
+2. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` for product image model scope
+3. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` if future cashier recount-form scan attachments are added
 
 ## Canonical Storage Boundary (Binding)
 

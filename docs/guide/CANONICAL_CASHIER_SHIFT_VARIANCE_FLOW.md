@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-02-26
+Last Reviewed: 2026-03-13
 
 ## Purpose
 
@@ -11,6 +11,33 @@ Defines one route-level source of truth for cashier shift lifecycle, shift close
 Role boundary reference:
 
 1. `docs/guide/CANONICAL_IDENTITY_ACCESS_FLOW.md`
+
+## Owns
+
+This document owns:
+
+1. cashier shift lifecycle and status transitions
+2. cashier drawer balance source-of-truth for shift views
+3. cashier close submit gate and manager recount authority
+4. cashier shift variance and cashier charge creation rules
+5. paper reference and printable recount-form requirements for mismatch close cases
+
+## Does Not Own
+
+This document does not own:
+
+1. worker schedule planning and staffing event history
+2. rider duty-session rules
+3. file upload/storage driver contracts for scanned attachments
+4. role authority model outside cashier shift responsibilities
+5. full delivery -> clearance -> AR end-to-end flow
+
+## Refer To
+
+1. `CANONICAL_IDENTITY_ACCESS_FLOW.md` for role boundaries and route access ownership
+2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md` for wider delivery/remit/cashier/AR stage flow
+3. `CANONICAL_UPLOAD_STORAGE_SOT.md` for any future scan/upload attachment implementation
+4. `WORKER_SCHEDULING_DUTY_SESSION_DRAFT.md` for current draft direction on schedule planning vs operational sessions
 
 ## Scope
 
@@ -126,9 +153,13 @@ Where:
 1. Cashier submits close count once in `cashier.shift.tsx`, and drawer writes become locked for cashier.
 2. Manager recounts and decides in `store.cashier-shifts.tsx` during final close.
 3. Manager can print an A4 recount form from `store.cashier-shifts.tsx`; UI can auto-generate paper reference number.
-4. Variance rows are created/updated in final close when mismatch exists.
-5. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
-6. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
+4. For mismatch cases that require paper audit handling, current operational practice is:
+   - cashier and manager sign the printed recount form
+   - signed paper is scanned and attached to the audit package outside the current in-app upload flow
+5. If in-system scan/upload is implemented later, it must follow `CANONICAL_UPLOAD_STORAGE_SOT.md`.
+6. Variance rows are created/updated in final close when mismatch exists.
+7. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
+8. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
 
 ## Mandatory Controls (Current)
 

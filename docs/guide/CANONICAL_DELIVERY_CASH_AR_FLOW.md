@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-12
+Last Reviewed: 2026-03-13
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -24,6 +24,33 @@ Visual map reference:
 - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/DIAGRAMS_DELIVERY_CSS_AR.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+
+## Owns
+
+This document owns:
+
+1. end-to-end stage handoffs from order create through dispatch, rider check-in, clearance, remit, cashier turnover, and AR entry
+2. route-stage responsibility map for this operational flow
+3. cross-stage authority boundaries inside the delivery/cash/AR workflow
+4. receipt/settlement flow rules that span more than one route family in this chain
+
+## Does Not Own
+
+This document does not own:
+
+1. role/account authority model in general
+2. cashier shift state machine and detailed recount close mechanics
+3. file upload/storage contracts
+4. pricing freeze algorithm details
+5. product sell-shape and stock semantics
+
+## Refer To
+
+1. `CANONICAL_IDENTITY_ACCESS_FLOW.md` for role authority and route access ownership
+2. `CANONICAL_ORDER_PRICING_SOT.md` for pricing freeze and order creator audit anchors
+3. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` for cashier shift close, manager recount, paper reference, and variance handling
+4. `Accounts Receivable — Canonical Source of Truth (SoT)` for AR ledger and payment application rules
+5. `DIAGRAMS_DELIVERY_CSS_AR.md` for visual flow and handoff mapping
 
 ## Core Rule Set
 
