@@ -73,9 +73,9 @@ Every future cleanup candidate should be classified into one of these buckets be
 
 The repository currently has:
 
-1. `57` Prisma models
+1. `55` Prisma models
 2. `34` Prisma enums
-3. `89` migration folders
+3. `90` migration folders
 
 This volume makes historical overlap plausible and means schema cleanup must be staged, not assumed.
 
@@ -92,6 +92,20 @@ Why these were safe enough to remove:
 1. repository review found no active runtime value worth preserving
 2. current database review showed `0` live rows for the removed tables
 3. `deliverPhotoKey` had no active write/read path and `0` non-null rows
+
+## Phase 2 Cleanup Completed (2026-03-13)
+
+Completed in the second cleanup pass:
+
+1. removed `Tag`
+2. removed `ProductTag`
+3. removed legacy implicit join table `_ProductTags`
+
+Why these were removed:
+
+1. current repository review found no active runtime reads/writes outside seed history
+2. current database review showed the implicit `Tag.products` path had `0` live links
+3. remaining `Tag` / `ProductTag` rows were explicitly approved for destructive cleanup
 
 ## Intentional Snapshot Duplications (Do Not Treat as Bugs by Default)
 
@@ -220,32 +234,15 @@ Future review question:
 
 1. Should branch scoping remain relational as-is, or be revisited only when multi-branch policy becomes more mature?
 
-## Deferred Legacy / Low-Confidence Cleanup Candidates
+## Remaining Cleanup Focus
 
-These still need a dedicated cleanup decision after Phase 1. They are not approved removals yet.
+The highest-signal remaining schema cleanup targets are now bridge or legacy-in-use items, not obviously dead tables.
 
-### Candidate Model Shortlist
+Suggested next review targets:
 
-1. `Tag`
-2. `ProductTag`
-
-Why these are listed:
-
-1. repo review found little or no active app-layer evidence compared with other models
-2. unlike the removed Phase 1 tables, these still have live rows in the current database
-3. they may represent either stale data structures or unfinished feature intent
-
-Current DB signal captured during review:
-
-1. `Tag` rows: `14`
-2. `ProductTag` rows: `308`
-
-Required validation before any change:
-
-1. search indirect relation includes/selects, not just `db.<model>` usage
-2. inspect live database row counts and recency
-3. confirm no pending feature relies on them
-4. confirm no print/audit/reporting path still references them
+1. product cover bridge: `Product.imageUrl`, `Product.imageKey`, `imageTag` versus `ProductPhoto`
+2. customer address cover bridge: `CustomerAddress.photoUrl`, `photoKey`, `photoUpdatedAt` versus `CustomerAddressPhoto`
+3. auth lifecycle decision: `User.pinHash`
 
 ## Migration-History Drift Signals
 

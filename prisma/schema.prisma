@@ -41,9 +41,7 @@ model Product {
   packingUnit        PackingUnit?        @relation("PackingUnit", fields: [packingUnitId], references: [id])
   unit               Unit?               @relation("RetailUnit", fields: [unitId], references: [id])
   productIndications ProductIndication[]
-  productTags        ProductTag[]
   productTargets     ProductTarget[]
-  tags               Tag[]               @relation("ProductTags")
   // back-relation to customer-specific pricing rules
   customerItemPrices CustomerItemPrice[] @relation("CustomerItemPricesOnProduct")
   orderItems         OrderItem[]
@@ -68,22 +66,6 @@ model Category {
   targets     Target[]
 
   @@index([isActive])
-}
-
-model Tag {
-  id          Int          @id @default(autoincrement())
-  name        String       @unique
-  productTags ProductTag[]
-  products    Product[]    @relation("ProductTags")
-}
-
-model ProductTag {
-  productId Int
-  tagId     Int
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  tag       Tag     @relation(fields: [tagId], references: [id])
-
-  @@id([productId, tagId])
 }
 
 model Brand {
