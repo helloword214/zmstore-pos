@@ -49,6 +49,7 @@ type EmployeeAccountRow = {
   lane: Lane;
   managerKind: ManagerKind | null;
   authState: UserAuthState;
+  hasPasswordHash: boolean;
   active: boolean;
   complianceFlags: string[];
   createdAt: string;
@@ -157,6 +158,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           role: true,
           managerKind: true,
           authState: true,
+          passwordHash: true,
           active: true,
           createdAt: true,
         },
@@ -237,6 +239,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         lane,
         managerKind: u.managerKind ?? null,
         authState: u.authState,
+        hasPasswordHash: Boolean(u.passwordHash),
         active: u.active,
         complianceFlags,
         createdAt: u.createdAt.toISOString(),
@@ -452,6 +455,7 @@ export async function action({ request }: ActionFunctionArgs) {
         email: true,
         active: true,
         authState: true,
+        passwordHash: true,
       },
     });
     if (!target || !target.email) {
@@ -463,7 +467,10 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 400 },
       );
     }
-    if (target.authState !== UserAuthState.PENDING_PASSWORD) {
+    const needsPasswordSetup =
+      target.authState === UserAuthState.PENDING_PASSWORD || !target.passwordHash;
+
+    if (!needsPasswordSetup) {
       return json<ActionData>(
         { ok: false, message: "Password setup is already completed for this account." },
         { status: 400 },
@@ -489,7 +496,10 @@ export async function action({ request }: ActionFunctionArgs) {
       await sendPasswordSetupEmail({ to: target.email, setupUrl });
       return json<ActionData>({
         ok: true,
-        message: "Password setup link re-sent.",
+        message:
+          target.authState === UserAuthState.PENDING_PASSWORD
+            ? "Password setup link re-sent."
+            : "Password setup link sent to repair the missing login password.",
       });
     } catch (mailError) {
       console.error("[auth] resend invite failed", mailError);
@@ -637,12 +647,18 @@ export default function EmployeeDirectoryPage() {
                       <div className="mt-1">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            row.authState === "ACTIVE"
-                              ? "bg-indigo-100 text-indigo-700"
+                            !row.hasPasswordHash
+                              ? "bg-rose-100 text-rose-700"
+                              : row.authState === "ACTIVE"
+                                ? "bg-indigo-100 text-indigo-700"
                               : "bg-amber-100 text-amber-700"
                           }`}
                         >
-                          {row.authState === "ACTIVE" ? "PASSWORD_READY" : "PENDING_PASSWORD"}
+                          {!row.hasPasswordHash
+                            ? "PASSWORD_MISSING"
+                            : row.authState === "ACTIVE"
+                              ? "PASSWORD_READY"
+                              : "PENDING_PASSWORD"}
                         </span>
                       </div>
                     </SoTTd>
@@ -708,12 +724,15 @@ export default function EmployeeDirectoryPage() {
                           Edit Profile
                         </SoTLinkButton>
 
-                        {row.authState === "PENDING_PASSWORD" && row.active ? (
+                        {(row.authState === "PENDING_PASSWORD" || !row.hasPasswordHash) &&
+                        row.active ? (
                           <Form method="post">
                             <input type="hidden" name="intent" value="resend-invite" />
                             <input type="hidden" name="userId" value={row.userId} />
                             <SoTButton type="submit" variant="secondary" disabled={busy}>
-                              Resend Invite
+                              {row.authState === "PENDING_PASSWORD"
+                                ? "Resend Invite"
+                                : "Send Setup Link"}
                             </SoTButton>
                           </Form>
                         ) : null}
