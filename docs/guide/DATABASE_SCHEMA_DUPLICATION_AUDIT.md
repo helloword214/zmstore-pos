@@ -75,7 +75,7 @@ The repository currently has:
 
 1. `55` Prisma models
 2. `34` Prisma enums
-3. `90` migration folders
+3. `91` migration folders
 
 This volume makes historical overlap plausible and means schema cleanup must be staged, not assumed.
 
@@ -106,6 +106,20 @@ Why these were removed:
 1. current repository review found no active runtime reads/writes outside seed history
 2. current database review showed the implicit `Tag.products` path had `0` live links
 3. remaining `Tag` / `ProductTag` rows were explicitly approved for destructive cleanup
+
+## Phase 3 Cleanup Completed (2026-03-13)
+
+Completed in the third cleanup pass:
+
+1. removed `Product.imageUrl`
+2. removed `Product.imageKey`
+3. switched product cover rendering to derive from `ProductPhoto`
+
+Why these were removed:
+
+1. product routes had already adopted slot-based `ProductPhoto` storage
+2. mirrored cover columns were redundant bridge fields
+3. active UI read paths were updated to derive the cover from the lowest occupied photo slot
 
 ## Intentional Snapshot Duplications (Do Not Treat as Bugs by Default)
 
@@ -168,20 +182,18 @@ These are overlaps where old and new shapes currently coexist and runtime still 
 
 Observed shape:
 
-1. `Product.imageUrl`, `Product.imageKey`, `imageTag`
+1. `Product.imageTag`
 2. `ProductPhoto` gallery rows (`slot` 1..4)
 
 Current interpretation:
 
-1. `ProductPhoto` is the richer storage model
-2. `Product.imageUrl` and `Product.imageKey` still act as cover-image mirror fields
-3. cleanup is not safe until all reads/writes stop depending on the mirrored cover fields
+1. `ProductPhoto` is now the sole image storage model for products
+2. `imageTag` remains as textual metadata, not as a storage bridge
+3. product cover images are derived from the lowest occupied slot at read time
 
 Future review questions:
 
-1. Which routes still read only the cover fields?
-2. Can UI/listing routes read derived cover data from `ProductPhoto` directly?
-3. Is `imageTag` still needed as a standalone concept once photo gallery usage is normalized?
+1. Is `imageTag` still needed as a standalone concept once photo gallery usage is normalized?
 
 ### 2. Customer Address Cover Fields + Customer Address Photo Gallery
 
@@ -240,9 +252,9 @@ The highest-signal remaining schema cleanup targets are now bridge or legacy-in-
 
 Suggested next review targets:
 
-1. product cover bridge: `Product.imageUrl`, `Product.imageKey`, `imageTag` versus `ProductPhoto`
-2. customer address cover bridge: `CustomerAddress.photoUrl`, `photoKey`, `photoUpdatedAt` versus `CustomerAddressPhoto`
-3. auth lifecycle decision: `User.pinHash`
+1. customer address cover bridge: `CustomerAddress.photoUrl`, `photoKey`, `photoUpdatedAt` versus `CustomerAddressPhoto`
+2. auth lifecycle decision: `User.pinHash`
+3. standalone product photo metadata decision: `imageTag`
 
 ## Migration-History Drift Signals
 

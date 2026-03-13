@@ -1,0 +1,2 @@
+ALTER TABLE "Product" DROP COLUMN IF EXISTS "imageUrl";
+ALTER TABLE "Product" DROP COLUMN IF EXISTS "imageKey";

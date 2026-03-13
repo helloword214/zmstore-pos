@@ -15,8 +15,6 @@ model Product {
   categoryId         Int?
   createdAt          DateTime            @default(now())
   description        String?
-  imageUrl           String?
-  imageKey           String?
   stock              Decimal?            @db.Decimal(12, 3)
   updatedAt          DateTime            @default(now()) @updatedAt
   brandId            Int?

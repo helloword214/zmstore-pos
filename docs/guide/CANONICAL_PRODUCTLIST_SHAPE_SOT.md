@@ -69,7 +69,7 @@ Stock fields:
 
 Auxiliary:
 
-1. `locationId`, `description`, `imageUrl`, `imageKey`, `expirationDate`, `replenishAt`, `imageTag`
+1. `locationId`, `description`, `expirationDate`, `replenishAt`, `imageTag`
 2. optional gallery photos: `ProductPhoto` (`slot` 1..4, metadata-first)
 3. tagging/relations: `ProductIndication`, `ProductTarget`
 
@@ -194,7 +194,7 @@ From `/products` action validation (used by dedicated create/edit routes):
 1. Product supports up to 4 optional photos (`slot` 1..4).
 2. Any slot may remain empty.
 3. New upload to an occupied slot replaces that slot metadata/object reference.
-4. Product cover fields (`imageUrl`, `imageKey`) mirror the lowest available slot photo.
+4. Product cover preview is derived from the lowest occupied photo slot.
 5. Product detail route is view-only for photos; upload/replace happens in product create/edit forms.
 
 ## Stock Movement Semantics (Current)

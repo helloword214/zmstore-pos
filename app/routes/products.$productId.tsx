@@ -76,12 +76,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Product not found", { status: 404 });
   }
 
+  const uniquePhotos = product.photos.filter((photo, index, list) => {
+    const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+    return firstIndex === index;
+  });
+
   return json({
     product: {
       id: product.id,
       name: product.name,
       description: product.description,
-      imageUrl: product.imageUrl,
+      imageUrl: uniquePhotos[0]?.fileUrl ?? null,
       imageTag: product.imageTag,
       isActive: product.isActive,
       allowPackSale: product.allowPackSale,
@@ -103,12 +108,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       replenishAt: product.replenishAt?.toISOString() ?? null,
       indications: product.productIndications.map((entry) => entry.indication.name),
       targets: product.productTargets.map((entry) => entry.target.name),
-      photos: product.photos
-        .filter((photo, index, list) => {
-          const firstIndex = list.findIndex((item) => item.slot === photo.slot);
-          return firstIndex === index;
-        })
-        .map((photo) => ({
+      photos: uniquePhotos.map((photo) => ({
           slot: photo.slot,
           fileUrl: photo.fileUrl,
           uploadedAt: photo.uploadedAt.toISOString(),
@@ -142,14 +142,8 @@ export default function ProductDetailRoute() {
         });
       }
     }
-    if (!map.has(1) && product.imageUrl) {
-      map.set(1, {
-        fileUrl: product.imageUrl,
-        uploadedAt: "",
-      });
-    }
     return map;
-  }, [product.photos, product.imageUrl]);
+  }, [product.photos]);
 
   function handleOpenPack() {
     const packsStr = window.prompt("Open how many whole packs?", "1");

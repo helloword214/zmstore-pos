@@ -12,8 +12,6 @@ type ProcessedProductPhotoUpload = {
 };
 
 type ExistingProductForUpsert = {
-  imageUrl: string | null;
-  imageKey: string | null;
   photos: Array<{
     slot: number;
     fileKey: string;
@@ -111,7 +109,6 @@ export async function runProductUpsertAction({
   const expiration = formData.get("expirationDate")?.toString();
   const replenishAt = formData.get("replenishAt")?.toString();
   const imageTag = formData.get("imageTag")?.toString().trim();
-  const imageUrlInput = formData.get("imageUrl")?.toString().trim();
   const description = formData.get("description")?.toString();
   const barcode = formData.get("barcode")?.toString() || undefined;
   const minStock = formData.get("minStock")
@@ -138,12 +135,10 @@ export async function runProductUpsertAction({
   const newTargets = formData.getAll("newTargets") as string[];
   const decimals = (packingStockRaw.split(".")[1] || "").length;
 
-  let finalImageUrl: string | undefined = imageUrlInput || undefined;
-  let finalImageKey: string | undefined;
+  let finalImageUrl: string | undefined;
   if (processedPhotoUploads.length > 0) {
     const coverUpload = [...processedPhotoUploads].sort((a, b) => a.slot - b.slot)[0];
     finalImageUrl = coverUpload?.fileUrl ?? finalImageUrl;
-    finalImageKey = coverUpload?.fileKey ?? finalImageKey;
   }
 
   if (!name) {
@@ -410,8 +405,6 @@ export async function runProductUpsertAction({
     expirationDate: expiration ? new Date(expiration) : undefined,
     replenishAt: replenishAt ? new Date(replenishAt) : undefined,
     imageTag,
-    imageUrl: finalImageUrl,
-    imageKey: finalImageKey,
     description,
     minStock,
     isActive,
@@ -461,42 +454,9 @@ export async function runProductUpsertAction({
       if (processedPhotoUploads.length > 0) {
         const persisted = await persistProductPhotos(productId, existingProduct?.photos ?? []);
         finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
-        finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
-
-        await db.product.update({
-          where: { id: productId },
-          data: {
-            imageUrl: persisted.cover?.fileUrl ?? null,
-            imageKey: persisted.cover?.fileKey ?? null,
-          },
-        });
 
         const keysToDelete = new Set(persisted.replacedKeys);
-        if (
-          existingProduct?.imageKey &&
-          !existingProduct.photos.some((photo) => photo.fileKey === existingProduct.imageKey) &&
-          existingProduct.imageKey !== persisted.cover?.fileKey
-        ) {
-          keysToDelete.add(existingProduct.imageKey);
-        }
         for (const oldKey of keysToDelete) {
-          try {
-            await storage.delete(oldKey);
-          } catch (error) {
-            console.warn("delete old image failed", error);
-          }
-        }
-      } else if (
-        finalImageUrl &&
-        existingProduct?.imageUrl &&
-        existingProduct.imageUrl !== finalImageUrl
-      ) {
-        const oldKey =
-          existingProduct.imageKey ??
-          (existingProduct.imageUrl.startsWith("/uploads/")
-            ? existingProduct.imageUrl.slice("/uploads/".length)
-            : undefined);
-        if (oldKey) {
           try {
             await storage.delete(oldKey);
           } catch (error) {
@@ -509,7 +469,7 @@ export async function runProductUpsertAction({
         success: true,
         action: "updated",
         id: productId,
-        imageUrl: finalImageUrl,
+        ...(finalImageUrl !== undefined ? { imageUrl: finalImageUrl } : {}),
       });
     }
 
@@ -532,22 +492,13 @@ export async function runProductUpsertAction({
     if (processedPhotoUploads.length > 0) {
       const persisted = await persistProductPhotos(createdProduct.id, []);
       finalImageUrl = persisted.cover?.fileUrl ?? finalImageUrl;
-      finalImageKey = persisted.cover?.fileKey ?? finalImageKey;
-
-      await db.product.update({
-        where: { id: createdProduct.id },
-        data: {
-          imageUrl: persisted.cover?.fileUrl ?? null,
-          imageKey: persisted.cover?.fileKey ?? null,
-        },
-      });
     }
 
     return json({
       success: true,
       action: "created",
       id: createdProduct.id,
-      imageUrl: finalImageUrl,
+      ...(finalImageUrl !== undefined ? { imageUrl: finalImageUrl } : {}),
     });
   } catch (error: unknown) {
     console.error("[❌ Product action error]:", error);
