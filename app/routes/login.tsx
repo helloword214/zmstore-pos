@@ -88,7 +88,19 @@ export async function action({ request }: ActionFunctionArgs) {
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
   }
 
-  if (!user.passwordHash || !(await compare(password, user.passwordHash))) {
+  if (!user.passwordHash) {
+    return json<ActionError>(
+      {
+        form:
+          user.authState !== "ACTIVE"
+            ? "Account setup is incomplete. Check your email and set your password first."
+            : "This account is missing a login password. Use Forgot password or ask an admin to send a setup link.",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (!(await compare(password, user.passwordHash))) {
     await registerAuthFailure({ email, ip });
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
   }
