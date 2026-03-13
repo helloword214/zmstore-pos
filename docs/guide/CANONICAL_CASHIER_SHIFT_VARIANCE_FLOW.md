@@ -37,7 +37,7 @@ This document does not own:
 1. `CANONICAL_IDENTITY_ACCESS_FLOW.md` for role boundaries and route access ownership
 2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md` for wider delivery/remit/cashier/AR stage flow
 3. `CANONICAL_UPLOAD_STORAGE_SOT.md` for any future scan/upload attachment implementation
-4. `WORKER_SCHEDULING_DUTY_SESSION_DRAFT.md` for current draft direction on schedule planning vs operational sessions
+4. `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` for worker schedule planning, staffing event history, and rider duty-session boundaries
 
 ## Scope
 
@@ -153,13 +153,13 @@ Where:
 1. Cashier submits close count once in `cashier.shift.tsx`, and drawer writes become locked for cashier.
 2. Manager recounts and decides in `store.cashier-shifts.tsx` during final close.
 3. Manager can print an A4 recount form from `store.cashier-shifts.tsx`; UI can auto-generate paper reference number.
-4. For mismatch cases that require paper audit handling, current operational practice is:
-   - cashier and manager sign the printed recount form
-   - signed paper is scanned and attached to the audit package outside the current in-app upload flow
-5. If in-system scan/upload is implemented later, it must follow `CANONICAL_UPLOAD_STORAGE_SOT.md`.
-6. Variance rows are created/updated in final close when mismatch exists.
-7. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
-8. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
+4. The printed recount form is the current acknowledgment artifact for mismatch cases.
+5. When paper audit handling is required, cashier and manager must sign the printed recount form.
+6. The signed paper must be scanned and attached to the shift variance audit package outside the current in-app upload flow.
+7. If in-system scan/upload is implemented later, it must follow `CANONICAL_UPLOAD_STORAGE_SOT.md`.
+8. Variance rows are created/updated in final close when mismatch exists.
+9. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
+10. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
 
 ## Mandatory Controls (Current)
 
