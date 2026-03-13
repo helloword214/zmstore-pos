@@ -22,6 +22,12 @@ If any instruction conflicts, follow this precedence:
 1. `DISCUSSION` or `REVIEW`: read-only. No file edits.
 2. `PATCH`: edits are allowed only after explicit user approval: `GO`.
 
+## Explicit Command Protocol
+
+1. `GO` alone means patch approval only.
+2. `GO` alone must not auto-run checks, commit, PR creation, or merge.
+3. Detailed workflow commands, execution contracts, stop-on-error behavior, and merge flow are owned by `docs/Chat Operating Rules/Chat Execution Rules.md`.
+
 ## Edit Gate (Mandatory)
 
 Before any edit, provide:
@@ -71,6 +77,11 @@ Then wait for explicit `GO`.
 3. Establish and reuse approved command prefixes early so succeeding turns can proceed end-to-end with minimal friction.
 4. Continue reporting what was executed and the outcome, but do not repeatedly ask for permission for the same approved workflow category.
 5. Ask again only for high-risk/destructive operations (for example `reset --hard`, history rewrite, destructive deletes) or when authentication/credentials are missing and require user action.
+
+## Execution Context
+
+1. Preflight reporting requirements and working-directory rules are owned by `docs/Chat Operating Rules/Chat Execution Rules.md`.
+2. Follow that owner doc for `pwd`, `git branch --show-current`, primary repo working copy usage, and `.codex/worktrees/...` isolation rules.
 
 ## Path and Privacy Standard
 
