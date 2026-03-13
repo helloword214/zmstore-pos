@@ -75,7 +75,7 @@ The repository currently has:
 
 1. `55` Prisma models
 2. `34` Prisma enums
-3. `91` migration folders
+3. `92` migration folders
 
 This volume makes historical overlap plausible and means schema cleanup must be staged, not assumed.
 
@@ -120,6 +120,21 @@ Why these were removed:
 1. product routes had already adopted slot-based `ProductPhoto` storage
 2. mirrored cover columns were redundant bridge fields
 3. active UI read paths were updated to derive the cover from the lowest occupied photo slot
+
+## Phase 4 Cleanup Completed (2026-03-13)
+
+Completed in the fourth cleanup pass:
+
+1. removed `CustomerAddress.photoUrl`
+2. removed `CustomerAddress.photoKey`
+3. removed `CustomerAddress.photoUpdatedAt`
+4. switched customer-address cover preview to derive from `CustomerAddressPhoto`
+
+Why these were removed:
+
+1. customer address photos were already stored in slot-based `CustomerAddressPhoto` rows
+2. parent-level cover fields were redundant bridge columns
+3. current database review showed no live address rows still depending on the bridge fields
 
 ## Intentional Snapshot Duplications (Do Not Treat as Bugs by Default)
 
@@ -195,22 +210,20 @@ Future review questions:
 
 1. Is `imageTag` still needed as a standalone concept once photo gallery usage is normalized?
 
-### 2. Customer Address Cover Fields + Customer Address Photo Gallery
+### 2. Customer Address Photo Gallery (Post-Bridge Cleanup)
 
 Observed shape:
 
-1. `CustomerAddress.photoUrl`, `photoKey`, `photoUpdatedAt`
-2. `CustomerAddressPhoto` gallery rows (`slot` 1..4)
+1. `CustomerAddressPhoto` gallery rows (`slot` 1..4)
 
 Current interpretation:
 
-1. same bridge pattern as product photos
-2. likely a cover-photo mirror over the gallery model
+1. `CustomerAddressPhoto` is now the sole image storage model for customer addresses
+2. address cover preview is derived from the lowest occupied slot at read time
 
 Future review questions:
 
-1. Are address screens consuming cover fields for summary cards while gallery drives detail pages?
-2. Can a single derived-cover rule replace duplicated storage?
+1. Should address-photo reads later move to `fileKey`-first URL derivation if storage strategy changes?
 
 ## Active Legacy-Looking Fields That Are Still In Use
 
@@ -252,9 +265,9 @@ The highest-signal remaining schema cleanup targets are now bridge or legacy-in-
 
 Suggested next review targets:
 
-1. customer address cover bridge: `CustomerAddress.photoUrl`, `photoKey`, `photoUpdatedAt` versus `CustomerAddressPhoto`
-2. auth lifecycle decision: `User.pinHash`
-3. standalone product photo metadata decision: `imageTag`
+1. auth lifecycle decision: `User.pinHash`
+2. standalone product photo metadata decision: `imageTag`
+3. future storage-hardening review: `fileKey`-first URL derivation strategy
 
 ## Migration-History Drift Signals
 

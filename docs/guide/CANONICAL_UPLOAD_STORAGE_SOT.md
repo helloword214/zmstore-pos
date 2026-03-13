@@ -94,7 +94,7 @@ This document does not own:
 1. Product supports optional gallery photos via `ProductPhoto` with slot uniqueness (`productId + slot`) and fixed range `1..4`.
 2. Product cover preview is derived from the lowest occupied `ProductPhoto.slot`; no mirrored cover-image columns remain on `Product`.
 3. Customer profile photo uses `Customer.photoUrl` and `Customer.photoKey`.
-4. Customer address gallery is modeled by `CustomerAddressPhoto` with slot uniqueness (`customerAddressId + slot`).
+4. Customer address photos are modeled only by `CustomerAddressPhoto` with slot uniqueness (`customerAddressId + slot`); address cover preview is derived from the lowest occupied slot.
 5. Employee compliance documents are stored as append-only history rows in `EmployeeDocument`.
 
 ## Lifecycle Rules (Binding)

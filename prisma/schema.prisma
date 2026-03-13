@@ -225,9 +225,6 @@ model CustomerAddress {
   landmark       String?
   geoLat         Float?
   geoLng         Float?
-  photoUrl       String?
-  photoKey       String?
-  photoUpdatedAt DateTime?
 
   deliveryOrders Order[]                @relation("OrderDeliveryAddress")
   photos         CustomerAddressPhoto[]

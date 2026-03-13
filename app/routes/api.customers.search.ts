@@ -18,6 +18,78 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const where = buildCustomerSearchWhere({ q, mustHaveOpenOrders });
 
+  if (withAddresses) {
+    const rows = await db.customer.findMany({
+      where,
+      select: {
+        id: true,
+        firstName: true,
+        middleName: true,
+        lastName: true,
+        alias: true,
+        phone: true,
+        addresses: {
+          select: {
+            id: true,
+            label: true,
+            line1: true,
+            barangay: true,
+            city: true,
+            province: true,
+            landmark: true,
+            geoLat: true,
+            geoLng: true,
+            photos: {
+              select: {
+                slot: true,
+                fileUrl: true,
+                uploadedAt: true,
+              },
+              orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+            },
+          },
+          orderBy: [{ id: "desc" }],
+          take: 2,
+        },
+      },
+      take: 25,
+    });
+
+    const normalizedRows = rows.map((row) => ({
+      ...row,
+      addresses: row.addresses.map((address) => {
+        const uniquePhotos = address.photos.filter((photo, index, list) => {
+          const firstIndex = list.findIndex((item) => item.slot === photo.slot);
+          return firstIndex === index;
+        });
+        const coverPhoto = uniquePhotos[0] ?? null;
+        const latestPhoto =
+          uniquePhotos.length > 0
+            ? uniquePhotos.reduce((latest, photo) =>
+                photo.uploadedAt > latest.uploadedAt ? photo : latest
+              )
+            : null;
+
+        return {
+          id: address.id,
+          label: address.label,
+          line1: address.line1,
+          barangay: address.barangay,
+          city: address.city,
+          province: address.province,
+          landmark: address.landmark,
+          geoLat: address.geoLat,
+          geoLng: address.geoLng,
+          photoUrl: coverPhoto?.fileUrl ?? null,
+          photoUpdatedAt: latestPhoto?.uploadedAt ?? null,
+        };
+      }),
+    }));
+
+    const items = scoreAndSortCustomers(normalizedRows, q).slice(0, 10);
+    return json({ items });
+  }
+
   const rows = await db.customer.findMany({
     where,
     select: {
@@ -27,27 +99,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       lastName: true,
       alias: true,
       phone: true,
-      ...(withAddresses
-        ? {
-            addresses: {
-              select: {
-                id: true,
-                label: true,
-                line1: true,
-                barangay: true,
-                city: true,
-                province: true,
-                landmark: true,
-                geoLat: true,
-                geoLng: true,
-                photoUrl: true,
-                photoUpdatedAt: true,
-              },
-              orderBy: [{ photoUpdatedAt: "desc" }, { id: "desc" }],
-              take: 2,
-            },
-          }
-        : {}),
     },
     take: 25,
   });
