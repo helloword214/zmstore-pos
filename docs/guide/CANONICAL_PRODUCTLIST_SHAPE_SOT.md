@@ -145,7 +145,7 @@ Mode selection and guards are evaluated from fresh product rows in `orders.new.t
 ## LPG Hooks in Schema (Current Status)
 
 1. `OrderItem` includes optional LPG-specific fields: `isLpg`, `lpgSwapKind`, `lpgEmptyReturned`, `lpgLoaned`.
-2. `CylinderLoan` table exists to track borrowed cylinders per customer.
+2. No dedicated cylinder-loan ledger remains in the active schema.
 3. Current `products._index.tsx`, `pad-order._index.tsx`, and `orders.new.tsx` flows are still driven by generic `PACK`/`RETAIL` logic.
 4. Dedicated swap/loan runtime lifecycle is not a required/default behavior in active order-create path.
 5. Treat current LPG fields as specialized hooks to be generalized in future refactor.

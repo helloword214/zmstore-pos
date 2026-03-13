@@ -1170,17 +1170,12 @@ async function seed() {
     db.user.deleteMany(),
     // ── M3/M2 artifacts first (may reference Product & Order)
     db.deliveryRunOrder.deleteMany(),
-    db.runAdhocSale.deleteMany(),
     db.stockMovement.deleteMany(),
 
     // ── Order graph
     db.payment.deleteMany(),
     db.orderItem.deleteMany(),
     db.order.deleteMany(),
-
-    // ── Sales graph
-    db.saleItem.deleteMany(),
-    db.sale.deleteMany(),
 
     // ── Product-side many-to-many & details
     db.productIndication.deleteMany(),
@@ -1191,7 +1186,6 @@ async function seed() {
     //    Keep these if you prefer to retain customers/addresses.
     db.customerAddress.deleteMany(),
     db.customerItemPrice.deleteMany(),
-    db.cylinderLoan.deleteMany(),
     db.customer.deleteMany(),
 
     // ── Core catalog
@@ -1217,7 +1211,6 @@ async function seed() {
 
     // ── Optional: if you also want a clean slate for fleet/workforce
     // Comment out if you want to keep them across seeds.
-    // db.overrideLog.deleteMany(),
     // db.deliveryRun.deleteMany(),
     db.vehicleCapacityProfile.deleteMany(),
     db.vehicle.deleteMany(),

@@ -82,9 +82,10 @@ These visualize flow and route ownership but do not replace canonical owner docs
 11. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
 12. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 13. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
-14. `PRODUCTLIST_REFACTOR_DIRECTION.md`
-15. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
-16. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
+14. `DATABASE_SCHEMA_DUPLICATION_AUDIT.md`
+15. `PRODUCTLIST_REFACTOR_DIRECTION.md`
+16. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
+17. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
 
 These help implementation but must not override Canonical docs.
 

@@ -43,7 +43,6 @@ model Product {
   productIndications ProductIndication[]
   productTags        ProductTag[]
   productTargets     ProductTarget[]
-  saleItems          SaleItem[]
   tags               Tag[]               @relation("ProductTags")
   // back-relation to customer-specific pricing rules
   customerItemPrices CustomerItemPrice[] @relation("CustomerItemPricesOnProduct")
@@ -51,30 +50,12 @@ model Product {
 
   // back-relations for new models
   stockMovements StockMovement[]
-  runAdhocSales  RunAdhocSale[]
 
   // NEW: lines in run receipts
   runReceiptLines RunReceiptLine[]
 
   // product photo gallery (slot-based, max 4)
   photos ProductPhoto[]
-}
-
-model Sale {
-  id        Int        @id @default(autoincrement())
-  createdAt DateTime   @default(now())
-  total     Float
-  items     SaleItem[]
-}
-
-model SaleItem {
-  id        Int     @id @default(autoincrement())
-  saleId    Int
-  productId Int
-  quantity  Int
-  price     Float
-  product   Product @relation(fields: [productId], references: [id])
-  sale      Sale    @relation(fields: [saleId], references: [id])
 }
 
 model Category {
@@ -217,7 +198,6 @@ model Customer {
 
   addresses          CustomerAddress[]
   orders             Order[]
-  cylinderLoans      CylinderLoan[]
   customerItemPrices CustomerItemPrice[]
 
   // NEW: run receipts (roadside or parent receipts)
@@ -356,7 +336,6 @@ model Order {
   deliverGeoLat     Float? // snapshot coords (optional)
   deliverGeoLng     Float? // snapshot coords (optional)
   deliverPhotoUrl   String? // snapshot photo (optional)
-  deliverPhotoKey   String? // snapshot photo storage key (optional)
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -390,9 +369,6 @@ model Order {
   // Named relations to avoid ambiguity
   rider   Employee? @relation("OrderRider", fields: [riderId], references: [id], onDelete: SetNull)
   vehicle Vehicle?  @relation("OrderVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
-
-  // Back-relations
-  overrideLogs OverrideLog[] @relation("OrderOverrideLogs")
 
   // Receipt fields (set when PAID)
   paidAt    DateTime?
@@ -503,20 +479,6 @@ model Payment {
   @@index([orderId])
   @@index([shiftId])
   @@index([cashierId, createdAt])
-}
-
-// Track borrowed LPG cylinders per customer
-model CylinderLoan {
-  id          Int       @id @default(autoincrement())
-  customerId  Int
-  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  brandFamily String // e.g. "CATGAS", "BRANDED" (can convert to enum later)
-  qty         Float // allow fractional if needed (e.g., partial deposit logic later)
-  openedAt    DateTime  @default(now())
-  closedAt    DateTime?
-  notes       String?
-
-  @@index([customerId, closedAt])
 }
 
 // ── NEW (singleton counter for receipts) ────────────────────
@@ -787,8 +749,6 @@ model DeliveryRun {
   vehicle Vehicle?  @relation("RunVehicle", fields: [vehicleId], references: [id], onDelete: SetNull)
 
   orders         DeliveryRunOrder[]
-  adhocSales     RunAdhocSale[]
-  overrideLogs   OverrideLog[]      @relation("RunOverrideLogs")
   riderVariances RiderRunVariance[]
 
   // NEW: receipt-level grouping for rider check-in / manager review
@@ -918,42 +878,6 @@ model DeliveryRunOrder {
 
   @@id([runId, orderId])
   @@index([orderId])
-}
-
-// Minimal ad-hoc sale lines against a run loadout
-model RunAdhocSale {
-  id        Int      @id @default(autoincrement())
-  runId     Int
-  productId Int
-  qty       Decimal  @db.Decimal(12, 3)
-  unitPrice Decimal  @db.Decimal(10, 2)
-  lineTotal Decimal  @db.Decimal(12, 2)
-  createdAt DateTime @default(now())
-
-  run     DeliveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  product Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  @@index([runId])
-  @@index([productId])
-}
-
-// ────────────── NEW: Permissions & Overrides (Milestone 4) ──────────────
-model OverrideLog {
-  id         Int          @id @default(autoincrement())
-  kind       OverrideKind
-  orderId    Int?
-  runId      Int?
-  approvedBy String // PIN/name or user code
-  reason     String?
-  createdAt  DateTime     @default(now())
-
-  // Named relations + back-relations exist on Order/DeliveryRun
-  order Order?       @relation("OrderOverrideLogs", fields: [orderId], references: [id], onDelete: SetNull)
-  run   DeliveryRun? @relation("RunOverrideLogs", fields: [runId], references: [id], onDelete: SetNull)
-
-  @@index([orderId])
-  @@index([runId])
-  @@index([kind, createdAt])
 }
 
 // ────────────── Rider Cash Variance (Shortages / Over) ──────────────
@@ -1207,13 +1131,6 @@ model RiderRunVariance {
   @@index([managerApprovedAt])
   @@index([riderAcceptedAt])
   @@index([receiptId])
-}
-
-enum OverrideKind {
-  CAPACITY_EXCEED
-  PRICE_BELOW_ALLOWED
-  MANUAL_RETURN_ADJUST
-  AR_APPROVE
 }
 
 // ────────────── Commercial Clearance System (CCS) ──────────────
