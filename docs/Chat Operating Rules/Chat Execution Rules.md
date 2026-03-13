@@ -1,6 +1,7 @@
 # Enterprise Chat Operating Rules (Option D – Hybrid, Anti–Silent Assumption)
 
-Version: 1.1  
+Version: 1.2  
+Changelog: v1.2 adds documentation architecture enforcement (owner-doc routing, cross-reference rule, router/diagram boundaries).  
 Purpose: This is the **starter context** I will paste at the top of a new chat to force stable, enterprise-style collaboration.
 
 ---
@@ -116,6 +117,25 @@ If you violate the gate (project mode), I may reply:
   - related diagram guide
 - Do not mark output as `FINALIZE` until docs are aligned, or explicitly state:
   - `Docs Impact: none` + one-line reason.
+
+### Documentation Architecture Rule
+
+- Documentation is a primary system artifact alongside code.
+- Before any documentation patch, identify:
+  1. the concern being changed
+  2. the owner document for that concern
+  3. secondary docs that should only align or point to the owner doc
+- One concern must have one owner document. If unrelated concerns are being mixed for convenience, stop and ask to split the scope or get explicit approval.
+- Update the owner document first.
+- Other docs may summarize and refer, but must not duplicate the full rule text as competing specifications.
+- README/index docs act as routers only.
+- Diagram docs visualize flow and ownership, then point back to owner docs for binding rules.
+- Supporting and draft docs may explain or propose, but must not silently introduce or override canonical rules.
+- New or substantially revised canonical docs should explicitly declare:
+  - `Owns`
+  - `Does Not Own`
+  - `Refer To`
+- Full doctrine lives in `docs/Governance SOP/Documentation Architecture Standard.md`.
 
 ---
 
