@@ -2,7 +2,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useSearchParams } from "@remix-run/react";
-import { ClearanceCaseStatus } from "@prisma/client";
+import { ClearanceCaseStatus, EmployeeRole } from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
@@ -243,7 +243,7 @@ const applyDecisionFinancial = (remainingRaw: number, c?: CaseInfo) => {
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["ADMIN", "STORE_MANAGER", "EMPLOYEE"]);
+  const me = await requireRole(request, ["STORE_MANAGER", "EMPLOYEE"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -283,6 +283,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   });
   if (!run) throw new Response("Not found", { status: 404 });
+
+  if (me.role === "EMPLOYEE") {
+    const userRow = await db.user.findUnique({
+      where: { id: me.userId },
+      select: {
+        employee: {
+          select: { id: true, role: true },
+        },
+      },
+    });
+    if (!userRow?.employee) {
+      throw new Response("Employee profile not linked", { status: 403 });
+    }
+    if (userRow.employee.role !== EmployeeRole.RIDER) {
+      throw new Response("Rider access only", { status: 403 });
+    }
+    if (!run.riderId || run.riderId !== userRow.employee.id) {
+      throw new Response("Assigned rider only", { status: 403 });
+    }
+  }
 
   const runStatus = run.status as RunStatus;
   const isFinalized =

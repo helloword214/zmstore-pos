@@ -65,7 +65,7 @@ function MiniBadge({ n }: { n: number }) {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
 
   const userRow = await db.user.findUnique({
     where: { id: me.userId },

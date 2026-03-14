@@ -66,8 +66,8 @@ function buildDispatchOrderBy(
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Store Manager (or Admin) lang ang pwede dito
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  // Store manager lane only
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const url = new URL(request.url);
   const q = String(url.searchParams.get("q") || "").trim();
@@ -191,7 +191,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
 

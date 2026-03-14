@@ -116,7 +116,7 @@ function normalizeDenoms(raw: unknown): Denoms | null {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const url = new URL(request.url);
   const tab = safeTab(url.searchParams.get("tab"));
@@ -212,7 +212,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
   throw new Response(
     "Read-only: manager decisions are recorded in /store/cashier-shifts during final close.",
     { status: 405 },

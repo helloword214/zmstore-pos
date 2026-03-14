@@ -17,7 +17,12 @@ import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { CustomerPicker } from "~/components/CustomerPicker";
-import { ClearanceCaseStatus, Prisma, UnitKind } from "@prisma/client";
+import {
+  ClearanceCaseStatus,
+  EmployeeRole,
+  Prisma,
+  UnitKind,
+} from "@prisma/client";
 import { loadRunReceiptCashMaps } from "~/services/runReceipts.server";
 import { loadRunRecap } from "~/services/runRecap.server";
 import { r2 as r2Money, MONEY_EPS } from "~/utils/money";
@@ -287,7 +292,7 @@ const parseStockRowsPayload = (value: unknown): StockRowsPayloadRow[] => {
 // Loader
 // -------------------------------------------------------
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
+  const me = await requireRole(request, ["EMPLOYEE"]);
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid id", { status: 400 });
@@ -335,6 +340,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 
   if (!run) throw new Response("Not found", { status: 404 });
+
+  const userRow = await db.user.findUnique({
+    where: { id: me.userId },
+    select: {
+      employee: {
+        select: { id: true, role: true },
+      },
+    },
+  });
+  if (!userRow?.employee) {
+    throw new Response("Employee profile not linked", { status: 403 });
+  }
+  if (userRow.employee.role !== EmployeeRole.RIDER) {
+    throw new Response("Rider access only", { status: 403 });
+  }
+  if (!run.riderId || run.riderId !== userRow.employee.id) {
+    throw new Response("Assigned rider only", { status: 403 });
+  }
 
   if (run.status !== "DISPATCHED" && run.status !== "CHECKED_IN") {
     return redirect(`/runs/${id}/summary?note=invalid-status`);
@@ -811,8 +834,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 // Action
 // -------------------------------------------------------
 export async function action({ request, params }: ActionFunctionArgs) {
-  // Same guard as loader: only rider/employee/manager/admin can submit
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN", "EMPLOYEE"]);
+  // Same guard as loader: only the assigned rider can submit or update check-in facts.
+  const me = await requireRole(request, ["EMPLOYEE"]);
   const actorId =
     Number.isFinite(me.userId) && Number(me.userId) > 0 ? Number(me.userId) : null;
 
@@ -838,9 +861,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const run = await db.deliveryRun.findUnique({
     where: { id },
-    select: { id: true, status: true, riderCheckinAt: true },
+    select: { id: true, status: true, riderId: true, riderCheckinAt: true },
   });
   if (!run) throw new Response("Not found", { status: 404 });
+
+  const userRow = await db.user.findUnique({
+    where: { id: me.userId },
+    select: {
+      employee: {
+        select: { id: true, role: true },
+      },
+    },
+  });
+  if (!userRow?.employee) {
+    throw new Response("Employee profile not linked", { status: 403 });
+  }
+  if (userRow.employee.role !== EmployeeRole.RIDER) {
+    throw new Response("Rider access only", { status: 403 });
+  }
+  if (!run.riderId || run.riderId !== userRow.employee.id) {
+    throw new Response("Assigned rider only", { status: 403 });
+  }
 
   if (run.status !== "DISPATCHED" && run.status !== "CHECKED_IN") {
     return redirect(`/runs/${id}/summary?note=invalid-status`);

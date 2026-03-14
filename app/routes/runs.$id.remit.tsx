@@ -345,8 +345,8 @@ async function loadStockUnitValues(
 // Loader: overview only (no editing)
 // ─────────────────────────────────────────
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // 🔒 Remit page: MANAGER / ADMIN only
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  // 🔒 Remit page: store manager only
+  await requireRole(request, ["STORE_MANAGER"]);
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
@@ -820,8 +820,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 // Action: use snapshot only; manager just approves
 // ─────────────────────────────────────────
 export async function action({ request, params }: ActionFunctionArgs) {
-  // 🔒 Extra guard: only MANAGER / ADMIN can post remit / revert
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  // 🔒 Extra guard: only store manager can post remit / revert
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   const id = Number(params.id);
 
   const formData = await request.formData();

@@ -4,11 +4,15 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
-import { EmployeeRole, RiderChargeStatus } from "@prisma/client";
+import { EmployeeRole } from "@prisma/client";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
+import {
+  getWorkerDashboardSummary,
+  type WorkerDashboardSummary,
+} from "~/services/worker-dashboard-summary.server";
 
 type LoaderData = {
   user: {
@@ -19,12 +23,7 @@ type LoaderData = {
     email: string | null;
   };
   pendingVarianceCount: number;
-  hr: {
-    nextShiftLabel: string | null;
-    paydayLabel: string | null;
-    absentCountThisMonth: number;
-    outstandingCharges: number;
-  };
+  workforce: WorkerDashboardSummary;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -57,44 +56,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : userRow.email ?? "";
   const alias: string | null = emp?.alias ?? null;
 
-  // Variances waiting for rider acceptance (only when manager decided CHARGE_RIDER)
-  const pendingVarianceCount = await db.riderRunVariance.count({
-    where: {
-      riderId: emp.id,
-      status: "MANAGER_APPROVED",
-      resolution: "CHARGE_RIDER",
-      riderAcceptedAt: null,
-    },
-  });
-
-  // OPTION B: outstanding rider charges = sum(unpaid balances)
-  // RiderChargeStatus: OPEN | PARTIALLY_SETTLED | SETTLED | WAIVED
-  const openCharges = await db.riderCharge.findMany({
-    where: {
-      riderId: emp.id,
-      status: {
-        in: [RiderChargeStatus.OPEN, RiderChargeStatus.PARTIALLY_SETTLED],
+  const [pendingVarianceCount, workforce] = await Promise.all([
+    db.riderRunVariance.count({
+      where: {
+        riderId: emp.id,
+        status: "MANAGER_APPROVED",
+        resolution: "CHARGE_RIDER",
+        riderAcceptedAt: null,
       },
-    },
-    select: {
-      amount: true,
-      payments: { select: { amount: true } },
-    },
-  });
-  const outstandingCharges = openCharges.reduce((sum, ch) => {
-    const amt = Number(ch.amount ?? 0);
-    const paid = (ch.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
-    const bal = Math.max(0, amt - paid);
-    return sum + bal;
-  }, 0);
-
-  // TODO: Wire these to real tables in the future
-  const hr: LoaderData["hr"] = {
-    nextShiftLabel: "Tomorrow, 8:00 AM – Asingan Branch", // placeholder
-    paydayLabel: "15 & 30 of the month", // placeholder
-    absentCountThisMonth: 0, // placeholder
-    outstandingCharges, // ✅ real computed
-  };
+    }),
+    getWorkerDashboardSummary({
+      employeeId: emp.id,
+      chargeScope: {
+        lane: "RIDER",
+        employeeId: emp.id,
+      },
+    }),
+  ]);
 
   return json<LoaderData>({
     user: {
@@ -105,12 +83,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       email: userRow.email ?? null,
     },
     pendingVarianceCount,
-    hr,
+    workforce,
   });
 }
 
 export default function RiderDashboard() {
-  const { user, hr, pendingVarianceCount } = useLoaderData<LoaderData>();
+  const { user, workforce, pendingVarianceCount } = useLoaderData<LoaderData>();
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -133,7 +111,9 @@ export default function RiderDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <SoTStatusPill tone="success">On-duty</SoTStatusPill>
+            <SoTStatusPill tone={workforce.todayStatus.tone}>
+              {workforce.todayStatus.label}
+            </SoTStatusPill>
             <Link to="/account/security">
               <SoTButton type="button" variant="secondary">
                 Account
@@ -164,15 +144,17 @@ export default function RiderDashboard() {
             <SoTCard
               compact
               title="Outstanding Charges"
-              tone={hr.outstandingCharges > 0 ? "danger" : "default"}
+              tone={workforce.charges.outstandingAmount > 0 ? "danger" : "default"}
             >
               <div
                 className={
                   "text-sm font-semibold " +
-                  (hr.outstandingCharges > 0 ? "text-rose-700" : "text-slate-900")
+                  (workforce.charges.outstandingAmount > 0
+                    ? "text-rose-700"
+                    : "text-slate-900")
                 }
               >
-                ₱{hr.outstandingCharges.toFixed(2)}
+                ₱{workforce.charges.outstandingAmount.toFixed(2)}
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 Includes shortage or penalties currently assigned to your account.
@@ -181,19 +163,23 @@ export default function RiderDashboard() {
 
             <SoTCard compact title="Next Shift" tone="success">
               <div className="text-sm font-medium text-slate-900">
-                {hr.nextShiftLabel ?? "No schedule loaded"}
+                {workforce.nextShift.label ?? "No schedule published"}
               </div>
               <p className="mt-1 text-xs text-emerald-900/80">
-                Check complete schedule for branch and shift-hour updates.
+                {workforce.nextShift.hint}
               </p>
             </SoTCard>
 
-            <SoTCard compact title="Payday">
+            <SoTCard compact title="Payroll">
               <div className="text-sm font-medium text-slate-900">
-                {hr.paydayLabel ?? "Not set"}
+                {workforce.payroll.latestLabel ??
+                  workforce.payroll.policyLabel ??
+                  "No payroll record yet"}
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                Payroll and charge deductions are reflected during payout cycle.
+                {workforce.payroll.policyLabel
+                  ? `Policy: ${workforce.payroll.policyLabel}`
+                  : "Payroll summary appears after manager finalizes a run."}
               </p>
             </SoTCard>
           </div>
@@ -336,18 +322,18 @@ export default function RiderDashboard() {
                   Work Schedule
                 </h2>
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {hr.nextShiftLabel ?? "No schedule loaded"}
+                  {workforce.nextShift.label ?? "No schedule published"}
                 </p>
               </div>
             </div>
             <p className="mt-3 text-xs text-indigo-900/80">
-              Tingnan ang full schedule, rest day, at assigned branch.
+              {workforce.nextShift.hint}
             </p>
             <Link
-              to="/me/schedule"
+              to="/runs?mine=1"
               className="mt-3 inline-flex items-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
-              View full schedule
+              Open my runs
             </Link>
           </div>
 
@@ -357,43 +343,50 @@ export default function RiderDashboard() {
               Attendance &amp; Absences
             </h2>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
-              {hr.absentCountThisMonth}
+              {workforce.attendance.absentCountThisMonth}
               <span className="ml-1 text-xs font-normal text-slate-500">
                 absent this month
               </span>
             </p>
             <p className="mt-2 text-xs text-slate-500">
-              Kasama dito ang hindi naka-time-in / naka-log sa schedule.
+              Late: {workforce.attendance.lateCountThisMonth} · Suspension:{" "}
+              {workforce.attendance.suspensionCountThisMonth}
             </p>
-            <Link
-              to="/me/attendance"
-              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              Attendance history
-            </Link>
           </div>
 
           {/* Payday & charges */}
           <div
             className={
               "rounded-2xl border p-4 text-sm shadow-sm " +
-              (hr.outstandingCharges > 0
+              (workforce.charges.outstandingAmount > 0
                 ? "border-rose-200 bg-rose-50"
                 : "border-slate-200 bg-white")
             }
           >
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Payday &amp; Charges
+              Payroll &amp; Charges
             </h2>
-            <p className="mt-1 text-xs text-slate-500">Next payday</p>
+            <p className="mt-1 text-xs text-slate-500">Payroll policy</p>
             <p className="text-sm font-medium text-slate-900">
-              {hr.paydayLabel ?? "Not set"}
+              {workforce.payroll.policyLabel ?? "Not configured"}
             </p>
+
+            <div className="mt-3">
+              <p className="text-xs text-slate-500">Latest payroll</p>
+              <p className="text-sm font-medium text-slate-900">
+                {workforce.payroll.latestLabel ?? "No finalized payroll yet"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {workforce.payroll.latestNetPay == null
+                  ? "Net pay will appear here after manager finalizes a payroll run."
+                  : `Latest net pay: ₱${workforce.payroll.latestNetPay.toFixed(2)}`}
+              </p>
+            </div>
 
             <div className="mt-3">
               <p className="text-xs text-slate-500">Outstanding charges</p>
               <p className="text-xl font-semibold text-slate-900">
-                ₱{hr.outstandingCharges.toFixed(2)}
+                ₱{workforce.charges.outstandingAmount.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 Pwedeng kasama dito ang shortage, penalties, o iba pang
@@ -403,21 +396,21 @@ export default function RiderDashboard() {
 
             <div className="mt-3 flex gap-2">
               <Link
-                to="/me/payroll"
+                to="/runs?mine=1"
                 className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
-                Payslip / payroll
+                My runs
               </Link>
               <Link
-                to="/me/charges"
+                to="/rider/variances"
                 className={
                   "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
-                  (hr.outstandingCharges > 0
+                  (workforce.charges.outstandingAmount > 0 || pendingVarianceCount > 0
                     ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
                 }
               >
-                View charges
+                Pending variances
               </Link>
             </div>
           </div>

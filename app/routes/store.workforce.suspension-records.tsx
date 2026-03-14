@@ -153,7 +153,7 @@ function dateFallsWithinRange(
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
   const url = new URL(request.url);
   const selectedWorkerId = parseOptionalInt(url.searchParams.get("workerId"));
   const saved = url.searchParams.get("saved");
@@ -219,7 +219,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
 

@@ -142,7 +142,7 @@ type ActionData = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
 
   // Cashier list
   const cashierUsers = await db.user.findMany({
@@ -277,7 +277,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   const fd = await request.formData();
   const act = String(fd.get("_action") || "");
   type CloseResolution = "" | CashierVarianceResolution;

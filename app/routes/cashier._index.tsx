@@ -9,7 +9,6 @@ import {
   type SessionUser,
 } from "~/utils/auth.server";
 import {
-  CashierChargeStatus,
   CashierVarianceResolution,
   CashierVarianceStatus,
 } from "@prisma/client";
@@ -18,6 +17,10 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
+import {
+  getWorkerDashboardSummary,
+  type WorkerDashboardSummary,
+} from "~/services/worker-dashboard-summary.server";
 
 type LoaderData = {
   me: SessionUser;
@@ -37,9 +40,7 @@ type LoaderData = {
   alerts: {
     openChargeItems: number; // manager-charged cashier variance items awaiting cashier ack
   };
-  finance: {
-    outstandingCharges: number;
-  };
+  workforce: WorkerDashboardSummary;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -67,7 +68,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : userRow.email ?? "";
   const alias: string | null = emp?.alias ?? null;
 
-  const [shift, openChargeItems, openCharges] = await Promise.all([
+  const [shift, openChargeItems, workforce] = await Promise.all([
     getActiveShift(request),
     // Cashier Charges = manager approved + charged to cashier, waiting cashier acknowledgement
     db.cashierShiftVariance.count({
@@ -77,27 +78,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         shift: { cashierId: me.userId },
       },
     }),
-    db.cashierCharge.findMany({
-      where: {
-        cashierId: me.userId,
-        status: {
-          in: [CashierChargeStatus.OPEN, CashierChargeStatus.PARTIALLY_SETTLED],
-        },
-      },
-      select: {
-        amount: true,
-        payments: { select: { amount: true } },
+    getWorkerDashboardSummary({
+      employeeId: emp?.id ?? null,
+      chargeScope: {
+        lane: "CASHIER",
+        userId: me.userId,
       },
     }),
   ]);
-  const outstandingCharges = openCharges.reduce((sum, ch) => {
-    const amt = Number(ch.amount ?? 0);
-    const paid = (ch.payments ?? []).reduce(
-      (s: number, p) => s + Number(p.amount ?? 0),
-      0
-    );
-    return sum + Math.max(0, amt - paid);
-  }, 0);
 
   const activeShift = shift
     ? {
@@ -118,12 +106,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       email: userRow.email ?? "",
     },
     alerts: { openChargeItems },
-    finance: { outstandingCharges },
+    workforce,
   });
 }
 
 export default function CashierDashboardPage() {
-  const { me, activeShift, userInfo, alerts, finance } =
+  const { me, activeShift, userInfo, alerts, workforce } =
     useLoaderData<LoaderData>();
 
   const hasShift = !!activeShift;
@@ -139,14 +127,9 @@ export default function CashierDashboardPage() {
     : shiftLocked
       ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
       : "Shift open";
-  const nextShiftLabel = hasShift
-    ? `Active shift #${activeShift?.id}`
-    : "No schedule loaded";
-  const scheduleSubtitle = hasShift && openedAt
-    ? `Opened ${openedAt}`
-    : "Waiting for manager to open your shift.";
-  const absentCountThisMonth = 0;
-  const paydayLabel = "15 & 30 of the month";
+  const scheduleSubtitle = workforce.hasLinkedEmployee
+    ? workforce.nextShift.hint
+    : "Schedule and payroll summary stay empty until this cashier account is linked to an employee profile.";
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
@@ -233,6 +216,16 @@ export default function CashierDashboardPage() {
           </div>
         )}
 
+        {!workforce.hasLinkedEmployee && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            <div className="font-medium">Employee profile link required</div>
+            <div className="mt-1 text-xs">
+              Workforce schedule and payroll widgets are read-only until this cashier
+              login is linked to an employee profile.
+            </div>
+          </div>
+        )}
+
         <section>
           <SoTSectionHeader title="Operations Snapshot" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -247,10 +240,10 @@ export default function CashierDashboardPage() {
 
             <SoTCard compact title="Next Shift" tone="success">
               <div className="mt-1 text-sm font-semibold text-slate-900">
-                Tomorrow, 8:00 AM – Asingan Branch
+                {workforce.nextShift.label ?? "No schedule published"}
               </div>
               <p className="mt-1 text-xs text-emerald-900/80">
-                Check complete schedule for branch and shift-hour updates.
+                {workforce.nextShift.hint}
               </p>
             </SoTCard>
 
@@ -280,17 +273,17 @@ export default function CashierDashboardPage() {
             <SoTCard
               compact
               title="Outstanding Charges"
-              tone={finance.outstandingCharges > 0 ? "danger" : "default"}
+              tone={workforce.charges.outstandingAmount > 0 ? "danger" : "default"}
             >
               <div
                 className={
                   "mt-1 text-sm font-semibold " +
-                  (finance.outstandingCharges > 0
+                  (workforce.charges.outstandingAmount > 0
                     ? "text-rose-700"
                     : "text-slate-900")
                 }
               >
-                ₱{finance.outstandingCharges.toFixed(2)}
+                ₱{workforce.charges.outstandingAmount.toFixed(2)}
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 Total remaining balance assigned to this cashier account.
@@ -442,35 +435,36 @@ export default function CashierDashboardPage() {
                 Work Schedule
               </div>
               <div className="mt-1 text-sm font-medium text-slate-900">
-                {nextShiftLabel}
+                {workforce.nextShift.label ?? "No schedule published"}
               </div>
               <p className="mt-1 text-xs text-indigo-900/80">{scheduleSubtitle}</p>
 
               <div className="mt-3 grid gap-2">
                 <Link
-                  to="/cashier/shift?next=/cashier"
+                  to="/cashier/shift-history"
                   className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
-                  View full schedule
+                  Shift history
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Attendance &amp; Absences
-              </h2>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
-                {absentCountThisMonth}
-                <span className="ml-1 text-xs font-normal text-slate-500">
-                  absent this month
-                </span>
-              </p>
-              <p className="mt-2 text-xs text-slate-500">
-                Kasama dito ang hindi naka-time-in / naka-log sa schedule.
-              </p>
-              <Link
-                to="/cashier/shift-history"
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Attendance &amp; Absences
+            </h2>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {workforce.attendance.absentCountThisMonth}
+              <span className="ml-1 text-xs font-normal text-slate-500">
+                absent this month
+              </span>
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Late: {workforce.attendance.lateCountThisMonth} · Suspension:{" "}
+              {workforce.attendance.suspensionCountThisMonth}
+            </p>
+            <Link
+              to="/cashier/shift-history"
                 className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
                 Attendance history
@@ -480,21 +474,35 @@ export default function CashierDashboardPage() {
             <div
               className={
                 "rounded-2xl border p-4 text-sm shadow-sm " +
-                (finance.outstandingCharges > 0
+                (workforce.charges.outstandingAmount > 0
                   ? "border-rose-200 bg-rose-50"
                   : "border-slate-200 bg-white")
               }
             >
               <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Payday &amp; Charges
+                Payroll &amp; Charges
               </h2>
-              <p className="mt-1 text-xs text-slate-500">Next payday</p>
-              <p className="text-sm font-medium text-slate-900">{paydayLabel}</p>
+              <p className="mt-1 text-xs text-slate-500">Payroll policy</p>
+              <p className="text-sm font-medium text-slate-900">
+                {workforce.payroll.policyLabel ?? "Not configured"}
+              </p>
+
+              <div className="mt-3">
+                <p className="text-xs text-slate-500">Latest payroll</p>
+                <p className="text-sm font-medium text-slate-900">
+                  {workforce.payroll.latestLabel ?? "No finalized payroll yet"}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {workforce.payroll.latestNetPay == null
+                    ? "Net pay appears here after the manager finalizes a payroll run."
+                    : `Latest net pay: ₱${workforce.payroll.latestNetPay.toFixed(2)}`}
+                </p>
+              </div>
 
               <div className="mt-3">
                 <p className="text-xs text-slate-500">Outstanding charges</p>
                 <p className="text-xl font-semibold text-slate-900">
-                  ₱{finance.outstandingCharges.toFixed(2)}
+                  ₱{workforce.charges.outstandingAmount.toFixed(2)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Pwedeng kasama dito ang shortage, penalties, o iba pang
@@ -507,18 +515,18 @@ export default function CashierDashboardPage() {
                   to="/cashier/shift-history"
                   className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
-                  Payslip / payroll
+                  Shift history
                 </Link>
                 <Link
                   to="/cashier/charges"
                   className={
                     "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
-                    (finance.outstandingCharges > 0 || alerts.openChargeItems > 0
+                    (workforce.charges.outstandingAmount > 0 || alerts.openChargeItems > 0
                       ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
                   }
                 >
-                  View charges
+                  Charge ledger
                 </Link>
               </div>
               <p className="mt-2 text-xs text-slate-500">

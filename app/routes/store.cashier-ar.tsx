@@ -93,7 +93,7 @@ function nameOfUser(u: CashierUserLite) {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const charges = await db.cashierCharge.findMany({
     where: {
@@ -163,7 +163,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");

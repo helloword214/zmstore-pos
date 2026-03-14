@@ -51,7 +51,7 @@ const upsertPlanTag = (
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   void me; // keep for future audit use
 
   // AR list = RiderCharge ledger (OPEN / PARTIALLY_SETTLED)
@@ -116,7 +116,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   void me;
 
   const fd = await request.formData();
