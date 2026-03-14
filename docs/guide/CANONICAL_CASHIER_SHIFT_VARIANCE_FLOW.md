@@ -31,7 +31,7 @@ This document does not own:
 3. file upload/storage driver contracts for scanned attachments
 4. role authority model outside cashier shift responsibilities
 5. full delivery -> clearance -> AR end-to-end flow
-6. employee pay profiles, payroll policy defaults, or payroll deduction computation
+6. employee pay profiles, payroll policy defaults, payroll deduction computation, or payroll identity normalization
 
 ## Refer To
 
@@ -99,6 +99,13 @@ Role label interpretation rule:
 
 1. `Store Manager` in this flow means `STORE_MANAGER` only (not `ADMIN`).
 2. `ADMIN` has no access to these operational routes, including read-only views.
+
+## Cashier Charge Identity Boundary
+
+1. `CashierCharge` creation stays anchored to cashier `User` identity and optional `shiftId` because this flow owns cashier drawer accountability.
+2. This document does not convert cashier charge ownership into employee-centered payroll lines.
+3. When payroll consumes `CashierCharge`, cashier identity normalization belongs to `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`.
+4. Any mismatch fix between cashier `User` identity and payroll `Employee` identity must happen in payroll foundation, not in cashier shift close or variance creation logic.
 
 ## Cash Drawer and Posting SoT
 
