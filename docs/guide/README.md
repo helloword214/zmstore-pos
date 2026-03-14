@@ -63,6 +63,7 @@ Quick lookup reminders:
 4. clearance pending counter, legacy receipt-route retirement, and print artifact boundaries -> `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 5. cashier recount + paper reference + signed paper audit artifact -> `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
 6. creator audit anchors -> `CANONICAL_ORDER_PRICING_SOT.md`
+7. worker schedule/payroll implementation sequencing -> `WORKER_SCHEDULE_PAYROLL_IMPLEMENTATION_PHASES.md` (supporting plan only)
 
 ## C. Diagrams / Visual Maps
 
@@ -89,6 +90,7 @@ These visualize flow and route ownership but do not replace canonical owner docs
 15. `PRODUCTLIST_REFACTOR_DIRECTION.md`
 16. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
 17. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
+18. `WORKER_SCHEDULE_PAYROLL_IMPLEMENTATION_PHASES.md`
 
 These help implementation but must not override Canonical docs.
 

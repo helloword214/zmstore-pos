@@ -12,8 +12,9 @@ Defines one source of truth for:
 2. company payroll policy defaults used by payroll runs
 3. payroll computation boundary from attendance facts to gross pay
 4. attendance-incentive policy and payroll addition rules
-5. manager-controlled payroll deductions from rider/cashier charge ledgers
-6. payroll freeze rules for historical attendance basis, finalized payroll runs, and payouts
+5. payroll identity normalization from operational ledgers into one employee-centered payroll subject
+6. manager-controlled payroll deductions from rider/cashier charge ledgers
+7. payroll freeze rules for historical attendance basis, finalized payroll runs, and payouts
 
 This document exists so payroll does not recompute live from mutable settings or silently mix schedule facts, charge creation, and payout decisions into one unclear flow.
 
@@ -24,9 +25,10 @@ This document owns:
 1. employee pay profile model and effective-dated rate history
 2. company payroll policy defaults for pay frequency, rest day worked premium, holiday worked premium, sick leave treatment, and attendance incentive treatment
 3. payroll interpretation of attendance facts into base pay and payroll additions
-4. payroll run model, manager override authority, and net-pay computation
-5. deduction consumption from payroll-tagged rider/cashier charge ledgers
-6. hybrid freeze rules for attendance-time pay basis snapshots and payroll-time finalization snapshots
+4. payroll identity normalization rules when operational ledgers use different actor anchors
+5. payroll run model, manager override authority, and net-pay computation
+6. deduction consumption from payroll-tagged rider/cashier charge ledgers
+7. hybrid freeze rules for attendance-time pay basis snapshots and payroll-time finalization snapshots
 
 ## Does Not Own
 
@@ -55,9 +57,10 @@ This document covers:
 1. one payroll model for all employees, with employee-specific pay profiles even when roles match
 2. day-based V1 payroll computation from attendance facts
 3. company defaults for rest day worked premium, regular/special holiday worked premium, sick leave treatment, attendance incentive criteria, and pay frequency
-4. manager override of default payroll treatment during payroll run review
-5. payroll deduction handling for existing rider/cashier charge ledgers
-6. historical freeze behavior for attendance pay basis, payroll finalization, and payout
+4. employee-centered payroll-line ownership even when an upstream operational ledger is user-centered
+5. manager override of default payroll treatment during payroll run review
+6. payroll deduction handling for existing rider/cashier charge ledgers
+7. historical freeze behavior for attendance pay basis, payroll finalization, and payout
 
 This document does not yet define:
 
@@ -134,6 +137,19 @@ They answer:
 
 Payroll consumes tagged charges as deductions, but payroll does not own charge creation.
 
+### 6. Payroll Identity Normalization
+
+`Payroll Identity Normalization` is the translation layer that keeps payroll employee-centered even when an upstream operational ledger uses another actor anchor.
+
+It answers:
+
+1. what canonical `employeeId` a payroll line belongs to
+2. how rider and cashier charge sources are resolved into one payroll subject
+3. when payroll must block because an operational user has no linked employee record
+4. which layer owns the mismatch fix without rewriting operational accountability flows
+
+Normalization rules belong to payroll because cashier shift accountability and charge creation must remain owned by their operational docs.
+
 ## Authority Model
 
 ### Admin
@@ -185,6 +201,7 @@ Rules:
 2. pay-rate changes are effective-dated and must not rewrite prior snapshots
 3. monthly-paid profiles must still store a manager-approved `dailyRateEquivalent` for V1 day-based payroll math
 4. V1 `halfDayFactor` is fixed at `0.5`
+5. payroll lines remain anchored to `employeeId`, not role name or operational `userId`
 
 ## Company Payroll Policy Canonical Model
 
@@ -339,16 +356,22 @@ Rules:
 1. payroll run is manager-reviewed before finalization
 2. finalized run is audit-safe and immutable except formal void/adjustment flow
 3. paid run must never be silently recalculated or rebundled into a later payout
+4. every payroll line must resolve to one canonical `employeeId`
 
 ## Charge Deduction Contract
 
 1. charge creation stays in the rider/cashier owner docs
-2. only charges explicitly tagged for payroll deduction are eligible
-3. manager may apply `NONE`, `PARTIAL`, or `FULL` deduction per payroll run
-4. current route behavior distributes an entered deduction amount FIFO across open payroll-tagged charges for the selected employee
-5. payroll deduction posts `RiderChargePayment` or `CashierChargePayment` with method `PAYROLL_DEDUCTION`
-6. charge and variance statuses sync after deduction posting
-7. unpaid or partially paid charges remain open for future payroll runs
+2. payroll deduction review and payroll-line snapshots are employee-centered
+3. `RiderCharge` already resolves directly through `riderId -> Employee.id`
+4. `CashierCharge` currently originates from cashier `User` identity and must resolve `cashierId -> User -> linked Employee` before payroll aggregation, display, deduction posting, and payroll-line finalization
+5. if a cashier charge cannot resolve to a linked employee, payroll must block that item from payroll-run finalization until the identity link is fixed
+6. this cashier identity normalization is a payroll-foundation fix only; it must not rewrite `CashierShift`, `CashierCharge`, or variance ownership
+7. only charges explicitly tagged for payroll deduction are eligible
+8. manager may apply `NONE`, `PARTIAL`, or `FULL` deduction per payroll run
+9. current route behavior distributes an entered deduction amount FIFO across open payroll-tagged charges for the selected employee
+10. payroll deduction posts `RiderChargePayment` or `CashierChargePayment` with method `PAYROLL_DEDUCTION`
+11. charge and variance statuses sync after deduction posting
+12. unpaid or partially paid charges remain open for future payroll runs
 
 ## Current Implementation Anchor
 
@@ -356,3 +379,5 @@ Rules:
 2. `app/routes/store.payroll.tsx` currently handles charge-ledger deduction posting only
 3. future payroll expansion must preserve the existing charge-ledger source of truth while adding gross-pay, net-pay, and payroll-line snapshots
 4. current code still allows `ADMIN` in some payroll routes; canonical target is `STORE_MANAGER` for payroll-run decisions and `ADMIN` only for control-plane payroll settings
+5. current code already matches rider payroll identity through `Employee`, but cashier payroll deduction still starts from `CashierCharge.cashierId -> User`
+6. future payroll foundation must normalize cashier payroll identity to linked `Employee` without rewriting cashier shift-close ownership
