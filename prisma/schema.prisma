@@ -221,10 +221,10 @@ model CustomerAddress {
   landmarkId  Int?
   landmarkRef Landmark? @relation("LandmarkToAddresses", fields: [landmarkId], references: [id], onDelete: SetNull)
 
-  postalCode     String?
-  landmark       String?
-  geoLat         Float?
-  geoLng         Float?
+  postalCode String?
+  landmark   String?
+  geoLat     Float?
+  geoLng     Float?
 
   deliveryOrders Order[]                @relation("OrderDeliveryAddress")
   photos         CustomerAddressPhoto[]
@@ -290,10 +290,10 @@ model Order {
   totalBeforeDiscount Float?
 
   // Slip meta
-  printCount Int      @default(1)
-  printedAt  DateTime
-  expiryAt   DateTime
-  terminalId String?
+  printCount    Int       @default(1)
+  printedAt     DateTime
+  expiryAt      DateTime
+  terminalId    String?
   createdById   Int?
   createdByRole UserRole?
 
@@ -532,12 +532,20 @@ model Employee {
   defaultVehicle   Vehicle? @relation("DefaultVehicle", fields: [defaultVehicleId], references: [id], onDelete: SetNull)
 
   // Back-relations
-  ordersAsRider  Order[]            @relation("OrderRider")
-  runsAsRider    DeliveryRun[]      @relation("RunRider")
-  user           User?
-  address        EmployeeAddress?
-  documents      EmployeeDocument[]
-  riderVariances RiderRunVariance[]
+  ordersAsRider               Order[]                      @relation("OrderRider")
+  runsAsRider                 DeliveryRun[]                @relation("RunRider")
+  user                        User?
+  address                     EmployeeAddress?
+  documents                   EmployeeDocument[]
+  riderVariances              RiderRunVariance[]
+  scheduleTemplateAssignments ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsOnEmployee")
+  workerSchedules             WorkerSchedule[]             @relation("WorkerSchedulesOnEmployee")
+  attendanceDutyResults       AttendanceDutyResult[]       @relation("AttendanceDutyResultsOnEmployee")
+  suspensionRecords           SuspensionRecord[]           @relation("SuspensionRecordsOnEmployee")
+  payProfiles                 EmployeePayProfile[]         @relation("EmployeePayProfilesOnEmployee")
+  payrollRunLines             PayrollRunLine[]             @relation("PayrollRunLinesOnEmployee")
+  scheduleEventSubjects       ScheduleEvent[]              @relation("WorkerScheduleEventSubjects")
+  scheduleEventRelatedWorkers ScheduleEvent[]              @relation("WorkerScheduleEventRelatedWorkers")
 
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -668,6 +676,403 @@ model EmployeeDocument {
   @@index([employeeId, docType, uploadedAt])
   @@index([docType, expiresAt])
   @@index([uploadedById, uploadedAt])
+}
+
+enum WorkerScheduleRole {
+  CASHIER
+  STORE_MANAGER
+  EMPLOYEE
+}
+
+enum WorkerScheduleTemplateStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum WorkerScheduleAssignmentStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum WorkerScheduleTemplateDayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum WorkerScheduleStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum WorkerScheduleEventType {
+  MARKED_ABSENT
+  REPLACEMENT_ASSIGNED
+  REPLACEMENT_REMOVED
+  ON_CALL_ASSIGNED
+  EARLY_OUT_RECORDED
+  EMERGENCY_LEAVE_RECORDED
+  SWAP_REQUESTED
+  SWAP_APPROVED
+  SWAP_DECLINED
+  NO_SHOW_RECORDED
+  SCHEDULE_CANCELLED
+  MANAGER_NOTE_ADDED
+  SUSPENSION_APPLIED
+  SUSPENSION_LIFTED
+}
+
+enum AttendanceDayType {
+  WORK_DAY
+  REST_DAY
+  REGULAR_HOLIDAY
+  SPECIAL_HOLIDAY
+}
+
+enum AttendanceResult {
+  WHOLE_DAY
+  HALF_DAY
+  ABSENT
+  LEAVE
+  NOT_REQUIRED
+  SUSPENDED_NO_WORK
+}
+
+enum AttendanceWorkContext {
+  REGULAR
+  REPLACEMENT
+  ON_CALL
+}
+
+enum AttendanceLeaveType {
+  SICK_LEAVE
+}
+
+enum AttendanceLateFlag {
+  NO
+  YES
+}
+
+enum SuspensionRecordStatus {
+  ACTIVE
+  LIFTED
+  ENDED
+}
+
+enum EmployeePayBasis {
+  DAILY
+  MONTHLY
+}
+
+enum PayrollFrequency {
+  WEEKLY
+  BIWEEKLY
+  SEMI_MONTHLY
+  CUSTOM
+}
+
+enum SickLeavePayTreatment {
+  PAID
+  UNPAID
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  FINALIZED
+  PAID
+  VOIDED
+}
+
+model ScheduleTemplate {
+  id            Int                          @id @default(autoincrement())
+  templateName  String
+  branchId      Int?
+  role          WorkerScheduleRole?
+  effectiveFrom DateTime                     @db.Date
+  effectiveTo   DateTime?                    @db.Date
+  status        WorkerScheduleTemplateStatus @default(ACTIVE)
+  createdById   Int?
+  updatedById   Int?
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+
+  branch      Branch?                      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy   User?                        @relation("WorkerScheduleTemplatesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?                        @relation("WorkerScheduleTemplatesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  days        ScheduleTemplateDay[]
+  assignments ScheduleTemplateAssignment[]
+
+  @@index([branchId, status])
+  @@index([role, status])
+  @@index([effectiveFrom, effectiveTo])
+}
+
+model ScheduleTemplateDay {
+  id          Int                             @id @default(autoincrement())
+  templateId  Int
+  dayOfWeek   WorkerScheduleTemplateDayOfWeek
+  startMinute Int
+  endMinute   Int
+  note        String?
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+
+  template ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, dayOfWeek])
+  @@index([dayOfWeek])
+}
+
+model ScheduleTemplateAssignment {
+  id            Int                            @id @default(autoincrement())
+  templateId    Int
+  workerId      Int
+  effectiveFrom DateTime                       @db.Date
+  effectiveTo   DateTime?                      @db.Date
+  status        WorkerScheduleAssignmentStatus @default(ACTIVE)
+  createdById   Int?
+  updatedById   Int?
+  createdAt     DateTime                       @default(now())
+  updatedAt     DateTime                       @updatedAt
+
+  template  ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  worker    Employee         @relation("WorkerScheduleTemplateAssignmentsOnEmployee", fields: [workerId], references: [id], onDelete: Cascade)
+  createdBy User?            @relation("WorkerScheduleTemplateAssignmentsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?            @relation("WorkerScheduleTemplateAssignmentsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  workerSchedules WorkerSchedule[]
+
+  @@unique([templateId, workerId, effectiveFrom])
+  @@index([workerId, status, effectiveFrom])
+  @@index([templateId, status])
+}
+
+model WorkerSchedule {
+  id                   Int                  @id @default(autoincrement())
+  workerId             Int
+  role                 WorkerScheduleRole
+  branchId             Int?
+  scheduleDate         DateTime             @db.Date
+  startAt              DateTime
+  endAt                DateTime
+  templateAssignmentId Int?
+  status               WorkerScheduleStatus @default(DRAFT)
+  note                 String?
+  createdById          Int?
+  updatedById          Int?
+  publishedById        Int?
+  publishedAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  worker             Employee                    @relation("WorkerSchedulesOnEmployee", fields: [workerId], references: [id], onDelete: Cascade)
+  branch             Branch?                     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  templateAssignment ScheduleTemplateAssignment? @relation(fields: [templateAssignmentId], references: [id], onDelete: SetNull)
+  createdBy          User?                       @relation("WorkerSchedulesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy          User?                       @relation("WorkerSchedulesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  publishedBy        User?                       @relation("WorkerSchedulesPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  attendanceDutyResult AttendanceDutyResult?
+  scheduleEvents       ScheduleEvent[]
+
+  @@unique([workerId, scheduleDate, startAt, endAt])
+  @@index([workerId, scheduleDate])
+  @@index([status, scheduleDate])
+  @@index([branchId, scheduleDate])
+}
+
+model AttendanceDutyResult {
+  id                  Int                   @id @default(autoincrement())
+  workerId            Int
+  scheduleId          Int?                  @unique
+  dutyDate            DateTime              @db.Date
+  dayType             AttendanceDayType
+  attendanceResult    AttendanceResult
+  workContext         AttendanceWorkContext @default(REGULAR)
+  leaveType           AttendanceLeaveType?
+  lateFlag            AttendanceLateFlag    @default(NO)
+  note                String?
+  recordedById        Int?
+  recordedAt          DateTime              @default(now())
+  payProfileId        Int?
+  payBasis            EmployeePayBasis?
+  baseDailyRate       Decimal?              @db.Decimal(12, 2)
+  baseMonthlyRate     Decimal?              @db.Decimal(12, 2)
+  dailyRateEquivalent Decimal?              @db.Decimal(12, 2)
+  halfDayFactor       Decimal               @default(0.5) @db.Decimal(5, 4)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  worker     Employee            @relation("AttendanceDutyResultsOnEmployee", fields: [workerId], references: [id], onDelete: Cascade)
+  schedule   WorkerSchedule?     @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  recordedBy User?               @relation("AttendanceDutyResultsRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  payProfile EmployeePayProfile? @relation(fields: [payProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([workerId, dutyDate])
+  @@index([recordedById, recordedAt])
+  @@index([payProfileId])
+}
+
+model SuspensionRecord {
+  id          Int                    @id @default(autoincrement())
+  workerId    Int
+  startDate   DateTime               @db.Date
+  endDate     DateTime               @db.Date
+  reasonType  String
+  managerNote String?
+  status      SuspensionRecordStatus @default(ACTIVE)
+  appliedById Int?
+  liftedById  Int?
+  appliedAt   DateTime               @default(now())
+  liftedAt    DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  worker    Employee @relation("SuspensionRecordsOnEmployee", fields: [workerId], references: [id], onDelete: Cascade)
+  appliedBy User?    @relation("WorkerSuspensionRecordsAppliedBy", fields: [appliedById], references: [id], onDelete: SetNull)
+  liftedBy  User?    @relation("WorkerSuspensionRecordsLiftedBy", fields: [liftedById], references: [id], onDelete: SetNull)
+
+  @@index([workerId, status, startDate, endDate])
+  @@index([appliedById, appliedAt])
+}
+
+model ScheduleEvent {
+  id              Int                     @id @default(autoincrement())
+  scheduleId      Int
+  eventType       WorkerScheduleEventType
+  actorUserId     Int?
+  subjectWorkerId Int
+  relatedWorkerId Int?
+  note            String?
+  effectiveAt     DateTime                @default(now())
+  createdAt       DateTime                @default(now())
+
+  schedule      WorkerSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  actorUser     User?          @relation("WorkerScheduleEventsAuthoredBy", fields: [actorUserId], references: [id], onDelete: SetNull)
+  subjectWorker Employee       @relation("WorkerScheduleEventSubjects", fields: [subjectWorkerId], references: [id], onDelete: Cascade)
+  relatedWorker Employee?      @relation("WorkerScheduleEventRelatedWorkers", fields: [relatedWorkerId], references: [id], onDelete: SetNull)
+
+  @@index([scheduleId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([subjectWorkerId, createdAt])
+}
+
+model EmployeePayProfile {
+  id                  Int              @id @default(autoincrement())
+  employeeId          Int
+  payBasis            EmployeePayBasis
+  baseDailyRate       Decimal?         @db.Decimal(12, 2)
+  baseMonthlyRate     Decimal?         @db.Decimal(12, 2)
+  dailyRateEquivalent Decimal          @db.Decimal(12, 2)
+  halfDayFactor       Decimal          @default(0.5) @db.Decimal(5, 4)
+  effectiveFrom       DateTime         @db.Date
+  effectiveTo         DateTime?        @db.Date
+  note                String?
+  createdById         Int?
+  updatedById         Int?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  employee  Employee @relation("EmployeePayProfilesOnEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("EmployeePayProfilesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?    @relation("EmployeePayProfilesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  attendanceDutyResults AttendanceDutyResult[]
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([employeeId, effectiveTo])
+}
+
+model CompanyPayrollPolicy {
+  id                                     Int                   @id @default(autoincrement())
+  effectiveFrom                          DateTime              @unique @db.Date
+  payFrequency                           PayrollFrequency
+  customCutoffNote                       String?
+  restDayWorkedPremiumPercent            Decimal               @db.Decimal(5, 2)
+  regularHolidayWorkedPremiumPercent     Decimal               @db.Decimal(5, 2)
+  specialHolidayWorkedPremiumPercent     Decimal               @db.Decimal(5, 2)
+  sickLeavePayTreatment                  SickLeavePayTreatment
+  attendanceIncentiveEnabled             Boolean               @default(false)
+  attendanceIncentiveAmount              Decimal               @default(0) @db.Decimal(12, 2)
+  attendanceIncentiveRequireNoLate       Boolean               @default(false)
+  attendanceIncentiveRequireNoAbsent     Boolean               @default(false)
+  attendanceIncentiveRequireNoSuspension Boolean               @default(false)
+  allowManagerOverride                   Boolean               @default(true)
+  createdById                            Int?
+  updatedById                            Int?
+  createdAt                              DateTime              @default(now())
+  updatedAt                              DateTime              @updatedAt
+
+  createdBy User? @relation("CompanyPayrollPoliciesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("CompanyPayrollPoliciesUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  payrollRuns PayrollRun[]
+
+  @@index([payFrequency, effectiveFrom])
+}
+
+model PayrollRun {
+  id                      Int              @id @default(autoincrement())
+  periodStart             DateTime         @db.Date
+  periodEnd               DateTime         @db.Date
+  payDate                 DateTime         @db.Date
+  payFrequency            PayrollFrequency
+  status                  PayrollRunStatus @default(DRAFT)
+  companyPayrollPolicyId  Int?
+  policySnapshot          Json?
+  managerOverrideSnapshot Json?
+  note                    String?
+  createdById             Int?
+  finalizedById           Int?
+  paidById                Int?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  finalizedAt             DateTime?
+  paidAt                  DateTime?
+
+  companyPayrollPolicy CompanyPayrollPolicy? @relation(fields: [companyPayrollPolicyId], references: [id], onDelete: SetNull)
+  createdBy            User?                 @relation("PayrollRunsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  finalizedBy          User?                 @relation("PayrollRunsFinalizedBy", fields: [finalizedById], references: [id], onDelete: SetNull)
+  paidBy               User?                 @relation("PayrollRunsPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  payrollRunLines PayrollRunLine[]
+
+  @@index([status, payDate])
+  @@index([periodStart, periodEnd])
+  @@index([createdById, createdAt])
+}
+
+model PayrollRunLine {
+  id                        Int      @id @default(autoincrement())
+  payrollRunId              Int
+  employeeId                Int
+  attendanceSnapshotIds     Json?
+  baseAttendancePay         Decimal  @default(0) @db.Decimal(12, 2)
+  attendanceIncentiveAmount Decimal  @default(0) @db.Decimal(12, 2)
+  totalAdditions            Decimal  @default(0) @db.Decimal(12, 2)
+  grossPay                  Decimal  @default(0) @db.Decimal(12, 2)
+  totalDeductions           Decimal  @default(0) @db.Decimal(12, 2)
+  netPay                    Decimal  @default(0) @db.Decimal(12, 2)
+  policySnapshot            Json?
+  additionSnapshot          Json?
+  deductionSnapshot         Json?
+  managerOverrideNote       String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation("PayrollRunLinesOnEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([payrollRunId, employeeId])
+  @@index([employeeId, createdAt])
 }
 
 // ────────────── NEW: Stock Movements for Loadout (Milestone 2) ──────────────
@@ -1485,7 +1890,7 @@ model User {
   clearanceCasesFlagged       ClearanceCase[]     @relation("ClearanceFlaggedBy")
   clearanceDecisionsMade      ClearanceDecision[] @relation("ClearanceDecidedBy")
   customerArPaymentsProcessed CustomerArPayment[] @relation("CustomerArPaymentsProcessed")
-  ordersCreated              Order[]             @relation("OrderCreatedByUser")
+  ordersCreated               Order[]             @relation("OrderCreatedByUser")
 
   // v2.6: who voided a receipt
   voidedRunReceipts RunReceipt[] @relation("RunReceiptVoidedBy")
@@ -1497,13 +1902,31 @@ model User {
   cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
   // Role lifecycle and immutable audit
-  roleAssignments           UserRoleAssignment[] @relation("UserRoleAssignments")
-  roleAssignmentsAuthored   UserRoleAssignment[] @relation("UserRoleAssignmentsChangedBy")
-  roleAuditEvents           UserRoleAuditEvent[] @relation("UserRoleAuditEventsOnUser")
-  roleAuditEventsAuthored   UserRoleAuditEvent[] @relation("UserRoleAuditEventsChangedBy")
-  passwordResetTokens       PasswordResetToken[]
-  loginOtpChallenges        LoginOtpChallenge[]
-  employeeDocumentsUploaded EmployeeDocument[]   @relation("EmployeeDocumentsUploadedBy")
+  roleAssignments                          UserRoleAssignment[]         @relation("UserRoleAssignments")
+  roleAssignmentsAuthored                  UserRoleAssignment[]         @relation("UserRoleAssignmentsChangedBy")
+  roleAuditEvents                          UserRoleAuditEvent[]         @relation("UserRoleAuditEventsOnUser")
+  roleAuditEventsAuthored                  UserRoleAuditEvent[]         @relation("UserRoleAuditEventsChangedBy")
+  passwordResetTokens                      PasswordResetToken[]
+  loginOtpChallenges                       LoginOtpChallenge[]
+  employeeDocumentsUploaded                EmployeeDocument[]           @relation("EmployeeDocumentsUploadedBy")
+  workerScheduleTemplatesCreated           ScheduleTemplate[]           @relation("WorkerScheduleTemplatesCreatedBy")
+  workerScheduleTemplatesUpdated           ScheduleTemplate[]           @relation("WorkerScheduleTemplatesUpdatedBy")
+  workerScheduleTemplateAssignmentsCreated ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsCreatedBy")
+  workerScheduleTemplateAssignmentsUpdated ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsUpdatedBy")
+  workerSchedulesCreated                   WorkerSchedule[]             @relation("WorkerSchedulesCreatedBy")
+  workerSchedulesUpdated                   WorkerSchedule[]             @relation("WorkerSchedulesUpdatedBy")
+  workerSchedulesPublished                 WorkerSchedule[]             @relation("WorkerSchedulesPublishedBy")
+  workerScheduleEventsAuthored             ScheduleEvent[]              @relation("WorkerScheduleEventsAuthoredBy")
+  workerAttendanceDutyResultsRecorded      AttendanceDutyResult[]       @relation("AttendanceDutyResultsRecordedBy")
+  workerSuspensionRecordsApplied           SuspensionRecord[]           @relation("WorkerSuspensionRecordsAppliedBy")
+  workerSuspensionRecordsLifted            SuspensionRecord[]           @relation("WorkerSuspensionRecordsLiftedBy")
+  employeePayProfilesCreated               EmployeePayProfile[]         @relation("EmployeePayProfilesCreatedBy")
+  employeePayProfilesUpdated               EmployeePayProfile[]         @relation("EmployeePayProfilesUpdatedBy")
+  companyPayrollPoliciesCreated            CompanyPayrollPolicy[]       @relation("CompanyPayrollPoliciesCreatedBy")
+  companyPayrollPoliciesUpdated            CompanyPayrollPolicy[]       @relation("CompanyPayrollPoliciesUpdatedBy")
+  payrollRunsCreated                       PayrollRun[]                 @relation("PayrollRunsCreatedBy")
+  payrollRunsFinalized                     PayrollRun[]                 @relation("PayrollRunsFinalizedBy")
+  payrollRunsPaid                          PayrollRun[]                 @relation("PayrollRunsPaidBy")
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
@@ -1677,10 +2100,12 @@ model CashDrawerTxn {
 }
 
 model Branch {
-  id     Int            @id @default(autoincrement())
-  name   String         @unique
-  users  UserBranch[]
-  shifts CashierShift[]
+  id                Int                @id @default(autoincrement())
+  name              String             @unique
+  users             UserBranch[]
+  shifts            CashierShift[]
+  scheduleTemplates ScheduleTemplate[]
+  workerSchedules   WorkerSchedule[]
 }
 
 model UserBranch {
