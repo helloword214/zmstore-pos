@@ -1,13 +1,16 @@
 import {
+  AttendanceResult,
   AttendanceDayType,
   Prisma,
   SuspensionRecordStatus,
   WorkerScheduleStatus,
+  WorkerScheduleEventType,
 } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import {
   recordWorkerSuspendedNoWorkDutyResult,
 } from "~/services/worker-attendance-duty-result.server";
+import { appendWorkerScheduleEvent } from "~/services/worker-schedule-event.server";
 import type {
   WorkforceDbClient,
   WorkforceRootDbClient,
@@ -30,6 +33,23 @@ const toDateOnly = (value: Date | string) => {
   parsed.setHours(0, 0, 0, 0);
   return parsed;
 };
+
+export const buildSuspensionRecordTag = (suspensionRecordId: number) =>
+  `[SUSPENSION_RECORD:${suspensionRecordId}]`;
+
+function buildSuspensionRecordNote(args: {
+  suspensionRecordId: number;
+  reasonType: string;
+  managerNote?: string | null;
+}) {
+  return `${buildSuspensionRecordTag(args.suspensionRecordId)} ${
+    args.managerNote?.trim() || `Suspension: ${args.reasonType}`
+  }`;
+}
+
+function noteHasSuspensionRecordTag(note: string | null, suspensionRecordId: number) {
+  return String(note ?? "").includes(buildSuspensionRecordTag(suspensionRecordId));
+}
 
 export async function applyWorkerSuspensionRecord(
   input: ApplyWorkerSuspensionRecordInput,
@@ -62,15 +82,80 @@ export async function applyWorkerSuspensionRecord(
 export async function liftWorkerSuspensionRecord(
   suspensionRecordId: number,
   liftedById?: number | null,
-  prisma: WorkforceDbClient = db,
+  prisma: WorkforceRootDbClient = db,
 ) {
-  return prisma.suspensionRecord.update({
-    where: { id: suspensionRecordId },
-    data: {
-      status: SuspensionRecordStatus.LIFTED,
-      liftedById: liftedById ?? null,
-      liftedAt: new Date(),
-    },
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const record = await tx.suspensionRecord.findUnique({
+      where: { id: suspensionRecordId },
+    });
+    if (!record) {
+      throw new Error("Suspension record not found.");
+    }
+
+    const liftedAt = new Date();
+    const liftDate = toDateOnly(liftedAt);
+
+    const updated = await tx.suspensionRecord.update({
+      where: { id: suspensionRecordId },
+      data: {
+        status: SuspensionRecordStatus.LIFTED,
+        liftedById: liftedById ?? null,
+        liftedAt,
+      },
+    });
+
+    const futureAttendance = await tx.attendanceDutyResult.findMany({
+      where: {
+        workerId: record.workerId,
+        dutyDate: {
+          gte: liftDate,
+          lte: record.endDate,
+        },
+        attendanceResult: AttendanceResult.SUSPENDED_NO_WORK,
+        note: { contains: buildSuspensionRecordTag(record.id) },
+      },
+      select: { id: true, scheduleId: true },
+    });
+
+    if (futureAttendance.length > 0) {
+      await tx.attendanceDutyResult.deleteMany({
+        where: { id: { in: futureAttendance.map((row) => row.id) } },
+      });
+    }
+
+    const schedules = await tx.workerSchedule.findMany({
+      where: {
+        workerId: record.workerId,
+        status: { not: WorkerScheduleStatus.CANCELLED },
+        scheduleDate: {
+          gte: liftDate,
+          lte: record.endDate,
+        },
+      },
+      orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }],
+    });
+
+    for (const schedule of schedules) {
+      await appendWorkerScheduleEvent(
+        {
+          scheduleId: schedule.id,
+          eventType: WorkerScheduleEventType.SUSPENSION_LIFTED,
+          actorUserId: liftedById ?? null,
+          subjectWorkerId: schedule.workerId,
+          note: buildSuspensionRecordNote({
+            suspensionRecordId: record.id,
+            reasonType: record.reasonType,
+            managerNote: record.managerNote,
+          }),
+        },
+        tx,
+      );
+    }
+
+    return {
+      record: updated,
+      clearedFutureAttendanceCount: futureAttendance.length,
+    };
   });
 }
 
@@ -105,32 +190,162 @@ export async function overlayWorkerSuspensionAttendance(
       throw new Error("Suspension record not found.");
     }
 
-    const schedules = await tx.workerSchedule.findMany({
-      where: {
-        workerId: record.workerId,
-        status: { not: WorkerScheduleStatus.CANCELLED },
-        scheduleDate: {
-          gte: record.startDate,
-          lte: record.endDate,
+    return overlayWorkerSuspensionAttendanceInTx(record, actorUserId, tx);
+  });
+}
+
+export async function listWorkerSuspensionRecords(
+  args?: {
+    workerId?: number;
+    status?: SuspensionRecordStatus;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.suspensionRecord.findMany({
+    where: {
+      ...(args?.workerId ? { workerId: args.workerId } : {}),
+      ...(args?.status ? { status: args.status } : {}),
+    },
+    include: {
+      worker: {
+        include: {
+          user: {
+            select: { role: true, active: true },
+          },
         },
       },
-      orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }],
+      appliedBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+      liftedBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+    },
+    orderBy: [{ status: "asc" }, { startDate: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function applyWorkerSuspensionRecordAndOverlay(
+  input: ApplyWorkerSuspensionRecordInput,
+  prisma: WorkforceRootDbClient = db,
+) {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const record = await tx.suspensionRecord.create({
+      data: {
+        workerId: input.workerId,
+        startDate: toDateOnly(input.startDate),
+        endDate: toDateOnly(input.endDate),
+        reasonType: input.reasonType.trim(),
+        managerNote: input.managerNote?.trim() || null,
+        status: SuspensionRecordStatus.ACTIVE,
+        appliedById: input.appliedById ?? null,
+        appliedAt: new Date(),
+      },
     });
 
-    for (const schedule of schedules) {
-      await recordWorkerSuspendedNoWorkDutyResult(
-        {
-          workerId: schedule.workerId,
-          scheduleId: schedule.id,
-          dutyDate: schedule.scheduleDate,
-          dayType: AttendanceDayType.WORK_DAY,
-          note: record.managerNote ?? `Suspension: ${record.reasonType}`,
-          recordedById: actorUserId ?? record.appliedById ?? null,
-        },
-        tx,
-      );
+    const overlay = await overlayWorkerSuspensionAttendanceInTx(
+      record,
+      input.appliedById ?? null,
+      tx,
+    );
+
+    return { record, ...overlay };
+  });
+}
+
+async function overlayWorkerSuspensionAttendanceInTx(
+  record: {
+    id: number;
+    workerId: number;
+    startDate: Date;
+    endDate: Date;
+    reasonType: string;
+    managerNote: string | null;
+    appliedById: number | null;
+  },
+  actorUserId: number | null | undefined,
+  tx: Prisma.TransactionClient,
+) {
+  const suspensionNote = buildSuspensionRecordNote({
+    suspensionRecordId: record.id,
+    reasonType: record.reasonType,
+    managerNote: record.managerNote,
+  });
+
+  const schedules = await tx.workerSchedule.findMany({
+    where: {
+      workerId: record.workerId,
+      status: { not: WorkerScheduleStatus.CANCELLED },
+      scheduleDate: {
+        gte: record.startDate,
+        lte: record.endDate,
+      },
+    },
+    orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }],
+  });
+
+  const existingAttendance = await tx.attendanceDutyResult.findMany({
+    where: {
+      workerId: record.workerId,
+      dutyDate: {
+        gte: record.startDate,
+        lte: record.endDate,
+      },
+    },
+    orderBy: [{ dutyDate: "asc" }, { id: "asc" }],
+  });
+  const attendanceByDate = new Map(
+    existingAttendance.map((row) => [row.dutyDate.toISOString(), row]),
+  );
+
+  let overlaidSchedules = 0;
+
+  for (const schedule of schedules) {
+    const existing = attendanceByDate.get(schedule.scheduleDate.toISOString());
+    if (
+      existing &&
+      existing.attendanceResult !== AttendanceResult.SUSPENDED_NO_WORK &&
+      !noteHasSuspensionRecordTag(existing.note, record.id)
+    ) {
+      continue;
     }
 
-    return { overlaidSchedules: schedules.length };
-  });
+    await recordWorkerSuspendedNoWorkDutyResult(
+      {
+        workerId: schedule.workerId,
+        scheduleId: schedule.id,
+        dutyDate: schedule.scheduleDate,
+        dayType: AttendanceDayType.WORK_DAY,
+        note: suspensionNote,
+        recordedById: actorUserId ?? record.appliedById ?? null,
+      },
+      tx,
+    );
+
+    await appendWorkerScheduleEvent(
+      {
+        scheduleId: schedule.id,
+        eventType: WorkerScheduleEventType.SUSPENSION_APPLIED,
+        actorUserId: actorUserId ?? record.appliedById ?? null,
+        subjectWorkerId: schedule.workerId,
+        note: suspensionNote,
+      },
+      tx,
+    );
+    overlaidSchedules += 1;
+  }
+
+  return { overlaidSchedules };
 }

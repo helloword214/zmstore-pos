@@ -253,3 +253,58 @@ export async function listActiveWorkerScheduleTemplateAssignments(
     orderBy: [{ workerId: "asc" }, { id: "asc" }],
   });
 }
+
+export async function listWorkerScheduleTemplates(
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.scheduleTemplate.findMany({
+    include: {
+      days: { orderBy: { dayOfWeek: "asc" } },
+      assignments: {
+        include: {
+          worker: {
+            include: {
+              user: {
+                select: { role: true, active: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+      },
+    },
+    orderBy: [{ status: "asc" }, { templateName: "asc" }, { id: "asc" }],
+  });
+}
+
+export async function listWorkerScheduleTemplateAssignments(
+  args: {
+    templateId?: number;
+    workerId?: number;
+    status?: WorkerScheduleAssignmentStatus;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.scheduleTemplateAssignment.findMany({
+    where: {
+      ...(args.templateId ? { templateId: args.templateId } : {}),
+      ...(args.workerId ? { workerId: args.workerId } : {}),
+      ...(args.status ? { status: args.status } : {}),
+    },
+    include: {
+      template: {
+        include: {
+          days: { orderBy: { dayOfWeek: "asc" } },
+        },
+      },
+      worker: {
+        include: {
+          user: {
+            select: { role: true, active: true },
+          },
+        },
+      },
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+}

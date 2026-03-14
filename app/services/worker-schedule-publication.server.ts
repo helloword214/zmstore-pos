@@ -1,11 +1,13 @@
 import {
   UserRole,
+  WorkerScheduleEventType,
   WorkerScheduleRole,
   WorkerScheduleStatus,
   WorkerScheduleTemplateDayOfWeek,
 } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import type { WorkforceDbClient } from "~/services/worker-payroll-policy.server";
+import { appendWorkerScheduleEvent } from "~/services/worker-schedule-event.server";
 
 const DAY_OF_WEEK_INDEX: Record<WorkerScheduleTemplateDayOfWeek, number> = {
   SUNDAY: 0,
@@ -40,6 +42,26 @@ const combineDateAndMinute = (date: Date, minute: number) => {
   const combined = new Date(date);
   combined.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
   return combined;
+};
+
+const parseTimeToMinute = (value: string) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    throw new Error("Time must be in HH:MM format.");
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    throw new Error("Invalid time value.");
+  }
+  return hour * 60 + minute;
 };
 
 const fallsWithinEffectiveRange = (
@@ -239,4 +261,110 @@ export async function listWorkerSchedulesForRange(
     },
     orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }, { workerId: "asc" }],
   });
+}
+
+export async function updateWorkerScheduleOneOff(
+  args: {
+    scheduleId: number;
+    actorUserId: number;
+    startTime?: string;
+    endTime?: string;
+    note?: string | null;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const schedule = await prisma.workerSchedule.findUnique({
+    where: { id: args.scheduleId },
+  });
+  if (!schedule) {
+    throw new Error("Worker schedule not found.");
+  }
+  if (schedule.status === WorkerScheduleStatus.CANCELLED) {
+    throw new Error("Cancelled schedules cannot be edited.");
+  }
+
+  const nextStartAt = args.startTime
+    ? combineDateAndMinute(schedule.scheduleDate, parseTimeToMinute(args.startTime))
+    : schedule.startAt;
+  const nextEndAt = args.endTime
+    ? combineDateAndMinute(schedule.scheduleDate, parseTimeToMinute(args.endTime))
+    : schedule.endAt;
+
+  if (nextEndAt <= nextStartAt) {
+    throw new Error("End time must be later than start time.");
+  }
+
+  const updated = await prisma.workerSchedule.update({
+    where: { id: args.scheduleId },
+    data: {
+      startAt: nextStartAt,
+      endAt: nextEndAt,
+      note: args.note?.trim() || schedule.note,
+      updatedById: args.actorUserId,
+    },
+  });
+
+  const originalWindow = `${schedule.startAt.toISOString()} -> ${schedule.endAt.toISOString()}`;
+  const nextWindow = `${updated.startAt.toISOString()} -> ${updated.endAt.toISOString()}`;
+  const eventNote = [
+    `One-off schedule update: ${originalWindow} => ${nextWindow}.`,
+    args.note?.trim() || null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  await appendWorkerScheduleEvent(
+    {
+      scheduleId: schedule.id,
+      eventType: WorkerScheduleEventType.MANAGER_NOTE_ADDED,
+      actorUserId: args.actorUserId,
+      subjectWorkerId: schedule.workerId,
+      note: eventNote,
+    },
+    prisma,
+  );
+
+  return updated;
+}
+
+export async function cancelWorkerSchedule(
+  args: {
+    scheduleId: number;
+    actorUserId: number;
+    note?: string | null;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const schedule = await prisma.workerSchedule.findUnique({
+    where: { id: args.scheduleId },
+  });
+  if (!schedule) {
+    throw new Error("Worker schedule not found.");
+  }
+  if (schedule.status === WorkerScheduleStatus.CANCELLED) {
+    return schedule;
+  }
+
+  const note = args.note?.trim() || null;
+  const updated = await prisma.workerSchedule.update({
+    where: { id: args.scheduleId },
+    data: {
+      status: WorkerScheduleStatus.CANCELLED,
+      note: note ?? schedule.note,
+      updatedById: args.actorUserId,
+    },
+  });
+
+  await appendWorkerScheduleEvent(
+    {
+      scheduleId: schedule.id,
+      eventType: WorkerScheduleEventType.SCHEDULE_CANCELLED,
+      actorUserId: args.actorUserId,
+      subjectWorkerId: schedule.workerId,
+      note: note ?? "Manager cancelled this one-off schedule row.",
+    },
+    prisma,
+  );
+
+  return updated;
 }

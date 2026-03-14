@@ -177,6 +177,18 @@ export async function listWorkerAttendanceDutyResultsForPeriod(
   });
 }
 
+export async function listWorkerAttendanceDutyResultsForDate(
+  dutyDate: Date | string,
+  prisma: WorkforceDbClient = db,
+) {
+  const date = toDateOnly(dutyDate);
+
+  return prisma.attendanceDutyResult.findMany({
+    where: { dutyDate: date },
+    orderBy: [{ workerId: "asc" }, { id: "asc" }],
+  });
+}
+
 export const WORKED_ATTENDANCE_RESULTS = new Set<AttendanceResult>([
   AttendanceResult.WHOLE_DAY,
   AttendanceResult.HALF_DAY,
