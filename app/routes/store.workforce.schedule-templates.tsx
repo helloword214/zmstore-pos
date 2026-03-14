@@ -561,9 +561,10 @@ export default function WorkforceScheduleTemplatesRoute() {
                       </SoTTableHead>
                       <tbody>
                         {selectedTemplate.assignments.length === 0 ? (
-                          <SoTTableEmptyRow colSpan={5}>
-                            No worker assignments yet.
-                          </SoTTableEmptyRow>
+                          <SoTTableEmptyRow
+                            colSpan={5}
+                            message="No worker assignments yet."
+                          />
                         ) : (
                           selectedTemplate.assignments.map((assignment) => (
                             <SoTTableRow key={assignment.id}>
@@ -647,9 +648,10 @@ export default function WorkforceScheduleTemplatesRoute() {
                 </SoTTableHead>
                 <tbody>
                   {templates.length === 0 ? (
-                    <SoTTableEmptyRow colSpan={3}>
-                      No schedule templates yet.
-                    </SoTTableEmptyRow>
+                    <SoTTableEmptyRow
+                      colSpan={3}
+                      message="No schedule templates yet."
+                    />
                   ) : (
                     templates.map((template) => (
                       <SoTTableRow key={template.id}>

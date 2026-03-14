@@ -42,6 +42,14 @@ const creationShortcuts: AdminShortcut[] = [
     tone: "emerald",
   },
   {
+    to: "/creation/workforce/pay-profiles",
+    title: "Employee Pay Profiles",
+    description:
+      "Maintain effective-dated daily or monthly pay basis records and daily-rate equivalents.",
+    eyebrow: "Payroll Setup",
+    tone: "emerald",
+  },
+  {
     to: "/customers?ctx=admin",
     title: "Create Discount Rule",
     description: "Open customer list, then go to Pricing Rules and add discount logic.",
@@ -96,6 +104,13 @@ const supportCreationShortcuts: AdminShortcut[] = [
     title: "Employee Directory",
     description: "Manage employee profile edits, compliance reminders, and account controls.",
     tone: "emerald",
+  },
+  {
+    to: "/creation/workforce/payroll-policy",
+    title: "Payroll Policy",
+    description:
+      "Set company payroll defaults for cutoffs, premiums, sick leave, and attendance incentive rules.",
+    tone: "amber",
   },
   {
     to: "/customers?ctx=admin",

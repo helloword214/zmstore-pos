@@ -176,6 +176,78 @@ export async function getEffectiveCompanyPayrollPolicy(
   });
 }
 
+export async function listEmployeePayProfiles(
+  args?: { employeeId?: number },
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.employeePayProfile.findMany({
+    where: {
+      ...(args?.employeeId ? { employeeId: args.employeeId } : {}),
+    },
+    include: {
+      employee: {
+        include: {
+          user: {
+            select: { role: true, active: true },
+          },
+        },
+      },
+      createdBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+      updatedBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { employee: { lastName: "asc" } },
+      { employee: { firstName: "asc" } },
+      { effectiveFrom: "desc" },
+      { id: "desc" },
+    ],
+  });
+}
+
+export async function listCompanyPayrollPolicies(
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.companyPayrollPolicy.findMany({
+    include: {
+      createdBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+      updatedBy: {
+        select: {
+          id: true,
+          email: true,
+          employee: {
+            select: { firstName: true, lastName: true, alias: true },
+          },
+        },
+      },
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+}
+
 export async function upsertEmployeePayProfile(
   input: UpsertEmployeePayProfileInput,
   prisma: WorkforceDbClient = db,

@@ -376,8 +376,8 @@ Rules:
 ## Current Implementation Anchor
 
 1. `app/routes/store.rider-ar.tsx` and `app/routes/store.cashier-ar.tsx` tag eligible charges for payroll deduction planning
-2. `app/routes/store.payroll.tsx` currently handles charge-ledger deduction posting only
-3. future payroll expansion must preserve the existing charge-ledger source of truth while adding gross-pay, net-pay, and payroll-line snapshots
-4. current code still allows `ADMIN` in some payroll routes; canonical target is `STORE_MANAGER` for payroll-run decisions and `ADMIN` only for control-plane payroll settings
-5. current code already matches rider payroll identity through `Employee`, but cashier payroll deduction still starts from `CashierCharge.cashierId -> User`
-6. future payroll foundation must normalize cashier payroll identity to linked `Employee` without rewriting cashier shift-close ownership
+2. `app/routes/store.payroll.tsx` is the `STORE_MANAGER` payroll-run review lane for draft creation, payroll-line rebuild, FIFO deduction posting, finalization, and paid-state updates
+3. `app/routes/creation/workforce/payroll-policy.tsx` and `app/routes/creation/workforce/pay-profiles.tsx` are `ADMIN` control-plane pages for policy and effective-dated pay-basis setup
+4. the payroll run lane preserves the existing charge-ledger source of truth while adding gross-pay, net-pay, payroll-line snapshots, and finalization freeze
+5. rider payroll identity already resolves directly through `Employee`, and cashier payroll deduction is normalized through linked `Employee` before payroll aggregation and finalization
+6. cashier payroll identity normalization remains a payroll concern only and does not rewrite cashier shift-close ownership

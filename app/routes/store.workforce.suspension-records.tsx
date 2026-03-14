@@ -307,6 +307,10 @@ export default function WorkforceSuspensionRecordsRoute() {
     defaultEndDate,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
+  const safeUpcomingSchedules = upcomingSchedules.filter(
+    (schedule): schedule is NonNullable<(typeof upcomingSchedules)[number]> =>
+      schedule != null,
+  );
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -386,9 +390,10 @@ export default function WorkforceSuspensionRecordsRoute() {
                 </SoTTableHead>
                 <tbody>
                   {records.length === 0 ? (
-                    <SoTTableEmptyRow colSpan={6}>
-                      No suspension records found for the current filter.
-                    </SoTTableEmptyRow>
+                    <SoTTableEmptyRow
+                      colSpan={6}
+                      message="No suspension records found for the current filter."
+                    />
                   ) : (
                     records.map((record) => (
                       <SoTTableRow key={record.id}>
@@ -598,12 +603,13 @@ export default function WorkforceSuspensionRecordsRoute() {
                       </SoTTableRow>
                     </SoTTableHead>
                     <tbody>
-                      {upcomingSchedules.length === 0 ? (
-                        <SoTTableEmptyRow colSpan={3}>
-                          No upcoming non-cancelled schedule rows for this worker.
-                        </SoTTableEmptyRow>
+                      {safeUpcomingSchedules.length === 0 ? (
+                        <SoTTableEmptyRow
+                          colSpan={3}
+                          message="No upcoming non-cancelled schedule rows for this worker."
+                        />
                       ) : (
-                        upcomingSchedules.map((schedule) => (
+                        safeUpcomingSchedules.map((schedule) => (
                           <SoTTableRow key={schedule.id}>
                             <SoTTd>{formatDateLabel(schedule.scheduleDate)}</SoTTd>
                             <SoTTd>

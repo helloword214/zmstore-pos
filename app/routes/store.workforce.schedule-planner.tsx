@@ -627,9 +627,10 @@ export default function WorkforceSchedulePlannerRoute() {
                 </SoTTableHead>
                 <tbody>
                   {schedules.length === 0 ? (
-                    <SoTTableEmptyRow colSpan={5}>
-                      No schedules in this range yet. Generate draft rows first.
-                    </SoTTableEmptyRow>
+                    <SoTTableEmptyRow
+                      colSpan={5}
+                      message="No schedules in this range yet. Generate draft rows first."
+                    />
                   ) : (
                     schedules.map((schedule) => (
                       <SoTTableRow key={schedule.id}>

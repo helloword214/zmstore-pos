@@ -383,9 +383,10 @@ export default function WorkforceAttendanceReviewRoute() {
                 </SoTTableHead>
                 <tbody>
                   {rows.length === 0 ? (
-                    <SoTTableEmptyRow colSpan={4}>
-                      No active workers found.
-                    </SoTTableEmptyRow>
+                    <SoTTableEmptyRow
+                      colSpan={4}
+                      message="No active workers found."
+                    />
                   ) : (
                     rows.map((row) => (
                       <SoTTableRow key={row.id}>
