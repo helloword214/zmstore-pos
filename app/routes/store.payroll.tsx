@@ -1,9 +1,14 @@
-/* app/routes/store.payroll.tsx */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
+import {
+  PayrollFrequency,
+  PayrollRunStatus,
+  SickLeavePayTreatment,
+} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
@@ -16,835 +21,1374 @@ import {
   SoTTh,
   SoTTd,
 } from "~/components/ui/SoTTable";
-
-import { db } from "~/utils/db.server";
-import { requireRole } from "~/utils/auth.server";
+import { SoTTextarea } from "~/components/ui/SoTTextarea";
+import { SelectInput } from "~/components/ui/SelectInput";
 import {
-  Prisma,
-  RiderChargePaymentMethod,
-  RiderChargeStatus,
-  RiderVarianceStatus,
-  CashierChargePaymentMethod,
-  CashierChargeStatus,
-  CashierVarianceStatus,
-} from "@prisma/client";
+  getPayrollTaggedChargeSummaryForEmployee,
+  listUnresolvedCashierPayrollCharges,
+} from "~/services/worker-payroll-identity.server";
+import { getEffectiveCompanyPayrollPolicy } from "~/services/worker-payroll-policy.server";
+import {
+  applyWorkerPayrollChargeDeduction,
+  createWorkerPayrollRunDraft,
+  finalizeWorkerPayrollRun,
+  getWorkerPayrollRunDetail,
+  getWorkerPayrollRunEmployeeOverride,
+  listWorkerPayrollRuns,
+  markWorkerPayrollRunPaid,
+  parsePayrollDeductionSnapshot,
+  parsePayrollRunLineAdditionSnapshot,
+  parsePolicySnapshot,
+  rebuildWorkerPayrollRunLines,
+  saveWorkerPayrollRunEmployeeOverride,
+} from "~/services/worker-payroll-run.server";
+import { requireRole } from "~/utils/auth.server";
+import { db } from "~/utils/db.server";
 
-// ---------------------------
-// helpers
-// ---------------------------
-const r2 = (n: number) =>
-  Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
-
-const peso = (n: number) =>
-  new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(
-    Number.isFinite(n) ? n : 0,
-  );
-
-const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
-const hasPlanTag = (note: string | null | undefined) =>
-  String(note ?? "").includes(PLAN_TAG);
-
-const getAuthUserId = (me: { userId?: unknown; id?: unknown }) => {
-  const v = Number(me?.userId ?? me?.id ?? 0);
-  return Number.isFinite(v) && v > 0 ? v : 0;
+type ActionData = {
+  ok: false;
+  error: string;
+  action?: string;
 };
 
-type ChargeRow = {
-  id: number;
-  kind: "RIDER" | "CASHIER";
-  status: string;
-  amount: number;
-  paid: number;
-  remaining: number;
-  createdAt: string;
-  note: string | null;
-  run: { id: number; runCode: string } | null;
-  variance: { id: number; variance: number; note: string | null } | null;
-  shift: { id: number } | null;
-};
+function parseOptionalInt(value: string | null) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
-type LoaderData = {
-  me: {
-    id: number;
-    role: string;
-    name: string;
-    alias: string | null;
-    email: string;
+function toDateOnly(value: Date | string) {
+  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Invalid date input.");
+  }
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(reference: Date) {
+  const date = toDateOnly(reference);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  return addDays(date, diff);
+}
+
+function endOfWeek(reference: Date) {
+  return addDays(startOfWeek(reference), 6);
+}
+
+function formatDateInput(value: Date | string) {
+  const date = toDateOnly(value);
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateLabel(value: Date | string) {
+  return toDateOnly(value).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatDateTimeLabel(value: Date | string | null | undefined) {
+  if (!value) return "Not recorded";
+  return new Date(value).toLocaleString("en-PH", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function peso(value: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function actorLabel(actor: {
+  email: string | null;
+  employee: { firstName: string; lastName: string; alias: string | null } | null;
+} | null) {
+  if (!actor) return "Unknown actor";
+  if (actor.employee) {
+    const fullName =
+      `${actor.employee.firstName} ${actor.employee.lastName}`.trim();
+    return actor.employee.alias
+      ? `${actor.employee.alias} (${fullName})`
+      : fullName;
+  }
+  return actor.email ?? "Unknown actor";
+}
+
+function buildWorkerLabel(worker: {
+  firstName: string;
+  lastName: string;
+  alias: string | null;
+}) {
+  const fullName = `${worker.firstName} ${worker.lastName}`.trim();
+  return `${fullName}${worker.alias ? ` (${worker.alias})` : ""}`;
+}
+
+function statusTone(status: string) {
+  if (status === PayrollRunStatus.PAID) return "success" as const;
+  if (status === PayrollRunStatus.FINALIZED) return "info" as const;
+  if (status === PayrollRunStatus.DRAFT) return "warning" as const;
+  return "danger" as const;
+}
+
+function buildPayrollRedirect(args: {
+  runId?: number | null;
+  employeeId?: number | null;
+  saved?: string;
+}) {
+  const params = new URLSearchParams();
+  if (args.runId) {
+    params.set("runId", String(args.runId));
+  }
+  if (args.employeeId) {
+    params.set("employeeId", String(args.employeeId));
+  }
+  if (args.saved) {
+    params.set("saved", args.saved);
+  }
+  const suffix = params.toString();
+  return suffix ? `/store/payroll?${suffix}` : "/store/payroll";
+}
+
+function resolveSuggestedDraftWindow(
+  payFrequency: PayrollFrequency | null | undefined,
+  referenceDate: Date,
+) {
+  const today = toDateOnly(referenceDate);
+
+  if (payFrequency === PayrollFrequency.SEMI_MONTHLY) {
+    if (today.getDate() <= 15) {
+      return {
+        periodStart: formatDateInput(
+          new Date(today.getFullYear(), today.getMonth(), 1),
+        ),
+        periodEnd: formatDateInput(
+          new Date(today.getFullYear(), today.getMonth(), 15),
+        ),
+      };
+    }
+
+    return {
+      periodStart: formatDateInput(
+        new Date(today.getFullYear(), today.getMonth(), 16),
+      ),
+      periodEnd: formatDateInput(
+        new Date(today.getFullYear(), today.getMonth() + 1, 0),
+      ),
+    };
+  }
+
+  if (payFrequency === PayrollFrequency.WEEKLY) {
+    return {
+      periodStart: formatDateInput(startOfWeek(today)),
+      periodEnd: formatDateInput(endOfWeek(today)),
+    };
+  }
+
+  if (payFrequency === PayrollFrequency.BIWEEKLY) {
+    return {
+      periodStart: formatDateInput(addDays(today, -13)),
+      periodEnd: formatDateInput(today),
+    };
+  }
+
+  return {
+    periodStart: formatDateInput(addDays(today, -13)),
+    periodEnd: formatDateInput(today),
   };
-  employees: Array<{
-    key: string; // "RIDER:12" or "CASHIER:8"
-    kind: "RIDER" | "CASHIER";
-    id: number;
-    name: string;
-    openItems: number;
-    totalRemaining: number;
-  }>;
-  selected: {
-    key: string;
-    kind: "RIDER" | "CASHIER";
-    id: number;
-    name: string;
-  } | null;
-  charges: ChargeRow[];
-  totals: { remaining: number; items: number };
-};
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
-
-  // header identity (same style as /store)
-  const userRow = await db.user.findUnique({
-    where: { id: me.userId },
-    include: { employee: true },
-  });
-  if (!userRow) throw new Response("User not found", { status: 404 });
-
-  const emp = userRow.employee;
-  const fullName =
-    emp && (emp.firstName || emp.lastName)
-      ? `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim()
-      : userRow.email ?? "Unknown user";
-
+  await requireRole(request, ["STORE_MANAGER"]);
   const url = new URL(request.url);
-  const kindRaw = String(url.searchParams.get("kind") || "").toUpperCase();
-  const idRaw = Number(url.searchParams.get("id") || 0);
-  // backward compat: ?rider=123
-  const riderCompat = Number(url.searchParams.get("rider") || 0);
+  const selectedRunId = parseOptionalInt(url.searchParams.get("runId"));
+  const selectedEmployeeId = parseOptionalInt(url.searchParams.get("employeeId"));
+  const saved = url.searchParams.get("saved");
 
-  const selectedKind: "RIDER" | "CASHIER" =
-    riderCompat > 0 ? "RIDER" : kindRaw === "CASHIER" ? "CASHIER" : "RIDER";
-  const selectedId = riderCompat > 0 ? riderCompat : idRaw;
-  const selectedKey = selectedId > 0 ? `${selectedKind}:${selectedId}` : "";
+  const [runsRaw, effectivePolicy, unresolvedCashierChargesRaw] =
+    await Promise.all([
+      listWorkerPayrollRuns(),
+      getEffectiveCompanyPayrollPolicy(db, new Date()),
+      listUnresolvedCashierPayrollCharges(),
+    ]);
 
-  // Pull all payroll-tagged open charges (both ledgers) then group in JS.
-  const [riderChargesAll, cashierChargesAll] = await Promise.all([
-    db.riderCharge.findMany({
-      where: {
-        status: {
-          in: [RiderChargeStatus.OPEN, RiderChargeStatus.PARTIALLY_SETTLED],
-        },
-        note: { contains: PLAN_TAG },
-      },
-      orderBy: [{ createdAt: "asc" }],
-      select: {
-        id: true,
-        status: true,
-        amount: true,
-        note: true,
-        createdAt: true,
-        riderId: true,
-        rider: {
-          select: { id: true, firstName: true, lastName: true, alias: true },
-        },
-        run: { select: { id: true, runCode: true } },
-        variance: { select: { id: true, variance: true, note: true } },
-        payments: { select: { amount: true } },
-      },
-    }),
-    db.cashierCharge.findMany({
-      where: {
-        status: {
-          in: [CashierChargeStatus.OPEN, CashierChargeStatus.PARTIALLY_SETTLED],
-        },
-        note: { contains: PLAN_TAG },
-      },
-      orderBy: [{ createdAt: "asc" }],
-      select: {
-        id: true,
-        status: true,
-        amount: true,
-        note: true,
-        createdAt: true,
-        cashierId: true,
-        shiftId: true,
-        cashier: {
-          select: {
-            id: true,
-            email: true,
-            employee: {
-              select: { firstName: true, lastName: true, alias: true },
-            },
-          },
-        },
-        variance: { select: { id: true, variance: true, note: true } },
-        payments: { select: { amount: true } },
-      },
-    }),
-  ]);
-
-  // Normalize to a unified list
-  const chargesAll: Array<
-    ChargeRow & {
-      employeeKey: string;
-      employeeName: string;
-      employeeKind: "RIDER" | "CASHIER";
-      employeeId: number;
-    }
-  > = [];
-
-  for (const c of riderChargesAll) {
-    const total = r2(Number(c.amount ?? 0));
-    const paid = r2(
-      (c.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0),
-    );
-    const remaining = r2(Math.max(0, total - paid));
-    if (remaining <= 0) continue;
-
-    const name = c.rider.alias
-      ? `${c.rider.alias} (${c.rider.firstName} ${c.rider.lastName})`
-      : `${c.rider.firstName} ${c.rider.lastName}`;
-
-    chargesAll.push({
-      id: c.id,
-      kind: "RIDER",
-      status: String(c.status ?? ""),
-      amount: total,
-      paid,
-      remaining,
-      createdAt: c.createdAt.toISOString(),
-      note: c.note ?? null,
-      run: c.run ? { id: c.run.id, runCode: c.run.runCode } : null,
-      variance: c.variance
-        ? {
-            id: c.variance.id,
-            variance: r2(Number(c.variance.variance ?? 0)),
-            note: c.variance.note ?? null,
-          }
-        : null,
-      shift: null,
-      employeeKey: `RIDER:${c.riderId}`,
-      employeeName: name,
-      employeeKind: "RIDER",
-      employeeId: c.riderId,
-    });
-  }
-
-  for (const c of cashierChargesAll) {
-    const total = r2(Number(c.amount ?? 0));
-    const paid = r2(
-      (c.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0),
-    );
-    const remaining = r2(Math.max(0, total - paid));
-    if (remaining <= 0) continue;
-
-    const name =
-      c.cashier.employee?.alias ||
-      [c.cashier.employee?.firstName, c.cashier.employee?.lastName]
-        .filter(Boolean)
-        .join(" ") ||
-      c.cashier.email ||
-      `User#${c.cashier.id}`;
-
-    chargesAll.push({
-      id: c.id,
-      kind: "CASHIER",
-      status: String(c.status ?? ""),
-      amount: total,
-      paid,
-      remaining,
-      createdAt: c.createdAt.toISOString(),
-      note: c.note ?? null,
-      run: null,
-      variance: c.variance
-        ? {
-            id: c.variance.id,
-            variance: r2(Number(c.variance.variance ?? 0)),
-            note: c.variance.note ?? null,
-          }
-        : null,
-      shift: c.shiftId ? { id: Number(c.shiftId) } : null,
-      employeeKey: `CASHIER:${c.cashierId}`,
-      employeeName: name,
-      employeeKind: "CASHIER",
-      employeeId: c.cashierId,
-    });
-  }
-
-  // Build per-employee summary
-  const byEmp = new Map<string, LoaderData["employees"][number]>();
-  for (const c of chargesAll) {
-    const cur = byEmp.get(c.employeeKey) ?? {
-      key: c.employeeKey,
-      kind: c.employeeKind,
-      id: c.employeeId,
-      name: c.employeeName,
-      openItems: 0,
-      totalRemaining: 0,
-    };
-    cur.openItems += 1;
-    cur.totalRemaining = r2(cur.totalRemaining + c.remaining);
-    byEmp.set(c.employeeKey, cur);
-  }
-
-  const employees = Array.from(byEmp.values()).sort(
-    (a, b) => b.totalRemaining - a.totalRemaining,
-  );
-
-  const selected = selectedKey
-    ? employees.find((e) => e.key === selectedKey) ?? null
-    : null;
-  const selectedCharges: ChargeRow[] = selected
-    ? chargesAll
-        .filter((c) => c.employeeKey === selected.key)
-        .map((c) => ({
-          id: c.id,
-          kind: c.kind,
-          status: c.status,
-          amount: c.amount,
-          paid: c.paid,
-          remaining: c.remaining,
-          createdAt: c.createdAt,
-          note: c.note,
-          run: c.run,
-          variance: c.variance,
-          shift: c.shift,
-        }))
-        .filter((c) => c.remaining > 0)
-    : [];
-
-  const totals = {
-    remaining: r2(
-      selectedCharges.reduce((s, c) => s + Number(c.remaining || 0), 0),
+  const runs = runsRaw.map((run) => ({
+    id: run.id,
+    status: run.status,
+    payFrequency: run.payFrequency,
+    periodStart: run.periodStart,
+    periodEnd: run.periodEnd,
+    payDate: run.payDate,
+    note: run.note ?? null,
+    createdAt: run.createdAt,
+    finalizedAt: run.finalizedAt,
+    paidAt: run.paidAt,
+    createdByLabel: actorLabel(run.createdBy),
+    finalizedByLabel: actorLabel(run.finalizedBy),
+    paidByLabel: actorLabel(run.paidBy),
+    lineCount: run.payrollRunLines.length,
+    grossTotal: run.payrollRunLines.reduce(
+      (sum, line) => sum + Number(line.grossPay),
+      0,
     ),
-    items: selectedCharges.length,
-  };
+    deductionTotal: run.payrollRunLines.reduce(
+      (sum, line) => sum + Number(line.totalDeductions),
+      0,
+    ),
+    netTotal: run.payrollRunLines.reduce(
+      (sum, line) => sum + Number(line.netPay),
+      0,
+    ),
+  }));
 
-  return json<LoaderData>({
-    me: {
-      id: me.userId,
-      role: me.role,
-      name: fullName,
-      alias: emp?.alias ?? null,
-      email: userRow.email ?? "",
+  const activeRunId = selectedRunId ?? runs[0]?.id ?? null;
+  const selectedRunRaw = activeRunId
+    ? await getWorkerPayrollRunDetail(activeRunId)
+    : null;
+
+  const selectedRun = selectedRunRaw
+    ? {
+        id: selectedRunRaw.id,
+        status: selectedRunRaw.status,
+        payFrequency: selectedRunRaw.payFrequency,
+        periodStart: selectedRunRaw.periodStart,
+        periodEnd: selectedRunRaw.periodEnd,
+        payDate: selectedRunRaw.payDate,
+        note: selectedRunRaw.note ?? null,
+        createdAt: selectedRunRaw.createdAt,
+        finalizedAt: selectedRunRaw.finalizedAt,
+        paidAt: selectedRunRaw.paidAt,
+        createdByLabel: actorLabel(selectedRunRaw.createdBy),
+        finalizedByLabel: actorLabel(selectedRunRaw.finalizedBy),
+        paidByLabel: actorLabel(selectedRunRaw.paidBy),
+        basePolicySnapshot:
+          parsePolicySnapshot(selectedRunRaw.policySnapshot) ?? null,
+        lines: selectedRunRaw.payrollRunLines.map((line) => ({
+          id: line.id,
+          employeeId: line.employeeId,
+          employeeLabel: buildWorkerLabel(line.employee),
+          employeeRole: line.employee.user?.role ?? "UNASSIGNED",
+          baseAttendancePay: Number(line.baseAttendancePay),
+          attendanceIncentiveAmount: Number(line.attendanceIncentiveAmount),
+          totalAdditions: Number(line.totalAdditions),
+          grossPay: Number(line.grossPay),
+          totalDeductions: Number(line.totalDeductions),
+          netPay: Number(line.netPay),
+          managerOverrideNote: line.managerOverrideNote ?? null,
+          attendanceSnapshotIds: Array.isArray(line.attendanceSnapshotIds)
+            ? line.attendanceSnapshotIds.map((value) => Number(value))
+            : [],
+          policySnapshot: parsePolicySnapshot(line.policySnapshot),
+          additionSnapshot: parsePayrollRunLineAdditionSnapshot(
+            line.additionSnapshot,
+          ),
+          deductionSnapshot: parsePayrollDeductionSnapshot(
+            line.deductionSnapshot,
+          ),
+        })),
+        totals: {
+          grossTotal: selectedRunRaw.payrollRunLines.reduce(
+            (sum, line) => sum + Number(line.grossPay),
+            0,
+          ),
+          deductionTotal: selectedRunRaw.payrollRunLines.reduce(
+            (sum, line) => sum + Number(line.totalDeductions),
+            0,
+          ),
+          netTotal: selectedRunRaw.payrollRunLines.reduce(
+            (sum, line) => sum + Number(line.netPay),
+            0,
+          ),
+        },
+      }
+    : null;
+
+  const selectedLine =
+    selectedRun?.lines.find((line) => line.employeeId === selectedEmployeeId) ??
+    selectedRun?.lines[0] ??
+    null;
+
+  const [selectedAttendanceRowsRaw, selectedChargeSummaryRaw] =
+    selectedRun && selectedLine
+      ? await Promise.all([
+          db.attendanceDutyResult.findMany({
+            where: {
+              workerId: selectedLine.employeeId,
+              dutyDate: {
+                gte: selectedRunRaw!.periodStart,
+                lte: selectedRunRaw!.periodEnd,
+              },
+            },
+            orderBy: [{ dutyDate: "asc" }, { id: "asc" }],
+          }),
+          getPayrollTaggedChargeSummaryForEmployee(selectedLine.employeeId),
+        ])
+      : [[], { itemCount: 0, totalRemaining: 0, items: [] }];
+
+  const selectedOverride =
+    selectedRunRaw && selectedLine
+      ? getWorkerPayrollRunEmployeeOverride(
+          selectedRunRaw.managerOverrideSnapshot,
+          selectedLine.employeeId,
+        )
+      : null;
+
+  return json({
+    runs,
+    selectedRun,
+    selectedLine,
+    selectedAttendanceRows: selectedAttendanceRowsRaw.map((row) => ({
+      id: row.id,
+      dutyDate: row.dutyDate,
+      dayType: row.dayType,
+      attendanceResult: row.attendanceResult,
+      workContext: row.workContext,
+      leaveType: row.leaveType ?? null,
+      lateFlag: row.lateFlag,
+      payBasis: row.payBasis ?? null,
+      dailyRateEquivalent:
+        row.dailyRateEquivalent == null ? null : Number(row.dailyRateEquivalent),
+      halfDayFactor: row.halfDayFactor == null ? null : Number(row.halfDayFactor),
+      note: row.note ?? null,
+    })),
+    selectedChargeSummary: {
+      itemCount: selectedChargeSummaryRaw.itemCount,
+      totalRemaining: selectedChargeSummaryRaw.totalRemaining,
+      items: selectedChargeSummaryRaw.items.map((item) => ({
+        chargeKind: item.chargeKind,
+        chargeId: item.chargeId,
+        employeeLabel: item.employeeLabel,
+        amount: item.amount,
+        paid: item.paid,
+        remaining: item.remaining,
+        status: item.status,
+        note: item.note ?? null,
+        createdAt: item.createdAt,
+        varianceId: item.varianceId ?? null,
+        runId: item.runId ?? null,
+        shiftId: item.shiftId ?? null,
+      })),
     },
-    employees,
-    selected: selected
-      ? {
-          key: selected.key,
-          kind: selected.kind,
-          id: selected.id,
-          name: selected.name,
-        }
-      : null,
-    charges: selectedCharges,
-    totals,
+    selectedOverride,
+    unresolvedCashierCharges: unresolvedCashierChargesRaw.map((item) => ({
+      chargeId: item.chargeId,
+      cashierUserId: item.cashierUserId,
+      cashierLabel: item.cashierLabel,
+      amount: item.amount,
+      paid: item.paid,
+      remaining: item.remaining,
+      status: item.status,
+      note: item.note ?? null,
+      createdAt: item.createdAt,
+      reason: item.reason,
+    })),
+    saved,
+    suggestedDraft: {
+      ...resolveSuggestedDraftWindow(
+        effectivePolicy?.payFrequency ?? null,
+        new Date(),
+      ),
+      payDate: formatDateInput(new Date()),
+      payFrequency: effectivePolicy?.payFrequency ?? null,
+      customCutoffNote: effectivePolicy?.customCutoffNote ?? null,
+    },
   });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
-  const recordedByUserId = getAuthUserId(me) || null;
-
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
-  if (intent !== "record-deduction") {
-    throw new Response("Unsupported intent", { status: 400 });
-  }
 
-  const kind = String(fd.get("kind") || "").toUpperCase();
-  const employeeId = Number(fd.get("employeeId"));
-  const amountRaw = String(fd.get("amount") || "").trim();
-  const note = String(fd.get("note") || "").trim(); // required: cutoff/date/reference
+  try {
+    if (intent === "create-run") {
+      const periodStart = String(fd.get("periodStart") || "");
+      const periodEnd = String(fd.get("periodEnd") || "");
+      const payDate = String(fd.get("payDate") || "");
+      const note = String(fd.get("note") || "");
 
-  if (!["RIDER", "CASHIER"].includes(kind)) {
-    throw new Response("Invalid kind", { status: 400 });
-  }
-  if (!Number.isFinite(employeeId) || employeeId <= 0) {
-    throw new Response("Invalid employee", { status: 400 });
-  }
-
-  const amtNum = Number(amountRaw);
-  if (!Number.isFinite(amtNum) || amtNum <= 0) {
-    throw new Response("Invalid deduction amount", { status: 400 });
-  }
-
-  if (!note.length) {
-    throw new Response("Note is required (e.g., cutoff/date)", { status: 400 });
-  }
-
-  const now = new Date();
-
-  await db.$transaction(async (tx) => {
-    const charges =
-      kind === "RIDER"
-        ? await tx.riderCharge.findMany({
-            where: {
-              riderId: employeeId,
-              status: {
-                in: [
-                  RiderChargeStatus.OPEN,
-                  RiderChargeStatus.PARTIALLY_SETTLED,
-                ],
-              },
-              note: { contains: PLAN_TAG },
-            },
-            orderBy: [{ createdAt: "asc" }],
-            select: {
-              id: true,
-              amount: true,
-              status: true,
-              varianceId: true,
-              createdAt: true,
-              payments: { select: { amount: true } },
-            },
-          })
-        : await tx.cashierCharge.findMany({
-            where: {
-              cashierId: employeeId,
-              status: {
-                in: [
-                  CashierChargeStatus.OPEN,
-                  CashierChargeStatus.PARTIALLY_SETTLED,
-                ],
-              },
-              note: { contains: PLAN_TAG },
-            },
-            orderBy: [{ createdAt: "asc" }],
-            select: {
-              id: true,
-              amount: true,
-              status: true,
-              varianceId: true,
-              createdAt: true,
-              payments: { select: { amount: true } },
-            },
-          });
-
-    // Build remaining per charge
-    const list = charges
-      .map((c) => {
-        const total = Number(c.amount ?? 0);
-        const paid = (c.payments ?? []).reduce(
-          (s, p) => s + Number(p.amount ?? 0),
-          0,
-        );
-        const remaining = Math.max(0, total - paid);
-        return { ...c, total, paid, remaining };
-      })
-      .filter((c) => c.remaining > 0);
-
-    if (list.length === 0) {
-      throw new Response("No payroll-tagged AR for this employee", {
-        status: 400,
+      const run = await createWorkerPayrollRunDraft({
+        periodStart,
+        periodEnd,
+        payDate,
+        note,
+        createdById: me.userId,
       });
+
+      return redirect(
+        buildPayrollRedirect({
+          runId: run.id,
+          saved: "created",
+        }),
+      );
     }
 
-    const totalRemaining = list.reduce((s, c) => s + c.remaining, 0);
-    const payTotal = Math.min(totalRemaining, amtNum);
-    if (payTotal <= 0.0001) {
-      throw new Response("Nothing to deduct", { status: 400 });
+    if (intent === "rebuild-run") {
+      const payrollRunId = parseOptionalInt(String(fd.get("payrollRunId") || ""));
+      const employeeId = parseOptionalInt(String(fd.get("employeeId") || ""));
+      if (!payrollRunId) throw new Error("Payroll run is required.");
+
+      await rebuildWorkerPayrollRunLines(payrollRunId);
+      return redirect(
+        buildPayrollRedirect({
+          runId: payrollRunId,
+          employeeId,
+          saved: "rebuilt",
+        }),
+      );
     }
 
-    // Distribute deduction FIFO across charges
-    let left = payTotal;
-
-    for (const c of list) {
-      if (left <= 0.0001) break;
-
-      const payAmt = Math.min(c.remaining, left);
-      if (payAmt <= 0.0001) continue;
-
-      if (kind === "RIDER") {
-        await tx.riderChargePayment.create({
-          data: {
-            chargeId: c.id,
-            amount: new Prisma.Decimal(payAmt.toFixed(2)),
-            method: RiderChargePaymentMethod.PAYROLL_DEDUCTION,
-            note: `[PAYROLL:${note}]${
-              recordedByUserId ? ` REC_BY:${recordedByUserId}` : ""
-            }`,
-            refNo: undefined,
-            shiftId: null,
-            cashierId: null,
-          },
-        });
-      } else {
-        await tx.cashierChargePayment.create({
-          data: {
-            chargeId: c.id,
-            amount: new Prisma.Decimal(payAmt.toFixed(2)),
-            method: CashierChargePaymentMethod.PAYROLL_DEDUCTION,
-            note: `[PAYROLL:${note}]${
-              recordedByUserId ? ` REC_BY:${recordedByUserId}` : ""
-            }`,
-            refNo: undefined,
-            shiftId: null,
-            cashierId: null,
-          },
-        });
+    if (intent === "save-override") {
+      const payrollRunId = parseOptionalInt(String(fd.get("payrollRunId") || ""));
+      const employeeId = parseOptionalInt(String(fd.get("employeeId") || ""));
+      if (!payrollRunId || !employeeId) {
+        throw new Error("Run and employee are required.");
       }
 
-      if (kind === "RIDER") {
-        // recompute paid/remaining for this charge (cheap + safe)
-        const agg = await tx.riderChargePayment.aggregate({
-          where: { chargeId: c.id },
-          _sum: { amount: true },
-        });
-        const paid2 = Number(agg._sum.amount ?? 0);
-        const rem2 = Math.max(0, c.total - paid2);
-        const nextStatus: RiderChargeStatus =
-          rem2 <= 0.009
-            ? RiderChargeStatus.SETTLED
-            : paid2 > 0.009
-              ? RiderChargeStatus.PARTIALLY_SETTLED
-              : RiderChargeStatus.OPEN;
+      const sickLeavePayTreatment = String(
+        fd.get("sickLeavePayTreatment") || "",
+      );
+      const attendanceIncentiveMode = String(
+        fd.get("attendanceIncentiveMode") || "DEFAULT",
+      );
+      const restDayWorkedPremiumPercentRaw = String(
+        fd.get("restDayWorkedPremiumPercent") || "",
+      ).trim();
+      const regularHolidayWorkedPremiumPercentRaw = String(
+        fd.get("regularHolidayWorkedPremiumPercent") || "",
+      ).trim();
+      const specialHolidayWorkedPremiumPercentRaw = String(
+        fd.get("specialHolidayWorkedPremiumPercent") || "",
+      ).trim();
+      const attendanceIncentiveAmountRaw = String(
+        fd.get("attendanceIncentiveAmount") || "",
+      ).trim();
+      const note = String(fd.get("note") || "");
 
-        await tx.riderCharge.update({
-          where: { id: c.id },
-          data: {
-            status: nextStatus,
-            settledAt: nextStatus === RiderChargeStatus.SETTLED ? now : null,
-          },
-        });
+      await saveWorkerPayrollRunEmployeeOverride({
+        payrollRunId,
+        employeeId,
+        sickLeavePayTreatment:
+          sickLeavePayTreatment === SickLeavePayTreatment.PAID ||
+          sickLeavePayTreatment === SickLeavePayTreatment.UNPAID
+            ? sickLeavePayTreatment
+            : null,
+        restDayWorkedPremiumPercent:
+          restDayWorkedPremiumPercentRaw.length > 0
+            ? Number(restDayWorkedPremiumPercentRaw)
+            : null,
+        regularHolidayWorkedPremiumPercent:
+          regularHolidayWorkedPremiumPercentRaw.length > 0
+            ? Number(regularHolidayWorkedPremiumPercentRaw)
+            : null,
+        specialHolidayWorkedPremiumPercent:
+          specialHolidayWorkedPremiumPercentRaw.length > 0
+            ? Number(specialHolidayWorkedPremiumPercentRaw)
+            : null,
+        attendanceIncentiveMode:
+          attendanceIncentiveMode === "FORCE_ALLOW" ||
+          attendanceIncentiveMode === "FORCE_BLOCK"
+            ? attendanceIncentiveMode
+            : "DEFAULT",
+        attendanceIncentiveAmount:
+          attendanceIncentiveAmountRaw.length > 0
+            ? Number(attendanceIncentiveAmountRaw)
+            : null,
+        note,
+        actorUserId: me.userId,
+      });
+      await rebuildWorkerPayrollRunLines(payrollRunId);
 
-        // keep variance sync behavior (ledger -> variance state)
-        if (c.varianceId) {
-          if (nextStatus === RiderChargeStatus.SETTLED) {
-            await tx.riderRunVariance.updateMany({
-              where: {
-                id: c.varianceId,
-                status: {
-                  in: [
-                    RiderVarianceStatus.OPEN,
-                    RiderVarianceStatus.MANAGER_APPROVED,
-                    RiderVarianceStatus.RIDER_ACCEPTED,
-                    RiderVarianceStatus.PARTIALLY_SETTLED,
-                  ],
-                },
-              },
-              data: { status: RiderVarianceStatus.CLOSED, resolvedAt: now },
-            });
-          } else if (nextStatus === RiderChargeStatus.PARTIALLY_SETTLED) {
-            await tx.riderRunVariance.updateMany({
-              where: {
-                id: c.varianceId,
-                status: {
-                  in: [
-                    RiderVarianceStatus.OPEN,
-                    RiderVarianceStatus.MANAGER_APPROVED,
-                    RiderVarianceStatus.RIDER_ACCEPTED,
-                  ],
-                },
-              },
-              data: { status: RiderVarianceStatus.PARTIALLY_SETTLED },
-            });
-          }
-        }
-      } else {
-        // recompute paid/remaining for this charge (cheap + safe)
-        const agg = await tx.cashierChargePayment.aggregate({
-          where: { chargeId: c.id },
-          _sum: { amount: true },
-        });
-        const paid2 = Number(agg._sum.amount ?? 0);
-        const rem2 = Math.max(0, c.total - paid2);
-        const nextStatus: CashierChargeStatus =
-          rem2 <= 0.009
-            ? CashierChargeStatus.SETTLED
-            : paid2 > 0.009
-              ? CashierChargeStatus.PARTIALLY_SETTLED
-              : CashierChargeStatus.OPEN;
+      return redirect(
+        buildPayrollRedirect({
+          runId: payrollRunId,
+          employeeId,
+          saved: "override",
+        }),
+      );
+    }
 
-        await tx.cashierCharge.update({
-          where: { id: c.id },
-          data: {
-            status: nextStatus,
-            settledAt: nextStatus === CashierChargeStatus.SETTLED ? now : null,
-          },
-        });
+    if (intent === "apply-deduction") {
+      const payrollRunId = parseOptionalInt(String(fd.get("payrollRunId") || ""));
+      const payrollRunLineId = parseOptionalInt(
+        String(fd.get("payrollRunLineId") || ""),
+      );
+      const employeeId = parseOptionalInt(String(fd.get("employeeId") || ""));
+      const amount = Number(fd.get("amount") || 0);
+      const note = String(fd.get("note") || "");
 
-        // Cashier variance statuses do not have PARTIALLY_SETTLED; close only when fully settled.
-        if (c.varianceId && nextStatus === CashierChargeStatus.SETTLED) {
-          await tx.cashierShiftVariance.updateMany({
-            where: {
-              id: c.varianceId,
-              status: {
-                in: [
-                  CashierVarianceStatus.OPEN,
-                  CashierVarianceStatus.MANAGER_APPROVED,
-                ],
-              },
-            },
-            data: { status: CashierVarianceStatus.CLOSED, resolvedAt: now },
-          });
-        }
+      if (!payrollRunId || !payrollRunLineId || !employeeId) {
+        throw new Error("Payroll deduction context is incomplete.");
       }
 
-      left = left - payAmt;
-    }
-  });
+      await applyWorkerPayrollChargeDeduction({
+        employeeId,
+        amount,
+        note,
+        payrollRunLineId,
+        recordedByUserId: me.userId,
+      });
 
-  return redirect(`/store/payroll?kind=${kind}&id=${employeeId}&deducted=1`);
+      return redirect(
+        buildPayrollRedirect({
+          runId: payrollRunId,
+          employeeId,
+          saved: "deduction",
+        }),
+      );
+    }
+
+    if (intent === "finalize-run") {
+      const payrollRunId = parseOptionalInt(String(fd.get("payrollRunId") || ""));
+      if (!payrollRunId) throw new Error("Payroll run is required.");
+
+      await finalizeWorkerPayrollRun(payrollRunId, me.userId);
+      return redirect(
+        buildPayrollRedirect({
+          runId: payrollRunId,
+          saved: "finalized",
+        }),
+      );
+    }
+
+    if (intent === "mark-paid") {
+      const payrollRunId = parseOptionalInt(String(fd.get("payrollRunId") || ""));
+      if (!payrollRunId) throw new Error("Payroll run is required.");
+
+      await markWorkerPayrollRunPaid(payrollRunId, me.userId);
+      return redirect(
+        buildPayrollRedirect({
+          runId: payrollRunId,
+          saved: "paid",
+        }),
+      );
+    }
+
+    return json<ActionData>(
+      { ok: false, error: "Unsupported action.", action: intent },
+      { status: 400 },
+    );
+  } catch (error) {
+    return json<ActionData>(
+      {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to save payroll changes.",
+        action: intent,
+      },
+      { status: 400 },
+    );
+  }
 }
 
 export default function StorePayrollPage() {
-  const { employees, selected, charges, totals } = useLoaderData<LoaderData>();
-  const [sp] = useSearchParams();
-
-  const kindRaw = String(sp.get("kind") || "").toUpperCase();
-  const safeKindParam: "RIDER" | "CASHIER" =
-    kindRaw === "CASHIER" ? "CASHIER" : "RIDER";
-  const idParam = Number(sp.get("id") || 0);
-  const riderCompat = Number(sp.get("rider") || 0);
-  const selectedKey =
-    selected?.key ??
-    (riderCompat > 0
-      ? `RIDER:${riderCompat}`
-      : idParam > 0
-      ? `${safeKindParam}:${idParam}`
-      : "");
-  const didDeduct = String(sp.get("deducted") || "") === "1";
+  const {
+    runs,
+    selectedRun,
+    selectedLine,
+    selectedAttendanceRows,
+    selectedChargeSummary,
+    selectedOverride,
+    unresolvedCashierCharges,
+    saved,
+    suggestedDraft,
+  } = useLoaderData<typeof loader>();
+  const actionData = useActionData<ActionData>();
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Payroll"
-        subtitle="Settle payroll-tagged A/R balances for riders and cashiers."
+        title="Payroll Runs"
+        subtitle="Review attendance-backed pay, apply tagged charge deductions, and freeze payroll snapshots per cutoff."
         backTo="/store"
-        backLabel="Dashboard"
-        maxWidthClassName="max-w-6xl"
+        backLabel="Manager Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/store/rider-ar"
-            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            title="Tag AR items for payroll"
-          >
-            Rider AR →
-          </Link>
-          <Link
-            to="/store/cashier-ar"
-            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            title="Tag cashier AR items for payroll"
-          >
-            Cashier AR →
-          </Link>
-        </div>
-
-        {didDeduct ? (
-          <SoTAlert tone="success" className="rounded-2xl px-4 py-3 text-sm">
-            Payroll deduction recorded.
+      <div className="mx-auto max-w-6xl space-y-5 px-5 py-6">
+        {saved ? (
+          <SoTAlert tone="success">
+            {saved === "created" && "Payroll run draft created."}
+            {saved === "rebuilt" && "Payroll lines rebuilt from attendance facts."}
+            {saved === "override" && "Manager override saved and payroll lines rebuilt."}
+            {saved === "deduction" && "Payroll deduction posted to the charge ledgers."}
+            {saved === "finalized" && "Payroll run finalized and frozen."}
+            {saved === "paid" && "Payroll run marked paid."}
           </SoTAlert>
         ) : null}
+        {actionData && !actionData.ok ? (
+          <SoTAlert tone="warning">{actionData.error}</SoTAlert>
+        ) : null}
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          {/* Left: employees list */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-800">
-                Employees with payroll-tagged AR
-              </div>
-              <div className="text-xs text-slate-500">
-                {employees.length} employee(s)
-              </div>
+        {unresolvedCashierCharges.length > 0 ? (
+          <SoTCard tone="warning" className="space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Cashier identity blocker
+              </h2>
+              <p className="text-xs text-slate-600">
+                Payroll finalization is blocked while payroll-tagged cashier charges
+                still point to users without linked employee records.
+              </p>
             </div>
-
-            <SoTTable>
-              <SoTTableHead>
-                <tr>
-                  <SoTTh>Employee</SoTTh>
-                  <SoTTh align="right">Items</SoTTh>
-                  <SoTTh align="right">Remaining</SoTTh>
-                  <SoTTh align="right">Action</SoTTh>
-                </tr>
-              </SoTTableHead>
-              <tbody>
-                {employees.length === 0 ? (
-                  <SoTTableEmptyRow
-                    colSpan={4}
-                    message={
-                      <>
-                        No payroll-tagged AR yet. Use{" "}
-                        <span className="font-medium">Rider AR</span> /{" "}
-                        <span className="font-medium">Cashier AR</span> to tag items.
-                      </>
-                    }
-                  />
-                ) : (
-                  employees.map((e) => {
-                    const active = selectedKey === e.key;
-                    return (
-                      <SoTTableRow key={e.key}>
-                        <SoTTd>
-                          <div className="text-slate-900">{e.name}</div>
-                          <div className="text-[11px] text-slate-500">{e.kind}</div>
-                        </SoTTd>
-                        <SoTTd align="right" className="tabular-nums">
-                          {e.openItems}
-                        </SoTTd>
-                        <SoTTd align="right" className="tabular-nums text-rose-700">
-                          {peso(e.totalRemaining)}
-                        </SoTTd>
-                        <SoTTd align="right">
-                          <Link
-                            to={`/store/payroll?kind=${e.kind}&id=${e.id}`}
-                            className={`inline-flex items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-medium hover:bg-slate-50 ${
-                              active
-                                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                                : "border-slate-200 bg-white text-slate-700"
-                            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
-                          >
-                            {active ? "Selected" : "Open"}
-                          </Link>
-                        </SoTTd>
-                      </SoTTableRow>
-                    );
-                  })
-                )}
-              </tbody>
-            </SoTTable>
-          </div>
-
-          {/* Right: selected employee details */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-800">
-                {selected
-                  ? `Payroll deduction · ${selected.name}`
-                  : "Select an employee"}
-              </div>
-              {selected ? (
-                <div className="text-xs text-slate-500">
-                  {totals.items} item(s) · Remaining{" "}
-                  <span className="font-medium text-rose-700">
-                    {peso(totals.remaining)}
+            <div className="grid gap-2">
+              {unresolvedCashierCharges.slice(0, 4).map((charge) => (
+                <div
+                  key={charge.chargeId}
+                  className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  Charge #{charge.chargeId} · {charge.cashierLabel} · Remaining{" "}
+                  <span className="font-semibold text-amber-900">
+                    {peso(charge.remaining)}
                   </span>
                 </div>
-              ) : (
-                <div className="text-xs text-slate-500">—</div>
-              )}
+              ))}
             </div>
+          </SoTCard>
+        ) : null}
 
-            {!selected ? (
-              <div className="px-4 py-10 text-center text-sm text-slate-500">
-                Pick an employee on the left to record payroll deduction.
+        <SoTCard interaction="form" className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Create payroll draft
+              </h2>
+              <p className="text-xs text-slate-500">
+                Suggested range follows the current company payroll policy.
+                {suggestedDraft.payFrequency
+                  ? ` Current pay frequency: ${suggestedDraft.payFrequency}.`
+                  : ""}
+              </p>
+            </div>
+            <Link
+              to="/store/rider-ar"
+              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Rider AR
+            </Link>
+          </div>
+
+          <Form method="post" className="grid gap-3 md:grid-cols-4">
+            <input type="hidden" name="_intent" value="create-run" />
+            <SoTFormField label="Period start">
+              <SoTInput
+                type="date"
+                name="periodStart"
+                defaultValue={suggestedDraft.periodStart}
+                required
+              />
+            </SoTFormField>
+            <SoTFormField label="Period end">
+              <SoTInput
+                type="date"
+                name="periodEnd"
+                defaultValue={suggestedDraft.periodEnd}
+                required
+              />
+            </SoTFormField>
+            <SoTFormField label="Pay date">
+              <SoTInput
+                type="date"
+                name="payDate"
+                defaultValue={suggestedDraft.payDate}
+                required
+              />
+            </SoTFormField>
+            <SoTFormField label="Draft note">
+              <SoTInput
+                name="note"
+                placeholder={
+                  suggestedDraft.customCutoffNote || "Cutoff note or manager context"
+                }
+              />
+            </SoTFormField>
+            <div className="md:col-span-4">
+              <SoTButton type="submit" variant="primary">
+                Create payroll draft
+              </SoTButton>
+            </div>
+          </Form>
+        </SoTCard>
+
+        <SoTCard className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Payroll run library</h2>
+            <p className="text-xs text-slate-500">
+              Open a draft to rebuild lines, review payroll, apply deductions, and finalize.
+            </p>
+          </div>
+
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow>
+                <SoTTh>Cutoff</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Employees</SoTTh>
+                <SoTTh align="right">Gross</SoTTh>
+                <SoTTh align="right">Net</SoTTh>
+                <SoTTh>Action</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
+            <tbody>
+              {runs.length === 0 ? (
+                <SoTTableEmptyRow
+                  colSpan={6}
+                  message="No payroll runs yet. Create the first draft above."
+                />
+              ) : (
+                runs.map((run) => (
+                  <SoTTableRow key={run.id}>
+                    <SoTTd>
+                      <div className="space-y-1">
+                        <div className="font-medium text-slate-900">
+                          {formatDateLabel(run.periodStart)} to{" "}
+                          {formatDateLabel(run.periodEnd)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Pay date {formatDateLabel(run.payDate)} · {run.payFrequency}
+                        </div>
+                      </div>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="space-y-1">
+                        <SoTStatusBadge tone={statusTone(run.status)}>
+                          {run.status}
+                        </SoTStatusBadge>
+                        <div className="text-xs text-slate-500">
+                          Created by {run.createdByLabel}
+                        </div>
+                      </div>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      {run.lineCount}
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      {peso(run.grossTotal)}
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums">
+                      {peso(run.netTotal)}
+                    </SoTTd>
+                    <SoTTd>
+                      <Link
+                        to={buildPayrollRedirect({ runId: run.id })}
+                        className={`inline-flex h-9 items-center rounded-xl border px-3 text-sm font-medium ${
+                          selectedRun?.id === run.id
+                            ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                            : "border-slate-300 bg-white text-slate-700"
+                        }`}
+                      >
+                        {selectedRun?.id === run.id ? "Selected" : "Open"}
+                      </Link>
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
+        </SoTCard>
+
+        {selectedRun ? (
+          <>
+            <SoTCard className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Selected payroll run
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    {formatDateLabel(selectedRun.periodStart)} to{" "}
+                    {formatDateLabel(selectedRun.periodEnd)} · Pay date{" "}
+                    {formatDateLabel(selectedRun.payDate)}
+                  </p>
+                </div>
+                <SoTStatusBadge tone={statusTone(selectedRun.status)}>
+                  {selectedRun.status}
+                </SoTStatusBadge>
               </div>
-            ) : (
-              <div className="p-4 space-y-3">
-                <SoTAlert tone="warning" className="p-3">
-                  This records{" "}
-                  <span className="font-semibold">PAYROLL_DEDUCTION</span>{" "}
-                  payments (FIFO), and updates charge/variance statuses.
-                </SoTAlert>
 
-                <Form
-                  method="post"
-                  className="grid gap-2 rounded-xl border border-slate-200 p-3"
-                >
-                  <input type="hidden" name="kind" value={selected.kind} />
-                  <input type="hidden" name="employeeId" value={selected.id} />
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <SoTFormField label="Deduct amount">
-                      <SoTInput
-                        name="amount"
-                        inputMode="decimal"
-                        placeholder="Deduct amount"
-                      />
-                    </SoTFormField>
-                    <SoTFormField label="Cutoff/date (required)">
-                      <SoTInput
-                        name="note"
-                        placeholder="Cutoff/date (required)"
-                      />
-                    </SoTFormField>
-                  </div>
-                  <SoTButton
-                    type="submit"
-                    name="_intent"
-                    value="record-deduction"
-                    variant="primary"
-                    className="w-full sm:w-auto"
-                  >
-                    Record payroll deduction
-                  </SoTButton>
-                  <div className="text-[11px] text-slate-500">
-                    Tip: kung gusto mo exact, set amount = remaining{" "}
-                    {peso(totals.remaining)}.
-                  </div>
-                </Form>
+              <div className="grid gap-3 md:grid-cols-4">
+                <MetricCard
+                  label="Employees"
+                  value={String(selectedRun.lines.length)}
+                  tone="info"
+                />
+                <MetricCard
+                  label="Gross pay"
+                  value={peso(selectedRun.totals.grossTotal)}
+                  tone="success"
+                />
+                <MetricCard
+                  label="Deductions"
+                  value={peso(selectedRun.totals.deductionTotal)}
+                  tone="warning"
+                />
+                <MetricCard
+                  label="Net pay"
+                  value={peso(selectedRun.totals.netTotal)}
+                  tone="info"
+                />
+              </div>
 
-                <div className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex flex-wrap gap-2">
+                {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                  <>
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="rebuild-run" />
+                      <input type="hidden" name="payrollRunId" value={selectedRun.id} />
+                      {selectedLine ? (
+                        <input
+                          type="hidden"
+                          name="employeeId"
+                          value={selectedLine.employeeId}
+                        />
+                      ) : null}
+                      <SoTButton type="submit" variant="primary">
+                        Rebuild payroll lines
+                      </SoTButton>
+                    </Form>
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="finalize-run" />
+                      <input type="hidden" name="payrollRunId" value={selectedRun.id} />
+                      <SoTButton type="submit">Finalize run</SoTButton>
+                    </Form>
+                  </>
+                ) : null}
+                {selectedRun.status === PayrollRunStatus.FINALIZED ? (
+                  <Form method="post">
+                    <input type="hidden" name="_intent" value="mark-paid" />
+                    <input type="hidden" name="payrollRunId" value={selectedRun.id} />
+                    <SoTButton type="submit" variant="primary">
+                      Mark paid
+                    </SoTButton>
+                  </Form>
+                ) : null}
+              </div>
+
+              <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 md:grid-cols-2">
+                <div>Created: {formatDateTimeLabel(selectedRun.createdAt)}</div>
+                <div>Created by: {selectedRun.createdByLabel}</div>
+                <div>Finalized: {formatDateTimeLabel(selectedRun.finalizedAt)}</div>
+                <div>Finalized by: {selectedRun.finalizedByLabel}</div>
+                <div>Paid: {formatDateTimeLabel(selectedRun.paidAt)}</div>
+                <div>Paid by: {selectedRun.paidByLabel}</div>
+              </div>
+            </SoTCard>
+
+            <div className="grid gap-5 lg:grid-cols-12">
+              <section className="lg:col-span-7">
+                <SoTCard className="space-y-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900">
+                      Payroll lines
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Review base pay, additions, deductions, and final net pay per employee.
+                    </p>
+                  </div>
+
                   <SoTTable>
                     <SoTTableHead>
-                      <tr>
-                        <SoTTh>Ref</SoTTh>
-                        <SoTTh>Link</SoTTh>
-                        <SoTTh>Status</SoTTh>
-                        <SoTTh align="right">Remaining</SoTTh>
-                      </tr>
+                      <SoTTableRow>
+                        <SoTTh>Employee</SoTTh>
+                        <SoTTh align="right">Base</SoTTh>
+                        <SoTTh align="right">Additions</SoTTh>
+                        <SoTTh align="right">Deductions</SoTTh>
+                        <SoTTh align="right">Net</SoTTh>
+                        <SoTTh>Action</SoTTh>
+                      </SoTTableRow>
                     </SoTTableHead>
                     <tbody>
-                      {charges.length === 0 ? (
-                        <SoTTableEmptyRow colSpan={4} message="No open items." />
+                      {selectedRun.lines.length === 0 ? (
+                        <SoTTableEmptyRow
+                          colSpan={6}
+                          message="No payroll lines yet. Rebuild this draft first."
+                        />
                       ) : (
-                        charges.map((c) => (
-                          <SoTTableRow key={c.id}>
+                        selectedRun.lines.map((line) => (
+                          <SoTTableRow key={line.id}>
                             <SoTTd>
-                              <div className="text-slate-900">#{c.id}</div>
-                              <div className="text-[11px] text-slate-500">{c.kind}</div>
-                              <div className="text-[11px] text-slate-500">
-                                {new Date(c.createdAt).toLocaleString()}
+                              <div className="space-y-1">
+                                <div className="font-medium text-slate-900">
+                                  {line.employeeLabel}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {line.employeeRole}
+                                  {line.additionSnapshot.managerOverrideApplied ||
+                                  line.managerOverrideNote ? " · Override" : ""}
+                                </div>
                               </div>
-                              {c.variance ? (
-                                <div className="text-[11px] text-slate-500">
-                                  variance #{c.variance.id} ·{" "}
-                                  <span className="font-medium">
-                                    {peso(Math.abs(c.variance.variance))}
-                                  </span>
-                                </div>
-                              ) : null}
                             </SoTTd>
-                            <SoTTd>
-                              {c.kind === "RIDER" ? (
-                                c.run ? (
-                                  <span className="font-mono text-slate-800">
-                                    {c.run.runCode}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-500">—</span>
-                                )
-                              ) : c.shift ? (
-                                <span className="font-mono text-slate-800">
-                                  shift#{c.shift.id}
-                                </span>
-                              ) : (
-                                <span className="text-slate-500">—</span>
-                              )}
+                            <SoTTd align="right" className="tabular-nums">
+                              {peso(line.baseAttendancePay)}
                             </SoTTd>
-                            <SoTTd>
-                              <SoTStatusBadge>{c.status}</SoTStatusBadge>
-                              {hasPlanTag(c.note) ? (
-                                <SoTStatusBadge tone="warning" className="ml-2">
-                                  Payroll-tagged
-                                </SoTStatusBadge>
-                              ) : null}
-                              {c.note ? (
-                                <div className="mt-1 text-[11px] text-slate-500">
-                                  Note: {c.note}
-                                </div>
-                              ) : null}
+                            <SoTTd align="right" className="tabular-nums">
+                              {peso(line.totalAdditions)}
                             </SoTTd>
                             <SoTTd align="right" className="tabular-nums text-rose-700">
-                              {peso(c.remaining)}
+                              {peso(line.totalDeductions)}
+                            </SoTTd>
+                            <SoTTd align="right" className="tabular-nums font-medium">
+                              {peso(line.netPay)}
+                            </SoTTd>
+                            <SoTTd>
+                              <Link
+                                to={buildPayrollRedirect({
+                                  runId: selectedRun.id,
+                                  employeeId: line.employeeId,
+                                })}
+                                className={`inline-flex h-9 items-center rounded-xl border px-3 text-sm font-medium ${
+                                  selectedLine?.employeeId === line.employeeId
+                                    ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                                    : "border-slate-300 bg-white text-slate-700"
+                                }`}
+                              >
+                                {selectedLine?.employeeId === line.employeeId
+                                  ? "Selected"
+                                  : "Review"}
+                              </Link>
                             </SoTTd>
                           </SoTTableRow>
                         ))
                       )}
                     </tbody>
                   </SoTTable>
-                </div>
+                </SoTCard>
+              </section>
 
-                <div className="text-[11px] text-slate-500">
-                  Only charges with{" "}
-                  <span className="font-mono">{PLAN_TAG}</span> are shown here.
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+              <aside className="space-y-5 lg:col-span-5">
+                {selectedLine ? (
+                  <>
+                    <SoTCard className="space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-sm font-semibold text-slate-900">
+                            Selected employee
+                          </h2>
+                          <p className="text-xs text-slate-500">
+                            {selectedLine.employeeLabel} · {selectedLine.employeeRole}
+                          </p>
+                        </div>
+                        <SoTStatusBadge tone={statusTone(selectedRun.status)}>
+                          {selectedRun.status}
+                        </SoTStatusBadge>
+                      </div>
+
+                      <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <div>Base attendance pay: {peso(selectedLine.baseAttendancePay)}</div>
+                        <div>
+                          Attendance incentive:{" "}
+                          {peso(selectedLine.attendanceIncentiveAmount)}
+                        </div>
+                        <div>Gross pay: {peso(selectedLine.grossPay)}</div>
+                        <div>Total deductions: {peso(selectedLine.totalDeductions)}</div>
+                        <div>Net pay: {peso(selectedLine.netPay)}</div>
+                      </div>
+                    </SoTCard>
+
+                    {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                      <SoTCard interaction="form" className="space-y-4">
+                        <div>
+                          <h2 className="text-sm font-semibold text-slate-900">
+                            Manager override
+                          </h2>
+                          <p className="text-xs text-slate-500">
+                            Override sick-leave treatment, premiums, or attendance
+                            incentive for this employee before finalization.
+                          </p>
+                        </div>
+
+                        <Form method="post" className="space-y-3">
+                          <input type="hidden" name="_intent" value="save-override" />
+                          <input
+                            type="hidden"
+                            name="payrollRunId"
+                            value={selectedRun.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="employeeId"
+                            value={selectedLine.employeeId}
+                          />
+
+                          <SoTFormField label="Sick leave treatment">
+                            <SelectInput
+                              name="sickLeavePayTreatment"
+                              defaultValue={selectedOverride?.sickLeavePayTreatment ?? ""}
+                              options={[
+                                { value: "", label: "Use policy default" },
+                                {
+                                  value: SickLeavePayTreatment.PAID,
+                                  label: "Force paid",
+                                },
+                                {
+                                  value: SickLeavePayTreatment.UNPAID,
+                                  label: "Force unpaid",
+                                },
+                              ]}
+                            />
+                          </SoTFormField>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <SoTFormField label="Rest-day premium %">
+                              <SoTInput
+                                name="restDayWorkedPremiumPercent"
+                                inputMode="decimal"
+                                defaultValue={
+                                  selectedOverride?.restDayWorkedPremiumPercent ?? ""
+                                }
+                                placeholder="Default"
+                              />
+                            </SoTFormField>
+                            <SoTFormField label="Regular holiday %">
+                              <SoTInput
+                                name="regularHolidayWorkedPremiumPercent"
+                                inputMode="decimal"
+                                defaultValue={
+                                  selectedOverride?.regularHolidayWorkedPremiumPercent ??
+                                  ""
+                                }
+                                placeholder="Default"
+                              />
+                            </SoTFormField>
+                            <SoTFormField label="Special holiday %">
+                              <SoTInput
+                                name="specialHolidayWorkedPremiumPercent"
+                                inputMode="decimal"
+                                defaultValue={
+                                  selectedOverride?.specialHolidayWorkedPremiumPercent ??
+                                  ""
+                                }
+                                placeholder="Default"
+                              />
+                            </SoTFormField>
+                          </div>
+
+                          <SoTFormField label="Attendance incentive mode">
+                            <SelectInput
+                              name="attendanceIncentiveMode"
+                              defaultValue={
+                                selectedOverride?.attendanceIncentiveMode ?? "DEFAULT"
+                              }
+                              options={[
+                                { value: "DEFAULT", label: "Use policy default" },
+                                { value: "FORCE_ALLOW", label: "Force allow" },
+                                { value: "FORCE_BLOCK", label: "Force block" },
+                              ]}
+                            />
+                          </SoTFormField>
+
+                          <SoTFormField label="Attendance incentive amount">
+                            <SoTInput
+                              name="attendanceIncentiveAmount"
+                              inputMode="decimal"
+                              defaultValue={
+                                selectedOverride?.attendanceIncentiveAmount ?? ""
+                              }
+                              placeholder="Default"
+                            />
+                          </SoTFormField>
+
+                          <SoTTextarea
+                            name="note"
+                            label="Override note"
+                            rows={3}
+                            defaultValue={selectedOverride?.note ?? ""}
+                            placeholder="Why this employee needs a payroll override"
+                          />
+
+                          <SoTButton type="submit" variant="primary">
+                            Save override and rebuild
+                          </SoTButton>
+                        </Form>
+                      </SoTCard>
+                    ) : null}
+
+                    <SoTCard className="space-y-4">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-900">
+                          Deduction review
+                        </h2>
+                        <p className="text-xs text-slate-500">
+                          Current open payroll-tagged charges:{" "}
+                          {peso(selectedChargeSummary.totalRemaining)} across{" "}
+                          {selectedChargeSummary.itemCount} item(s).
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <div>
+                          Applied in this run:{" "}
+                          {peso(
+                            selectedLine.deductionSnapshot.appliedPayments.reduce(
+                              (sum, payment) => sum + payment.amount,
+                              0,
+                            ),
+                          )}
+                        </div>
+                        <div>
+                          Last applied at:{" "}
+                          {formatDateTimeLabel(
+                            selectedLine.deductionSnapshot.lastAppliedAt,
+                          )}
+                        </div>
+                      </div>
+
+                      {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                        <div className="space-y-3">
+                          <Form method="post" className="space-y-3">
+                            <input type="hidden" name="_intent" value="apply-deduction" />
+                            <input
+                              type="hidden"
+                              name="payrollRunId"
+                              value={selectedRun.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="payrollRunLineId"
+                              value={selectedLine.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="employeeId"
+                              value={selectedLine.employeeId}
+                            />
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <SoTFormField label="Deduction amount">
+                                <SoTInput
+                                  name="amount"
+                                  inputMode="decimal"
+                                  placeholder="Enter partial deduction"
+                                  required
+                                />
+                              </SoTFormField>
+                              <SoTFormField label="Reference note">
+                                <SoTInput
+                                  name="note"
+                                  placeholder="Cutoff / note / reason"
+                                  required
+                                />
+                              </SoTFormField>
+                            </div>
+
+                            <SoTButton type="submit" variant="primary">
+                              Apply partial deduction
+                            </SoTButton>
+                          </Form>
+
+                          <Form method="post" className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <input type="hidden" name="_intent" value="apply-deduction" />
+                            <input
+                              type="hidden"
+                              name="payrollRunId"
+                              value={selectedRun.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="payrollRunLineId"
+                              value={selectedLine.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="employeeId"
+                              value={selectedLine.employeeId}
+                            />
+                            <input
+                              type="hidden"
+                              name="amount"
+                              value={selectedChargeSummary.totalRemaining}
+                            />
+                            <SoTFormField label="Full-deduction note">
+                              <SoTInput
+                                name="note"
+                                placeholder="Reference for full deduction"
+                                required
+                              />
+                            </SoTFormField>
+                            <SoTButton
+                              type="submit"
+                              disabled={selectedChargeSummary.totalRemaining <= 0}
+                            >
+                              Apply full remaining balance
+                            </SoTButton>
+                          </Form>
+                        </div>
+                      ) : null}
+
+                      <SoTTable>
+                        <SoTTableHead>
+                          <SoTTableRow>
+                            <SoTTh>Charge</SoTTh>
+                            <SoTTh>Status</SoTTh>
+                            <SoTTh align="right">Remaining</SoTTh>
+                          </SoTTableRow>
+                        </SoTTableHead>
+                        <tbody>
+                          {selectedChargeSummary.items.length === 0 ? (
+                            <SoTTableEmptyRow
+                              colSpan={3}
+                              message="No open payroll-tagged charges for this employee."
+                            />
+                          ) : (
+                            selectedChargeSummary.items.map((item) => (
+                              <SoTTableRow key={`${item.chargeKind}-${item.chargeId}`}>
+                                <SoTTd>
+                                  <div className="space-y-1">
+                                    <div className="font-medium text-slate-900">
+                                      {item.chargeKind} charge #{item.chargeId}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      {item.runId
+                                        ? `Run #${item.runId}`
+                                        : item.shiftId
+                                          ? `Shift #${item.shiftId}`
+                                          : "Direct charge"}{" "}
+                                      · Created {formatDateTimeLabel(item.createdAt)}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      Note: {item.note || "No note"}
+                                    </div>
+                                  </div>
+                                </SoTTd>
+                                <SoTTd>
+                                  <SoTStatusBadge tone="warning">
+                                    {item.status}
+                                  </SoTStatusBadge>
+                                </SoTTd>
+                                <SoTTd align="right" className="tabular-nums text-rose-700">
+                                  {peso(item.remaining)}
+                                </SoTTd>
+                              </SoTTableRow>
+                            ))
+                          )}
+                        </tbody>
+                      </SoTTable>
+                    </SoTCard>
+
+                    <SoTCard className="space-y-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-900">
+                          Attendance facts used in this run
+                        </h2>
+                        <p className="text-xs text-slate-500">
+                          These are the frozen attendance inputs payroll computed from.
+                        </p>
+                      </div>
+
+                      <SoTTable>
+                        <SoTTableHead>
+                          <SoTTableRow>
+                            <SoTTh>Date</SoTTh>
+                            <SoTTh>Result</SoTTh>
+                            <SoTTh>Context</SoTTh>
+                            <SoTTh align="right">Rate</SoTTh>
+                          </SoTTableRow>
+                        </SoTTableHead>
+                        <tbody>
+                          {selectedAttendanceRows.length === 0 ? (
+                            <SoTTableEmptyRow
+                              colSpan={4}
+                              message="No attendance rows found in this payroll window."
+                            />
+                          ) : (
+                            selectedAttendanceRows.map((row) => (
+                              <SoTTableRow key={row.id}>
+                                <SoTTd>
+                                  <div className="space-y-1">
+                                    <div className="font-medium text-slate-900">
+                                      {formatDateLabel(row.dutyDate)}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      {row.dayType}
+                                    </div>
+                                  </div>
+                                </SoTTd>
+                                <SoTTd>
+                                  <div className="space-y-1">
+                                    <SoTStatusBadge tone="info">
+                                      {row.attendanceResult}
+                                    </SoTStatusBadge>
+                                    <div className="text-xs text-slate-500">
+                                      {row.leaveType || "No leave"} · Late {row.lateFlag}
+                                    </div>
+                                  </div>
+                                </SoTTd>
+                                <SoTTd>
+                                  <div className="text-sm text-slate-700">
+                                    {row.workContext}
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {row.note || "No note"}
+                                  </div>
+                                </SoTTd>
+                                <SoTTd align="right" className="tabular-nums">
+                                  {row.dailyRateEquivalent == null
+                                    ? "—"
+                                    : peso(row.dailyRateEquivalent)}
+                                </SoTTd>
+                              </SoTTableRow>
+                            ))
+                          )}
+                        </tbody>
+                      </SoTTable>
+                    </SoTCard>
+                  </>
+                ) : (
+                  <SoTCard>
+                    <p className="text-sm text-slate-600">
+                      Select a payroll line to review payroll inputs and deductions.
+                    </p>
+                  </SoTCard>
+                )}
+              </aside>
+            </div>
+          </>
+        ) : null}
       </div>
     </main>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  tone = "info",
+}: {
+  label: string;
+  value: string;
+  tone?: "info" | "success" | "warning";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50/40"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-50/40"
+        : "border-sky-200 bg-sky-50/40";
+
+  return (
+    <div className={`rounded-2xl border p-3 shadow-sm ${toneClass}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
+    </div>
   );
 }

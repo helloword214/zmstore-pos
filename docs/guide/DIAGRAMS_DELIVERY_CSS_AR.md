@@ -179,7 +179,7 @@ Authority note:
 | `store.cashier-variances.tsx` | read-only variance queue/history |
 | `cashier.charges.tsx` | cashier acknowledgement trail for charged variances |
 | `store.cashier-ar.tsx` | cashier charge list and payroll-tag planning |
-| `store.payroll.tsx` | payroll deduction posting and status synchronization |
+| `store.payroll.tsx` | manager payroll-run review, payroll deduction posting, and payroll-run status freeze |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
 
@@ -276,4 +276,3 @@ Current code still allows `ADMIN` in some manager routes and requires follow-up 
 4. `app/routes/store.cashier-shifts.tsx`
 5. `app/routes/store.cashier-variances.tsx`
 6. `app/routes/store.cashier-ar.tsx`
-7. `app/routes/store.payroll.tsx`

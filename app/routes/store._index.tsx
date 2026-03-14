@@ -65,7 +65,7 @@ function MiniBadge({ n }: { n: number }) {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireRole(request, ["STORE_MANAGER", "ADMIN"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
 
   const userRow = await db.user.findUnique({
     where: { id: me.userId },
@@ -496,6 +496,52 @@ export default function StoreManagerDashboard() {
                     className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
                     Shift variances <MiniBadge n={cash.openShiftVariances} />
+                  </Link>
+                </div>
+              </div>
+
+              <div
+                className={sotCardClass({
+                  className: "border-amber-200 bg-amber-50/50 md:col-span-2",
+                })}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                      Workforce Ops
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      Schedule, attendance, and suspension controls
+                    </div>
+                  </div>
+                  <span className="rounded-xl border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800">
+                    Phase 2
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <Link
+                    to="/store/workforce/schedule-templates"
+                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Schedule templates →
+                  </Link>
+                  <Link
+                    to="/store/workforce/schedule-planner"
+                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Schedule planner →
+                  </Link>
+                  <Link
+                    to="/store/workforce/attendance-review"
+                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Attendance review →
+                  </Link>
+                  <Link
+                    to="/store/workforce/suspension-records"
+                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Suspension records →
                   </Link>
                 </div>
               </div>

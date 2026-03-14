@@ -153,8 +153,8 @@ function runStatusTone(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Store manager / admin lang pwedeng mag-dispatch ng runs
-  await requireRole(request, ["ADMIN", "STORE_MANAGER"]);
+  // Store manager lane only
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const id = Number(params.id);
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
@@ -405,7 +405,7 @@ function getPreDispatchFulfillmentStatus(): FulfillmentStatus | null {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  await requireRole(request, ["ADMIN", "STORE_MANAGER"]);
+  await requireRole(request, ["STORE_MANAGER"]);
 
   const id = Number(params.id);
   if (!Number.isFinite(id))
