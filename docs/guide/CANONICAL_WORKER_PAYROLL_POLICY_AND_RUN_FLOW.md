@@ -11,8 +11,9 @@ Defines one source of truth for:
 1. employee pay profiles and effective-dated rate history
 2. company payroll policy defaults used by payroll runs
 3. payroll computation boundary from attendance facts to gross pay
-4. manager-controlled payroll deductions from rider/cashier charge ledgers
-5. payroll freeze rules for historical attendance basis, finalized payroll runs, and payouts
+4. attendance-incentive policy and payroll addition rules
+5. manager-controlled payroll deductions from rider/cashier charge ledgers
+6. payroll freeze rules for historical attendance basis, finalized payroll runs, and payouts
 
 This document exists so payroll does not recompute live from mutable settings or silently mix schedule facts, charge creation, and payout decisions into one unclear flow.
 
@@ -21,8 +22,8 @@ This document exists so payroll does not recompute live from mutable settings or
 This document owns:
 
 1. employee pay profile model and effective-dated rate history
-2. company payroll policy defaults for pay frequency, rest day worked premium, holiday worked premium, and sick leave treatment
-3. payroll interpretation of attendance facts into gross pay
+2. company payroll policy defaults for pay frequency, rest day worked premium, holiday worked premium, sick leave treatment, and attendance incentive treatment
+3. payroll interpretation of attendance facts into base pay and payroll additions
 4. payroll run model, manager override authority, and net-pay computation
 5. deduction consumption from payroll-tagged rider/cashier charge ledgers
 6. hybrid freeze rules for attendance-time pay basis snapshots and payroll-time finalization snapshots
@@ -53,7 +54,7 @@ This document covers:
 
 1. one payroll model for all employees, with employee-specific pay profiles even when roles match
 2. day-based V1 payroll computation from attendance facts
-3. company defaults for rest day worked premium, regular/special holiday worked premium, sick leave treatment, and pay frequency
+3. company defaults for rest day worked premium, regular/special holiday worked premium, sick leave treatment, attendance incentive criteria, and pay frequency
 4. manager override of default payroll treatment during payroll run review
 5. payroll deduction handling for existing rider/cashier charge ledgers
 6. historical freeze behavior for attendance pay basis, payroll finalization, and payout
@@ -64,7 +65,8 @@ This document does not yet define:
 2. undertime or grace-period rules
 3. leave families beyond `SICK_LEAVE`
 4. tax, SSS, PhilHealth, Pag-IBIG, or 13th-month calculations
-5. employee self-service payroll release flows
+5. percentage-based attendance incentives
+6. employee self-service payroll release flows
 
 ## Domain Separation (Binding)
 
@@ -89,8 +91,9 @@ It answers:
 
 1. what default premium percentages are used for rest day and holiday work
 2. how sick leave is treated by default
-3. what payroll frequency/cutoff style the business uses
-4. whether manager override is allowed at payroll time
+3. what attendance incentive amount and qualification criteria apply by default
+4. what payroll frequency/cutoff style the business uses
+5. whether manager override is allowed at payroll time
 
 These defaults are internal business settings, not employee-facing compliance notices.
 
@@ -113,10 +116,11 @@ This snapshot freezes employee pay basis, not final payroll treatment.
 
 It answers:
 
-1. what gross pay was computed for the employee in that run
-2. what company default or manager override was applied
-3. what deductions were actually taken
-4. what final net pay was approved and paid
+1. what attendance-backed base pay was computed for the employee in that run
+2. what additions such as attendance incentive were applied
+3. what company default or manager override was applied
+4. what deductions were actually taken
+5. what final net pay was approved and paid
 
 ### 5. Charge Ledgers
 
@@ -193,30 +197,38 @@ Recommended fields:
 5. `regularHolidayWorkedPremiumPercent`
 6. `specialHolidayWorkedPremiumPercent`
 7. `sickLeavePayTreatment` -> `PAID` or `UNPAID`
-8. `allowManagerOverride` default `true`
-9. `createdById`
-10. `updatedById`
+8. `attendanceIncentiveEnabled`
+9. `attendanceIncentiveAmount`
+10. `attendanceIncentiveRequireNoLate`
+11. `attendanceIncentiveRequireNoAbsent`
+12. `attendanceIncentiveRequireNoSuspension`
+13. `allowManagerOverride` default `true`
+14. `createdById`
+15. `updatedById`
 
 Rules:
 
 1. policy changes affect future payroll decisions only; they do not rewrite finalized payroll snapshots
 2. businesses may choose flexible premium percentages such as `0`, `10`, `30`, `50`, or `100`
 3. manager may override defaults per payroll run when business reality requires it
+4. V1 attendance incentive is a fixed peso amount per cutoff, not a percentage-based rule
 
 ## Attendance Input Contract
 
 Payroll reads these factual inputs from `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`:
 
 1. `dayType` -> `WORK_DAY`, `REST_DAY`, `REGULAR_HOLIDAY`, `SPECIAL_HOLIDAY`
-2. `attendanceResult` -> `WHOLE_DAY`, `HALF_DAY`, `ABSENT`, `LEAVE`, `NOT_REQUIRED`
+2. `attendanceResult` -> `WHOLE_DAY`, `HALF_DAY`, `ABSENT`, `LEAVE`, `NOT_REQUIRED`, `SUSPENDED_NO_WORK`
 3. `workContext` -> `REGULAR`, `REPLACEMENT`, `ON_CALL`
 4. `leaveType` V1 -> `SICK_LEAVE`
+5. `lateFlag` -> `YES` or `NO`
 
 Rules:
 
 1. payroll consumes these facts but does not own or rewrite them
 2. rest day or holiday work must preserve original `dayType` even when the worker reports as replacement
 3. replacement and on-call explain the attendance context; they do not by themselves change pay
+4. `lateFlag` is an eligibility/discipline fact only in V1 and does not trigger minute-based pay deduction
 
 ## Gross Pay V1 Computation
 
@@ -224,12 +236,13 @@ Rules:
 2. `WHOLE_DAY` = 100% of base day amount
 3. `HALF_DAY` = 50% of base day amount
 4. `ABSENT` = 0
-5. `NOT_REQUIRED` = 0 unless manager explicitly applies another treatment in payroll
-6. `LEAVE` with `SICK_LEAVE` follows the payroll policy default or manager override (`PAID` or `UNPAID`)
-7. `REST_DAY` worked entries apply `restDayWorkedPremiumPercent`
-8. `REGULAR_HOLIDAY` worked entries apply `regularHolidayWorkedPremiumPercent`
-9. `SPECIAL_HOLIDAY` worked entries apply `specialHolidayWorkedPremiumPercent`
-10. worked premiums apply only to the actual worked day fraction (`WHOLE_DAY` or `HALF_DAY`)
+5. `SUSPENDED_NO_WORK` = 0
+6. `NOT_REQUIRED` = 0 unless manager explicitly applies another treatment in payroll
+7. `LEAVE` with `SICK_LEAVE` follows the payroll policy default or manager override (`PAID` or `UNPAID`)
+8. `REST_DAY` worked entries apply `restDayWorkedPremiumPercent`
+9. `REGULAR_HOLIDAY` worked entries apply `regularHolidayWorkedPremiumPercent`
+10. `SPECIAL_HOLIDAY` worked entries apply `specialHolidayWorkedPremiumPercent`
+11. worked premiums apply only to the actual worked day fraction (`WHOLE_DAY` or `HALF_DAY`)
 
 Example interpretation:
 
@@ -237,6 +250,21 @@ Example interpretation:
 2. half day -> `base day amount * 0.5`
 3. rest day whole day with `30%` premium -> `base day amount * 1.30`
 4. rest day half day with `30%` premium -> `(base day amount * 0.5) * 1.30`
+
+## Attendance Incentive V1 Policy
+
+Attendance incentive is a payroll addition, not base pay.
+
+V1 rules:
+
+1. incentive is a fixed peso amount per payroll cutoff
+2. incentive eligibility comes from company policy defaults and may be overridden by manager during payroll review
+3. supported V1 policy criteria are:
+   - no `ABSENT`
+   - no `SUSPENDED_NO_WORK`
+   - `lateFlag = NO` across the payroll period
+4. payroll must evaluate the finalized attendance facts inside the payroll period before adding the incentive
+5. once payroll is finalized, the incentive result and amount are frozen inside the payroll snapshot
 
 ## Hybrid Freeze Model (Binding)
 
@@ -250,7 +278,7 @@ At attendance/day-result recording time, freeze:
 4. `baseDailyRate` / `baseMonthlyRate`
 5. `dailyRateEquivalent`
 6. `halfDayFactor`
-7. factual attendance inputs (`dayType`, `attendanceResult`, `workContext`, `leaveType`)
+7. factual attendance inputs (`dayType`, `attendanceResult`, `workContext`, `leaveType`, `lateFlag`)
 
 These attendance-basis snapshots must not change when future pay profiles or company settings are edited.
 
@@ -260,10 +288,12 @@ At payroll run finalization time, freeze:
 
 1. company default values actually used
 2. manager overrides actually used
-3. computed `grossPay`
-4. selected deductions and linked charge-payment rows
-5. final `netPay`
-6. payroll status anchors such as `finalizedAt`, `paidAt`, and actor ids
+3. computed `baseAttendancePay`
+4. computed additions such as `attendanceIncentiveAmount`
+5. computed `grossPay`
+6. selected deductions and linked charge-payment rows
+7. final `netPay`
+8. payroll status anchors such as `finalizedAt`, `paidAt`, and actor ids
 
 After a payroll run is finalized or paid, later settings changes must not recompute it.
 
@@ -294,12 +324,15 @@ Recommended per-employee payroll line fields:
 1. `payrollRunId`
 2. `employeeId`
 3. `attendanceSnapshotIds` or equivalent resolved day-line anchors
-4. `grossPay`
-5. `totalDeductions`
-6. `netPay`
-7. `policySnapshot`
-8. `managerOverrideNote`
-9. `createdAt`
+4. `baseAttendancePay`
+5. `attendanceIncentiveAmount`
+6. `totalAdditions`
+7. `grossPay`
+8. `totalDeductions`
+9. `netPay`
+10. `policySnapshot`
+11. `managerOverrideNote`
+12. `createdAt`
 
 Rules:
 
