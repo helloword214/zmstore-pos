@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-13
+Last Reviewed: 2026-03-14
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -43,6 +43,7 @@ This document does not own:
 3. file upload/storage contracts
 4. pricing freeze algorithm details
 5. product sell-shape and stock semantics
+6. worker pay profile, payroll policy, or gross/net payroll computation
 
 ## Refer To
 
@@ -50,7 +51,8 @@ This document does not own:
 2. `CANONICAL_ORDER_PRICING_SOT.md` for pricing freeze and order creator audit anchors
 3. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` for cashier shift close, manager recount, paper reference, and variance handling
 4. `Accounts Receivable — Canonical Source of Truth (SoT)` for AR ledger and payment application rules
-5. `DIAGRAMS_DELIVERY_CSS_AR.md` for visual flow and handoff mapping
+5. `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` for payroll policy, deduction timing, and payroll-run ownership
+6. `DIAGRAMS_DELIVERY_CSS_AR.md` for visual flow and handoff mapping
 
 ## Core Rule Set
 
@@ -119,7 +121,7 @@ This map is the primary route-level reference for canonical target behavior.
 | Cashier variance review | Manager | `app/routes/store.cashier-variances.tsx` | Read-only variance queue/history | `cashierShiftVariance` audit visibility |
 | Cashier charge acknowledgement | Cashier | `app/routes/cashier.charges.tsx` | Acknowledge manager-charged items | Charged variance visibility and acknowledgement trail |
 | Cashier AR payroll tagging | Manager | `app/routes/store.cashier-ar.tsx` | Tag cashier charge items for payroll collection plan | Cashier charge collection planning |
-| Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync |
+| Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync; full payroll computation belongs to `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` |
 | AR customer list | Cashier | `app/routes/ar._index.tsx` | List customers with open approved balances | `customerAr` authority (target behavior) |
 | AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments, show post-submit feedback, print receipt proof | `customerAr` ledger/payment application |
 
@@ -265,6 +267,7 @@ AR list and customer ledger show balances from `customerAr` open balances only.
 - Only short variance with `CHARGE_CASHIER` creates/updates `cashierCharge`.
 - `store.cashier-variances.tsx` is read-only queue/history for audit visibility.
 - Charge collection planning and payroll deduction happen in manager payroll routes.
+- Deduction amount/timing and gross/net payroll treatment are owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`.
 
 ## Forbidden Shortcuts
 
