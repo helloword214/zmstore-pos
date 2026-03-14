@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-13
+Last Reviewed: 2026-03-14
 
 ## Purpose
 
@@ -10,8 +10,9 @@ Defines one source of truth for:
 
 1. worker schedule planning
 2. staffing exception history
-3. rider duty-session access gating
-4. cashier schedule alignment with the existing `CashierShift` lifecycle
+3. attendance / duty-result recording as payroll input
+4. rider duty-session access gating
+5. cashier schedule alignment with the existing `CashierShift` lifecycle
 
 This document exists so scheduling, operational access, and cashier drawer accountability do not get merged into one unclear flow.
 
@@ -21,9 +22,10 @@ This document owns:
 
 1. worker schedule planning rules for `CASHIER`, `EMPLOYEE`, and rider-linked `EMPLOYEE`
 2. staffing exception history through append-only schedule events
-3. rider duty-session authority, lifecycle, and access-gating rules
-4. the boundary between cashier schedule planning and cashier drawer shift ownership
-5. real-world staffing scenarios such as absence, replacement, on-call coverage, early out, swap, and replacement no-show
+3. attendance / duty-result facts used later by payroll
+4. rider duty-session authority, lifecycle, and access-gating rules
+5. the boundary between cashier schedule planning and cashier drawer shift ownership
+6. real-world staffing scenarios such as absence, replacement, on-call coverage, early out, swap, and replacement no-show
 
 ## Does Not Own
 
@@ -32,8 +34,8 @@ This document does not own:
 1. cashier drawer close/recount/variance mechanics
 2. delivery -> cashier -> AR end-to-end flow
 3. file upload/storage contracts for scanned attachments
-4. payroll computation and deduction rules
-5. leave filing, biometric attendance, or recurring schedule automation
+4. employee pay profiles, company payroll defaults, and payroll deduction rules
+5. leave approval workflows, biometric attendance, or recurring schedule automation
 6. final route/file/module names for future scheduling implementation
 
 ## Refer To
@@ -41,7 +43,8 @@ This document does not own:
 1. `CANONICAL_IDENTITY_ACCESS_FLOW.md` for role boundaries and route access ownership
 2. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md` for cashier shift lifecycle, final close, recount, and signed paper audit handling
 3. `CANONICAL_DELIVERY_CASH_AR_FLOW.md` for wider delivery/remit/cashier/AR stage flow
-4. `CANONICAL_UPLOAD_STORAGE_SOT.md` for any future in-system scan/upload attachment behavior
+4. `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` for employee pay profiles, payroll defaults, gross-pay rules, and payroll deductions
+5. `CANONICAL_UPLOAD_STORAGE_SOT.md` for any future in-system scan/upload attachment behavior
 
 ## Scope
 
@@ -49,13 +52,14 @@ This document covers:
 
 1. planned schedules for `CASHIER`, `STORE_MANAGER`, and `EMPLOYEE` workers used in store operations
 2. staffing history for schedule changes and exceptions
-3. manager-controlled rider duty sessions as the rider operational access gate
-4. cashier schedule planning only, while preserving `CashierShift` as the cashier money-lane SoT
+3. attendance / duty-result facts that later feed payroll
+4. manager-controlled rider duty sessions as the rider operational access gate
+5. cashier schedule planning only, while preserving `CashierShift` as the cashier money-lane SoT
 
 This document does not yet define:
 
 1. final UI route names
-2. payroll formulas
+2. late-minute or hourly attendance math
 3. leave approval flows
 4. biometric or GPS attendance
 5. recurring schedule templates
@@ -89,7 +93,20 @@ It answers:
 
 Chronology must be preserved instead of silently overwriting staffing history.
 
-### 3. Rider Duty Session
+### 3. Attendance / Duty Result
+
+`Attendance / Duty Result` is the factual record of what actually happened for the worker on that duty date.
+
+It answers:
+
+1. whether the date was a work day, rest day, or holiday classification
+2. whether the worker rendered a whole day, half day, leave, absent, or no-work-required result
+3. whether the worker served the day as regular, replacement, or on-call
+4. what payroll should later read as factual input
+
+This record feeds payroll, but payroll does not own or rewrite the fact layer.
+
+### 4. Rider Duty Session
 
 `Rider Duty Session` is the actual rider access gate.
 
@@ -102,7 +119,7 @@ It answers:
 
 Schedule alone must not unlock rider features.
 
-### 4. Cashier Shift
+### 5. Cashier Shift
 
 `CashierShift` remains the cashier drawer/accountability session and is not replaced by generic scheduling records.
 
@@ -126,10 +143,11 @@ Manager responsibilities:
 
 1. create and publish worker schedules
 2. record staffing exceptions
-3. assign replacements and on-call coverage
-4. open and close rider duty sessions
-5. open cashier shifts for the actual cashier on duty
-6. keep staffing history auditable
+3. record attendance / duty results
+4. assign replacements and on-call coverage
+5. open and close rider duty sessions
+6. open cashier shifts for the actual cashier on duty
+7. keep staffing history auditable
 
 ### Rider
 
@@ -192,6 +210,53 @@ Planning rules:
 2. publish actions must be manager-authored and auditable
 3. schedule edits must not erase prior staffing exceptions
 4. schedule planning is not by itself an access grant
+
+## Attendance / Duty Result Canonical Model
+
+Recommended factual fields:
+
+1. `workerId`
+2. `scheduleId` nullable
+3. `dutyDate`
+4. `dayType`
+5. `attendanceResult`
+6. `workContext`
+7. `leaveType` nullable
+8. `note`
+9. `recordedById`
+10. `recordedAt`
+
+Recommended day types:
+
+1. `WORK_DAY`
+2. `REST_DAY`
+3. `REGULAR_HOLIDAY`
+4. `SPECIAL_HOLIDAY`
+
+Recommended attendance results:
+
+1. `WHOLE_DAY`
+2. `HALF_DAY`
+3. `ABSENT`
+4. `LEAVE`
+5. `NOT_REQUIRED`
+
+Recommended work contexts:
+
+1. `REGULAR`
+2. `REPLACEMENT`
+3. `ON_CALL`
+
+V1 leave scope:
+
+1. `SICK_LEAVE`
+
+Key rules:
+
+1. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
+2. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
+3. `LEAVE` is separate from `ABSENT`
+4. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 
 ## Schedule Event Log Canonical Model
 
@@ -345,3 +410,4 @@ Cashier-specific note:
 5. access never transfers silently from one worker to another
 6. replacement and on-call coverage always require a new manager-opened operational session for the worker who actually reports
 7. cashier schedule planning must not weaken the current cashier drawer accountability model
+8. payroll must consume attendance facts without redefining them

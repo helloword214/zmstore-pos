@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-13
+Last Reviewed: 2026-03-14
 
 This file is a router for `docs/guide`.
 It points readers to owner documents and must not become a secondary specification.
@@ -25,14 +25,15 @@ Use these as source of truth for implementation and review:
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
 3. `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`
-4. `CANONICAL_UPLOAD_STORAGE_SOT.md`
-5. `CANONICAL_ORDER_PRICING_SOT.md`
-6. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
-7. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-8. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-9. `Accounts Receivable — Canonical Source of Truth (SoT)`
-10. `RIDER_SHORTAGE_WORKFLOW.md`
-11. `RunReceipt_Architecture.md`
+4. `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+5. `CANONICAL_UPLOAD_STORAGE_SOT.md`
+6. `CANONICAL_ORDER_PRICING_SOT.md`
+7. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+8. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+9. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+10. `Accounts Receivable — Canonical Source of Truth (SoT)`
+11. `RIDER_SHORTAGE_WORKFLOW.md`
+12. `RunReceipt_Architecture.md`
 
 ## B. Owner Doc Map
 
@@ -42,6 +43,7 @@ Use this map to route by concern.
 | --- | --- | --- |
 | Role boundaries, route access, identity model | `CANONICAL_IDENTITY_ACCESS_FLOW.md` | Owner for role authority and access boundaries |
 | Worker schedule planning, staffing exceptions, rider duty gating | `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` | Owner for schedule/event-log/duty-session separation and cashier schedule boundary |
+| Worker pay profile, payroll defaults, payroll run, payroll deductions | `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` | Owner for payroll policy, hybrid freeze, gross/net pay, and charge deduction handling |
 | Upload/storage contract | `CANONICAL_UPLOAD_STORAGE_SOT.md` | Owner for file storage, keying, validation, lifecycle |
 | Order pricing freeze and creator audit anchors | `CANONICAL_ORDER_PRICING_SOT.md` | Owner for pricing freeze authority |
 | Product unit/pack/retail shape | `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` | Owner for product sell-shape and stock semantics |
@@ -57,9 +59,10 @@ Quick lookup reminders:
 
 1. security access targets and retired legacy order settlement routes -> `CANONICAL_IDENTITY_ACCESS_FLOW.md`
 2. worker schedule planning, staffing event history, and rider duty gating -> `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`
-3. clearance pending counter, legacy receipt-route retirement, and print artifact boundaries -> `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-4. cashier recount + paper reference + signed paper audit artifact -> `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-5. creator audit anchors -> `CANONICAL_ORDER_PRICING_SOT.md`
+3. worker pay profile, payroll defaults, gross/net pay, and payroll deductions -> `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+4. clearance pending counter, legacy receipt-route retirement, and print artifact boundaries -> `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+5. cashier recount + paper reference + signed paper audit artifact -> `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+6. creator audit anchors -> `CANONICAL_ORDER_PRICING_SOT.md`
 
 ## C. Diagrams / Visual Maps
 
@@ -115,14 +118,15 @@ When two guide docs conflict, apply this order:
 1. `Commercial Clearance System V2`
 2. `CANONICAL_IDENTITY_ACCESS_FLOW.md`
 3. `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`
-4. `CANONICAL_UPLOAD_STORAGE_SOT.md`
-5. `CANONICAL_ORDER_PRICING_SOT.md`
-6. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
-7. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
-8. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
-9. `Accounts Receivable — Canonical Source of Truth (SoT)`
-10. `RIDER_SHORTAGE_WORKFLOW.md`
-11. all other guide docs
+4. `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+5. `CANONICAL_UPLOAD_STORAGE_SOT.md`
+6. `CANONICAL_ORDER_PRICING_SOT.md`
+7. `CANONICAL_PRODUCTLIST_SHAPE_SOT.md`
+8. `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
+9. `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+10. `Accounts Receivable — Canonical Source of Truth (SoT)`
+11. `RIDER_SHORTAGE_WORKFLOW.md`
+12. all other guide docs
 
 Router reminder:
 
@@ -135,6 +139,7 @@ Router reminder:
 1. If code changes flow behavior, update the corresponding canonical guide docs in the same objective/PR.
 2. Minimum required docs for flow-affecting updates:
    - `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` when worker schedule, staffing event log, or rider duty-session behavior changes
+   - `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` when employee pay profile, payroll defaults, gross/net pay, deduction rules, or payout freeze behavior changes
    - `CANONICAL_ORDER_PRICING_SOT.md` when order-create pricing/freeze behavior changes
    - `CANONICAL_PRODUCTLIST_SHAPE_SOT.md` when product unit/pack/retail shape, stock semantics, or sell-mode rules change
    - `CANONICAL_IDENTITY_ACCESS_FLOW.md` when role/access authority boundaries change

@@ -7,6 +7,10 @@ Workflow & Business Rules
 Delivery runs (parent + roadside), cashier settlement, manager decision,
 and rider acknowledgement.
 
+Payroll deduction timing and amount are not owned here.
+Use `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` for payroll policy,
+manager override, and payroll-run deduction behavior.
+
 ## Goal
 
 Kapag may kulang, hindi pwedeng ma-settle ang run hangga’t
@@ -199,6 +203,7 @@ When manager clicks **Charge Rider (Missing Stocks) & Close Run**:
 - Rider accepts in `rider.variance.$id.tsx` (`RIDER_ACCEPTED`)
 - Manager collection tracking in `store.rider-charges.tsx`
 - Actual payroll deduction/payment posting in `store.payroll.tsx`
+- Payroll may deduct none, partial, or full amount in a given cutoff; remaining balance stays open for future payroll runs
 
 ---
 

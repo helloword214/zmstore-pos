@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-13
+Last Reviewed: 2026-03-14
 
 ## Purpose
 
@@ -31,6 +31,7 @@ This document does not own:
 3. file upload/storage driver contracts for scanned attachments
 4. role authority model outside cashier shift responsibilities
 5. full delivery -> clearance -> AR end-to-end flow
+6. employee pay profiles, payroll policy defaults, or payroll deduction computation
 
 ## Refer To
 
@@ -38,6 +39,7 @@ This document does not own:
 2. `CANONICAL_DELIVERY_CASH_AR_FLOW.md` for wider delivery/remit/cashier/AR stage flow
 3. `CANONICAL_UPLOAD_STORAGE_SOT.md` for any future scan/upload attachment implementation
 4. `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` for worker schedule planning, staffing event history, and rider duty-session boundaries
+5. `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` for payroll deduction timing, amount, and payroll-run ownership
 
 ## Scope
 
@@ -160,6 +162,7 @@ Where:
 8. Variance rows are created/updated in final close when mismatch exists.
 9. `store.cashier-variances.tsx` is a read-only queue/history of variance outcomes.
 10. Charged items are acknowledged in `cashier.charges.tsx` and can be settled via payroll routes.
+11. Payroll deduction amount and timing remain manager-controlled under `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`.
 
 ## Mandatory Controls (Current)
 
