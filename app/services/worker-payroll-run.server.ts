@@ -20,7 +20,9 @@ import {
 import {
   getEffectiveCompanyPayrollPolicy,
   snapshotCompanyPayrollPolicy,
+  snapshotEmployeeStatutoryDeductionProfile,
   type CompanyPayrollPolicySnapshot,
+  type EmployeeStatutoryDeductionProfileSnapshot,
   type WorkforceDbClient,
   type WorkforceRootDbClient,
 } from "~/services/worker-payroll-policy.server";
@@ -32,6 +34,7 @@ type AttendanceRow = Awaited<
 export type PayrollDeductionSnapshot = {
   openChargeCount: number;
   openChargeRemaining: number;
+  chargeDeductionAmount: number;
   appliedPayments: Array<{
     chargeKind: "RIDER" | "CASHIER";
     chargeId: number;
@@ -39,6 +42,19 @@ export type PayrollDeductionSnapshot = {
     createdAt: string;
   }>;
   lastAppliedAt: string | null;
+};
+
+export type PayrollStatutoryDeductionSnapshot = {
+  statutoryProfileId: number | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  sssEnabled: boolean;
+  philhealthEnabled: boolean;
+  pagIbigEnabled: boolean;
+  sssAmount: number;
+  philhealthAmount: number;
+  pagIbigAmount: number;
+  totalAmount: number;
 };
 
 export type PayrollRunEmployeeOverride = {
@@ -151,25 +167,70 @@ export const parsePayrollDeductionSnapshot = (
     return {
       openChargeCount: 0,
       openChargeRemaining: 0,
+      chargeDeductionAmount: 0,
       appliedPayments: [],
       lastAppliedAt: null,
     };
   }
 
   const raw = snapshot as Partial<PayrollDeductionSnapshot>;
+  const appliedPayments: PayrollDeductionSnapshot["appliedPayments"] =
+    Array.isArray(raw.appliedPayments)
+    ? raw.appliedPayments.map((item) => ({
+        chargeKind: item.chargeKind === "CASHIER" ? "CASHIER" : "RIDER",
+        chargeId: Number(item.chargeId ?? 0),
+        amount: Number(item.amount ?? 0),
+        createdAt: String(item.createdAt ?? ""),
+      }))
+    : [];
   return {
     openChargeCount: Number(raw.openChargeCount ?? 0),
     openChargeRemaining: Number(raw.openChargeRemaining ?? 0),
-    appliedPayments: Array.isArray(raw.appliedPayments)
-      ? raw.appliedPayments.map((item) => ({
-          chargeKind: item.chargeKind === "CASHIER" ? "CASHIER" : "RIDER",
-          chargeId: Number(item.chargeId ?? 0),
-          amount: Number(item.amount ?? 0),
-          createdAt: String(item.createdAt ?? ""),
-        }))
-      : [],
+    chargeDeductionAmount: Number(
+      raw.chargeDeductionAmount ??
+        appliedPayments.reduce((sum, item) => sum + item.amount, 0),
+    ),
+    appliedPayments,
     lastAppliedAt:
       typeof raw.lastAppliedAt === "string" ? raw.lastAppliedAt : null,
+  };
+};
+
+export const parsePayrollStatutoryDeductionSnapshot = (
+  snapshot: Prisma.JsonValue | null,
+): PayrollStatutoryDeductionSnapshot => {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return {
+      statutoryProfileId: null,
+      effectiveFrom: null,
+      effectiveTo: null,
+      sssEnabled: false,
+      philhealthEnabled: false,
+      pagIbigEnabled: false,
+      sssAmount: 0,
+      philhealthAmount: 0,
+      pagIbigAmount: 0,
+      totalAmount: 0,
+    };
+  }
+
+  const raw = snapshot as Partial<PayrollStatutoryDeductionSnapshot>;
+  return {
+    statutoryProfileId:
+      Number.isFinite(Number(raw.statutoryProfileId)) &&
+      Number(raw.statutoryProfileId) > 0
+        ? Number(raw.statutoryProfileId)
+        : null,
+    effectiveFrom:
+      typeof raw.effectiveFrom === "string" ? raw.effectiveFrom : null,
+    effectiveTo: typeof raw.effectiveTo === "string" ? raw.effectiveTo : null,
+    sssEnabled: Boolean(raw.sssEnabled),
+    philhealthEnabled: Boolean(raw.philhealthEnabled),
+    pagIbigEnabled: Boolean(raw.pagIbigEnabled),
+    sssAmount: Number(raw.sssAmount ?? 0),
+    philhealthAmount: Number(raw.philhealthAmount ?? 0),
+    pagIbigAmount: Number(raw.pagIbigAmount ?? 0),
+    totalAmount: Number(raw.totalAmount ?? 0),
   };
 };
 
@@ -244,7 +305,7 @@ export const getWorkerPayrollRunEmployeeOverride = (
     String(employeeId)
   ] ?? null;
 
-const requiresFrozenPayBasis = (row: AttendanceRow) =>
+const requiresFrozenDailyRate = (row: AttendanceRow) =>
   row.attendanceResult !== AttendanceResult.NOT_REQUIRED &&
   row.attendanceResult !== AttendanceResult.ABSENT &&
   row.attendanceResult !== AttendanceResult.SUSPENDED_NO_WORK;
@@ -273,10 +334,10 @@ const computeAttendanceRowPay = (
   row: AttendanceRow,
   policy: EffectivePayrollLinePolicySnapshot,
 ) => {
-  const dailyRateEquivalent = Number(row.dailyRateEquivalent ?? 0);
+  const dailyRate = Number(row.dailyRate ?? 0);
   const halfDayFactor = Number(row.halfDayFactor ?? 0.5);
-  if (!Number.isFinite(dailyRateEquivalent) || dailyRateEquivalent < 0) {
-    throw new Error(`Attendance row ${row.id} is missing dailyRateEquivalent.`);
+  if (!Number.isFinite(dailyRate) || dailyRate < 0) {
+    throw new Error(`Attendance row ${row.id} is missing dailyRate.`);
   }
 
   let multiplier = 0;
@@ -299,7 +360,7 @@ const computeAttendanceRowPay = (
       break;
   }
 
-  let gross = dailyRateEquivalent * multiplier;
+  let gross = dailyRate * multiplier;
   const isWorked =
     row.attendanceResult === AttendanceResult.WHOLE_DAY ||
     row.attendanceResult === AttendanceResult.HALF_DAY;
@@ -404,9 +465,41 @@ const buildOpenChargeSnapshot = (
   openChargeRemaining: roundMoney(
     items.reduce((sum, item) => sum + item.remaining, 0),
   ),
+  chargeDeductionAmount: roundMoney(
+    previous?.appliedPayments.reduce((sum, item) => sum + item.amount, 0) ?? 0,
+  ),
   appliedPayments: previous?.appliedPayments ?? [],
   lastAppliedAt: previous?.lastAppliedAt ?? null,
 });
+
+const buildStatutoryDeductionSnapshot = (
+  policy: CompanyPayrollPolicySnapshot,
+  profile: EmployeeStatutoryDeductionProfileSnapshot | null,
+  grossPay: number,
+): PayrollStatutoryDeductionSnapshot => {
+  const shouldApply = grossPay > MONEY_EPS;
+  const sssAmount =
+    shouldApply && policy.sssDeductionEnabled ? profile?.sssAmount ?? 0 : 0;
+  const philhealthAmount =
+    shouldApply && policy.philhealthDeductionEnabled
+      ? profile?.philhealthAmount ?? 0
+      : 0;
+  const pagIbigAmount =
+    shouldApply && policy.pagIbigDeductionEnabled ? profile?.pagIbigAmount ?? 0 : 0;
+
+  return {
+    statutoryProfileId: profile?.statutoryProfileId ?? null,
+    effectiveFrom: profile?.effectiveFrom ?? null,
+    effectiveTo: profile?.effectiveTo ?? null,
+    sssEnabled: policy.sssDeductionEnabled,
+    philhealthEnabled: policy.philhealthDeductionEnabled,
+    pagIbigEnabled: policy.pagIbigDeductionEnabled,
+    sssAmount: roundMoney(sssAmount),
+    philhealthAmount: roundMoney(philhealthAmount),
+    pagIbigAmount: roundMoney(pagIbigAmount),
+    totalAmount: roundMoney(sssAmount + philhealthAmount + pagIbigAmount),
+  };
+};
 
 export async function listWorkerPayrollRuns(prisma: WorkforceDbClient = db) {
   return prisma.payrollRun.findMany({
@@ -667,13 +760,12 @@ export async function rebuildWorkerPayrollRunLines(
     const missingSnapshots = attendanceRows
       .filter(
         (row) =>
-          requiresFrozenPayBasis(row) &&
-          (row.payBasis == null || row.dailyRateEquivalent == null),
+          requiresFrozenDailyRate(row) && row.dailyRate == null,
       )
       .map((row) => row.id);
     if (missingSnapshots.length > 0) {
       throw new Error(
-        `Payroll run cannot rebuild while attendance snapshots are missing pay basis on rows: ${missingSnapshots.join(", ")}.`,
+        `Payroll run cannot rebuild while attendance snapshots are missing daily rate on rows: ${missingSnapshots.join(", ")}.`,
       );
     }
 
@@ -711,6 +803,33 @@ export async function rebuildWorkerPayrollRunLines(
       .filter((employeeId) => Number.isFinite(employeeId) && employeeId > 0)
       .sort((left, right) => left - right);
 
+    const statutoryProfileRows =
+      employeeIds.length === 0
+        ? []
+        : await tx.employeeStatutoryDeductionProfile.findMany({
+            where: {
+              employeeId: { in: employeeIds },
+              effectiveFrom: { lte: run.payDate },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: run.payDate } }],
+            },
+            orderBy: [
+              { employeeId: "asc" },
+              { effectiveFrom: "desc" },
+              { id: "desc" },
+            ],
+          });
+    const statutoryProfileByEmployee = new Map<
+      number,
+      EmployeeStatutoryDeductionProfileSnapshot
+    >();
+    for (const profile of statutoryProfileRows) {
+      if (statutoryProfileByEmployee.has(profile.employeeId)) continue;
+      const snapshot = snapshotEmployeeStatutoryDeductionProfile(profile);
+      if (snapshot) {
+        statutoryProfileByEmployee.set(profile.employeeId, snapshot);
+      }
+    }
+
     await tx.payrollRunLine.deleteMany({ where: { payrollRunId } });
 
     for (const employeeId of employeeIds) {
@@ -723,6 +842,8 @@ export async function rebuildWorkerPayrollRunLines(
         policySnapshot,
         employeeOverride,
       );
+      const effectiveStatutoryProfile =
+        statutoryProfileByEmployee.get(employeeId) ?? null;
 
       const baseAttendancePay = roundMoney(
         employeeAttendance.reduce(
@@ -742,14 +863,30 @@ export async function rebuildWorkerPayrollRunLines(
         : {
             openChargeCount: 0,
             openChargeRemaining: 0,
+            chargeDeductionAmount: 0,
             appliedPayments: [],
             lastAppliedAt: null,
           };
-      const totalDeductions = roundMoney(Number(existingLine?.totalDeductions ?? 0));
+      const chargeDeductionAmount = roundMoney(
+        Number(existingLine?.chargeDeductionAmount ?? 0) ||
+          priorDeductionSnapshot.chargeDeductionAmount,
+      );
+      const statutoryDeductionSnapshot = buildStatutoryDeductionSnapshot(
+        effectivePolicy,
+        effectiveStatutoryProfile,
+        grossPay,
+      );
+      const statutoryDeductionAmount = roundMoney(
+        statutoryDeductionSnapshot.totalAmount,
+      );
+      const totalDeductions = roundMoney(
+        chargeDeductionAmount + statutoryDeductionAmount,
+      );
       const netPay = roundMoney(grossPay - totalDeductions);
       const shouldKeepLine =
         employeeAttendance.length > 0 ||
         employeeChargeItems.length > 0 ||
+        statutoryDeductionAmount > MONEY_EPS ||
         totalDeductions > MONEY_EPS ||
         priorDeductionSnapshot.appliedPayments.length > 0 ||
         hasMeaningfulOverride(employeeOverride);
@@ -767,6 +904,8 @@ export async function rebuildWorkerPayrollRunLines(
           attendanceIncentiveAmount: toMoneyDecimal(incentive.amount),
           totalAdditions: toMoneyDecimal(totalAdditions),
           grossPay: toMoneyDecimal(grossPay),
+          chargeDeductionAmount: toMoneyDecimal(chargeDeductionAmount),
+          statutoryDeductionAmount: toMoneyDecimal(statutoryDeductionAmount),
           totalDeductions: toMoneyDecimal(totalDeductions),
           netPay: toMoneyDecimal(netPay),
           policySnapshot: effectivePolicy as Prisma.InputJsonValue,
@@ -779,6 +918,8 @@ export async function rebuildWorkerPayrollRunLines(
               incentive.managerOverrideApplied ||
               effectivePolicy.managerOverrideApplied,
           } as Prisma.InputJsonValue,
+          statutoryDeductionSnapshot:
+            statutoryDeductionSnapshot as Prisma.InputJsonValue,
           deductionSnapshot: buildOpenChargeSnapshot(
             employeeChargeItems,
             priorDeductionSnapshot,
@@ -986,8 +1127,11 @@ export async function applyWorkerPayrollChargeDeduction(
       }
 
       const currentSnapshot = parsePayrollDeductionSnapshot(line.deductionSnapshot);
+      const nextChargeDeductionAmount = roundMoney(
+        Number(line.chargeDeductionAmount) + appliedTotal,
+      );
       const nextTotalDeductions = roundMoney(
-        Number(line.totalDeductions) + appliedTotal,
+        Number(line.statutoryDeductionAmount) + nextChargeDeductionAmount,
       );
       const nextNetPay = roundMoney(Number(line.grossPay) - nextTotalDeductions);
 
@@ -999,6 +1143,7 @@ export async function applyWorkerPayrollChargeDeduction(
       await tx.payrollRunLine.update({
         where: { id: args.payrollRunLineId },
         data: {
+          chargeDeductionAmount: toMoneyDecimal(nextChargeDeductionAmount),
           totalDeductions: toMoneyDecimal(nextTotalDeductions),
           netPay: toMoneyDecimal(nextNetPay),
           deductionSnapshot: {
@@ -1006,6 +1151,7 @@ export async function applyWorkerPayrollChargeDeduction(
             openChargeRemaining: roundMoney(
               refreshedChargeItems.reduce((sum, item) => sum + item.remaining, 0),
             ),
+            chargeDeductionAmount: nextChargeDeductionAmount,
             appliedPayments: [
               ...currentSnapshot.appliedPayments,
               ...appliedPayments,

@@ -33,6 +33,7 @@ import {
   markWorkerPayrollRunPaid,
   parsePayrollDeductionSnapshot,
   parsePayrollRunLineAdditionSnapshot,
+  parsePayrollStatutoryDeductionSnapshot,
   parsePolicySnapshot,
   rebuildWorkerPayrollRunLines,
   saveWorkerPayrollRunEmployeeOverride,
@@ -305,6 +306,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           attendanceIncentiveAmount: Number(line.attendanceIncentiveAmount),
           totalAdditions: Number(line.totalAdditions),
           grossPay: Number(line.grossPay),
+          chargeDeductionAmount: Number(line.chargeDeductionAmount),
+          statutoryDeductionAmount: Number(line.statutoryDeductionAmount),
           totalDeductions: Number(line.totalDeductions),
           netPay: Number(line.netPay),
           managerOverrideNote: line.managerOverrideNote ?? null,
@@ -314,6 +317,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
           policySnapshot: parsePolicySnapshot(line.policySnapshot),
           additionSnapshot: parsePayrollRunLineAdditionSnapshot(
             line.additionSnapshot,
+          ),
+          statutoryDeductionSnapshot: parsePayrollStatutoryDeductionSnapshot(
+            line.statutoryDeductionSnapshot,
           ),
           deductionSnapshot: parsePayrollDeductionSnapshot(
             line.deductionSnapshot,
@@ -378,9 +384,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       workContext: row.workContext,
       leaveType: row.leaveType ?? null,
       lateFlag: row.lateFlag,
-      payBasis: row.payBasis ?? null,
-      dailyRateEquivalent:
-        row.dailyRateEquivalent == null ? null : Number(row.dailyRateEquivalent),
+      dailyRate: row.dailyRate == null ? null : Number(row.dailyRate),
       halfDayFactor: row.halfDayFactor == null ? null : Number(row.halfDayFactor),
       note: row.note ?? null,
     })),
@@ -634,7 +638,7 @@ export default function StorePayrollPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Payroll Runs"
-        subtitle="Review attendance-backed pay, apply tagged charge deductions, and freeze payroll snapshots per cutoff."
+        subtitle="Review attendance-backed daily pay, include employee statutory deductions when policy enables them, apply tagged charge deductions, and freeze payroll snapshots per cutoff."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
@@ -1014,6 +1018,13 @@ export default function StorePayrollPage() {
                           {peso(selectedLine.attendanceIncentiveAmount)}
                         </div>
                         <div>Gross pay: {peso(selectedLine.grossPay)}</div>
+                        <div>
+                          Government deductions:{" "}
+                          {peso(selectedLine.statutoryDeductionAmount)}
+                        </div>
+                        <div>
+                          Charge deductions: {peso(selectedLine.chargeDeductionAmount)}
+                        </div>
                         <div>Total deductions: {peso(selectedLine.totalDeductions)}</div>
                         <div>Net pay: {peso(selectedLine.netPay)}</div>
                       </div>
@@ -1143,6 +1154,8 @@ export default function StorePayrollPage() {
                           Deduction review
                         </h2>
                         <p className="text-xs text-slate-500">
+                          Policy-driven government deductions:{" "}
+                          {peso(selectedLine.statutoryDeductionAmount)}.{" "}
                           Current open payroll-tagged charges:{" "}
                           {peso(selectedChargeSummary.totalRemaining)} across{" "}
                           {selectedChargeSummary.itemCount} item(s).
@@ -1151,16 +1164,25 @@ export default function StorePayrollPage() {
 
                       <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                         <div>
-                          Applied in this run:{" "}
+                          SSS:{" "}
+                          {peso(selectedLine.statutoryDeductionSnapshot.sssAmount)}
+                        </div>
+                        <div>
+                          PhilHealth:{" "}
                           {peso(
-                            selectedLine.deductionSnapshot.appliedPayments.reduce(
-                              (sum, payment) => sum + payment.amount,
-                              0,
-                            ),
+                            selectedLine.statutoryDeductionSnapshot.philhealthAmount,
                           )}
                         </div>
                         <div>
-                          Last applied at:{" "}
+                          Pag-IBIG:{" "}
+                          {peso(selectedLine.statutoryDeductionSnapshot.pagIbigAmount)}
+                        </div>
+                        <div>
+                          Charge deductions applied in this run:{" "}
+                          {peso(selectedLine.chargeDeductionAmount)}
+                        </div>
+                        <div>
+                          Last charge deduction at:{" "}
                           {formatDateTimeLabel(
                             selectedLine.deductionSnapshot.lastAppliedAt,
                           )}
@@ -1356,9 +1378,7 @@ export default function StorePayrollPage() {
                                   </div>
                                 </SoTTd>
                                 <SoTTd align="right" className="tabular-nums">
-                                  {row.dailyRateEquivalent == null
-                                    ? "—"
-                                    : peso(row.dailyRateEquivalent)}
+                                  {row.dailyRate == null ? "—" : peso(row.dailyRate)}
                                 </SoTTd>
                               </SoTTableRow>
                             ))

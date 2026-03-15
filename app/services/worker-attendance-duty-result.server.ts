@@ -90,19 +90,10 @@ export async function recordWorkerAttendanceDutyResult(
       recordedById: input.recordedById ?? null,
       recordedAt: input.recordedAt ?? new Date(),
       payProfileId: paySnapshot?.payProfileId ?? null,
-      payBasis: paySnapshot?.payBasis ?? null,
-      baseDailyRate:
-        paySnapshot?.baseDailyRate == null
+      dailyRate:
+        paySnapshot?.dailyRate == null
           ? null
-          : toMoneyDecimal(paySnapshot.baseDailyRate),
-      baseMonthlyRate:
-        paySnapshot?.baseMonthlyRate == null
-          ? null
-          : toMoneyDecimal(paySnapshot.baseMonthlyRate),
-      dailyRateEquivalent:
-        paySnapshot?.dailyRateEquivalent == null
-          ? null
-          : toMoneyDecimal(paySnapshot.dailyRateEquivalent),
+          : toMoneyDecimal(paySnapshot.dailyRate),
       halfDayFactor: toFactorDecimal(paySnapshot?.halfDayFactor ?? 0.5),
     },
     create: {
@@ -118,19 +109,10 @@ export async function recordWorkerAttendanceDutyResult(
       recordedById: input.recordedById ?? null,
       recordedAt: input.recordedAt ?? new Date(),
       payProfileId: paySnapshot?.payProfileId ?? null,
-      payBasis: paySnapshot?.payBasis ?? null,
-      baseDailyRate:
-        paySnapshot?.baseDailyRate == null
+      dailyRate:
+        paySnapshot?.dailyRate == null
           ? null
-          : toMoneyDecimal(paySnapshot.baseDailyRate),
-      baseMonthlyRate:
-        paySnapshot?.baseMonthlyRate == null
-          ? null
-          : toMoneyDecimal(paySnapshot.baseMonthlyRate),
-      dailyRateEquivalent:
-        paySnapshot?.dailyRateEquivalent == null
-          ? null
-          : toMoneyDecimal(paySnapshot.dailyRateEquivalent),
+          : toMoneyDecimal(paySnapshot.dailyRate),
       halfDayFactor: toFactorDecimal(paySnapshot?.halfDayFactor ?? 0.5),
     },
   });
