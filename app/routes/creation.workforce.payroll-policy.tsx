@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import { PayrollFrequency, SickLeavePayTreatment } from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -30,6 +29,18 @@ type ActionData = {
   error: string;
   action?: string;
 };
+
+const PAYROLL_FREQUENCY = {
+  WEEKLY: "WEEKLY",
+  BIWEEKLY: "BIWEEKLY",
+  SEMI_MONTHLY: "SEMI_MONTHLY",
+  CUSTOM: "CUSTOM",
+} as const;
+
+const SICK_LEAVE_PAY_TREATMENT = {
+  PAID: "PAID",
+  UNPAID: "UNPAID",
+} as const;
 
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
@@ -143,17 +154,17 @@ export async function action({ request }: ActionFunctionArgs) {
     const sickLeavePayTreatment = String(fd.get("sickLeavePayTreatment") || "");
 
     if (
-      payFrequency !== PayrollFrequency.WEEKLY &&
-      payFrequency !== PayrollFrequency.BIWEEKLY &&
-      payFrequency !== PayrollFrequency.SEMI_MONTHLY &&
-      payFrequency !== PayrollFrequency.CUSTOM
+      payFrequency !== PAYROLL_FREQUENCY.WEEKLY &&
+      payFrequency !== PAYROLL_FREQUENCY.BIWEEKLY &&
+      payFrequency !== PAYROLL_FREQUENCY.SEMI_MONTHLY &&
+      payFrequency !== PAYROLL_FREQUENCY.CUSTOM
     ) {
       throw new Error("Invalid payroll frequency.");
     }
 
     if (
-      sickLeavePayTreatment !== SickLeavePayTreatment.PAID &&
-      sickLeavePayTreatment !== SickLeavePayTreatment.UNPAID
+      sickLeavePayTreatment !== SICK_LEAVE_PAY_TREATMENT.PAID &&
+      sickLeavePayTreatment !== SICK_LEAVE_PAY_TREATMENT.UNPAID
     ) {
       throw new Error("Invalid sick leave treatment.");
     }
@@ -255,16 +266,16 @@ export default function PayrollPolicyCreationRoute() {
                     <SelectInput
                       name="payFrequency"
                       defaultValue={
-                        selectedPolicy?.payFrequency ?? PayrollFrequency.SEMI_MONTHLY
+                        selectedPolicy?.payFrequency ?? PAYROLL_FREQUENCY.SEMI_MONTHLY
                       }
                       options={[
                         {
-                          value: PayrollFrequency.SEMI_MONTHLY,
+                          value: PAYROLL_FREQUENCY.SEMI_MONTHLY,
                           label: "Semi-monthly",
                         },
-                        { value: PayrollFrequency.WEEKLY, label: "Weekly" },
-                        { value: PayrollFrequency.BIWEEKLY, label: "Biweekly" },
-                        { value: PayrollFrequency.CUSTOM, label: "Custom" },
+                        { value: PAYROLL_FREQUENCY.WEEKLY, label: "Weekly" },
+                        { value: PAYROLL_FREQUENCY.BIWEEKLY, label: "Biweekly" },
+                        { value: PAYROLL_FREQUENCY.CUSTOM, label: "Custom" },
                       ]}
                     />
                   </SoTFormField>
@@ -315,14 +326,14 @@ export default function PayrollPolicyCreationRoute() {
                       name="sickLeavePayTreatment"
                       defaultValue={
                         selectedPolicy?.sickLeavePayTreatment ??
-                        SickLeavePayTreatment.UNPAID
+                        SICK_LEAVE_PAY_TREATMENT.UNPAID
                       }
                       options={[
                         {
-                          value: SickLeavePayTreatment.UNPAID,
+                          value: SICK_LEAVE_PAY_TREATMENT.UNPAID,
                           label: "Unpaid",
                         },
-                        { value: SickLeavePayTreatment.PAID, label: "Paid" },
+                        { value: SICK_LEAVE_PAY_TREATMENT.PAID, label: "Paid" },
                       ]}
                     />
                   </SoTFormField>

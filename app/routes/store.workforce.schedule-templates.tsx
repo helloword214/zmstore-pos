@@ -1,12 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import {
-  WorkerScheduleAssignmentStatus,
-  WorkerScheduleRole,
-  WorkerScheduleTemplateDayOfWeek,
-  WorkerScheduleTemplateStatus,
-} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -39,8 +33,66 @@ type ActionData = {
   action?: string;
 };
 
+const WORKER_SCHEDULE_ASSIGNMENT_STATUS = {
+  ACTIVE: "ACTIVE",
+  PAUSED: "PAUSED",
+  ENDED: "ENDED",
+} as const;
+
+type WorkerScheduleAssignmentStatusValue =
+  (typeof WORKER_SCHEDULE_ASSIGNMENT_STATUS)[keyof typeof WORKER_SCHEDULE_ASSIGNMENT_STATUS];
+
+const WORKER_SCHEDULE_ROLE = {
+  CASHIER: "CASHIER",
+  STORE_MANAGER: "STORE_MANAGER",
+  EMPLOYEE: "EMPLOYEE",
+} as const;
+
+type WorkerScheduleRoleValue =
+  (typeof WORKER_SCHEDULE_ROLE)[keyof typeof WORKER_SCHEDULE_ROLE];
+
+const WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK = {
+  MONDAY: "MONDAY",
+  TUESDAY: "TUESDAY",
+  WEDNESDAY: "WEDNESDAY",
+  THURSDAY: "THURSDAY",
+  FRIDAY: "FRIDAY",
+  SATURDAY: "SATURDAY",
+  SUNDAY: "SUNDAY",
+} as const;
+
+type WorkerScheduleTemplateDayOfWeekValue =
+  (typeof WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK)[keyof typeof WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK];
+
+const WORKER_SCHEDULE_TEMPLATE_STATUS = {
+  ACTIVE: "ACTIVE",
+  PAUSED: "PAUSED",
+  ENDED: "ENDED",
+} as const;
+
+type WorkerScheduleTemplateStatusValue =
+  (typeof WORKER_SCHEDULE_TEMPLATE_STATUS)[keyof typeof WORKER_SCHEDULE_TEMPLATE_STATUS];
+
+const WORKER_SCHEDULE_ROLE_VALUES = [
+  WORKER_SCHEDULE_ROLE.CASHIER,
+  WORKER_SCHEDULE_ROLE.STORE_MANAGER,
+  WORKER_SCHEDULE_ROLE.EMPLOYEE,
+] as const;
+
+const WORKER_SCHEDULE_ASSIGNMENT_STATUS_VALUES = [
+  WORKER_SCHEDULE_ASSIGNMENT_STATUS.ACTIVE,
+  WORKER_SCHEDULE_ASSIGNMENT_STATUS.PAUSED,
+  WORKER_SCHEDULE_ASSIGNMENT_STATUS.ENDED,
+] as const;
+
+const WORKER_SCHEDULE_TEMPLATE_STATUS_VALUES = [
+  WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE,
+  WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED,
+  WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED,
+] as const;
+
 type DayConfig = {
-  dayOfWeek: WorkerScheduleTemplateDayOfWeek;
+  dayOfWeek: WorkerScheduleTemplateDayOfWeekValue;
   label: string;
 };
 
@@ -51,32 +103,32 @@ type WorkerOption = {
 };
 
 const DAY_CONFIGS: DayConfig[] = [
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.MONDAY, label: "Monday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.TUESDAY, label: "Tuesday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.WEDNESDAY, label: "Wednesday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.THURSDAY, label: "Thursday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.FRIDAY, label: "Friday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.SATURDAY, label: "Saturday" },
-  { dayOfWeek: WorkerScheduleTemplateDayOfWeek.SUNDAY, label: "Sunday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.MONDAY, label: "Monday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.TUESDAY, label: "Tuesday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.WEDNESDAY, label: "Wednesday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.THURSDAY, label: "Thursday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.FRIDAY, label: "Friday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.SATURDAY, label: "Saturday" },
+  { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.SUNDAY, label: "Sunday" },
 ];
 
 const TEMPLATE_ROLE_OPTIONS = [
   { value: "", label: "Any role" },
-  { value: WorkerScheduleRole.CASHIER, label: "Cashier" },
-  { value: WorkerScheduleRole.STORE_MANAGER, label: "Store manager" },
-  { value: WorkerScheduleRole.EMPLOYEE, label: "Employee" },
+  { value: WORKER_SCHEDULE_ROLE.CASHIER, label: "Cashier" },
+  { value: WORKER_SCHEDULE_ROLE.STORE_MANAGER, label: "Store manager" },
+  { value: WORKER_SCHEDULE_ROLE.EMPLOYEE, label: "Employee" },
 ];
 
 const ASSIGNMENT_STATUS_OPTIONS = [
-  { value: WorkerScheduleAssignmentStatus.ACTIVE, label: "Active" },
-  { value: WorkerScheduleAssignmentStatus.PAUSED, label: "Paused" },
-  { value: WorkerScheduleAssignmentStatus.ENDED, label: "Ended" },
+  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.ACTIVE, label: "Active" },
+  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.PAUSED, label: "Paused" },
+  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.ENDED, label: "Ended" },
 ];
 
 const TEMPLATE_STATUS_OPTIONS = [
-  { value: WorkerScheduleTemplateStatus.ACTIVE, label: "Active" },
-  { value: WorkerScheduleTemplateStatus.PAUSED, label: "Paused" },
-  { value: WorkerScheduleTemplateStatus.ENDED, label: "Ended" },
+  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE, label: "Active" },
+  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED, label: "Paused" },
+  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED, label: "Ended" },
 ];
 
 function parseOptionalInt(value: string | null) {
@@ -127,6 +179,26 @@ function statusTone(status: string) {
   if (status === "PAUSED" || status === "DRAFT") return "warning" as const;
   if (status === "ENDED" || status === "CANCELLED") return "danger" as const;
   return "info" as const;
+}
+
+function isWorkerScheduleRoleValue(value: string): value is WorkerScheduleRoleValue {
+  return WORKER_SCHEDULE_ROLE_VALUES.includes(value as WorkerScheduleRoleValue);
+}
+
+function isWorkerScheduleAssignmentStatusValue(
+  value: string,
+): value is WorkerScheduleAssignmentStatusValue {
+  return WORKER_SCHEDULE_ASSIGNMENT_STATUS_VALUES.includes(
+    value as WorkerScheduleAssignmentStatusValue,
+  );
+}
+
+function isWorkerScheduleTemplateStatusValue(
+  value: string,
+): value is WorkerScheduleTemplateStatusValue {
+  return WORKER_SCHEDULE_TEMPLATE_STATUS_VALUES.includes(
+    value as WorkerScheduleTemplateStatusValue,
+  );
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -212,12 +284,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const savedTemplate = await upsertWorkerScheduleTemplate({
         id: templateId ?? undefined,
         templateName,
-        role:
-          roleRaw === WorkerScheduleRole.CASHIER ||
-          roleRaw === WorkerScheduleRole.STORE_MANAGER ||
-          roleRaw === WorkerScheduleRole.EMPLOYEE
-            ? roleRaw
-            : null,
+        role: isWorkerScheduleRoleValue(roleRaw) ? roleRaw : null,
         effectiveFrom,
         effectiveTo: effectiveToRaw || null,
         actorUserId: me.userId,
@@ -233,11 +300,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const templateId = parseOptionalInt(String(fd.get("templateId") || ""));
       const status = String(fd.get("status") || "");
       if (!templateId) throw new Error("Template is required.");
-      if (
-        status !== WorkerScheduleTemplateStatus.ACTIVE &&
-        status !== WorkerScheduleTemplateStatus.PAUSED &&
-        status !== WorkerScheduleTemplateStatus.ENDED
-      ) {
+      if (!isWorkerScheduleTemplateStatusValue(status)) {
         throw new Error("Invalid template status.");
       }
 
@@ -278,11 +341,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!assignmentId || !templateId) {
         throw new Error("Assignment context is missing.");
       }
-      if (
-        status !== WorkerScheduleAssignmentStatus.ACTIVE &&
-        status !== WorkerScheduleAssignmentStatus.PAUSED &&
-        status !== WorkerScheduleAssignmentStatus.ENDED
-      ) {
+      if (!isWorkerScheduleAssignmentStatusValue(status)) {
         throw new Error("Invalid assignment status.");
       }
 
@@ -685,13 +744,13 @@ export default function WorkforceScheduleTemplatesRoute() {
                                 type="hidden"
                                 name="status"
                                 value={
-                                  template.status === WorkerScheduleTemplateStatus.ACTIVE
-                                    ? WorkerScheduleTemplateStatus.PAUSED
-                                    : WorkerScheduleTemplateStatus.ACTIVE
+                                  template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                                    ? WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED
+                                    : WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
                                 }
                               />
                               <SoTButton type="submit" size="compact">
-                                {template.status === WorkerScheduleTemplateStatus.ACTIVE
+                                {template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
                                   ? "Pause"
                                   : "Activate"}
                               </SoTButton>
@@ -702,7 +761,7 @@ export default function WorkforceScheduleTemplatesRoute() {
                               <input
                                 type="hidden"
                                 name="status"
-                                value={WorkerScheduleTemplateStatus.ENDED}
+                                value={WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED}
                               />
                               <SoTButton type="submit" size="compact" variant="danger">
                                 End

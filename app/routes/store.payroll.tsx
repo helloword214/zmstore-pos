@@ -1,11 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import {
-  PayrollFrequency,
-  PayrollRunStatus,
-  SickLeavePayTreatment,
-} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -50,6 +45,27 @@ type ActionData = {
   error: string;
   action?: string;
 };
+
+const PAYROLL_FREQUENCY = {
+  WEEKLY: "WEEKLY",
+  BIWEEKLY: "BIWEEKLY",
+  SEMI_MONTHLY: "SEMI_MONTHLY",
+  CUSTOM: "CUSTOM",
+} as const;
+
+type PayrollFrequencyValue =
+  (typeof PAYROLL_FREQUENCY)[keyof typeof PAYROLL_FREQUENCY];
+
+const PAYROLL_RUN_STATUS = {
+  DRAFT: "DRAFT",
+  FINALIZED: "FINALIZED",
+  PAID: "PAID",
+} as const;
+
+const SICK_LEAVE_PAY_TREATMENT = {
+  PAID: "PAID",
+  UNPAID: "UNPAID",
+} as const;
 
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
@@ -142,9 +158,9 @@ function buildWorkerLabel(worker: {
 }
 
 function statusTone(status: string) {
-  if (status === PayrollRunStatus.PAID) return "success" as const;
-  if (status === PayrollRunStatus.FINALIZED) return "info" as const;
-  if (status === PayrollRunStatus.DRAFT) return "warning" as const;
+  if (status === PAYROLL_RUN_STATUS.PAID) return "success" as const;
+  if (status === PAYROLL_RUN_STATUS.FINALIZED) return "info" as const;
+  if (status === PAYROLL_RUN_STATUS.DRAFT) return "warning" as const;
   return "danger" as const;
 }
 
@@ -168,12 +184,12 @@ function buildPayrollRedirect(args: {
 }
 
 function resolveSuggestedDraftWindow(
-  payFrequency: PayrollFrequency | null | undefined,
+  payFrequency: PayrollFrequencyValue | null | undefined,
   referenceDate: Date,
 ) {
   const today = toDateOnly(referenceDate);
 
-  if (payFrequency === PayrollFrequency.SEMI_MONTHLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.SEMI_MONTHLY) {
     if (today.getDate() <= 15) {
       return {
         periodStart: formatDateInput(
@@ -195,14 +211,14 @@ function resolveSuggestedDraftWindow(
     };
   }
 
-  if (payFrequency === PayrollFrequency.WEEKLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.WEEKLY) {
     return {
       periodStart: formatDateInput(startOfWeek(today)),
       periodEnd: formatDateInput(endOfWeek(today)),
     };
   }
 
-  if (payFrequency === PayrollFrequency.BIWEEKLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.BIWEEKLY) {
     return {
       periodStart: formatDateInput(addDays(today, -13)),
       periodEnd: formatDateInput(today),
@@ -486,8 +502,8 @@ export async function action({ request }: ActionFunctionArgs) {
         payrollRunId,
         employeeId,
         sickLeavePayTreatment:
-          sickLeavePayTreatment === SickLeavePayTreatment.PAID ||
-          sickLeavePayTreatment === SickLeavePayTreatment.UNPAID
+          sickLeavePayTreatment === SICK_LEAVE_PAY_TREATMENT.PAID ||
+          sickLeavePayTreatment === SICK_LEAVE_PAY_TREATMENT.UNPAID
             ? sickLeavePayTreatment
             : null,
         restDayWorkedPremiumPercent:
@@ -848,7 +864,7 @@ export default function StorePayrollPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                {selectedRun.status === PAYROLL_RUN_STATUS.DRAFT ? (
                   <>
                     <Form method="post">
                       <input type="hidden" name="_intent" value="rebuild-run" />
@@ -871,7 +887,7 @@ export default function StorePayrollPage() {
                     </Form>
                   </>
                 ) : null}
-                {selectedRun.status === PayrollRunStatus.FINALIZED ? (
+                {selectedRun.status === PAYROLL_RUN_STATUS.FINALIZED ? (
                   <Form method="post">
                     <input type="hidden" name="_intent" value="mark-paid" />
                     <input type="hidden" name="payrollRunId" value={selectedRun.id} />
@@ -1003,7 +1019,7 @@ export default function StorePayrollPage() {
                       </div>
                     </SoTCard>
 
-                    {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                    {selectedRun.status === PAYROLL_RUN_STATUS.DRAFT ? (
                       <SoTCard interaction="form" className="space-y-4">
                         <div>
                           <h2 className="text-sm font-semibold text-slate-900">
@@ -1035,11 +1051,11 @@ export default function StorePayrollPage() {
                               options={[
                                 { value: "", label: "Use policy default" },
                                 {
-                                  value: SickLeavePayTreatment.PAID,
+                                  value: SICK_LEAVE_PAY_TREATMENT.PAID,
                                   label: "Force paid",
                                 },
                                 {
-                                  value: SickLeavePayTreatment.UNPAID,
+                                  value: SICK_LEAVE_PAY_TREATMENT.UNPAID,
                                   label: "Force unpaid",
                                 },
                               ]}
@@ -1151,7 +1167,7 @@ export default function StorePayrollPage() {
                         </div>
                       </div>
 
-                      {selectedRun.status === PayrollRunStatus.DRAFT ? (
+                      {selectedRun.status === PAYROLL_RUN_STATUS.DRAFT ? (
                         <div className="space-y-3">
                           <Form method="post" className="space-y-3">
                             <input type="hidden" name="_intent" value="apply-deduction" />
