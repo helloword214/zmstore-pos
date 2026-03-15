@@ -1,10 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import {
-  SuspensionRecordStatus,
-  WorkerScheduleStatus,
-} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -34,6 +30,16 @@ type ActionData = {
   error: string;
   action?: string;
 };
+
+const SUSPENSION_RECORD_STATUS = {
+  ACTIVE: "ACTIVE",
+  LIFTED: "LIFTED",
+} as const;
+
+const WORKER_SCHEDULE_STATUS = {
+  CANCELLED: "CANCELLED",
+  PUBLISHED: "PUBLISHED",
+} as const;
 
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
@@ -118,8 +124,8 @@ function actorLabel(actor: {
 }
 
 function statusTone(status: string) {
-  if (status === SuspensionRecordStatus.ACTIVE) return "warning" as const;
-  if (status === SuspensionRecordStatus.LIFTED) return "success" as const;
+  if (status === SUSPENSION_RECORD_STATUS.ACTIVE) return "warning" as const;
+  if (status === SUSPENSION_RECORD_STATUS.LIFTED) return "success" as const;
   return "info" as const;
 }
 
@@ -179,11 +185,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     listWorkerSuspensionRecords(
       selectedWorkerId ? { workerId: selectedWorkerId } : undefined,
     ),
-    selectedWorker
+        selectedWorker
       ? db.workerSchedule.findMany({
           where: {
             workerId: selectedWorker.id,
-            status: { not: WorkerScheduleStatus.CANCELLED },
+            status: { not: WORKER_SCHEDULE_STATUS.CANCELLED },
             scheduleDate: {
               gte: today,
               lte: addDays(today, 30),
@@ -199,7 +205,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     records.find(
       (record) =>
         record.workerId === selectedWorker?.id &&
-        record.status === SuspensionRecordStatus.ACTIVE,
+        record.status === SUSPENSION_RECORD_STATUS.ACTIVE,
     ) ?? null;
 
   return json({
@@ -454,7 +460,7 @@ export default function WorkforceSuspensionRecordsRoute() {
                             >
                               Open worker
                             </Link>
-                            {record.status === SuspensionRecordStatus.ACTIVE ? (
+                            {record.status === SUSPENSION_RECORD_STATUS.ACTIVE ? (
                               <Form method="post">
                                 <input
                                   type="hidden"
@@ -626,7 +632,7 @@ export default function WorkforceSuspensionRecordsRoute() {
                                       activeSuspension.endDate,
                                     )
                                       ? "warning"
-                                      : schedule.status === WorkerScheduleStatus.PUBLISHED
+                                      : schedule.status === WORKER_SCHEDULE_STATUS.PUBLISHED
                                         ? "success"
                                         : "info"
                                   }

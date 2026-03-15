@@ -1,14 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import {
-  AttendanceDayType,
-  AttendanceLateFlag,
-  AttendanceLeaveType,
-  AttendanceResult,
-  AttendanceWorkContext,
-  WorkerScheduleEventType,
-} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -39,34 +31,107 @@ type ActionData = {
   action?: string;
 };
 
+const ATTENDANCE_DAY_TYPE = {
+  WORK_DAY: "WORK_DAY",
+  REST_DAY: "REST_DAY",
+  REGULAR_HOLIDAY: "REGULAR_HOLIDAY",
+  SPECIAL_HOLIDAY: "SPECIAL_HOLIDAY",
+} as const;
+
+type AttendanceDayTypeValue =
+  (typeof ATTENDANCE_DAY_TYPE)[keyof typeof ATTENDANCE_DAY_TYPE];
+
+const ATTENDANCE_DAY_TYPE_VALUES = [
+  ATTENDANCE_DAY_TYPE.WORK_DAY,
+  ATTENDANCE_DAY_TYPE.REST_DAY,
+  ATTENDANCE_DAY_TYPE.REGULAR_HOLIDAY,
+  ATTENDANCE_DAY_TYPE.SPECIAL_HOLIDAY,
+] as const;
+
+const ATTENDANCE_LATE_FLAG = {
+  NO: "NO",
+  YES: "YES",
+} as const;
+
+type AttendanceLateFlagValue =
+  (typeof ATTENDANCE_LATE_FLAG)[keyof typeof ATTENDANCE_LATE_FLAG];
+
+const ATTENDANCE_LEAVE_TYPE = {
+  SICK_LEAVE: "SICK_LEAVE",
+} as const;
+
+type AttendanceLeaveTypeValue =
+  (typeof ATTENDANCE_LEAVE_TYPE)[keyof typeof ATTENDANCE_LEAVE_TYPE];
+
+const ATTENDANCE_RESULT = {
+  WHOLE_DAY: "WHOLE_DAY",
+  HALF_DAY: "HALF_DAY",
+  ABSENT: "ABSENT",
+  LEAVE: "LEAVE",
+  NOT_REQUIRED: "NOT_REQUIRED",
+  SUSPENDED_NO_WORK: "SUSPENDED_NO_WORK",
+} as const;
+
+type AttendanceResultValue =
+  (typeof ATTENDANCE_RESULT)[keyof typeof ATTENDANCE_RESULT];
+
+const ATTENDANCE_RESULT_VALUES = [
+  ATTENDANCE_RESULT.WHOLE_DAY,
+  ATTENDANCE_RESULT.HALF_DAY,
+  ATTENDANCE_RESULT.ABSENT,
+  ATTENDANCE_RESULT.LEAVE,
+  ATTENDANCE_RESULT.NOT_REQUIRED,
+  ATTENDANCE_RESULT.SUSPENDED_NO_WORK,
+] as const;
+
+const ATTENDANCE_WORK_CONTEXT = {
+  REGULAR: "REGULAR",
+  REPLACEMENT: "REPLACEMENT",
+  ON_CALL: "ON_CALL",
+} as const;
+
+type AttendanceWorkContextValue =
+  (typeof ATTENDANCE_WORK_CONTEXT)[keyof typeof ATTENDANCE_WORK_CONTEXT];
+
+const ATTENDANCE_WORK_CONTEXT_VALUES = [
+  ATTENDANCE_WORK_CONTEXT.REGULAR,
+  ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
+  ATTENDANCE_WORK_CONTEXT.ON_CALL,
+] as const;
+
+const WORKER_SCHEDULE_EVENT_TYPE = {
+  MARKED_ABSENT: "MARKED_ABSENT",
+  EMERGENCY_LEAVE_RECORDED: "EMERGENCY_LEAVE_RECORDED",
+} as const;
+
 const DAY_TYPE_OPTIONS = [
-  { value: AttendanceDayType.WORK_DAY, label: "Work day" },
-  { value: AttendanceDayType.REST_DAY, label: "Rest day" },
-  { value: AttendanceDayType.REGULAR_HOLIDAY, label: "Regular holiday" },
-  { value: AttendanceDayType.SPECIAL_HOLIDAY, label: "Special holiday" },
+  { value: ATTENDANCE_DAY_TYPE.WORK_DAY, label: "Work day" },
+  { value: ATTENDANCE_DAY_TYPE.REST_DAY, label: "Rest day" },
+  { value: ATTENDANCE_DAY_TYPE.REGULAR_HOLIDAY, label: "Regular holiday" },
+  { value: ATTENDANCE_DAY_TYPE.SPECIAL_HOLIDAY, label: "Special holiday" },
 ];
 
 const ATTENDANCE_RESULT_OPTIONS = [
-  { value: AttendanceResult.WHOLE_DAY, label: "Whole day" },
-  { value: AttendanceResult.HALF_DAY, label: "Half day" },
-  { value: AttendanceResult.ABSENT, label: "Absent" },
-  { value: AttendanceResult.LEAVE, label: "Leave" },
-  { value: AttendanceResult.NOT_REQUIRED, label: "Not required" },
+  { value: ATTENDANCE_RESULT.WHOLE_DAY, label: "Whole day" },
+  { value: ATTENDANCE_RESULT.HALF_DAY, label: "Half day" },
+  { value: ATTENDANCE_RESULT.ABSENT, label: "Absent" },
+  { value: ATTENDANCE_RESULT.LEAVE, label: "Leave" },
+  { value: ATTENDANCE_RESULT.NOT_REQUIRED, label: "Not required" },
   {
-    value: AttendanceResult.SUSPENDED_NO_WORK,
+    value: ATTENDANCE_RESULT.SUSPENDED_NO_WORK,
     label: "Suspended no work",
   },
 ];
 
 const WORK_CONTEXT_OPTIONS = [
-  { value: AttendanceWorkContext.REGULAR, label: "Regular" },
-  { value: AttendanceWorkContext.REPLACEMENT, label: "Replacement" },
-  { value: AttendanceWorkContext.ON_CALL, label: "On-call" },
+  { value: ATTENDANCE_WORK_CONTEXT.REGULAR, label: "Regular" },
+  { value: ATTENDANCE_WORK_CONTEXT.REPLACEMENT, label: "Replacement" },
+  { value: ATTENDANCE_WORK_CONTEXT.ON_CALL, label: "On-call" },
 ];
 
 const LATE_FLAG_OPTIONS = [
-  { value: AttendanceLateFlag.NO, label: "No" },
-  { value: AttendanceLateFlag.YES, label: "Yes" },
+  { value: ATTENDANCE_LATE_FLAG.NO, label: "No" },
+  { value: ATTENDANCE_LATE_FLAG.YES, label: "Yes" },
 ];
 
 function parseOptionalInt(value: string | null) {
@@ -116,13 +181,13 @@ function buildWorkerLabel(worker: {
 
 function statusTone(status: string) {
   if (
-    status === AttendanceResult.WHOLE_DAY ||
-    status === AttendanceResult.HALF_DAY
+    status === ATTENDANCE_RESULT.WHOLE_DAY ||
+    status === ATTENDANCE_RESULT.HALF_DAY
   ) {
     return "success" as const;
   }
-  if (status === AttendanceResult.NOT_REQUIRED) return "info" as const;
-  if (status === AttendanceResult.LEAVE) return "warning" as const;
+  if (status === ATTENDANCE_RESULT.NOT_REQUIRED) return "info" as const;
+  if (status === ATTENDANCE_RESULT.LEAVE) return "warning" as const;
   return "danger" as const;
 }
 
@@ -225,25 +290,21 @@ export async function action({ request }: ActionFunctionArgs) {
     const note = String(fd.get("note") || "");
 
     if (!workerId) throw new Error("Worker is required.");
-    if (
-      dayType !== AttendanceDayType.WORK_DAY &&
-      dayType !== AttendanceDayType.REST_DAY &&
-      dayType !== AttendanceDayType.REGULAR_HOLIDAY &&
-      dayType !== AttendanceDayType.SPECIAL_HOLIDAY
-    ) {
+    if (!ATTENDANCE_DAY_TYPE_VALUES.includes(dayType as AttendanceDayTypeValue)) {
       throw new Error("Invalid day type.");
     }
-    if (!Object.values(AttendanceResult).includes(attendanceResult as AttendanceResult)) {
+    if (!ATTENDANCE_RESULT_VALUES.includes(attendanceResult as AttendanceResultValue)) {
       throw new Error("Invalid attendance result.");
     }
     if (
-      workContext !== AttendanceWorkContext.REGULAR &&
-      workContext !== AttendanceWorkContext.REPLACEMENT &&
-      workContext !== AttendanceWorkContext.ON_CALL
+      !ATTENDANCE_WORK_CONTEXT_VALUES.includes(workContext as AttendanceWorkContextValue)
     ) {
       throw new Error("Invalid work context.");
     }
-    if (lateFlag !== AttendanceLateFlag.NO && lateFlag !== AttendanceLateFlag.YES) {
+    if (
+      lateFlag !== ATTENDANCE_LATE_FLAG.NO &&
+      lateFlag !== ATTENDANCE_LATE_FLAG.YES
+    ) {
       throw new Error("Invalid late flag.");
     }
 
@@ -251,33 +312,33 @@ export async function action({ request }: ActionFunctionArgs) {
       workerId,
       scheduleId,
       dutyDate,
-      dayType: dayType as AttendanceDayType,
-      attendanceResult: attendanceResult as AttendanceResult,
-      workContext: workContext as AttendanceWorkContext,
+      dayType: dayType as AttendanceDayTypeValue,
+      attendanceResult: attendanceResult as AttendanceResultValue,
+      workContext: workContext as AttendanceWorkContextValue,
       leaveType:
-        leaveTypeRaw === AttendanceLeaveType.SICK_LEAVE
-          ? AttendanceLeaveType.SICK_LEAVE
+        leaveTypeRaw === ATTENDANCE_LEAVE_TYPE.SICK_LEAVE
+          ? (ATTENDANCE_LEAVE_TYPE.SICK_LEAVE as AttendanceLeaveTypeValue)
           : null,
-      lateFlag: lateFlag as AttendanceLateFlag,
+      lateFlag: lateFlag as AttendanceLateFlagValue,
       note,
       recordedById: me.userId,
     });
 
     if (scheduleId) {
-      if (attendanceResult === AttendanceResult.ABSENT) {
+      if (attendanceResult === ATTENDANCE_RESULT.ABSENT) {
         await appendWorkerScheduleEvent({
           scheduleId,
-          eventType: WorkerScheduleEventType.MARKED_ABSENT,
+          eventType: WORKER_SCHEDULE_EVENT_TYPE.MARKED_ABSENT,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
           note: note || "Attendance review marked this worker absent.",
         });
       }
 
-      if (attendanceResult === AttendanceResult.LEAVE) {
+      if (attendanceResult === ATTENDANCE_RESULT.LEAVE) {
         await appendWorkerScheduleEvent({
           scheduleId,
-          eventType: WorkerScheduleEventType.EMERGENCY_LEAVE_RECORDED,
+          eventType: WORKER_SCHEDULE_EVENT_TYPE.EMERGENCY_LEAVE_RECORDED,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
           note:
@@ -309,18 +370,18 @@ export default function WorkforceAttendanceReviewRoute() {
   const actionData = useActionData<ActionData>();
 
   const defaultDayType = selectedRow?.attendance?.dayType ??
-    (selectedRow?.schedule ? AttendanceDayType.WORK_DAY : AttendanceDayType.REST_DAY);
+    (selectedRow?.schedule ? ATTENDANCE_DAY_TYPE.WORK_DAY : ATTENDANCE_DAY_TYPE.REST_DAY);
   const defaultAttendanceResult =
     selectedRow?.attendance?.attendanceResult ??
     (selectedRow?.suspension && selectedRow?.schedule
-      ? AttendanceResult.SUSPENDED_NO_WORK
+      ? ATTENDANCE_RESULT.SUSPENDED_NO_WORK
       : selectedRow?.schedule
-        ? AttendanceResult.WHOLE_DAY
-        : AttendanceResult.NOT_REQUIRED);
+        ? ATTENDANCE_RESULT.WHOLE_DAY
+        : ATTENDANCE_RESULT.NOT_REQUIRED);
   const defaultWorkContext =
-    selectedRow?.attendance?.workContext ?? AttendanceWorkContext.REGULAR;
+    selectedRow?.attendance?.workContext ?? ATTENDANCE_WORK_CONTEXT.REGULAR;
   const defaultLeaveType = selectedRow?.attendance?.leaveType ?? "";
-  const defaultLateFlag = selectedRow?.attendance?.lateFlag ?? AttendanceLateFlag.NO;
+  const defaultLateFlag = selectedRow?.attendance?.lateFlag ?? ATTENDANCE_LATE_FLAG.NO;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -520,7 +581,7 @@ export default function WorkforceAttendanceReviewRoute() {
                       defaultValue={defaultLeaveType}
                       options={[
                         { value: "", label: "None" },
-                        { value: AttendanceLeaveType.SICK_LEAVE, label: "Sick leave" },
+                        { value: ATTENDANCE_LEAVE_TYPE.SICK_LEAVE, label: "Sick leave" },
                       ]}
                     />
                   </SoTFormField>

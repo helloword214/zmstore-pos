@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import { EmployeePayBasis } from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -30,6 +29,11 @@ type ActionData = {
   error: string;
   action?: string;
 };
+
+const EMPLOYEE_PAY_BASIS = {
+  DAILY: "DAILY",
+  MONTHLY: "MONTHLY",
+} as const;
 
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
@@ -175,7 +179,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const employeeId = parseOptionalInt(String(fd.get("employeeId") || ""));
     const payBasis = String(fd.get("payBasis") || "");
     if (!employeeId) throw new Error("Employee is required.");
-    if (payBasis !== EmployeePayBasis.DAILY && payBasis !== EmployeePayBasis.MONTHLY) {
+    if (
+      payBasis !== EMPLOYEE_PAY_BASIS.DAILY &&
+      payBasis !== EMPLOYEE_PAY_BASIS.MONTHLY
+    ) {
       throw new Error("Invalid pay basis.");
     }
 
@@ -305,11 +312,11 @@ export default function PayProfilesCreationRoute() {
                     <SelectInput
                       name="payBasis"
                       defaultValue={
-                        selectedProfile?.payBasis ?? EmployeePayBasis.DAILY
+                        selectedProfile?.payBasis ?? EMPLOYEE_PAY_BASIS.DAILY
                       }
                       options={[
-                        { value: EmployeePayBasis.DAILY, label: "Daily" },
-                        { value: EmployeePayBasis.MONTHLY, label: "Monthly" },
+                        { value: EMPLOYEE_PAY_BASIS.DAILY, label: "Daily" },
+                        { value: EMPLOYEE_PAY_BASIS.MONTHLY, label: "Monthly" },
                       ]}
                     />
                   </SoTFormField>

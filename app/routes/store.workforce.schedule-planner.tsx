@@ -1,11 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import {
-  PayrollFrequency,
-  WorkerScheduleEventType,
-  WorkerScheduleStatus,
-} from "@prisma/client";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -44,13 +39,47 @@ type ActionData = {
 
 type PlannerPreset = "next-week" | "next-cutoff" | "next-month";
 
+const PAYROLL_FREQUENCY = {
+  WEEKLY: "WEEKLY",
+  BIWEEKLY: "BIWEEKLY",
+  SEMI_MONTHLY: "SEMI_MONTHLY",
+  CUSTOM: "CUSTOM",
+} as const;
+
+type PayrollFrequencyValue =
+  (typeof PAYROLL_FREQUENCY)[keyof typeof PAYROLL_FREQUENCY];
+
+const WORKER_SCHEDULE_EVENT_TYPE = {
+  MANAGER_NOTE_ADDED: "MANAGER_NOTE_ADDED",
+  REPLACEMENT_ASSIGNED: "REPLACEMENT_ASSIGNED",
+  ON_CALL_ASSIGNED: "ON_CALL_ASSIGNED",
+} as const;
+
+type WorkerScheduleEventTypeValue =
+  (typeof WORKER_SCHEDULE_EVENT_TYPE)[keyof typeof WORKER_SCHEDULE_EVENT_TYPE];
+
+const WORKER_SCHEDULE_EVENT_TYPE_VALUES = [
+  WORKER_SCHEDULE_EVENT_TYPE.MANAGER_NOTE_ADDED,
+  WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED,
+  WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED,
+] as const;
+
+const WORKER_SCHEDULE_STATUS = {
+  DRAFT: "DRAFT",
+  PUBLISHED: "PUBLISHED",
+  CANCELLED: "CANCELLED",
+} as const;
+
 const EVENT_OPTIONS = [
-  { value: WorkerScheduleEventType.MANAGER_NOTE_ADDED, label: "Manager note" },
+  { value: WORKER_SCHEDULE_EVENT_TYPE.MANAGER_NOTE_ADDED, label: "Manager note" },
   {
-    value: WorkerScheduleEventType.REPLACEMENT_ASSIGNED,
+    value: WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED,
     label: "Replacement assigned",
   },
-  { value: WorkerScheduleEventType.ON_CALL_ASSIGNED, label: "On-call assigned" },
+  {
+    value: WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED,
+    label: "On-call assigned",
+  },
 ];
 
 function parseOptionalInt(value: string | null) {
@@ -129,11 +158,11 @@ function endOfMonth(reference: Date) {
 
 function getNextCutoffRange(
   reference: Date,
-  payFrequency: PayrollFrequency | null | undefined,
+  payFrequency: PayrollFrequencyValue | null | undefined,
 ) {
   const base = toDateOnly(reference);
 
-  if (payFrequency === PayrollFrequency.SEMI_MONTHLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.SEMI_MONTHLY) {
     if (base.getDate() <= 15) {
       return {
         rangeStart: new Date(base.getFullYear(), base.getMonth(), 16),
@@ -147,12 +176,12 @@ function getNextCutoffRange(
     };
   }
 
-  if (payFrequency === PayrollFrequency.WEEKLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.WEEKLY) {
     const rangeStart = startOfNextWeek(base);
     return { rangeStart, rangeEnd: endOfWeek(rangeStart) };
   }
 
-  if (payFrequency === PayrollFrequency.BIWEEKLY) {
+  if (payFrequency === PAYROLL_FREQUENCY.BIWEEKLY) {
     const rangeStart = startOfNextWeek(base);
     return { rangeStart, rangeEnd: addDays(rangeStart, 13) };
   }
@@ -162,7 +191,7 @@ function getNextCutoffRange(
 
 function resolvePlannerRange(args: {
   url: URL;
-  payFrequency: PayrollFrequency | null | undefined;
+  payFrequency: PayrollFrequencyValue | null | undefined;
 }) {
   const preset = args.url.searchParams.get("preset") as PlannerPreset | null;
   const today = toDateOnly(new Date());
@@ -230,6 +259,14 @@ function statusTone(status: string) {
   if (status === "DRAFT") return "warning" as const;
   if (status === "CANCELLED") return "danger" as const;
   return "info" as const;
+}
+
+function isWorkerScheduleEventTypeValue(
+  value: string,
+): value is WorkerScheduleEventTypeValue {
+  return WORKER_SCHEDULE_EVENT_TYPE_VALUES.includes(
+    value as WorkerScheduleEventTypeValue,
+  );
 }
 
 function actorLabel(actor: {
@@ -316,9 +353,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const counts = schedules.reduce(
     (acc, schedule) => {
-      if (schedule.status === WorkerScheduleStatus.DRAFT) acc.draft += 1;
-      if (schedule.status === WorkerScheduleStatus.PUBLISHED) acc.published += 1;
-      if (schedule.status === WorkerScheduleStatus.CANCELLED) acc.cancelled += 1;
+      if (schedule.status === WORKER_SCHEDULE_STATUS.DRAFT) acc.draft += 1;
+      if (schedule.status === WORKER_SCHEDULE_STATUS.PUBLISHED) acc.published += 1;
+      if (schedule.status === WORKER_SCHEDULE_STATUS.CANCELLED) acc.cancelled += 1;
       return acc;
     },
     { draft: 0, published: 0, cancelled: 0 },
@@ -423,16 +460,12 @@ export async function action({ request }: ActionFunctionArgs) {
       const relatedWorkerId = parseOptionalInt(String(fd.get("relatedWorkerId") || ""));
       const note = String(fd.get("note") || "");
 
-      if (
-        eventType !== WorkerScheduleEventType.MANAGER_NOTE_ADDED &&
-        eventType !== WorkerScheduleEventType.REPLACEMENT_ASSIGNED &&
-        eventType !== WorkerScheduleEventType.ON_CALL_ASSIGNED
-      ) {
+      if (!isWorkerScheduleEventTypeValue(eventType)) {
         throw new Error("Unsupported schedule event.");
       }
       if (
-        (eventType === WorkerScheduleEventType.REPLACEMENT_ASSIGNED ||
-          eventType === WorkerScheduleEventType.ON_CALL_ASSIGNED) &&
+        (eventType === WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED ||
+          eventType === WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED) &&
         !relatedWorkerId
       ) {
         throw new Error("Related worker is required for replacement/on-call events.");
@@ -780,7 +813,7 @@ export default function WorkforceSchedulePlannerRoute() {
                     <SoTFormField label="Event type">
                       <SelectInput
                         name="eventType"
-                        defaultValue={WorkerScheduleEventType.MANAGER_NOTE_ADDED}
+                        defaultValue={WORKER_SCHEDULE_EVENT_TYPE.MANAGER_NOTE_ADDED}
                         options={EVENT_OPTIONS}
                       />
                     </SoTFormField>
