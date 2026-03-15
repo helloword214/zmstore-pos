@@ -2,8 +2,8 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-12
-Diagram Version: v2.0
+Last Reviewed: 2026-03-15
+Diagram Version: v3.0
 
 ## Purpose
 
@@ -13,6 +13,7 @@ Visual map for the canonical flow described in:
 - `docs/guide/CANONICAL_ORDER_PRICING_SOT.md`
 - `docs/guide/CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 - `docs/guide/CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`
+- `docs/guide/CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 - `docs/guide/Commercial Clearance System V2`
 - `docs/guide/Accounts Receivable — Canonical Source of Truth (SoT)`
 
@@ -99,6 +100,7 @@ flowchart LR
     subgraph Admin["Admin Creation Routes (creation/setup only)"]
         AD0["_index.tsx"]
         AD1["creation.*"]
+        AD4["creation/workforce/pay-profiles + payroll-policy"]
         AD2["customers.* admin context"]
         AD3["creation.opening-ar-batches.tsx"]
     end
@@ -118,7 +120,7 @@ flowchart LR
         M5["runs.$id.remit.tsx"]
         M6["store.cashier-shifts.tsx"]
         M7["store.cashier-variances.tsx (read-only)"]
-        M8["store.cashier-ar.tsx / store.payroll.tsx"]
+        M8["store.cashier-ar.tsx / store.payroll.tsx (charge + statutory deductions)"]
         M9["store.clearance-opening-batches.tsx"]
     end
 
@@ -141,6 +143,7 @@ flowchart LR
     end
 
     AD0 --> AD1
+    AD1 --> AD4
     AD0 --> AD2
     AD1 --> AD3 --> M9
     P0 --> P1 --> M0
@@ -179,7 +182,9 @@ Authority note:
 | `store.cashier-variances.tsx` | read-only variance queue/history |
 | `cashier.charges.tsx` | cashier acknowledgement trail for charged variances |
 | `store.cashier-ar.tsx` | cashier charge list and payroll-tag planning |
-| `store.payroll.tsx` | manager payroll-run review, payroll deduction posting, and payroll-run status freeze |
+| `store.payroll.tsx` | manager payroll-run review, government-deduction visibility, charge deduction posting, and payroll-run status freeze |
+| `creation.workforce.pay-profiles.tsx` | admin employee payroll setup: daily salary history and employee-specific deduction setup |
+| `creation.workforce.payroll-policy.tsx` | admin payroll defaults, incentive rules, and government-deduction inclusion switches |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
 

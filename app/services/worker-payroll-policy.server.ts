@@ -1,5 +1,4 @@
 import {
-  EmployeePayBasis,
   PayrollFrequency,
   Prisma,
   PrismaClient,
@@ -12,11 +11,18 @@ export type WorkforceRootDbClient = PrismaClient;
 
 export type EmployeePayProfileSnapshot = {
   payProfileId: number;
-  payBasis: EmployeePayBasis;
-  baseDailyRate: number | null;
-  baseMonthlyRate: number | null;
-  dailyRateEquivalent: number;
+  dailyRate: number;
   halfDayFactor: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+};
+
+export type EmployeeStatutoryDeductionProfileSnapshot = {
+  statutoryProfileId: number;
+  sssAmount: number;
+  philhealthAmount: number;
+  pagIbigAmount: number;
+  totalAmount: number;
   effectiveFrom: string;
   effectiveTo: string | null;
 };
@@ -35,17 +41,29 @@ export type CompanyPayrollPolicySnapshot = {
   attendanceIncentiveRequireNoLate: boolean;
   attendanceIncentiveRequireNoAbsent: boolean;
   attendanceIncentiveRequireNoSuspension: boolean;
+  sssDeductionEnabled: boolean;
+  philhealthDeductionEnabled: boolean;
+  pagIbigDeductionEnabled: boolean;
   allowManagerOverride: boolean;
 };
 
 export type UpsertEmployeePayProfileInput = {
   id?: number;
   employeeId: number;
-  payBasis: EmployeePayBasis;
-  baseDailyRate?: number | null;
-  baseMonthlyRate?: number | null;
-  dailyRateEquivalent: number;
+  dailyRate: number;
   halfDayFactor?: number;
+  effectiveFrom: Date | string;
+  effectiveTo?: Date | string | null;
+  note?: string | null;
+  actorUserId?: number | null;
+};
+
+export type UpsertEmployeeStatutoryDeductionProfileInput = {
+  id?: number;
+  employeeId: number;
+  sssAmount?: number;
+  philhealthAmount?: number;
+  pagIbigAmount?: number;
   effectiveFrom: Date | string;
   effectiveTo?: Date | string | null;
   note?: string | null;
@@ -66,17 +84,39 @@ export type UpsertCompanyPayrollPolicyInput = {
   attendanceIncentiveRequireNoLate: boolean;
   attendanceIncentiveRequireNoAbsent: boolean;
   attendanceIncentiveRequireNoSuspension: boolean;
+  sssDeductionEnabled: boolean;
+  philhealthDeductionEnabled: boolean;
+  pagIbigDeductionEnabled: boolean;
   allowManagerOverride?: boolean;
   actorUserId?: number | null;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const toDateOnly = (value: Date | string) => {
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+  if (value instanceof Date) {
+    return new Date(
+      Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()),
+    );
+  }
+
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
+    return new Date(
+      Date.UTC(Number(yearRaw), Number(monthRaw) - 1, Number(dayRaw)),
+    );
+  }
+
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
+
+  return new Date(
+    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()),
+  );
 };
 
 const toOptionalDateOnly = (value?: Date | string | null) =>
@@ -101,17 +141,231 @@ const toMoneyDecimal = (value: number) => new Prisma.Decimal(value.toFixed(2));
 
 const toFactorDecimal = (value: number) => new Prisma.Decimal(value.toFixed(4));
 
+const subtractOneDay = (value: Date) => new Date(value.getTime() - DAY_MS);
+
+const rangesOverlap = (
+  leftFrom: Date,
+  leftTo: Date | null,
+  rightFrom: Date,
+  rightTo: Date | null,
+) => {
+  const leftEnd = leftTo?.getTime() ?? Number.POSITIVE_INFINITY;
+  const rightEnd = rightTo?.getTime() ?? Number.POSITIVE_INFINITY;
+  return leftFrom.getTime() <= rightEnd && rightFrom.getTime() <= leftEnd;
+};
+
+const workforceActorInclude = {
+  createdBy: {
+    select: {
+      id: true,
+      email: true,
+      employee: {
+        select: { firstName: true, lastName: true, alias: true },
+      },
+    },
+  },
+  updatedBy: {
+    select: {
+      id: true,
+      email: true,
+      employee: {
+        select: { firstName: true, lastName: true, alias: true },
+      },
+    },
+  },
+} as const;
+
+async function withOptionalTransaction<T>(
+  prisma: WorkforceDbClient,
+  handler: (tx: Prisma.TransactionClient) => Promise<T>,
+) {
+  const rootClient = prisma as PrismaClient;
+  if (typeof rootClient.$transaction === "function") {
+    return rootClient.$transaction((tx) => handler(tx));
+  }
+  return handler(prisma as Prisma.TransactionClient);
+}
+
+function validateEffectivityWindow(
+  effectiveFrom: Date,
+  effectiveTo: Date | null,
+  label: string,
+) {
+  if (effectiveTo && effectiveTo < effectiveFrom) {
+    throw new Error(`${label} effective-to must be on or after effective-from.`);
+  }
+}
+
+async function autoClosePreviousOpenEndedPayProfile(
+  tx: Prisma.TransactionClient,
+  args: {
+    employeeId: number;
+    effectiveFrom: Date;
+    actorUserId?: number | null;
+  },
+) {
+  const previous = await tx.employeePayProfile.findFirst({
+    where: {
+      employeeId: args.employeeId,
+      effectiveTo: null,
+      effectiveFrom: { lt: args.effectiveFrom },
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+
+  if (!previous) return;
+
+  const nextEffectiveTo = subtractOneDay(args.effectiveFrom);
+  if (nextEffectiveTo < previous.effectiveFrom) {
+    return;
+  }
+
+  await tx.employeePayProfile.update({
+    where: { id: previous.id },
+    data: {
+      effectiveTo: nextEffectiveTo,
+      updatedById: args.actorUserId ?? null,
+    },
+  });
+}
+
+async function autoClosePreviousOpenEndedStatutoryProfile(
+  tx: Prisma.TransactionClient,
+  args: {
+    employeeId: number;
+    effectiveFrom: Date;
+    actorUserId?: number | null;
+  },
+) {
+  const previous = await tx.employeeStatutoryDeductionProfile.findFirst({
+    where: {
+      employeeId: args.employeeId,
+      effectiveTo: null,
+      effectiveFrom: { lt: args.effectiveFrom },
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+
+  if (!previous) return;
+
+  const nextEffectiveTo = subtractOneDay(args.effectiveFrom);
+  if (nextEffectiveTo < previous.effectiveFrom) {
+    return;
+  }
+
+  await tx.employeeStatutoryDeductionProfile.update({
+    where: { id: previous.id },
+    data: {
+      effectiveTo: nextEffectiveTo,
+      updatedById: args.actorUserId ?? null,
+    },
+  });
+}
+
+async function assertNoOverlappingPayProfiles(
+  tx: Prisma.TransactionClient,
+  args: {
+    employeeId: number;
+    effectiveFrom: Date;
+    effectiveTo: Date | null;
+    excludeId?: number;
+  },
+) {
+  const existingProfiles = await tx.employeePayProfile.findMany({
+    where: {
+      employeeId: args.employeeId,
+      ...(args.excludeId ? { id: { not: args.excludeId } } : {}),
+    },
+    select: {
+      id: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+    },
+    orderBy: [{ effectiveFrom: "asc" }, { id: "asc" }],
+  });
+
+  const overlapping = existingProfiles.find((profile) =>
+    rangesOverlap(
+      profile.effectiveFrom,
+      profile.effectiveTo,
+      args.effectiveFrom,
+      args.effectiveTo,
+    ),
+  );
+
+  if (overlapping) {
+    throw new Error(
+      "This salary row overlaps an existing salary effectivity. Edit the conflicting row or choose a later effective-from date.",
+    );
+  }
+}
+
+async function assertNoOverlappingStatutoryProfiles(
+  tx: Prisma.TransactionClient,
+  args: {
+    employeeId: number;
+    effectiveFrom: Date;
+    effectiveTo: Date | null;
+    excludeId?: number;
+  },
+) {
+  const existingProfiles = await tx.employeeStatutoryDeductionProfile.findMany({
+    where: {
+      employeeId: args.employeeId,
+      ...(args.excludeId ? { id: { not: args.excludeId } } : {}),
+    },
+    select: {
+      id: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+    },
+    orderBy: [{ effectiveFrom: "asc" }, { id: "asc" }],
+  });
+
+  const overlapping = existingProfiles.find((profile) =>
+    rangesOverlap(
+      profile.effectiveFrom,
+      profile.effectiveTo,
+      args.effectiveFrom,
+      args.effectiveTo,
+    ),
+  );
+
+  if (overlapping) {
+    throw new Error(
+      "This government-deduction row overlaps an existing effectivity. Edit the conflicting row or choose a later effective-from date.",
+    );
+  }
+}
+
 export function snapshotEmployeePayProfile(
   profile: Awaited<ReturnType<typeof getEffectiveEmployeePayProfile>>,
 ): EmployeePayProfileSnapshot | null {
   if (!profile) return null;
   return {
     payProfileId: profile.id,
-    payBasis: profile.payBasis,
-    baseDailyRate: toNumber(profile.baseDailyRate),
-    baseMonthlyRate: toNumber(profile.baseMonthlyRate),
-    dailyRateEquivalent: Number(profile.dailyRateEquivalent),
+    dailyRate: Number(profile.dailyRate),
     halfDayFactor: Number(profile.halfDayFactor),
+    effectiveFrom: profile.effectiveFrom.toISOString(),
+    effectiveTo: profile.effectiveTo?.toISOString() ?? null,
+  };
+}
+
+export function snapshotEmployeeStatutoryDeductionProfile(
+  profile: Awaited<
+    ReturnType<typeof getEffectiveEmployeeStatutoryDeductionProfile>
+  >,
+): EmployeeStatutoryDeductionProfileSnapshot | null {
+  if (!profile) return null;
+  const sssAmount = Number(profile.sssAmount);
+  const philhealthAmount = Number(profile.philhealthAmount);
+  const pagIbigAmount = Number(profile.pagIbigAmount);
+  return {
+    statutoryProfileId: profile.id,
+    sssAmount,
+    philhealthAmount,
+    pagIbigAmount,
+    totalAmount: sssAmount + philhealthAmount + pagIbigAmount,
     effectiveFrom: profile.effectiveFrom.toISOString(),
     effectiveTo: profile.effectiveTo?.toISOString() ?? null,
   };
@@ -141,6 +395,9 @@ export function snapshotCompanyPayrollPolicy(
       policy.attendanceIncentiveRequireNoAbsent,
     attendanceIncentiveRequireNoSuspension:
       policy.attendanceIncentiveRequireNoSuspension,
+    sssDeductionEnabled: policy.sssDeductionEnabled,
+    philhealthDeductionEnabled: policy.philhealthDeductionEnabled,
+    pagIbigDeductionEnabled: policy.pagIbigDeductionEnabled,
     allowManagerOverride: policy.allowManagerOverride,
   };
 }
@@ -153,6 +410,23 @@ export async function getEffectiveEmployeePayProfile(
   const date = toDateOnly(onDate);
 
   return prisma.employeePayProfile.findFirst({
+    where: {
+      employeeId,
+      effectiveFrom: { lte: date },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function getEffectiveEmployeeStatutoryDeductionProfile(
+  prisma: WorkforceDbClient,
+  employeeId: number,
+  onDate: Date | string,
+) {
+  const date = toDateOnly(onDate);
+
+  return prisma.employeeStatutoryDeductionProfile.findFirst({
     where: {
       employeeId,
       effectiveFrom: { lte: date },
@@ -192,24 +466,34 @@ export async function listEmployeePayProfiles(
           },
         },
       },
-      createdBy: {
-        select: {
-          id: true,
-          email: true,
-          employee: {
-            select: { firstName: true, lastName: true, alias: true },
+      ...workforceActorInclude,
+    },
+    orderBy: [
+      { employee: { lastName: "asc" } },
+      { employee: { firstName: "asc" } },
+      { effectiveFrom: "desc" },
+      { id: "desc" },
+    ],
+  });
+}
+
+export async function listEmployeeStatutoryDeductionProfiles(
+  args?: { employeeId?: number },
+  prisma: WorkforceDbClient = db,
+) {
+  return prisma.employeeStatutoryDeductionProfile.findMany({
+    where: {
+      ...(args?.employeeId ? { employeeId: args.employeeId } : {}),
+    },
+    include: {
+      employee: {
+        include: {
+          user: {
+            select: { role: true, active: true },
           },
         },
       },
-      updatedBy: {
-        select: {
-          id: true,
-          email: true,
-          employee: {
-            select: { firstName: true, lastName: true, alias: true },
-          },
-        },
-      },
+      ...workforceActorInclude,
     },
     orderBy: [
       { employee: { lastName: "asc" } },
@@ -224,26 +508,7 @@ export async function listCompanyPayrollPolicies(
   prisma: WorkforceDbClient = db,
 ) {
   return prisma.companyPayrollPolicy.findMany({
-    include: {
-      createdBy: {
-        select: {
-          id: true,
-          email: true,
-          employee: {
-            select: { firstName: true, lastName: true, alias: true },
-          },
-        },
-      },
-      updatedBy: {
-        select: {
-          id: true,
-          email: true,
-          employee: {
-            select: { firstName: true, lastName: true, alias: true },
-          },
-        },
-      },
-    },
+    include: workforceActorInclude,
     orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
   });
 }
@@ -254,52 +519,151 @@ export async function upsertEmployeePayProfile(
 ) {
   const effectiveFrom = toDateOnly(input.effectiveFrom);
   const effectiveTo = toOptionalDateOnly(input.effectiveTo);
+  const halfDayFactor = input.halfDayFactor ?? 0.5;
 
   assertPositive(input.employeeId, "employeeId");
-  assertPositive(input.dailyRateEquivalent, "dailyRateEquivalent");
-  assertPositive(input.halfDayFactor ?? 0.5, "halfDayFactor");
+  assertPositive(input.dailyRate, "dailyRate");
+  assertPositive(halfDayFactor, "halfDayFactor");
+  validateEffectivityWindow(effectiveFrom, effectiveTo, "Salary row");
 
-  if (effectiveTo && effectiveTo < effectiveFrom) {
-    throw new Error("effectiveTo must be on or after effectiveFrom.");
-  }
+  return withOptionalTransaction(prisma, async (tx) => {
+    if (!input.id) {
+      await autoClosePreviousOpenEndedPayProfile(tx, {
+        employeeId: input.employeeId,
+        effectiveFrom,
+        actorUserId: input.actorUserId,
+      });
+    }
 
-  if (input.payBasis === EmployeePayBasis.DAILY) {
-    assertPositive(input.baseDailyRate ?? 0, "baseDailyRate");
-  }
+    await assertNoOverlappingPayProfiles(tx, {
+      employeeId: input.employeeId,
+      effectiveFrom,
+      effectiveTo,
+      excludeId: input.id,
+    });
 
-  if (input.payBasis === EmployeePayBasis.MONTHLY) {
-    assertPositive(input.baseMonthlyRate ?? 0, "baseMonthlyRate");
-  }
+    const data = {
+      employeeId: input.employeeId,
+      dailyRate: toMoneyDecimal(input.dailyRate),
+      halfDayFactor: toFactorDecimal(halfDayFactor),
+      effectiveFrom,
+      effectiveTo,
+      note: input.note?.trim() || null,
+      updatedById: input.actorUserId ?? null,
+    } satisfies Prisma.EmployeePayProfileUncheckedUpdateInput;
 
-  const data = {
-    employeeId: input.employeeId,
-    payBasis: input.payBasis,
-    baseDailyRate:
-      input.baseDailyRate == null ? null : toMoneyDecimal(input.baseDailyRate),
-    baseMonthlyRate:
-      input.baseMonthlyRate == null
-        ? null
-        : toMoneyDecimal(input.baseMonthlyRate),
-    dailyRateEquivalent: toMoneyDecimal(input.dailyRateEquivalent),
-    halfDayFactor: toFactorDecimal(input.halfDayFactor ?? 0.5),
+    try {
+      if (input.id) {
+        return await tx.employeePayProfile.update({
+          where: { id: input.id },
+          data,
+        });
+      }
+
+      return await tx.employeePayProfile.create({
+        data: {
+          ...data,
+          createdById: input.actorUserId ?? null,
+        },
+      });
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : null;
+
+      if (errorCode === "P2002") {
+        throw new Error(
+          "A salary row already exists for this employee on that effective-from date. Use a different effective date or edit the existing row.",
+        );
+      }
+
+      throw error;
+    }
+  });
+}
+
+export async function upsertEmployeeStatutoryDeductionProfile(
+  input: UpsertEmployeeStatutoryDeductionProfileInput,
+  prisma: WorkforceDbClient = db,
+) {
+  const effectiveFrom = toDateOnly(input.effectiveFrom);
+  const effectiveTo = toOptionalDateOnly(input.effectiveTo);
+  const sssAmount = input.sssAmount ?? 0;
+  const philhealthAmount = input.philhealthAmount ?? 0;
+  const pagIbigAmount = input.pagIbigAmount ?? 0;
+
+  assertPositive(input.employeeId, "employeeId");
+  assertNonNegative(sssAmount, "sssAmount");
+  assertNonNegative(philhealthAmount, "philhealthAmount");
+  assertNonNegative(pagIbigAmount, "pagIbigAmount");
+  validateEffectivityWindow(
     effectiveFrom,
     effectiveTo,
-    note: input.note?.trim() || null,
-    updatedById: input.actorUserId ?? null,
-  } satisfies Prisma.EmployeePayProfileUncheckedUpdateInput;
+    "Government-deduction row",
+  );
 
-  if (input.id) {
-    return prisma.employeePayProfile.update({
-      where: { id: input.id },
-      data,
+  return withOptionalTransaction(prisma, async (tx) => {
+    if (!input.id) {
+      await autoClosePreviousOpenEndedStatutoryProfile(tx, {
+        employeeId: input.employeeId,
+        effectiveFrom,
+        actorUserId: input.actorUserId,
+      });
+    }
+
+    await assertNoOverlappingStatutoryProfiles(tx, {
+      employeeId: input.employeeId,
+      effectiveFrom,
+      effectiveTo,
+      excludeId: input.id,
     });
-  }
 
-  return prisma.employeePayProfile.create({
-    data: {
-      ...data,
-      createdById: input.actorUserId ?? null,
-    },
+    const data = {
+      employeeId: input.employeeId,
+      sssAmount: toMoneyDecimal(sssAmount),
+      philhealthAmount: toMoneyDecimal(philhealthAmount),
+      pagIbigAmount: toMoneyDecimal(pagIbigAmount),
+      effectiveFrom,
+      effectiveTo,
+      note: input.note?.trim() || null,
+      updatedById: input.actorUserId ?? null,
+    } satisfies Prisma.EmployeeStatutoryDeductionProfileUncheckedUpdateInput;
+
+    try {
+      if (input.id) {
+        return await tx.employeeStatutoryDeductionProfile.update({
+          where: { id: input.id },
+          data,
+        });
+      }
+
+      return await tx.employeeStatutoryDeductionProfile.create({
+        data: {
+          ...data,
+          createdById: input.actorUserId ?? null,
+        },
+      });
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : null;
+
+      if (errorCode === "P2002") {
+        throw new Error(
+          "A government-deduction row already exists for this employee on that effective-from date. Use a different effective date or edit the existing row.",
+        );
+      }
+
+      throw error;
+    }
   });
 }
 
@@ -347,6 +711,9 @@ export async function upsertCompanyPayrollPolicy(
       input.attendanceIncentiveRequireNoAbsent,
     attendanceIncentiveRequireNoSuspension:
       input.attendanceIncentiveRequireNoSuspension,
+    sssDeductionEnabled: input.sssDeductionEnabled,
+    philhealthDeductionEnabled: input.philhealthDeductionEnabled,
+    pagIbigDeductionEnabled: input.pagIbigDeductionEnabled,
     allowManagerOverride: input.allowManagerOverride ?? true,
     updatedById: input.actorUserId ?? null,
   } satisfies Prisma.CompanyPayrollPolicyUncheckedUpdateInput;

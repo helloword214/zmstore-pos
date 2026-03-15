@@ -118,6 +118,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       policy.attendanceIncentiveRequireNoAbsent,
     attendanceIncentiveRequireNoSuspension:
       policy.attendanceIncentiveRequireNoSuspension,
+    sssDeductionEnabled: policy.sssDeductionEnabled,
+    philhealthDeductionEnabled: policy.philhealthDeductionEnabled,
+    pagIbigDeductionEnabled: policy.pagIbigDeductionEnabled,
     allowManagerOverride: policy.allowManagerOverride,
     createdByLabel: actorLabel(policy.createdBy),
     updatedByLabel: actorLabel(policy.updatedBy),
@@ -192,6 +195,11 @@ export async function action({ request }: ActionFunctionArgs) {
         String(fd.get("attendanceIncentiveRequireNoAbsent") || "") === "1",
       attendanceIncentiveRequireNoSuspension:
         String(fd.get("attendanceIncentiveRequireNoSuspension") || "") === "1",
+      sssDeductionEnabled: String(fd.get("sssDeductionEnabled") || "") === "1",
+      philhealthDeductionEnabled:
+        String(fd.get("philhealthDeductionEnabled") || "") === "1",
+      pagIbigDeductionEnabled:
+        String(fd.get("pagIbigDeductionEnabled") || "") === "1",
       allowManagerOverride:
         String(fd.get("allowManagerOverride") || "") === "1",
       actorUserId: me.userId,
@@ -223,7 +231,7 @@ export default function PayrollPolicyCreationRoute() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Payroll Policy Setup"
-        subtitle="Admin-owned company payroll defaults for cutoffs, premiums, sick leave treatment, and attendance incentive rules."
+        subtitle="Admin-owned company payroll defaults for cutoffs, premiums, attendance incentive rules, and whether SSS, PhilHealth, and Pag-IBIG are included on every payroll run."
         backTo="/"
         backLabel="Admin Dashboard"
       />
@@ -245,7 +253,9 @@ export default function PayrollPolicyCreationRoute() {
                 </h2>
                 <p className="text-xs text-slate-500">
                   Every new payroll run snapshots the policy effective on its pay
-                  date. Editing here affects future runs only.
+                  date. Editing here affects future runs only. Enabled
+                  government deductions apply on every payroll run using the
+                  employee-specific setup active on the pay date.
                 </p>
               </div>
 
@@ -385,6 +395,41 @@ export default function PayrollPolicyCreationRoute() {
                   />
                 </div>
 
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Government deduction switches
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      These toggles only decide whether the employee-specific
+                      SSS, PhilHealth, and Pag-IBIG amounts are included during
+                      payroll rebuild and review.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <CheckboxField
+                      name="sssDeductionEnabled"
+                      label="Include SSS"
+                      defaultChecked={selectedPolicy?.sssDeductionEnabled ?? false}
+                    />
+                    <CheckboxField
+                      name="philhealthDeductionEnabled"
+                      label="Include PhilHealth"
+                      defaultChecked={
+                        selectedPolicy?.philhealthDeductionEnabled ?? false
+                      }
+                    />
+                    <CheckboxField
+                      name="pagIbigDeductionEnabled"
+                      label="Include Pag-IBIG"
+                      defaultChecked={
+                        selectedPolicy?.pagIbigDeductionEnabled ?? false
+                      }
+                    />
+                  </div>
+                </div>
+
                 <SoTButton type="submit" variant="primary">
                   Save payroll policy
                 </SoTButton>
@@ -448,6 +493,11 @@ export default function PayrollPolicyCreationRoute() {
                               Incentive {boolLabel(policy.attendanceIncentiveEnabled)} ·{" "}
                               PHP {policy.attendanceIncentiveAmount.toFixed(2)}
                             </div>
+                            <div>
+                              Govt deductions: SSS {boolLabel(policy.sssDeductionEnabled)}
+                              {" "}· PH {boolLabel(policy.philhealthDeductionEnabled)}
+                              {" "}· PI {boolLabel(policy.pagIbigDeductionEnabled)}
+                            </div>
                           </div>
                         </SoTTd>
                         <SoTTd>
@@ -504,6 +554,17 @@ export default function PayrollPolicyCreationRoute() {
                     {boolLabel(
                       selectedPolicy.attendanceIncentiveRequireNoSuspension,
                     )}
+                  </div>
+                  <div>
+                    Include SSS: {boolLabel(selectedPolicy.sssDeductionEnabled)}
+                  </div>
+                  <div>
+                    Include PhilHealth:{" "}
+                    {boolLabel(selectedPolicy.philhealthDeductionEnabled)}
+                  </div>
+                  <div>
+                    Include Pag-IBIG:{" "}
+                    {boolLabel(selectedPolicy.pagIbigDeductionEnabled)}
                   </div>
                 </div>
               </SoTCard>
