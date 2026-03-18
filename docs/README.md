@@ -5,10 +5,17 @@ This repository uses a tiered documentation model so engineers can quickly find 
 ## 1) Governance (Highest Priority)
 
 1. `docs/Chat Operating Rules/Chat Execution Rules.md`
-2. `docs/Governance SOP/AI Governance SOP.md`
-3. `docs/guide/Commercial Clearance System V2`
+2. `docs/Governance SOP/Documentation Architecture Standard.md`
+3. `docs/Governance SOP/QA Testing Architecture Standard.md`
+4. `docs/Governance SOP/AI Governance SOP.md`
+5. `docs/guide/Commercial Clearance System V2`
 
 If guidance conflicts, follow the order above.
+
+QA/testing architecture reminder:
+
+1. `docs/Governance SOP/QA Testing Architecture Standard.md` owns QA/testing structure, naming, and artifact boundaries.
+2. Scenario checklists, Playwright specs, and setup/cleanup scripts should point back to that owner doc instead of redefining the rules.
 
 ## 2) Domain Canonical (Binding for Product Behavior)
 
