@@ -27,13 +27,45 @@ export type RecordWorkerAttendanceDutyResultInput = {
   recordedAt?: Date;
 };
 
-const toDateOnly = (value: Date | string) => {
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+const parseCalendarDateParts = (value: Date | string) => {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new Error("Invalid dutyDate.");
+    }
+
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    };
+  }
+
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
+    return {
+      year: Number(yearRaw),
+      month: Number(monthRaw),
+      day: Number(dayRaw),
+    };
+  }
+
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid dutyDate.");
   }
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
+
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+};
+
+const toDateOnly = (value: Date | string) => {
+  const { year, month, day } = parseCalendarDateParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 };
 
 const toMoneyDecimal = (value: number) => new Prisma.Decimal(value.toFixed(2));
