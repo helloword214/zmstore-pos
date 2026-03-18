@@ -31,6 +31,7 @@ import {
   getWorkerPayrollRunEmployeeOverride,
   listWorkerPayrollRuns,
   markWorkerPayrollRunPaid,
+  parsePayrollAttendanceSnapshotIds,
   parsePayrollDeductionSnapshot,
   parsePayrollRunLineAdditionSnapshot,
   parsePayrollStatutoryDeductionSnapshot,
@@ -311,23 +312,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     : null;
 
   const selectedRun = selectedRunRaw
-    ? {
-        id: selectedRunRaw.id,
-        status: selectedRunRaw.status,
-        payFrequency: selectedRunRaw.payFrequency,
-        periodStart: selectedRunRaw.periodStart,
-        periodEnd: selectedRunRaw.periodEnd,
-        payDate: selectedRunRaw.payDate,
-        note: selectedRunRaw.note ?? null,
-        createdAt: selectedRunRaw.createdAt,
-        finalizedAt: selectedRunRaw.finalizedAt,
-        paidAt: selectedRunRaw.paidAt,
-        createdByLabel: actorLabel(selectedRunRaw.createdBy),
-        finalizedByLabel: actorLabel(selectedRunRaw.finalizedBy),
-        paidByLabel: actorLabel(selectedRunRaw.paidBy),
-        basePolicySnapshot:
-          parsePolicySnapshot(selectedRunRaw.policySnapshot) ?? null,
-        lines: selectedRunRaw.payrollRunLines.map((line) => ({
+    ? (() => {
+        const lines = selectedRunRaw.payrollRunLines.map((line) => ({
           id: line.id,
           employeeId: line.employeeId,
           employeeLabel: buildWorkerLabel(line.employee),
@@ -341,9 +327,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
           totalDeductions: Number(line.totalDeductions),
           netPay: Number(line.netPay),
           managerOverrideNote: line.managerOverrideNote ?? null,
-          attendanceSnapshotIds: Array.isArray(line.attendanceSnapshotIds)
-            ? line.attendanceSnapshotIds.map((value) => Number(value))
-            : [],
+          attendanceSnapshotIds: parsePayrollAttendanceSnapshotIds(
+            line.attendanceSnapshotIds,
+          ),
           policySnapshot: parsePolicySnapshot(line.policySnapshot),
           additionSnapshot: parsePayrollRunLineAdditionSnapshot(
             line.additionSnapshot,
@@ -354,22 +340,46 @@ export async function loader({ request }: LoaderFunctionArgs) {
           deductionSnapshot: parsePayrollDeductionSnapshot(
             line.deductionSnapshot,
           ),
-        })),
-        totals: {
-          grossTotal: selectedRunRaw.payrollRunLines.reduce(
-            (sum, line) => sum + Number(line.grossPay),
-            0,
-          ),
-          deductionTotal: selectedRunRaw.payrollRunLines.reduce(
-            (sum, line) => sum + Number(line.totalDeductions),
-            0,
-          ),
-          netTotal: selectedRunRaw.payrollRunLines.reduce(
-            (sum, line) => sum + Number(line.netPay),
-            0,
-          ),
-        },
-      }
+        }));
+        const attendanceBackedLineCount = lines.filter(
+          (line) => line.attendanceSnapshotIds.length > 0,
+        ).length;
+
+        return {
+          id: selectedRunRaw.id,
+          status: selectedRunRaw.status,
+          payFrequency: selectedRunRaw.payFrequency,
+          periodStart: selectedRunRaw.periodStart,
+          periodEnd: selectedRunRaw.periodEnd,
+          payDate: selectedRunRaw.payDate,
+          note: selectedRunRaw.note ?? null,
+          createdAt: selectedRunRaw.createdAt,
+          finalizedAt: selectedRunRaw.finalizedAt,
+          paidAt: selectedRunRaw.paidAt,
+          createdByLabel: actorLabel(selectedRunRaw.createdBy),
+          finalizedByLabel: actorLabel(selectedRunRaw.finalizedBy),
+          paidByLabel: actorLabel(selectedRunRaw.paidBy),
+          basePolicySnapshot:
+            parsePolicySnapshot(selectedRunRaw.policySnapshot) ?? null,
+          lines,
+          attendanceBackedLineCount,
+          nonAttendanceBackedLineCount: lines.length - attendanceBackedLineCount,
+          totals: {
+            grossTotal: selectedRunRaw.payrollRunLines.reduce(
+              (sum, line) => sum + Number(line.grossPay),
+              0,
+            ),
+            deductionTotal: selectedRunRaw.payrollRunLines.reduce(
+              (sum, line) => sum + Number(line.totalDeductions),
+              0,
+            ),
+            netTotal: selectedRunRaw.payrollRunLines.reduce(
+              (sum, line) => sum + Number(line.netPay),
+              0,
+            ),
+          },
+        };
+      })()
     : null;
 
   const selectedLine =
@@ -663,6 +673,23 @@ export default function StorePayrollPage() {
     suggestedDraft,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
+  const hasAttendanceBackedLineGap = Boolean(
+    selectedRun &&
+      (selectedRun.attendanceBackedLineCount === 0 ||
+        selectedRun.nonAttendanceBackedLineCount > 0),
+  );
+  const finalizeBlockedByAttendance = hasAttendanceBackedLineGap;
+  const finalizeBlocked =
+    finalizeBlockedByAttendance || unresolvedCashierCharges.length > 0;
+  const payrollAttendanceGuardMessage = selectedRun
+    ? selectedRun.attendanceBackedLineCount === 0
+      ? selectedRun.status === PAYROLL_RUN_STATUS.DRAFT
+        ? "This draft has no attendance-backed payroll lines yet. Rebuild after attendance review. Payroll-tagged charges stay open for a future payroll until a worker has attendance facts in this cutoff."
+        : "This run has no attendance-backed payroll lines, so payout updates stay blocked."
+      : selectedRun.nonAttendanceBackedLineCount > 0
+        ? `This run still contains ${selectedRun.nonAttendanceBackedLineCount} line(s) without attendance facts. Rebuild after fixing attendance or salary setup before payout.`
+        : null
+    : null;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -711,6 +738,16 @@ export default function StorePayrollPage() {
                   </span>
                 </div>
               ))}
+            </div>
+          </SoTCard>
+        ) : null}
+        {payrollAttendanceGuardMessage ? (
+          <SoTCard tone="warning" className="space-y-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Attendance-backed payroll guard
+              </h2>
+              <p className="text-xs text-slate-600">{payrollAttendanceGuardMessage}</p>
             </div>
           </SoTCard>
         ) : null}
@@ -917,7 +954,9 @@ export default function StorePayrollPage() {
                     <Form method="post">
                       <input type="hidden" name="_intent" value="finalize-run" />
                       <input type="hidden" name="payrollRunId" value={selectedRun.id} />
-                      <SoTButton type="submit">Finalize run</SoTButton>
+                      <SoTButton type="submit" disabled={finalizeBlocked}>
+                        Finalize run
+                      </SoTButton>
                     </Form>
                   </>
                 ) : null}
@@ -925,12 +964,29 @@ export default function StorePayrollPage() {
                   <Form method="post">
                     <input type="hidden" name="_intent" value="mark-paid" />
                     <input type="hidden" name="payrollRunId" value={selectedRun.id} />
-                    <SoTButton type="submit" variant="primary">
+                    <SoTButton
+                      type="submit"
+                      variant="primary"
+                      disabled={finalizeBlockedByAttendance}
+                    >
                       Mark paid
                     </SoTButton>
                   </Form>
                 ) : null}
               </div>
+              {selectedRun.status === PAYROLL_RUN_STATUS.DRAFT && finalizeBlocked ? (
+                <p className="text-xs text-amber-700">
+                  Finalization stays disabled until this run has attendance-backed
+                  payroll lines only.
+                </p>
+              ) : null}
+              {selectedRun.status === PAYROLL_RUN_STATUS.FINALIZED &&
+              finalizeBlockedByAttendance ? (
+                <p className="text-xs text-amber-700">
+                  Paid-state updates stay disabled until the run is corrected into an
+                  attendance-backed payroll snapshot.
+                </p>
+              ) : null}
 
               <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 md:grid-cols-2">
                 <div>Created: {formatDateTimeLabel(selectedRun.createdAt)}</div>
