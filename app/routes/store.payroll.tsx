@@ -73,24 +73,56 @@ function parseOptionalInt(value: string | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function toDateOnly(value: Date | string) {
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+function parseCalendarDateParts(value: Date | string) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new Error("Invalid date input.");
+    }
+
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    };
+  }
+
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
+    return {
+      year: Number(yearRaw),
+      month: Number(monthRaw),
+      day: Number(dayRaw),
+    };
+  }
+
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
+
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+}
+
+function toDateOnly(value: Date | string) {
+  const { year, month, day } = parseCalendarDateParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function addDays(date: Date, days: number) {
   const next = new Date(date);
-  next.setDate(next.getDate() + days);
+  next.setUTCDate(next.getUTCDate() + days);
   return next;
 }
 
 function startOfWeek(reference: Date) {
   const date = toDateOnly(reference);
-  const day = date.getDay();
+  const day = date.getUTCDay();
   const diff = day === 0 ? -6 : 1 - day;
   return addDays(date, diff);
 }
@@ -100,11 +132,8 @@ function endOfWeek(reference: Date) {
 }
 
 function formatDateInput(value: Date | string) {
-  const date = toDateOnly(value);
-  const year = String(date.getFullYear());
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const { year, month, day } = parseCalendarDateParts(value);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function formatDateLabel(value: Date | string) {
@@ -112,6 +141,7 @@ function formatDateLabel(value: Date | string) {
     month: "short",
     day: "2-digit",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 

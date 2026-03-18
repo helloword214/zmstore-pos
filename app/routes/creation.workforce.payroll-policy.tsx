@@ -1,11 +1,7 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import { SoTAlert } from "~/components/ui/SoTAlert";
-import { SoTButton } from "~/components/ui/SoTButton";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Link, useLoaderData, useOutlet } from "@remix-run/react";
 import { SoTCard } from "~/components/ui/SoTCard";
-import { SoTFormField } from "~/components/ui/SoTFormField";
-import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import {
@@ -16,52 +12,73 @@ import {
   SoTTh,
   SoTTd,
 } from "~/components/ui/SoTTable";
-import { SelectInput } from "~/components/ui/SelectInput";
-import { SoTTextarea } from "~/components/ui/SoTTextarea";
 import {
+  getEffectiveCompanyPayrollPolicy,
   listCompanyPayrollPolicies,
-  upsertCompanyPayrollPolicy,
 } from "~/services/worker-payroll-policy.server";
 import { requireRole } from "~/utils/auth.server";
+import { db } from "~/utils/db.server";
 
-type ActionData = {
-  ok: false;
-  error: string;
-  action?: string;
+type NormalizedPolicy = {
+  id: number;
+  effectiveFrom: string;
+  payFrequency: string;
+  customCutoffNote: string | null;
+  attendanceIncentiveEnabled: boolean;
+  attendanceIncentiveAmount: number;
+  attendanceIncentiveRequireNoLate: boolean;
+  attendanceIncentiveRequireNoAbsent: boolean;
+  attendanceIncentiveRequireNoSuspension: boolean;
+  sssDeductionEnabled: boolean;
+  philhealthDeductionEnabled: boolean;
+  pagIbigDeductionEnabled: boolean;
+  allowManagerOverride: boolean;
+  sickLeavePayTreatment: string;
+  restDayWorkedPremiumPercent: number;
+  regularHolidayWorkedPremiumPercent: number;
+  specialHolidayWorkedPremiumPercent: number;
+  updatedByLabel: string;
 };
 
-const PAYROLL_FREQUENCY = {
-  WEEKLY: "WEEKLY",
-  BIWEEKLY: "BIWEEKLY",
-  SEMI_MONTHLY: "SEMI_MONTHLY",
-  CUSTOM: "CUSTOM",
-} as const;
+function parseCalendarDateParts(value: Date | string) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new Error("Invalid date input.");
+    }
 
-const SICK_LEAVE_PAY_TREATMENT = {
-  PAID: "PAID",
-  UNPAID: "UNPAID",
-} as const;
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    };
+  }
 
-function parseOptionalInt(value: string | null) {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
+    return {
+      year: Number(yearRaw),
+      month: Number(monthRaw),
+      day: Number(dayRaw),
+    };
+  }
 
-function toDateOnly(value: Date | string) {
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
+
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
 }
 
-function formatDateInput(value: Date | string) {
-  const date = toDateOnly(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(date.getDate()).padStart(2, "0")}`;
+function toDateOnly(value: Date | string) {
+  const { year, month, day } = parseCalendarDateParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function formatDateLabel(value: Date | string) {
@@ -69,7 +86,19 @@ function formatDateLabel(value: Date | string) {
     month: "short",
     day: "2-digit",
     year: "numeric",
+    timeZone: "UTC",
   });
+}
+
+function peso(value: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function boolLabel(value: boolean) {
+  return value ? "Yes" : "No";
 }
 
 function actorLabel(actor: {
@@ -87,30 +116,36 @@ function actorLabel(actor: {
   return actor.email ?? "Unknown actor";
 }
 
-function boolLabel(value: boolean) {
-  return value ? "Yes" : "No";
+function statusMeta(
+  policy: Pick<NormalizedPolicy, "id" | "effectiveFrom">,
+  currentPolicyId: number | null,
+  today: Date,
+) {
+  if (policy.id === currentPolicyId) {
+    return { label: "CURRENT", tone: "success" as const };
+  }
+
+  if (toDateOnly(policy.effectiveFrom).getTime() > today.getTime()) {
+    return { label: "FUTURE", tone: "info" as const };
+  }
+
+  return { label: "HISTORY", tone: "warning" as const };
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["ADMIN"]);
-  const url = new URL(request.url);
-  const selectedPolicyId = parseOptionalInt(url.searchParams.get("policyId"));
-  const saved = url.searchParams.get("saved");
 
-  const policiesRaw = await listCompanyPayrollPolicies();
+  const today = toDateOnly(new Date());
+  const [policiesRaw, currentPolicyRaw] = await Promise.all([
+    listCompanyPayrollPolicies(),
+    getEffectiveCompanyPayrollPolicy(db, today),
+  ]);
+
   const policies = policiesRaw.map((policy) => ({
     id: policy.id,
-    effectiveFrom: policy.effectiveFrom,
+    effectiveFrom: policy.effectiveFrom.toISOString(),
     payFrequency: policy.payFrequency,
     customCutoffNote: policy.customCutoffNote ?? null,
-    restDayWorkedPremiumPercent: Number(policy.restDayWorkedPremiumPercent),
-    regularHolidayWorkedPremiumPercent: Number(
-      policy.regularHolidayWorkedPremiumPercent,
-    ),
-    specialHolidayWorkedPremiumPercent: Number(
-      policy.specialHolidayWorkedPremiumPercent,
-    ),
-    sickLeavePayTreatment: policy.sickLeavePayTreatment,
     attendanceIncentiveEnabled: policy.attendanceIncentiveEnabled,
     attendanceIncentiveAmount: Number(policy.attendanceIncentiveAmount),
     attendanceIncentiveRequireNoLate: policy.attendanceIncentiveRequireNoLate,
@@ -122,338 +157,148 @@ export async function loader({ request }: LoaderFunctionArgs) {
     philhealthDeductionEnabled: policy.philhealthDeductionEnabled,
     pagIbigDeductionEnabled: policy.pagIbigDeductionEnabled,
     allowManagerOverride: policy.allowManagerOverride,
-    createdByLabel: actorLabel(policy.createdBy),
+    sickLeavePayTreatment: policy.sickLeavePayTreatment,
+    restDayWorkedPremiumPercent: Number(policy.restDayWorkedPremiumPercent),
+    regularHolidayWorkedPremiumPercent: Number(
+      policy.regularHolidayWorkedPremiumPercent,
+    ),
+    specialHolidayWorkedPremiumPercent: Number(
+      policy.specialHolidayWorkedPremiumPercent,
+    ),
     updatedByLabel: actorLabel(policy.updatedBy),
-    updatedAt: policy.updatedAt,
   }));
 
-  const selectedPolicy =
-    policies.find((policy) => policy.id === selectedPolicyId) ?? policies[0] ?? null;
+  const currentPolicy =
+    policies.find((policy) => policy.id === currentPolicyRaw?.id) ?? null;
 
   return json({
     policies,
-    selectedPolicy,
-    saved,
-    today: formatDateInput(new Date()),
+    currentPolicy,
+    currentPolicyId: currentPolicyRaw?.id ?? null,
+    todayIso: today.toISOString(),
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireRole(request, ["ADMIN"]);
-  const fd = await request.formData();
-  const intent = String(fd.get("_intent") || "");
+export default function PayrollPolicyDirectoryRoute() {
+  const outlet = useOutlet();
+  const { policies, currentPolicy, currentPolicyId, todayIso } =
+    useLoaderData<typeof loader>();
 
-  try {
-    if (intent !== "save-policy") {
-      return json<ActionData>(
-        { ok: false, error: "Unsupported action.", action: intent },
-        { status: 400 },
-      );
-    }
-
-    const policyId = parseOptionalInt(String(fd.get("policyId") || ""));
-    const effectiveFrom = String(fd.get("effectiveFrom") || "");
-    const payFrequency = String(fd.get("payFrequency") || "");
-    const sickLeavePayTreatment = String(fd.get("sickLeavePayTreatment") || "");
-
-    if (
-      payFrequency !== PAYROLL_FREQUENCY.WEEKLY &&
-      payFrequency !== PAYROLL_FREQUENCY.BIWEEKLY &&
-      payFrequency !== PAYROLL_FREQUENCY.SEMI_MONTHLY &&
-      payFrequency !== PAYROLL_FREQUENCY.CUSTOM
-    ) {
-      throw new Error("Invalid payroll frequency.");
-    }
-
-    if (
-      sickLeavePayTreatment !== SICK_LEAVE_PAY_TREATMENT.PAID &&
-      sickLeavePayTreatment !== SICK_LEAVE_PAY_TREATMENT.UNPAID
-    ) {
-      throw new Error("Invalid sick leave treatment.");
-    }
-
-    const policy = await upsertCompanyPayrollPolicy({
-      id: policyId ?? undefined,
-      effectiveFrom,
-      payFrequency,
-      customCutoffNote: String(fd.get("customCutoffNote") || ""),
-      restDayWorkedPremiumPercent: Number(
-        fd.get("restDayWorkedPremiumPercent") || 0,
-      ),
-      regularHolidayWorkedPremiumPercent: Number(
-        fd.get("regularHolidayWorkedPremiumPercent") || 0,
-      ),
-      specialHolidayWorkedPremiumPercent: Number(
-        fd.get("specialHolidayWorkedPremiumPercent") || 0,
-      ),
-      sickLeavePayTreatment,
-      attendanceIncentiveEnabled: String(fd.get("attendanceIncentiveEnabled") || "") === "1",
-      attendanceIncentiveAmount: Number(fd.get("attendanceIncentiveAmount") || 0),
-      attendanceIncentiveRequireNoLate:
-        String(fd.get("attendanceIncentiveRequireNoLate") || "") === "1",
-      attendanceIncentiveRequireNoAbsent:
-        String(fd.get("attendanceIncentiveRequireNoAbsent") || "") === "1",
-      attendanceIncentiveRequireNoSuspension:
-        String(fd.get("attendanceIncentiveRequireNoSuspension") || "") === "1",
-      sssDeductionEnabled: String(fd.get("sssDeductionEnabled") || "") === "1",
-      philhealthDeductionEnabled:
-        String(fd.get("philhealthDeductionEnabled") || "") === "1",
-      pagIbigDeductionEnabled:
-        String(fd.get("pagIbigDeductionEnabled") || "") === "1",
-      allowManagerOverride:
-        String(fd.get("allowManagerOverride") || "") === "1",
-      actorUserId: me.userId,
-    });
-
-    return redirect(
-      `/creation/workforce/payroll-policy?policyId=${policy.id}&saved=policy`,
-    );
-  } catch (error) {
-    return json<ActionData>(
-      {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to save payroll policy.",
-        action: intent,
-      },
-      { status: 400 },
-    );
+  if (outlet) {
+    return outlet;
   }
-}
 
-export default function PayrollPolicyCreationRoute() {
-  const { policies, selectedPolicy, saved, today } = useLoaderData<typeof loader>();
-  const actionData = useActionData<ActionData>();
+  const today = toDateOnly(todayIso);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Payroll Policy Setup"
-        subtitle="Admin-owned company payroll defaults for cutoffs, premiums, attendance incentive rules, and whether SSS, PhilHealth, and Pag-IBIG are included on every payroll run."
+        title="Payroll Policy History"
+        subtitle="Overview of effective-dated payroll policy rows. Create a new policy row for future effectivity, or open an existing row only when you need to correct it."
         backTo="/"
         backLabel="Admin Dashboard"
       />
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-6">
-        {saved === "policy" ? (
-          <SoTAlert tone="success">Payroll policy saved.</SoTAlert>
-        ) : null}
-        {actionData && !actionData.ok ? (
-          <SoTAlert tone="warning">{actionData.error}</SoTAlert>
-        ) : null}
-
         <div className="grid gap-5 lg:grid-cols-12">
-          <section className="lg:col-span-7">
-            <SoTCard interaction="form" className="space-y-4">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Company payroll policy
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Every new payroll run snapshots the policy effective on its pay
-                  date. Editing here affects future runs only. Enabled
-                  government deductions apply on every payroll run using the
-                  employee-specific setup active on the pay date.
-                </p>
-              </div>
-
-              <Form method="post" className="space-y-3">
-                <input type="hidden" name="_intent" value="save-policy" />
-                <input type="hidden" name="policyId" value={selectedPolicy?.id ?? ""} />
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <SoTFormField label="Effective from">
-                    <SoTInput
-                      type="date"
-                      name="effectiveFrom"
-                      defaultValue={selectedPolicy?.effectiveFrom ? formatDateInput(selectedPolicy.effectiveFrom) : today}
-                      required
-                    />
-                  </SoTFormField>
-                  <SoTFormField label="Pay frequency">
-                    <SelectInput
-                      name="payFrequency"
-                      defaultValue={
-                        selectedPolicy?.payFrequency ?? PAYROLL_FREQUENCY.SEMI_MONTHLY
-                      }
-                      options={[
-                        {
-                          value: PAYROLL_FREQUENCY.SEMI_MONTHLY,
-                          label: "Semi-monthly",
-                        },
-                        { value: PAYROLL_FREQUENCY.WEEKLY, label: "Weekly" },
-                        { value: PAYROLL_FREQUENCY.BIWEEKLY, label: "Biweekly" },
-                        { value: PAYROLL_FREQUENCY.CUSTOM, label: "Custom" },
-                      ]}
-                    />
-                  </SoTFormField>
-                </div>
-
-                <SoTTextarea
-                  name="customCutoffNote"
-                  label="Custom cutoff note"
-                  rows={2}
-                  defaultValue={selectedPolicy?.customCutoffNote ?? ""}
-                  placeholder="Use only when pay frequency is custom or needs clarification"
-                />
-
-                <div className="grid gap-3 md:grid-cols-3">
-                  <SoTFormField label="Rest-day premium %">
-                    <SoTInput
-                      name="restDayWorkedPremiumPercent"
-                      inputMode="decimal"
-                      defaultValue={selectedPolicy?.restDayWorkedPremiumPercent ?? 0}
-                      required
-                    />
-                  </SoTFormField>
-                  <SoTFormField label="Regular holiday %">
-                    <SoTInput
-                      name="regularHolidayWorkedPremiumPercent"
-                      inputMode="decimal"
-                      defaultValue={
-                        selectedPolicy?.regularHolidayWorkedPremiumPercent ?? 0
-                      }
-                      required
-                    />
-                  </SoTFormField>
-                  <SoTFormField label="Special holiday %">
-                    <SoTInput
-                      name="specialHolidayWorkedPremiumPercent"
-                      inputMode="decimal"
-                      defaultValue={
-                        selectedPolicy?.specialHolidayWorkedPremiumPercent ?? 0
-                      }
-                      required
-                    />
-                  </SoTFormField>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <SoTFormField label="Sick leave treatment">
-                    <SelectInput
-                      name="sickLeavePayTreatment"
-                      defaultValue={
-                        selectedPolicy?.sickLeavePayTreatment ??
-                        SICK_LEAVE_PAY_TREATMENT.UNPAID
-                      }
-                      options={[
-                        {
-                          value: SICK_LEAVE_PAY_TREATMENT.UNPAID,
-                          label: "Unpaid",
-                        },
-                        { value: SICK_LEAVE_PAY_TREATMENT.PAID, label: "Paid" },
-                      ]}
-                    />
-                  </SoTFormField>
-                  <SoTFormField label="Attendance incentive amount">
-                    <SoTInput
-                      name="attendanceIncentiveAmount"
-                      inputMode="decimal"
-                      defaultValue={selectedPolicy?.attendanceIncentiveAmount ?? 0}
-                      required
-                    />
-                  </SoTFormField>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <CheckboxField
-                    name="attendanceIncentiveEnabled"
-                    label="Enable attendance incentive"
-                    defaultChecked={
-                      selectedPolicy?.attendanceIncentiveEnabled ?? true
-                    }
-                  />
-                  <CheckboxField
-                    name="allowManagerOverride"
-                    label="Allow manager override"
-                    defaultChecked={
-                      selectedPolicy?.allowManagerOverride ?? true
-                    }
-                  />
-                  <CheckboxField
-                    name="attendanceIncentiveRequireNoLate"
-                    label="Require no late flags"
-                    defaultChecked={
-                      selectedPolicy?.attendanceIncentiveRequireNoLate ?? true
-                    }
-                  />
-                  <CheckboxField
-                    name="attendanceIncentiveRequireNoAbsent"
-                    label="Require no absences"
-                    defaultChecked={
-                      selectedPolicy?.attendanceIncentiveRequireNoAbsent ?? true
-                    }
-                  />
-                  <CheckboxField
-                    name="attendanceIncentiveRequireNoSuspension"
-                    label="Require no suspension"
-                    defaultChecked={
-                      selectedPolicy?.attendanceIncentiveRequireNoSuspension ?? true
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Government deduction switches
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      These toggles only decide whether the employee-specific
-                      SSS, PhilHealth, and Pag-IBIG amounts are included during
-                      payroll rebuild and review.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <CheckboxField
-                      name="sssDeductionEnabled"
-                      label="Include SSS"
-                      defaultChecked={selectedPolicy?.sssDeductionEnabled ?? false}
-                    />
-                    <CheckboxField
-                      name="philhealthDeductionEnabled"
-                      label="Include PhilHealth"
-                      defaultChecked={
-                        selectedPolicy?.philhealthDeductionEnabled ?? false
-                      }
-                    />
-                    <CheckboxField
-                      name="pagIbigDeductionEnabled"
-                      label="Include Pag-IBIG"
-                      defaultChecked={
-                        selectedPolicy?.pagIbigDeductionEnabled ?? false
-                      }
-                    />
-                  </div>
-                </div>
-
-                <SoTButton type="submit" variant="primary">
-                  Save payroll policy
-                </SoTButton>
-              </Form>
-            </SoTCard>
-          </section>
-
-          <aside className="space-y-5 lg:col-span-5">
-            <SoTCard className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
+          <section className="space-y-5 lg:col-span-7">
+            <SoTCard className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    Policy history
+                    Current payroll defaults
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Effective-dated records remain available for audit and future runs.
+                    This is the policy row payroll will snapshot today. New rows
+                    should be used for future effectivity changes.
                   </p>
                 </div>
                 <Link
-                  to="/creation/workforce/pay-profiles"
-                  className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  to="/creation/workforce/payroll-policy/new"
+                  className="inline-flex h-9 items-center rounded-xl bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800"
                 >
-                  Pay profiles
+                  Add policy row
                 </Link>
+              </div>
+
+              {currentPolicy ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Effective from
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      {formatDateLabel(currentPolicy.effectiveFrom)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Frequency {currentPolicy.payFrequency} · Sick leave{" "}
+                      {currentPolicy.sickLeavePayTreatment.toLowerCase()}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Government deductions
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      SSS {boolLabel(currentPolicy.sssDeductionEnabled)} · PH{" "}
+                      {boolLabel(currentPolicy.philhealthDeductionEnabled)} · PI{" "}
+                      {boolLabel(currentPolicy.pagIbigDeductionEnabled)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Manager override {boolLabel(currentPolicy.allowManagerOverride)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Attendance incentive
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      {boolLabel(currentPolicy.attendanceIncentiveEnabled)} ·{" "}
+                      {peso(currentPolicy.attendanceIncentiveAmount)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      No late {boolLabel(currentPolicy.attendanceIncentiveRequireNoLate)}
+                      {" · "}No absent{" "}
+                      {boolLabel(currentPolicy.attendanceIncentiveRequireNoAbsent)}
+                      {" · "}No suspension{" "}
+                      {boolLabel(
+                        currentPolicy.attendanceIncentiveRequireNoSuspension,
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Premiums
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      Rest {currentPolicy.restDayWorkedPremiumPercent}% · Regular{" "}
+                      {currentPolicy.regularHolidayWorkedPremiumPercent}% · Special{" "}
+                      {currentPolicy.specialHolidayWorkedPremiumPercent}%
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Last updated by {currentPolicy.updatedByLabel}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                  No payroll policy row exists yet. Create the first one before
+                  managers build payroll runs.
+                </div>
+              )}
+            </SoTCard>
+          </section>
+
+          <aside className="lg:col-span-5">
+            <SoTCard className="space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Policy history
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Open an existing row only when you need to correct that exact
+                  record. Use a new row for future policy changes.
+                </p>
               </div>
 
               <SoTTable>
@@ -468,133 +313,62 @@ export default function PayrollPolicyCreationRoute() {
                   {policies.length === 0 ? (
                     <SoTTableEmptyRow
                       colSpan={3}
-                      message="No payroll policy records yet."
+                      message="No payroll policy rows yet."
                     />
                   ) : (
-                    policies.map((policy) => (
-                      <SoTTableRow key={policy.id}>
-                        <SoTTd>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">
-                              {formatDateLabel(policy.effectiveFrom)}
+                    policies.map((policy) => {
+                      const status = statusMeta(policy, currentPolicyId, today);
+                      return (
+                        <SoTTableRow key={policy.id}>
+                          <SoTTd>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span>{formatDateLabel(policy.effectiveFrom)}</span>
+                                <SoTStatusBadge tone={status.tone}>
+                                  {status.label}
+                                </SoTStatusBadge>
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                Updated by {policy.updatedByLabel}
+                              </div>
                             </div>
-                            <div className="text-xs text-slate-500">
-                              Updated by {policy.updatedByLabel}
+                          </SoTTd>
+                          <SoTTd>
+                            <div className="space-y-1 text-xs text-slate-600">
+                              <div>{policy.payFrequency}</div>
+                              <div>
+                                Incentive {boolLabel(policy.attendanceIncentiveEnabled)} ·{" "}
+                                {peso(policy.attendanceIncentiveAmount)}
+                              </div>
+                              <div>
+                                Govt deductions: SSS{" "}
+                                {boolLabel(policy.sssDeductionEnabled)} · PH{" "}
+                                {boolLabel(policy.philhealthDeductionEnabled)} · PI{" "}
+                                {boolLabel(policy.pagIbigDeductionEnabled)}
+                              </div>
+                              {policy.customCutoffNote ? (
+                                <div>Note: {policy.customCutoffNote}</div>
+                              ) : null}
                             </div>
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="space-y-1 text-xs text-slate-600">
-                            <div>{policy.payFrequency}</div>
-                            <div>
-                              Sick leave {policy.sickLeavePayTreatment.toLowerCase()}
-                            </div>
-                            <div>
-                              Incentive {boolLabel(policy.attendanceIncentiveEnabled)} ·{" "}
-                              PHP {policy.attendanceIncentiveAmount.toFixed(2)}
-                            </div>
-                            <div>
-                              Govt deductions: SSS {boolLabel(policy.sssDeductionEnabled)}
-                              {" "}· PH {boolLabel(policy.philhealthDeductionEnabled)}
-                              {" "}· PI {boolLabel(policy.pagIbigDeductionEnabled)}
-                            </div>
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <Link
-                            to={`/creation/workforce/payroll-policy?policyId=${policy.id}`}
-                            className={`inline-flex h-9 items-center rounded-xl border px-3 text-sm font-medium ${
-                              selectedPolicy?.id === policy.id
-                                ? "border-indigo-300 bg-indigo-50 text-indigo-800"
-                                : "border-slate-300 bg-white text-slate-700"
-                            }`}
-                          >
-                            {selectedPolicy?.id === policy.id ? "Selected" : "Open"}
-                          </Link>
-                        </SoTTd>
-                      </SoTTableRow>
-                    ))
+                          </SoTTd>
+                          <SoTTd>
+                            <Link
+                              to={`/creation/workforce/payroll-policy/${policy.id}/edit`}
+                              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Edit row
+                            </Link>
+                          </SoTTd>
+                        </SoTTableRow>
+                      );
+                    })
                   )}
                 </tbody>
               </SoTTable>
             </SoTCard>
-
-            {selectedPolicy ? (
-              <SoTCard className="space-y-2">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Selected policy summary
-                </h2>
-                <div className="space-y-1 text-sm text-slate-700">
-                  <div>
-                    <SoTStatusBadge tone="info">
-                      {selectedPolicy.payFrequency}
-                    </SoTStatusBadge>
-                  </div>
-                  <div>
-                    Rest-day premium: {selectedPolicy.restDayWorkedPremiumPercent}%
-                  </div>
-                  <div>
-                    Regular holiday premium:{" "}
-                    {selectedPolicy.regularHolidayWorkedPremiumPercent}%
-                  </div>
-                  <div>
-                    Special holiday premium:{" "}
-                    {selectedPolicy.specialHolidayWorkedPremiumPercent}%
-                  </div>
-                  <div>
-                    No late required:{" "}
-                    {boolLabel(selectedPolicy.attendanceIncentiveRequireNoLate)}
-                  </div>
-                  <div>
-                    No absent required:{" "}
-                    {boolLabel(selectedPolicy.attendanceIncentiveRequireNoAbsent)}
-                  </div>
-                  <div>
-                    No suspension required:{" "}
-                    {boolLabel(
-                      selectedPolicy.attendanceIncentiveRequireNoSuspension,
-                    )}
-                  </div>
-                  <div>
-                    Include SSS: {boolLabel(selectedPolicy.sssDeductionEnabled)}
-                  </div>
-                  <div>
-                    Include PhilHealth:{" "}
-                    {boolLabel(selectedPolicy.philhealthDeductionEnabled)}
-                  </div>
-                  <div>
-                    Include Pag-IBIG:{" "}
-                    {boolLabel(selectedPolicy.pagIbigDeductionEnabled)}
-                  </div>
-                </div>
-              </SoTCard>
-            ) : null}
           </aside>
         </div>
       </div>
     </main>
-  );
-}
-
-function CheckboxField({
-  name,
-  label,
-  defaultChecked,
-}: {
-  name: string;
-  label: string;
-  defaultChecked: boolean;
-}) {
-  return (
-    <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-      <input
-        type="checkbox"
-        name={name}
-        value="1"
-        defaultChecked={defaultChecked}
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-300"
-      />
-      <span>{label}</span>
-    </label>
   );
 }

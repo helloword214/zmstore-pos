@@ -93,20 +93,28 @@ export type UpsertCompanyPayrollPolicyInput = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const toDateOnly = (value: Date | string) => {
+const parseCalendarDateParts = (value: Date | string) => {
   if (value instanceof Date) {
-    return new Date(
-      Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()),
-    );
+    if (Number.isNaN(value.getTime())) {
+      throw new Error("Invalid date input.");
+    }
+
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    };
   }
 
   const trimmed = value.trim();
-  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(trimmed);
   if (dateOnlyMatch) {
     const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
-    return new Date(
-      Date.UTC(Number(yearRaw), Number(monthRaw) - 1, Number(dayRaw)),
-    );
+    return {
+      year: Number(yearRaw),
+      month: Number(monthRaw),
+      day: Number(dayRaw),
+    };
   }
 
   const parsed = new Date(trimmed);
@@ -114,9 +122,16 @@ const toDateOnly = (value: Date | string) => {
     throw new Error("Invalid date input.");
   }
 
-  return new Date(
-    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()),
-  );
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+};
+
+const toDateOnly = (value: Date | string) => {
+  const { year, month, day } = parseCalendarDateParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 };
 
 const toOptionalDateOnly = (value?: Date | string | null) =>
@@ -718,17 +733,35 @@ export async function upsertCompanyPayrollPolicy(
     updatedById: input.actorUserId ?? null,
   } satisfies Prisma.CompanyPayrollPolicyUncheckedUpdateInput;
 
-  if (input.id) {
-    return prisma.companyPayrollPolicy.update({
-      where: { id: input.id },
-      data,
-    });
-  }
+  try {
+    if (input.id) {
+      return await prisma.companyPayrollPolicy.update({
+        where: { id: input.id },
+        data,
+      });
+    }
 
-  return prisma.companyPayrollPolicy.create({
-    data: {
-      ...data,
-      createdById: input.actorUserId ?? null,
-    },
-  });
+    return await prisma.companyPayrollPolicy.create({
+      data: {
+        ...data,
+        createdById: input.actorUserId ?? null,
+      },
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : null;
+
+    if (errorCode === "P2002") {
+      throw new Error(
+        "A payroll policy row already exists on that effective-from date. Use a different date or edit the existing row.",
+      );
+    }
+
+    throw error;
+  }
 }
