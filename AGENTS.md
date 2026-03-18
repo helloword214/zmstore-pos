@@ -6,16 +6,18 @@ This file is the permanent governance entry point for this repository.
 
 1. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Chat Operating Rules/Chat Execution Rules.md`
 2. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/Documentation Architecture Standard.md`
-3. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/AI Governance SOP.md`
-4. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/guide/Commercial Clearance System V2`
+3. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/QA Testing Architecture Standard.md`
+4. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/AI Governance SOP.md`
+5. `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/guide/Commercial Clearance System V2`
 
 If any instruction conflicts, follow this precedence:
 
 1. `Chat Execution Rules.md`
 2. `Documentation Architecture Standard.md`
-3. `AI Governance SOP.md`
-4. `Commercial Clearance System V2`
-5. Other project docs
+3. `QA Testing Architecture Standard.md`
+4. `AI Governance SOP.md`
+5. `Commercial Clearance System V2`
+6. Other project docs
 
 ## Intent Modes
 
@@ -135,6 +137,12 @@ Then wait for explicit `GO`.
 5. Diagram docs visualize flow and ownership; they must not become alternate canonical specifications.
 6. Draft/supporting docs may explain or propose, but must not silently override canonical docs.
 7. Follow `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/Documentation Architecture Standard.md` for full documentation architecture rules.
+
+## QA Testing Architecture Rule (Mandatory)
+
+1. QA/testing structure, naming, and artifact boundaries are owned by `/Users/johnmichaell.benito/Desktop/client project/zmstore-pos-2/docs/Governance SOP/QA Testing Architecture Standard.md`.
+2. Use that owner doc when deciding between manual QA, browser QA, setup/cleanup scripts, and QA checklist artifacts.
+3. Do not create generic QA/testing filenames; follow the owner doc naming convention instead.
 
 ## Change Safety
 

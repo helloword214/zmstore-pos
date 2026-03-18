@@ -9,6 +9,8 @@
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc",
+    "qa:workforce:payroll:happy-path:setup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-setup.ts",
+    "qa:workforce:payroll:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-cleanup.ts",
     "automation:flow:setup": "node scripts/automation/business-flow/index.mjs setup",
     "automation:flow:smoke": "node scripts/automation/business-flow/index.mjs smoke",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",

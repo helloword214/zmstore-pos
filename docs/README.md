@@ -5,10 +5,17 @@ This repository uses a tiered documentation model so engineers can quickly find 
 ## 1) Governance (Highest Priority)
 
 1. `docs/Chat Operating Rules/Chat Execution Rules.md`
-2. `docs/Governance SOP/AI Governance SOP.md`
-3. `docs/guide/Commercial Clearance System V2`
+2. `docs/Governance SOP/Documentation Architecture Standard.md`
+3. `docs/Governance SOP/QA Testing Architecture Standard.md`
+4. `docs/Governance SOP/AI Governance SOP.md`
+5. `docs/guide/Commercial Clearance System V2`
 
 If guidance conflicts, follow the order above.
+
+QA/testing architecture reminder:
+
+1. `docs/Governance SOP/QA Testing Architecture Standard.md` owns QA/testing structure, naming, and artifact boundaries.
+2. Scenario checklists, Playwright specs, and setup/cleanup scripts should point back to that owner doc instead of redefining the rules.
 
 ## 2) Domain Canonical (Binding for Product Behavior)
 
@@ -39,12 +46,20 @@ Boundary reminder:
 1. `ui:cycle` and `automation:flow:smoke` are separate modes with different input contracts.
 2. `UI_RUN_ID` is not a business-flow smoke requirement.
 
-## 4) Archive and Superseded Notes
+## 4) QA Scenario Docs
+
+Use this stack when the goal is manual QA setup, scenario checklists, or local QA cleanup for a named product flow:
+
+1. `docs/Governance SOP/QA Testing Architecture Standard.md`
+2. `docs/qa/README.md`
+3. scenario-specific checklist such as `docs/qa/workforce/workforce-payroll-happy-path-checklist.md`
+
+## 5) Archive and Superseded Notes
 
 Use `docs/archive/README.md` for deprecation and migration notes.
 Do not use archived documents as implementation authority.
 
-## 5) Authoring Rules (Required)
+## 6) Authoring Rules (Required)
 
 Every new or updated domain document must include:
 
@@ -55,7 +70,7 @@ Every new or updated domain document must include:
 - `Superseded By:` (optional)
 - If behavior/flow changed in code, update the impacted canonical flow and diagram docs in the same objective/PR.
 
-## 6) Fast Path
+## 7) Fast Path
 
 For delivery-commercial bugs, read in this order:
 
