@@ -45,7 +45,7 @@ const creationShortcuts: AdminShortcut[] = [
     to: "/creation/workforce/pay-profiles",
     title: "Employee Pay Profiles",
     description:
-      "Maintain effective-dated daily or monthly pay basis records and daily-rate equivalents.",
+      "Maintain effective-dated daily salary rows and employee-specific government deductions.",
     eyebrow: "Payroll Setup",
     tone: "emerald",
   },
