@@ -410,6 +410,11 @@ Rules:
 2. finalized run is audit-safe and immutable except formal void/adjustment flow
 3. paid run must never be silently recalculated or rebundled into a later payout
 4. every payroll line must resolve to one canonical `employeeId`
+5. a payroll line is valid only when `attendanceSnapshotIds` resolves at least one attendance fact inside the cutoff
+6. payroll-tagged rider/cashier charges alone must not create a synthetic zero-pay payroll line
+7. if attendance exists but the attendance-time salary snapshot is missing `payProfileId` or `dailyRate`, payroll rebuild must block until attendance or salary setup is corrected
+8. payroll run cannot be finalized or marked paid unless it contains at least one attendance-backed payroll line
+9. any charge-only item with no attendance-backed payroll basis remains open for a future payroll run
 
 ## Charge Deduction Contract
 

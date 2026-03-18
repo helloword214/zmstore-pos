@@ -329,6 +329,16 @@ export const parsePayrollRunLineAdditionSnapshot = (
   };
 };
 
+export const parsePayrollAttendanceSnapshotIds = (snapshot: unknown) => {
+  if (!Array.isArray(snapshot)) {
+    return [];
+  }
+
+  return snapshot
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+};
+
 export const getWorkerPayrollRunEmployeeOverride = (
   snapshot: Prisma.JsonValue | null,
   employeeId: number,
@@ -336,6 +346,32 @@ export const getWorkerPayrollRunEmployeeOverride = (
   parsePayrollRunManagerOverrideSnapshot(snapshot).employeeOverrides[
     String(employeeId)
   ] ?? null;
+
+const summarizeAttendanceBackedPayrollLines = (
+  lines: Array<{
+    employeeId: number;
+    attendanceSnapshotIds: unknown;
+  }>,
+) => {
+  let attendanceBackedLineCount = 0;
+  const nonAttendanceBackedEmployeeIds = new Set<number>();
+
+  for (const line of lines) {
+    if (parsePayrollAttendanceSnapshotIds(line.attendanceSnapshotIds).length > 0) {
+      attendanceBackedLineCount += 1;
+      continue;
+    }
+
+    nonAttendanceBackedEmployeeIds.add(line.employeeId);
+  }
+
+  return {
+    attendanceBackedLineCount,
+    nonAttendanceBackedEmployeeIds: Array.from(nonAttendanceBackedEmployeeIds).sort(
+      (left, right) => left - right,
+    ),
+  };
+};
 
 const requiresFrozenDailyRate = (row: AttendanceRow) =>
   row.attendanceResult !== AttendanceResult.NOT_REQUIRED &&
@@ -789,15 +825,18 @@ export async function rebuildWorkerPayrollRunLines(
       orderBy: [{ dutyDate: "asc" }, { workerId: "asc" }, { id: "asc" }],
     });
 
-    const missingSnapshots = attendanceRows
+    const missingAttendanceSalarySnapshots = attendanceRows
       .filter(
         (row) =>
-          requiresFrozenDailyRate(row) && row.dailyRate == null,
+          requiresFrozenDailyRate(row) &&
+          (row.dailyRate == null || row.payProfileId == null),
       )
       .map((row) => row.id);
-    if (missingSnapshots.length > 0) {
+    if (missingAttendanceSalarySnapshots.length > 0) {
       throw new Error(
-        `Payroll run cannot rebuild while attendance snapshots are missing daily rate on rows: ${missingSnapshots.join(", ")}.`,
+        "Payroll run cannot rebuild while attendance salary snapshots are missing " +
+          `daily rate or pay-profile anchors on rows: ${missingAttendanceSalarySnapshots.join(", ")}. ` +
+          "Fix attendance review or daily salary setup first.",
       );
     }
 
@@ -811,6 +850,33 @@ export async function rebuildWorkerPayrollRunLines(
       const bucket = attendanceByEmployee.get(row.workerId) ?? [];
       bucket.push(row);
       attendanceByEmployee.set(row.workerId, bucket);
+    }
+
+    const staleChargeOnlyDeductionEmployeeIds = Array.from(
+      new Set(
+        existingLines
+          .filter((line) => !attendanceByEmployee.has(line.employeeId))
+          .filter((line) => {
+            const deductionSnapshot = parsePayrollDeductionSnapshot(
+              line.deductionSnapshot,
+            );
+
+            return (
+              Number(line.chargeDeductionAmount) > MONEY_EPS ||
+              deductionSnapshot.appliedPayments.length > 0
+            );
+          })
+          .map((line) => line.employeeId),
+      ),
+    ).sort((left, right) => left - right);
+
+    if (staleChargeOnlyDeductionEmployeeIds.length > 0) {
+      throw new Error(
+        "Payroll run cannot rebuild because posted charge deductions already exist " +
+          "on employees without attendance facts in this cutoff: " +
+          `${staleChargeOnlyDeductionEmployeeIds.join(", ")}. ` +
+          "Review the draft before rebuilding again.",
+      );
     }
 
     const chargeItemsByEmployee = new Map<number, PayrollTaggedChargeItem[]>();
@@ -827,9 +893,6 @@ export async function rebuildWorkerPayrollRunLines(
     const employeeIds = Array.from(
       new Set([
         ...attendanceByEmployee.keys(),
-        ...chargeItemsByEmployee.keys(),
-        ...existingLineByEmployee.keys(),
-        ...Object.keys(overrideSnapshot.employeeOverrides).map((value) => Number(value)),
       ]),
     )
       .filter((employeeId) => Number.isFinite(employeeId) && employeeId > 0)
@@ -915,15 +978,7 @@ export async function rebuildWorkerPayrollRunLines(
         chargeDeductionAmount + statutoryDeductionAmount,
       );
       const netPay = roundMoney(grossPay - totalDeductions);
-      const shouldKeepLine =
-        employeeAttendance.length > 0 ||
-        employeeChargeItems.length > 0 ||
-        statutoryDeductionAmount > MONEY_EPS ||
-        totalDeductions > MONEY_EPS ||
-        priorDeductionSnapshot.appliedPayments.length > 0 ||
-        hasMeaningfulOverride(employeeOverride);
-
-      if (!shouldKeepLine) {
+      if (employeeAttendance.length === 0) {
         continue;
       }
 
@@ -1210,7 +1265,16 @@ export async function finalizeWorkerPayrollRun(
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const run = await tx.payrollRun.findUnique({
       where: { id: payrollRunId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        payrollRunLines: {
+          select: {
+            employeeId: true,
+            attendanceSnapshotIds: true,
+          },
+        },
+      },
     });
     if (!run) {
       throw new Error("Payroll run not found.");
@@ -1226,11 +1290,16 @@ export async function finalizeWorkerPayrollRun(
       );
     }
 
-    const lineCount = await tx.payrollRunLine.count({
-      where: { payrollRunId },
-    });
-    if (lineCount === 0) {
-      throw new Error("Payroll run has no lines to finalize.");
+    const lineSummary = summarizeAttendanceBackedPayrollLines(run.payrollRunLines);
+    if (lineSummary.attendanceBackedLineCount === 0) {
+      throw new Error("Payroll run has no attendance-backed lines to finalize.");
+    }
+    if (lineSummary.nonAttendanceBackedEmployeeIds.length > 0) {
+      throw new Error(
+        "Payroll run still contains lines without attendance facts for employee IDs: " +
+          `${lineSummary.nonAttendanceBackedEmployeeIds.join(", ")}. ` +
+          "Rebuild the draft after fixing attendance or salary setup.",
+      );
     }
 
     return tx.payrollRun.update({
@@ -1251,13 +1320,34 @@ export async function markWorkerPayrollRunPaid(
 ) {
   const run = await prisma.payrollRun.findUnique({
     where: { id: payrollRunId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      payrollRunLines: {
+        select: {
+          employeeId: true,
+          attendanceSnapshotIds: true,
+        },
+      },
+    },
   });
   if (!run) {
     throw new Error("Payroll run not found.");
   }
   if (run.status !== PayrollRunStatus.FINALIZED) {
     throw new Error("Only FINALIZED payroll runs can be marked PAID.");
+  }
+
+  const lineSummary = summarizeAttendanceBackedPayrollLines(run.payrollRunLines);
+  if (lineSummary.attendanceBackedLineCount === 0) {
+    throw new Error("Payroll run has no attendance-backed lines to mark paid.");
+  }
+  if (lineSummary.nonAttendanceBackedEmployeeIds.length > 0) {
+    throw new Error(
+      "Payroll run still contains lines without attendance facts for employee IDs: " +
+        `${lineSummary.nonAttendanceBackedEmployeeIds.join(", ")}. ` +
+        "Paid-state updates stay blocked until the draft is rebuilt correctly.",
+    );
   }
 
   return prisma.payrollRun.update({
