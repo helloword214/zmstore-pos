@@ -69,6 +69,7 @@ Use this scenario family with the matching setup and cleanup commands:
 
 1. `employee/employee-onboarding-create-happy-path-checklist.md`
 2. `employee/employee-onboarding-rider-happy-path-checklist.md`
+3. `employee/employee-onboarding-store-manager-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -78,6 +79,9 @@ Use this scenario family with the matching setup and cleanup commands:
 4. `npm run qa:employee:onboarding-rider:happy-path:setup`
 5. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:onboarding-rider:happy-path`
 6. `npm run qa:employee:onboarding-rider:happy-path:cleanup`
+7. `npm run qa:employee:onboarding-store-manager:happy-path:setup`
+8. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:onboarding-store-manager:happy-path`
+9. `npm run qa:employee:onboarding-store-manager:happy-path:cleanup`
 
 ### Product
 
