@@ -23,6 +23,11 @@ Verify one attendance-backed payroll happy path using a repeatable local QA scen
 2. Copy the printed employee name, cutoff dates, and QA marker from the console output.
 3. Do not apply charge deductions in this scenario if you want cleanup to fully reset the local data afterward.
 
+## Browser QA Steps
+
+1. Run `npm run ui:test:workforce:payroll:happy-path`.
+2. The browser scenario stops after the payroll run reaches `FINALIZED`.
+
 ## Expected Scenario Shape
 
 The setup creates or confirms:
@@ -54,7 +59,7 @@ Expected base-pay formula:
 9. Confirm that the base attendance pay matches the setup formula.
 10. If payroll policy currently enables SSS, PhilHealth, or Pag-IBIG, confirm the employee deduction row is reflected in deductions.
 11. Confirm the run can be finalized because it now has attendance-backed payroll lines.
-12. Optionally mark the run paid if you are only validating the paid-state path and did not apply charge deductions.
+12. Stop at `FINALIZED` for this canonical happy path.
 
 ## Expected Outcomes
 
@@ -62,7 +67,8 @@ Expected base-pay formula:
 2. the selected rider has positive gross pay
 3. deductions stay separate from base attendance pay
 4. finalize is enabled only after rebuild creates attendance-backed lines
-5. no runtime crash occurs on the payroll page during draft, rebuild, finalize, or paid actions
+5. the canonical happy path ends at `FINALIZED`, with `Mark paid` available as a later-state action
+6. no runtime crash occurs on the payroll page during draft, rebuild, or finalize actions
 
 ## Cleanup
 
