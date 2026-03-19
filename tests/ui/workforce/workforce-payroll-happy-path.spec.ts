@@ -70,18 +70,24 @@ test.describe("workforce payroll happy path", () => {
       page.getByRole("button", { name: /^Finalize run$/i }),
     ).toBeEnabled();
 
-    await workerRow.getByRole("link", { name: /^Review$/i }).click();
+    await workerRow
+      .getByRole("link", { name: /^(Review|Selected)$/i })
+      .click();
 
     await expect(
       page.getByRole("heading", { name: /^Selected employee$/i }),
     ).toBeVisible();
     await expect(page.getByText(scenario.employeeLabel, { exact: true })).toBeVisible();
     await expect(
-      page.getByText(`Base attendance pay: ${scenario.expectedBasePayLabel}`),
+      page.getByText(
+        `Base attendance pay: ${scenario.expectedBasePayLabel}`,
+        { exact: true },
+      ),
     ).toBeVisible();
     await expect(
       page.getByText(
         `Government deductions: ${scenario.expectedGovernmentDeductionsLabel}`,
+        { exact: true },
       ),
     ).toBeVisible();
 
