@@ -79,6 +79,8 @@ Use browser QA when:
 2. the value comes from checking actual UI behavior
 3. the flow should be regression-safe across future changes
 
+Browser QA should prefer accessible selectors first, especially real label-to-control bindings for form fields.
+
 ### QA Setup and Cleanup
 
 QA setup prepares a valid scenario for testing.
@@ -237,6 +239,24 @@ Use browser QA when:
 1. the scenario is stable enough to repeat
 2. UI regressions are likely
 3. the value comes from verifying real user interactions
+
+## Playwright Execution Rule
+
+For local browser QA in this repo:
+
+1. prefer isolated browser contexts or explicit `storageState` files over attaching to an existing persistent browser session
+2. on the local Remix/Vite server, prefer `domcontentloaded` plus explicit locator or URL waits over `networkidle`
+3. keep selectors accessibility-first when practical, especially `getByRole()` and `getByLabel()` once the UI exposes real semantics
+4. if the flow needs repeated authenticated browser access, prefer a named local QA browser-session helper over repeated OTP log scraping
+
+## Local QA Auth Helper Rule
+
+Local QA auth or browser-session helpers are allowed when they:
+
+1. are scoped to a named QA scenario
+2. create session state through the app auth layer or an equivalent repository-owned auth helper
+3. stay local-only and do not alter production authentication rules
+4. remain separate from business behavior docs and route authority
 
 Use setup and cleanup scripts when:
 
