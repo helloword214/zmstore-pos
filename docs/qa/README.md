@@ -51,8 +51,8 @@ Use this checklist after running the matching scenario setup command:
 
 1. `workforce/workforce-payroll-happy-path-checklist.md`
 
-Use this checklist after running the matching scenario setup command:
+Use this scenario family with the matching setup and cleanup commands:
 
 1. `npm run qa:workforce:payroll:happy-path:setup`
-2. perform the manual QA steps in the checklist
+2. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:payroll:happy-path`
 3. `npm run qa:workforce:payroll:happy-path:cleanup`

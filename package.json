@@ -19,6 +19,7 @@
     "automation:flow:smoke": "node scripts/automation/business-flow/index.mjs smoke",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",
     "ui:test": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts",
+    "ui:test:workforce:payroll:happy-path": "QA_WORKFORCE_PAYROLL_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-payroll-happy-path",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
   },
