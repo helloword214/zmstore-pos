@@ -30,16 +30,16 @@ Automation evidence is grouped into:
 UI consistency mode:
 
 1. `npm run ui:test`
-2. `npm run ui:test:auth`
-3. `npm run ui:test:update`
-4. `npm run ui:cycle`
-5. `npm run ui:cycle -- --dry-run`
+2. `npm run ui:test:update`
+3. `npm run ui:cycle`
+4. `npm run ui:cycle -- --dry-run`
 
 Business-flow smoke mode:
 
-1. `npm run automation:flow:setup`
-2. `npm run automation:flow:smoke`
-3. `npm run automation:flow:cleanup`
+1. `npm run qa:auth:business-flow:browser-session`
+2. `npm run automation:flow:setup`
+3. `npm run automation:flow:smoke`
+4. `npm run automation:flow:cleanup`
 
 ## 4. Operational Source of Truth
 

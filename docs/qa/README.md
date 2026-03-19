@@ -23,8 +23,29 @@ It points readers to QA scenario docs and must not become the owner of QA/testin
 1. `docs/Governance SOP/QA Testing Architecture Standard.md`
 2. `docs/guide/README.md`
 3. the relevant canonical business doc for the flow being tested
+4. `docs/qa/APP_QA_FLOW_REGISTRY.md`
+5. `docs/qa/APP_QA_ROADMAP.md`
+
+## Core QA Planning Docs
+
+Start here before adding or rewriting browser QA:
+
+1. `APP_QA_FLOW_REGISTRY.md`
+   Owner doc for repository-level QA flow inventory, current coverage mapping, and legacy-test disposition
+2. `APP_QA_ROADMAP.md`
+   Supporting rollout plan for phasing scenario-family work across auth, product, payroll, schedule, cashier, delivery, and admin flows
 
 ## Current Scenario Docs
+
+### Auth
+
+1. `auth/auth-login-otp-session-checklist.md`
+
+Use this checklist after running the matching scenario setup command:
+
+1. `npm run qa:auth:login-otp-session:setup`
+2. perform the manual QA steps in the checklist
+3. `npm run qa:auth:login-otp-session:cleanup`
 
 ### Workforce
 

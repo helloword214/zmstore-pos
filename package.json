@@ -9,6 +9,9 @@
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc",
+    "qa:auth:business-flow:browser-session": "tsx scripts/qa/auth/auth-business-flow-browser-session.ts",
+    "qa:auth:login-otp-session:setup": "tsx scripts/qa/auth/auth-login-otp-session-setup.ts",
+    "qa:auth:login-otp-session:cleanup": "tsx scripts/qa/auth/auth-login-otp-session-cleanup.ts",
     "qa:workforce:payroll:happy-path:setup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-setup.ts",
     "qa:workforce:payroll:happy-path:browser-session": "tsx scripts/qa/workforce/workforce-payroll-happy-path-browser-session.ts",
     "qa:workforce:payroll:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-cleanup.ts",
@@ -16,7 +19,6 @@
     "automation:flow:smoke": "node scripts/automation/business-flow/index.mjs smoke",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",
     "ui:test": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts",
-    "ui:test:auth": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=setup-manager-auth --project=setup-rider-auth --project=setup-cashier-auth",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
   },

@@ -44,33 +44,8 @@ export default defineConfig({
     : undefined,
   projects: [
     {
-      name: "setup-manager-auth",
-      testMatch: /tests\/ui\/auth\.manager\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1366, height: 900 },
-      },
-    },
-    {
-      name: "setup-rider-auth",
-      testMatch: /tests\/ui\/auth\.rider\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1366, height: 900 },
-      },
-    },
-    {
-      name: "setup-cashier-auth",
-      testMatch: /tests\/ui\/auth\.cashier\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1366, height: 900 },
-      },
-    },
-    {
       name: "manager-flow-desktop",
       testMatch: /tests\/automation\/business-flow\/manager\.flow\.smoke\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-manager-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
@@ -80,7 +55,6 @@ export default defineConfig({
     {
       name: "rider-flow-desktop",
       testMatch: /tests\/automation\/business-flow\/rider\.flow\.smoke\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-rider-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
@@ -90,7 +64,6 @@ export default defineConfig({
     {
       name: "cashier-flow-desktop",
       testMatch: /tests\/automation\/business-flow\/cashier\.flow\.smoke\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-cashier-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
