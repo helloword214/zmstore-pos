@@ -82,6 +82,14 @@ export default defineConfig({
       },
     },
     {
+      name: "product-catalog-admin-happy-path",
+      testMatch: /product\/product-catalog-admin-happy-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "workforce-payroll-happy-path",
       testMatch: /workforce\/workforce-payroll-happy-path\.spec\.ts/,
       use: {
