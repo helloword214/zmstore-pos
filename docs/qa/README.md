@@ -54,12 +54,16 @@ Use this checklist after running the matching scenario setup command:
 ### Cashier
 
 1. `cashier/cashier-shift-open-close-happy-path-checklist.md`
+2. `cashier/cashier-shift-dispute-shortage-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
 1. `npm run qa:cashier:shift-open-close:happy-path:setup`
 2. perform the manual QA steps in the checklist, or run `npm run ui:test:cashier:shift-open-close:happy-path`
 3. `npm run qa:cashier:shift-open-close:happy-path:cleanup`
+4. `npm run qa:cashier:shift-dispute-shortage-path:setup`
+5. perform the manual QA steps in the shortage checklist, or run `npm run ui:test:cashier:shift-dispute-shortage-path`
+6. `npm run qa:cashier:shift-dispute-shortage-path:cleanup`
 
 ### Workforce
 
