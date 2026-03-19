@@ -40,12 +40,16 @@ Start here before adding or rewriting browser QA:
 ### Auth
 
 1. `auth/auth-login-otp-session-checklist.md`
+2. `auth/auth-role-routing-checklist.md`
 
 Use this checklist after running the matching scenario setup command:
 
 1. `npm run qa:auth:login-otp-session:setup`
 2. perform the manual QA steps in the checklist
 3. `npm run qa:auth:login-otp-session:cleanup`
+4. `npm run qa:auth:role-routing:setup`
+5. perform the manual QA steps in the role-routing checklist
+6. `npm run qa:auth:role-routing:cleanup`
 
 ### Workforce
 
