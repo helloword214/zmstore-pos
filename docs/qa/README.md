@@ -51,6 +51,16 @@ Use this checklist after running the matching scenario setup command:
 5. perform the manual QA steps in the role-routing checklist
 6. `npm run qa:auth:role-routing:cleanup`
 
+### Cashier
+
+1. `cashier/cashier-shift-open-close-happy-path-checklist.md`
+
+Use this scenario family with the matching setup and cleanup commands:
+
+1. `npm run qa:cashier:shift-open-close:happy-path:setup`
+2. perform the manual QA steps in the checklist, or run `npm run ui:test:cashier:shift-open-close:happy-path`
+3. `npm run qa:cashier:shift-open-close:happy-path:cleanup`
+
 ### Workforce
 
 1. `workforce/workforce-payroll-happy-path-checklist.md`
