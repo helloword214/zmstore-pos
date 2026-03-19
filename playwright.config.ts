@@ -90,6 +90,14 @@ export default defineConfig({
       },
     },
     {
+      name: "employee-onboarding-rider-happy-path",
+      testMatch: /employee\/employee-onboarding-rider-happy-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "product-catalog-admin-happy-path",
       testMatch: /product\/product-catalog-admin-happy-path\.spec\.ts/,
       use: {
