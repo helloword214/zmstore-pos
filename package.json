@@ -12,6 +12,8 @@
     "qa:auth:business-flow:browser-session": "tsx scripts/qa/auth/auth-business-flow-browser-session.ts",
     "qa:auth:login-otp-session:setup": "tsx scripts/qa/auth/auth-login-otp-session-setup.ts",
     "qa:auth:login-otp-session:cleanup": "tsx scripts/qa/auth/auth-login-otp-session-cleanup.ts",
+    "qa:auth:role-routing:setup": "tsx scripts/qa/auth/auth-role-routing-setup.ts",
+    "qa:auth:role-routing:cleanup": "tsx scripts/qa/auth/auth-role-routing-cleanup.ts",
     "qa:workforce:payroll:happy-path:setup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-setup.ts",
     "qa:workforce:payroll:happy-path:browser-session": "tsx scripts/qa/workforce/workforce-payroll-happy-path-browser-session.ts",
     "qa:workforce:payroll:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-cleanup.ts",
