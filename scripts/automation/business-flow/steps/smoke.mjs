@@ -36,7 +36,11 @@ export async function runSmoke(options = {}) {
     FLOW_CONTEXT_FILE: paths.latestContextFile,
   };
 
-  const authExit = runCommand("npm", ["run", "ui:test:auth"], setupEnv);
+  const authExit = runCommand(
+    "npm",
+    ["run", "qa:auth:business-flow:browser-session"],
+    setupEnv,
+  );
   if (authExit !== 0) {
     if (!keepData) await runCleanup({ contextFile: paths.latestContextFile });
     return { ok: false, stage: "auth", exitCode: authExit };

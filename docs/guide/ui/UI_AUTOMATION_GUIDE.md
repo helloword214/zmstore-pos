@@ -414,17 +414,17 @@ Execution source of truth:
 4. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 1. `npm run ui:test`
-2. `npm run ui:test:auth`
-3. `npm run ui:test:update`
-4. `npm run ui:cycle`
-5. `npm run ui:cycle -- --dry-run`
+2. `npm run ui:test:update`
+3. `npm run ui:cycle`
+4. `npm run ui:cycle -- --dry-run`
 
 Business-flow engine (separate from UI consistency):
 
-1. `npm run automation:flow:setup`
-2. `npm run automation:flow:smoke`
-3. `npm run automation:flow:cleanup`
-4. Reference: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
+1. `npm run qa:auth:business-flow:browser-session`
+2. `npm run automation:flow:setup`
+3. `npm run automation:flow:smoke`
+4. `npm run automation:flow:cleanup`
+5. Reference: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 
 Run evidence output:
 

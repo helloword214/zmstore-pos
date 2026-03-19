@@ -50,24 +50,8 @@ export default defineConfig({
     : undefined,
   projects: [
     {
-      name: "setup-manager-auth",
-      testMatch: /auth\.manager\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1366, height: 900 },
-      },
-    },
-    {
-      name: "setup-rider-auth",
-      testMatch: /auth\.rider\.setup\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1366, height: 900 },
-      },
-    },
-    {
-      name: "setup-cashier-auth",
-      testMatch: /auth\.cashier\.setup\.ts/,
+      name: "auth-login-otp-session",
+      testMatch: /auth\/auth-login-otp-session\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
@@ -76,7 +60,6 @@ export default defineConfig({
     {
       name: "manager-desktop",
       testMatch: /manager\..*\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-manager-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
@@ -86,7 +69,6 @@ export default defineConfig({
     {
       name: "manager-mobile",
       testMatch: /manager\..*\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-manager-auth"],
       use: {
         ...devices["iPhone 12"],
         storageState: skipAuthSetup ? undefined : managerState,
@@ -95,7 +77,6 @@ export default defineConfig({
     {
       name: "rider-desktop",
       testMatch: /rider\..*\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-rider-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
@@ -105,7 +86,6 @@ export default defineConfig({
     {
       name: "rider-mobile",
       testMatch: /rider\..*\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-rider-auth"],
       use: {
         ...devices["iPhone 12"],
         storageState: skipAuthSetup ? undefined : riderState,
@@ -114,7 +94,6 @@ export default defineConfig({
     {
       name: "cashier-desktop",
       testMatch: /cashier\..*\.spec\.ts/,
-      dependencies: skipAuthSetup ? [] : ["setup-cashier-auth"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1366, height: 900 },
