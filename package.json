@@ -33,6 +33,8 @@
     "qa:workforce:payroll:happy-path:setup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-setup.ts",
     "qa:workforce:payroll:happy-path:browser-session": "tsx scripts/qa/workforce/workforce-payroll-happy-path-browser-session.ts",
     "qa:workforce:payroll:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-payroll-happy-path-cleanup.ts",
+    "qa:workforce:schedule-planner-publish-visibility:happy-path:setup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-setup.ts",
+    "qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-cleanup.ts",
     "automation:flow:setup": "node scripts/automation/business-flow/index.mjs setup",
     "automation:flow:smoke": "node scripts/automation/business-flow/index.mjs smoke",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",
@@ -46,6 +48,7 @@
     "ui:test:employee:role-switch:happy-path": "QA_EMPLOYEE_ROLE_SWITCH_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=employee-role-switch-happy-path",
     "ui:test:product:catalog-admin:happy-path": "QA_PRODUCT_CATALOG_ADMIN_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=product-catalog-admin-happy-path",
     "ui:test:workforce:payroll:happy-path": "QA_WORKFORCE_PAYROLL_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-payroll-happy-path",
+    "ui:test:workforce:schedule-planner-publish-visibility:happy-path": "QA_WORKFORCE_SCHEDULE_PLANNER_PUBLISH_VISIBILITY_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-planner-publish-visibility-happy-path",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
   },
