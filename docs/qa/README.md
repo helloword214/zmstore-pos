@@ -76,8 +76,9 @@ Use this scenario family with the matching setup and cleanup commands:
 3. `delivery/delivery-cashier-order-remit-posting-happy-path-checklist.md`
 4. `delivery/delivery-cashier-order-remit-shortage-path-checklist.md`
 5. `delivery/delivery-manager-shortage-review-charge-path-checklist.md`
-6. `delivery/delivery-rider-acceptance-path-checklist.md`
-7. `delivery/delivery-final-settlement-gating-checklist.md`
+6. `delivery/delivery-manager-shortage-waive-info-only-path-checklist.md`
+7. `delivery/delivery-rider-acceptance-path-checklist.md`
+8. `delivery/delivery-final-settlement-gating-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -96,12 +97,15 @@ Use this scenario family with the matching setup and cleanup commands:
 13. `npm run qa:delivery:manager-shortage-review-charge-path:setup`
 14. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-review-charge-path`
 15. `npm run qa:delivery:manager-shortage-review-charge-path:cleanup`
-16. `npm run qa:delivery:rider-acceptance-path:setup`
-17. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:rider-acceptance-path`
-18. `npm run qa:delivery:rider-acceptance-path:cleanup`
-19. `npm run qa:delivery:final-settlement-gating:setup`
-20. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-gating`
-21. `npm run qa:delivery:final-settlement-gating:cleanup`
+16. `npm run qa:delivery:manager-shortage-waive-info-only-path:setup`
+17. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-waive-info-only-path`
+18. `npm run qa:delivery:manager-shortage-waive-info-only-path:cleanup`
+19. `npm run qa:delivery:rider-acceptance-path:setup`
+20. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:rider-acceptance-path`
+21. `npm run qa:delivery:rider-acceptance-path:cleanup`
+22. `npm run qa:delivery:final-settlement-gating:setup`
+23. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-gating`
+24. `npm run qa:delivery:final-settlement-gating:cleanup`
 
 ### Employee
 

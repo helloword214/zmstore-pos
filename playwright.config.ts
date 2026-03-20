@@ -135,6 +135,15 @@ export default defineConfig({
       },
     },
     {
+      name: "delivery-manager-shortage-waive-info-only-path",
+      testMatch:
+        /delivery\/delivery-manager-shortage-waive-info-only-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "delivery-rider-acceptance-path",
       testMatch: /delivery\/delivery-rider-acceptance-path\.spec\.ts/,
       use: {
