@@ -22,6 +22,28 @@ export const EMPLOYEE_ROLE_SWITCH_HAPPY_PATH_ENABLE_ENV =
 export type EmployeeRoleSwitchHappyPathScenario =
   Awaited<ReturnType<typeof resolveEmployeeRoleSwitchHappyPathScenarioContext>>;
 
+type SwitchAccessLane = "CASHIER" | "RIDER";
+
+const SWITCH_ACCESS_LANES: Record<
+  SwitchAccessLane,
+  {
+    heading: RegExp;
+    homePath: string;
+    wrongPath: string;
+  }
+> = {
+  CASHIER: {
+    heading: /cashier dashboard/i,
+    homePath: "/cashier",
+    wrongPath: "/store",
+  },
+  RIDER: {
+    heading: /rider\s*&\s*seller console/i,
+    homePath: "/rider",
+    wrongPath: "/cashier",
+  },
+};
+
 function resolveBaseUrl() {
   return process.env.UI_BASE_URL ?? DEFAULT_BASE_URL;
 }
@@ -89,6 +111,53 @@ export async function bootstrapEmployeeRoleSwitchHappyPathSession(
       sameSite: "Lax",
     },
   ]);
+}
+
+async function bootstrapEmployeeRoleSwitchHappyPathUserSession(
+  context: BrowserContext,
+  userId: number,
+) {
+  const baseUrl = new URL(resolveBaseUrl());
+  const { headers } = await createUserSession(
+    new Request(new URL("/login", baseUrl).toString()),
+    userId,
+  );
+  const setCookieHeader = headers["Set-Cookie"];
+
+  if (!setCookieHeader) {
+    throw new Error(
+      "Employee role-switch QA session bootstrap did not return a session cookie for the switched user.",
+    );
+  }
+
+  const cookie = parseCookiePair(setCookieHeader);
+  await context.clearCookies();
+  await context.addCookies([
+    {
+      name: cookie.name,
+      value: cookie.value,
+      domain: baseUrl.hostname,
+      path: "/",
+      expires: Math.floor(Date.now() / 1000) + 60 * 60 * 12,
+      httpOnly: true,
+      secure: baseUrl.protocol === "https:",
+      sameSite: "Lax",
+    },
+  ]);
+}
+
+export async function bootstrapEmployeeRoleSwitchHappyPathSwitchedUserSession(
+  context: BrowserContext,
+) {
+  const accountState = await resolveEmployeeRoleSwitchHappyPathAccountState();
+
+  if (!accountState?.id) {
+    throw new Error(
+      "Employee role-switch fixture could not resolve the switched user account for access-lane verification.",
+    );
+  }
+
+  await bootstrapEmployeeRoleSwitchHappyPathUserSession(context, accountState.id);
 }
 
 export async function openEmployeeRoleSwitchHappyPathDirectoryPage(page: Page) {
@@ -188,6 +257,7 @@ export async function resolveEmployeeRoleSwitchHappyPathAccountState() {
     authVersion: user.authVersion,
     branchIds: user.branches.map((branch) => branch.branchId),
     email: user.email ?? null,
+    id: user.id,
     employee: user.employee
       ? {
           active: user.employee.active,
@@ -232,6 +302,42 @@ export async function expectEmployeeRoleSwitchHappyPathDirectoryRowState(
   await expect(row).toContainText(new RegExp(`\\b${expectedLane}\\b`));
   await expect(row).toContainText(/\bACTIVE\b/);
   await expect(row).toContainText(/\bPASSWORD_READY\b/);
+}
+
+export async function expectEmployeeRoleSwitchHappyPathHomeLane(
+  page: Page,
+  lane: SwitchAccessLane,
+) {
+  const target = SWITCH_ACCESS_LANES[lane];
+
+  await page.goto(new URL(target.homePath, resolveBaseUrl()).toString(), {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForURL((url) => url.pathname === target.homePath, {
+    timeout: 10_000,
+  });
+  await expect(
+    page.getByRole("heading", { name: target.heading }),
+  ).toBeVisible();
+}
+
+export async function expectEmployeeRoleSwitchHappyPathWrongLaneRedirect(
+  page: Page,
+  lane: SwitchAccessLane,
+) {
+  const target = SWITCH_ACCESS_LANES[lane];
+
+  await page.goto(new URL(target.wrongPath, resolveBaseUrl()).toString(), {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.waitForURL((url) => url.pathname === target.homePath, {
+    timeout: 10_000,
+  });
+  await expect(
+    page.getByRole("heading", { name: target.heading }),
+  ).toBeVisible();
 }
 
 export function expectEmployeeRoleSwitchHappyPathInitialDbState(

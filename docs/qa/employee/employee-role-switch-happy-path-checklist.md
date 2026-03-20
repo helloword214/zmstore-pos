@@ -17,6 +17,7 @@ This checklist covers:
 3. switching the same seeded rider account back to `CASHIER`
 4. user-role and employee-role sync during both switches
 5. role-assignment and role-audit trail creation for both actions
+6. resulting access-lane redirect after each re-login
 
 ## Preconditions
 
@@ -37,7 +38,11 @@ This checklist covers:
 8. enter the printed rider-to-cashier reason
 9. click `Switch to CASHIER`
 10. confirm the success alert `Role switched to CASHIER. User must re-login with new role lane.`
-11. confirm the tagged row returns to `CASHIER` and `Switch to RIDER`
+11. open a fresh rider session for the switched user and confirm `/rider` is the home lane
+12. confirm the same rider session is redirected away from `/cashier`
+13. confirm the tagged row returns to `CASHIER` and `Switch to RIDER`
+14. open a fresh cashier session for the switched user and confirm `/cashier` is the home lane
+15. confirm the same cashier session is redirected away from `/store`
 
 ## Expected Outcomes
 
@@ -47,7 +52,9 @@ This checklist covers:
 4. each submitted switch reason is stored on the new active `UserRoleAssignment`
 5. one `UserRoleAuditEvent` is added for each switch
 6. branch linkage and active-state values remain unchanged throughout
-7. manager switching remains out of scope for this scenario family
+7. after cashier-to-rider, the switched user lands on `/rider` and is redirected away from `/cashier`
+8. after rider-to-cashier, the switched user lands on `/cashier` and is redirected away from `/store`
+9. manager switching remains out of scope for this scenario family
 
 ## Cleanup
 
