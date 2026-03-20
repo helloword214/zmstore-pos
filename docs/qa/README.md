@@ -104,9 +104,13 @@ Use this scenario family with the matching setup and cleanup commands:
 ### Workforce
 
 1. `workforce/workforce-payroll-happy-path-checklist.md`
+2. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
 1. `npm run qa:workforce:payroll:happy-path:setup`
 2. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:payroll:happy-path`
 3. `npm run qa:workforce:payroll:happy-path:cleanup`
+4. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
+5. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
+6. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
