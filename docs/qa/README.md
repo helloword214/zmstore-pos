@@ -70,6 +70,7 @@ Use this scenario family with the matching setup and cleanup commands:
 1. `delivery/delivery-run-handoff-and-remit-access-happy-path-checklist.md`
 2. `delivery/delivery-manager-remit-posting-happy-path-checklist.md`
 3. `delivery/delivery-cashier-order-remit-posting-happy-path-checklist.md`
+4. `delivery/delivery-cashier-order-remit-shortage-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -82,6 +83,9 @@ Use this scenario family with the matching setup and cleanup commands:
 7. `npm run qa:delivery:cashier-order-remit-posting:happy-path:setup`
 8. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-posting:happy-path`
 9. `npm run qa:delivery:cashier-order-remit-posting:happy-path:cleanup`
+10. `npm run qa:delivery:cashier-order-remit-shortage-path:setup`
+11. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-shortage-path`
+12. `npm run qa:delivery:cashier-order-remit-shortage-path:cleanup`
 
 ### Employee
 
