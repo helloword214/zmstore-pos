@@ -82,6 +82,15 @@ export default defineConfig({
       },
     },
     {
+      name: "delivery-run-handoff-and-remit-access-happy-path",
+      testMatch:
+        /delivery\/delivery-run-handoff-and-remit-access-happy-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "employee-onboarding-create-happy-path",
       testMatch: /employee\/employee-onboarding-create-happy-path\.spec\.ts/,
       use: {
