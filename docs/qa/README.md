@@ -79,6 +79,7 @@ Use this scenario family with the matching setup and cleanup commands:
 6. `delivery/delivery-manager-shortage-waive-info-only-path-checklist.md`
 7. `delivery/delivery-rider-acceptance-path-checklist.md`
 8. `delivery/delivery-final-settlement-gating-checklist.md`
+9. `delivery/delivery-final-settlement-info-only-waive-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -106,6 +107,9 @@ Use this scenario family with the matching setup and cleanup commands:
 22. `npm run qa:delivery:final-settlement-gating:setup`
 23. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-gating`
 24. `npm run qa:delivery:final-settlement-gating:cleanup`
+25. `npm run qa:delivery:final-settlement-info-only-waive-path:setup`
+26. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-info-only-waive-path`
+27. `npm run qa:delivery:final-settlement-info-only-waive-path:cleanup`
 
 ### Employee
 
