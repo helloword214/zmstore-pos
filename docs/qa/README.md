@@ -65,6 +65,16 @@ Use this scenario family with the matching setup and cleanup commands:
 5. perform the manual QA steps in the shortage checklist, or run `npm run ui:test:cashier:shift-dispute-shortage-path`
 6. `npm run qa:cashier:shift-dispute-shortage-path:cleanup`
 
+### Delivery
+
+1. `delivery/delivery-run-handoff-and-remit-access-happy-path-checklist.md`
+
+Use this scenario family with the matching setup and cleanup commands:
+
+1. `npm run qa:delivery:run-handoff-and-remit-access:happy-path:setup`
+2. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:run-handoff-and-remit-access:happy-path`
+3. `npm run qa:delivery:run-handoff-and-remit-access:happy-path:cleanup`
+
 ### Employee
 
 1. `employee/employee-onboarding-create-happy-path-checklist.md`
