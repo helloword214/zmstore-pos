@@ -54,7 +54,6 @@
     "qa:workforce:schedule-planner-publish-visibility:happy-path:setup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-setup.ts",
     "qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-cleanup.ts",
     "automation:flow:setup": "node scripts/automation/business-flow/index.mjs setup",
-    "automation:flow:smoke": "node scripts/automation/business-flow/index.mjs smoke",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",
     "ui:test": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts",
     "ui:test:cashier:opening-dispute-resend-path": "QA_CASHIER_OPENING_DISPUTE_RESEND_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=cashier-opening-dispute-resend-path",

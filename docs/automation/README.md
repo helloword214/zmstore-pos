@@ -13,7 +13,7 @@ Execution instructions are maintained in `docs/automation/runbooks/` to keep ope
 Automation evidence is grouped into:
 
 1. UI consistency checks
-2. Business flow smoke checks
+2. deterministic business-flow setup records
 
 ## 2. Folder Structure
 
@@ -34,12 +34,11 @@ UI consistency mode:
 3. `npm run ui:cycle`
 4. `npm run ui:cycle -- --dry-run`
 
-Business-flow smoke mode:
+Business-flow foundation mode:
 
 1. `npm run qa:auth:business-flow:browser-session`
 2. `npm run automation:flow:setup`
-3. `npm run automation:flow:smoke`
-4. `npm run automation:flow:cleanup`
+3. `npm run automation:flow:cleanup`
 
 ## 4. Operational Source of Truth
 
@@ -48,9 +47,9 @@ Use these docs for all execution instructions and input requirements:
 1. `docs/automation/runbooks/README.md`
 2. `docs/automation/runbooks/INTENT_ROUTER.md`
 3. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
-4. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+4. `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
-6. `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
+6. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 
 ## 5. Artifact Interpretation
 
@@ -60,7 +59,7 @@ UI consistency (`ui:cycle`) artifacts:
 2. `docs/automation/runs/<timestamp>/playwright-report.json`
 3. `docs/automation/incidents/<timestamp>.md`
 
-Business-flow smoke artifacts:
+Business-flow setup artifacts:
 
 1. `docs/automation/business-flow/runs/<timestamp>/context.json`
 2. `docs/automation/business-flow/runs/<timestamp>/summary.md`

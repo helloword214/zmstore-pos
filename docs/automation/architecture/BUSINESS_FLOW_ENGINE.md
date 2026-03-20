@@ -8,11 +8,11 @@ Last Reviewed: 2026-02-20
 
 Provide a deterministic automation engine for delivery business flows that can be reused by:
 
-1. UI consistency checks
-2. Smoke tests
+1. Domain-scoped delivery QA scenario families
+2. Browser-session bootstrap helpers
 3. Future full end-to-end workflow assertions
 
-This separates data lifecycle concerns from UI-only route assertions.
+This separates deterministic data lifecycle concerns from downstream route assertions.
 
 ## 2. Design Principle
 
@@ -21,20 +21,17 @@ Use one control-tower entrypoint and modular internals.
 1. Control tower: `scripts/automation/business-flow/index.mjs`
 2. Deterministic setup: `scripts/automation/business-flow/steps/setup.mjs`
 3. Deterministic cleanup: `scripts/automation/business-flow/steps/cleanup.mjs`
-4. Smoke orchestration: `scripts/automation/business-flow/steps/smoke.mjs`
-5. Shared contracts/paths: `scripts/automation/business-flow/contracts.mjs`
+4. Shared contracts/paths: `scripts/automation/business-flow/contracts.mjs`
 
 ## 3. Engine Cycle
 
 ```mermaid
 flowchart TD
   A["Setup fixtures"] --> B["Write context.json"]
-  B --> C["Run role auth setup"]
-  C --> D["Run smoke projects"]
-  D --> E["Collect reports"]
-  E --> F{"keep data?"}
-  F -- "no" --> G["Cleanup by context IDs"]
-  F -- "yes" --> H["Keep context for debugging"]
+  B --> C["Optional browser-session bootstrap"]
+  C --> D["Domain scenario-family QA uses context"]
+  D --> E["Collect downstream reports"]
+  E --> F["Cleanup by context IDs"]
 ```
 
 ## 4. Setup Contract
@@ -44,7 +41,7 @@ Current setup creates deterministic records with trace tags:
 1. one `CHECKED_IN` delivery run
 2. one `CLOSED` delivery run
 3. one delivery order linked to each run
-4. route context output for manager/rider/cashier smoke usage
+4. route context output for manager/rider/cashier delivery QA usage
 
 Artifacts:
 
@@ -56,23 +53,24 @@ Artifacts:
 ## 5. Commands
 
 1. `npm run automation:flow:setup`
-2. `npm run automation:flow:smoke`
-3. `npm run automation:flow:cleanup`
+2. `npm run automation:flow:cleanup`
 
 Optional env:
 
 1. `FLOW_TAG_PREFIX` (default `AUTO-BFLOW`)
-2. `FLOW_KEEP_DATA=1` (skip cleanup after smoke)
-3. `FLOW_PROJECTS=manager-flow-desktop,rider-flow-desktop,cashier-flow-desktop`
-4. `FLOW_CLEANUP_SWEEP_PREFIX=<prefix>` (bulk cleanup by code prefix)
+2. `FLOW_CLEANUP_SWEEP_PREFIX=<prefix>` (bulk cleanup by code prefix)
 
-## 6. Smoke Test Scope
+## 6. Current Reuse Scope
 
-Smoke projects under `tests/automation/business-flow/` currently validate:
+Current delivery scenario families that reuse this foundation include:
 
-1. manager routes on checked-in run
-2. rider check-in route on checked-in run
-3. cashier shift + cashier run remit route on closed run
+1. `tests/ui/delivery/delivery-run-handoff-and-remit-access-happy-path.spec.ts`
+2. `tests/ui/delivery/delivery-manager-remit-posting-happy-path.spec.ts`
+3. `tests/ui/delivery/delivery-cashier-order-remit-posting-happy-path.spec.ts`
+4. `tests/ui/delivery/delivery-cashier-order-remit-shortage-path.spec.ts`
+5. `tests/ui/delivery/delivery-manager-shortage-review-charge-path.spec.ts`
+6. `tests/ui/delivery/delivery-rider-acceptance-path.spec.ts`
+7. `tests/ui/delivery/delivery-final-settlement-gating.spec.ts`
 
 ## 7. Scaling Rules
 
@@ -87,4 +85,4 @@ When extending this engine:
 ## 8. Current Boundary
 
 This foundation does not yet automate full interaction actions (create order via UI, assign rider via UI, dispatch click-flow, remit posting click-flow).  
-It provisions deterministic records directly for reliable route-level smoke checks first.
+It provisions deterministic records directly for reusable delivery setup and cleanup. The older route-level smoke layer was retired after the dedicated delivery scenario families above became canonical.

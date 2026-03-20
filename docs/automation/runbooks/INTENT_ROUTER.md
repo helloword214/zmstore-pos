@@ -11,9 +11,9 @@ Route UI automation requests to the correct execution mode with minimal ambiguit
 ## 2. Router Rules
 
 1. Choose `UI_CYCLE_MONITOR` when request is about UI consistency checks, screenshot drift, manager/rider/cashier monitoring, or `ui:cycle`.
-2. Choose `BUSINESS_FLOW_SMOKE` when request is about delivery flow smoke, deterministic setup, run provisioning, or `automation:flow:smoke`.
+2. Choose `BUSINESS_FLOW_FOUNDATION` when request is about deterministic setup, run provisioning, or delivery context preparation.
 3. Choose `UI_PATCH_VALIDATION` when request is UI-only patching and needs post-patch monitoring.
-4. If no clear signal exists, ask one clarifying question: "Do you want `ui:cycle` monitoring or business-flow smoke?"
+4. If no clear signal exists, ask one clarifying question: "Do you want `ui:cycle` monitoring or delivery setup foundation?"
 
 ## 3. Mode Contracts
 
@@ -29,10 +29,12 @@ Route UI automation requests to the correct execution mode with minimal ambiguit
 5. Primary evidence:
    - `docs/automation/runs/<timestamp>/summary.md`
 
-### 3.2 `BUSINESS_FLOW_SMOKE`
+### 3.2 `BUSINESS_FLOW_FOUNDATION`
 
-1. Command source: `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
-2. Primary command: `npm run automation:flow:smoke`
+1. Command source: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
+2. Primary commands:
+   - `npm run automation:flow:setup`
+   - `npm run automation:flow:cleanup`
 3. Input rule:
    - do not require `UI_RUN_ID`
 4. Route source:
@@ -51,5 +53,5 @@ Route UI automation requests to the correct execution mode with minimal ambiguit
 ## 4. Anti-Confusion Guards
 
 1. `UI_RUN_ID` is not a global automation requirement.
-2. `ui:cycle` and `automation:flow:smoke` are different pipelines with different contracts.
-3. Business-flow smoke creates its own deterministic run IDs during setup.
+2. `ui:cycle` and the deterministic business-flow foundation are different pipelines with different contracts.
+3. Business-flow setup creates its own deterministic run IDs during setup.
