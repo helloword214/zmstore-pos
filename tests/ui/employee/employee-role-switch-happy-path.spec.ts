@@ -6,9 +6,12 @@ import { expect, test } from "@playwright/test";
 import {
   EMPLOYEE_ROLE_SWITCH_HAPPY_PATH_ENABLE_ENV,
   bootstrapEmployeeRoleSwitchHappyPathSession,
+  bootstrapEmployeeRoleSwitchHappyPathSwitchedUserSession,
   cleanupEmployeeRoleSwitchHappyPathQaState,
   expectEmployeeRoleSwitchHappyPathDirectoryRowState,
+  expectEmployeeRoleSwitchHappyPathHomeLane,
   expectEmployeeRoleSwitchHappyPathInitialDbState,
+  expectEmployeeRoleSwitchHappyPathWrongLaneRedirect,
   findEmployeeRoleSwitchHappyPathDirectoryRow,
   isEmployeeRoleSwitchHappyPathEnabled,
   openEmployeeRoleSwitchHappyPathDirectoryPage,
@@ -120,6 +123,21 @@ test.describe("employee role switch happy path", () => {
         scenario.admin.id,
       );
 
+      const riderUserContext = await browser.newContext();
+      try {
+        const riderUserPage = await riderUserContext.newPage();
+        await bootstrapEmployeeRoleSwitchHappyPathSwitchedUserSession(
+          riderUserContext,
+        );
+        await expectEmployeeRoleSwitchHappyPathHomeLane(riderUserPage, "RIDER");
+        await expectEmployeeRoleSwitchHappyPathWrongLaneRedirect(
+          riderUserPage,
+          "RIDER",
+        );
+      } finally {
+        await riderUserContext.close();
+      }
+
       row = findEmployeeRoleSwitchHappyPathDirectoryRow(page, scenario.email);
       await expectEmployeeRoleSwitchHappyPathDirectoryRowState(row, "RIDER");
       await expect(
@@ -162,6 +180,24 @@ test.describe("employee role switch happy path", () => {
       expect(cashierState?.roleAuditEvents[2]?.changedById).toBe(
         scenario.admin.id,
       );
+
+      const cashierUserContext = await browser.newContext();
+      try {
+        const cashierUserPage = await cashierUserContext.newPage();
+        await bootstrapEmployeeRoleSwitchHappyPathSwitchedUserSession(
+          cashierUserContext,
+        );
+        await expectEmployeeRoleSwitchHappyPathHomeLane(
+          cashierUserPage,
+          "CASHIER",
+        );
+        await expectEmployeeRoleSwitchHappyPathWrongLaneRedirect(
+          cashierUserPage,
+          "CASHIER",
+        );
+      } finally {
+        await cashierUserContext.close();
+      }
 
       row = findEmployeeRoleSwitchHappyPathDirectoryRow(page, scenario.email);
       await expectEmployeeRoleSwitchHappyPathDirectoryRowState(row, "CASHIER");
