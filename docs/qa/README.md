@@ -72,6 +72,7 @@ Use this scenario family with the matching setup and cleanup commands:
 3. `delivery/delivery-cashier-order-remit-posting-happy-path-checklist.md`
 4. `delivery/delivery-cashier-order-remit-shortage-path-checklist.md`
 5. `delivery/delivery-manager-shortage-review-charge-path-checklist.md`
+6. `delivery/delivery-rider-acceptance-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -90,6 +91,9 @@ Use this scenario family with the matching setup and cleanup commands:
 13. `npm run qa:delivery:manager-shortage-review-charge-path:setup`
 14. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-review-charge-path`
 15. `npm run qa:delivery:manager-shortage-review-charge-path:cleanup`
+16. `npm run qa:delivery:rider-acceptance-path:setup`
+17. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:rider-acceptance-path`
+18. `npm run qa:delivery:rider-acceptance-path:cleanup`
 
 ### Employee
 

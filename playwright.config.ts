@@ -127,6 +127,14 @@ export default defineConfig({
       },
     },
     {
+      name: "delivery-rider-acceptance-path",
+      testMatch: /delivery\/delivery-rider-acceptance-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "employee-onboarding-create-happy-path",
       testMatch: /employee\/employee-onboarding-create-happy-path\.spec\.ts/,
       use: {
