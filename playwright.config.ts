@@ -250,6 +250,15 @@ export default defineConfig({
       },
     },
     {
+      name: "workforce-schedule-template-assignment-happy-path",
+      testMatch:
+        /workforce\/workforce-schedule-template-assignment-happy-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "workforce-schedule-template-create-edit-happy-path",
       testMatch:
         /workforce\/workforce-schedule-template-create-edit-happy-path\.spec\.ts/,
