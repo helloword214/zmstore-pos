@@ -300,18 +300,14 @@ Catalog rule:
 
 ### 9.0 Current Enforcement Boundary (Read This First)
 
-Current automated UI enforcement is limited to these active specs:
-
-1. `tests/ui/manager.golden-reference.spec.ts`
-2. `tests/ui/rider.golden-reference.spec.ts`
-3. `tests/ui/cashier.golden-reference.spec.ts`
+Current operational browser coverage is anchored in the domain-scoped scenario families under `tests/ui/`.
 
 Interpretation rule:
 
 1. Section 9.2 list is the target critical coverage set.
 2. If a route in 9.2 is not yet represented by an active spec, treat it as planned coverage, not enforced coverage.
 3. `not-set` route gate applies to `ui:cycle` manager monitoring only.
-4. Business-flow smoke (`automation:flow:smoke`) is context-driven and should not require `UI_RUN_ID`.
+4. The retired `automation:flow:smoke` path must not be used; deterministic setup now lives under `automation:flow:setup` and `automation:flow:cleanup`.
 5. Execution intent routing and runtime inputs are governed by `docs/automation/runbooks/INTENT_ROUTER.md`.
 
 ### 9.1 Operating Model: Monitor vs Repair (Mandatory)
@@ -422,9 +418,8 @@ Business-flow engine (separate from UI consistency):
 
 1. `npm run qa:auth:business-flow:browser-session`
 2. `npm run automation:flow:setup`
-3. `npm run automation:flow:smoke`
-4. `npm run automation:flow:cleanup`
-5. Reference: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
+3. `npm run automation:flow:cleanup`
+4. Reference: `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 
 Run evidence output:
 

@@ -3,13 +3,11 @@ import process from "node:process";
 import { resolveEnginePaths } from "./contracts.mjs";
 import { runCleanup } from "./steps/cleanup.mjs";
 import { runSetup } from "./steps/setup.mjs";
-import { runSmoke } from "./steps/smoke.mjs";
 
 function printUsage() {
   console.log("Business Flow Engine commands:");
   console.log("  node scripts/automation/business-flow/index.mjs setup");
   console.log("  node scripts/automation/business-flow/index.mjs cleanup");
-  console.log("  node scripts/automation/business-flow/index.mjs smoke");
 }
 
 async function main() {
@@ -32,11 +30,10 @@ async function main() {
   }
 
   if (command === "smoke") {
-    const result = await runSmoke();
-    if (!result.ok) {
-      process.exit(result.exitCode || 1);
-    }
-    console.log("Business flow smoke passed.");
+    console.error(
+      "Business flow smoke is retired. Use the domain-scoped scenario-family QA commands instead.",
+    );
+    process.exit(1);
     return;
   }
 

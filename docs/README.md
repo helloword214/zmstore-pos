@@ -33,18 +33,18 @@ Start here for Order Pricing + Delivery + Clearance + Cashier + AR behavior:
 
 ## 3) Automation Operations (Separated)
 
-Use this automation operations stack first when the request mentions UI automation, UI monitoring, or flow smoke execution:
+Use this automation operations stack first when the request mentions UI automation, UI monitoring, or deterministic delivery setup or cleanup:
 
 1. `docs/automation/README.md`
 2. `docs/automation/runbooks/INTENT_ROUTER.md`
 3. `docs/automation/runbooks/UI_CYCLE_RUNBOOK.md`
-4. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+4. `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`
 5. `docs/automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
 
 Boundary reminder:
 
-1. `ui:cycle` and `automation:flow:smoke` are separate modes with different input contracts.
-2. `UI_RUN_ID` is not a business-flow smoke requirement.
+1. `ui:cycle` and the deterministic business-flow foundation are separate modes with different input contracts.
+2. `UI_RUN_ID` is not a business-flow setup requirement.
 
 ## 4) QA Scenario Docs
 

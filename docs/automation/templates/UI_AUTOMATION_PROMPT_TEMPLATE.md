@@ -7,7 +7,7 @@ Last Reviewed: 2026-02-22
 Scope note:
 
 1. This template is for UI consistency automation.
-2. For deterministic business-flow smoke automation, use `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`.
+2. For the deterministic business-flow setup foundation, use `docs/automation/architecture/BUSINESS_FLOW_ENGINE.md`.
 3. Resolve execution mode first using `docs/automation/runbooks/INTENT_ROUTER.md`.
 
 ## 1. Full Prompt (Recommended)
@@ -236,34 +236,23 @@ Task:
 2. Job B (Rider): daily, late afternoon
 3. Job C (Full): weekly (Friday evening)
 
-### 5.5 First-Run Baseline Bootstrap (Manager, Optional)
+## 6. Business-Flow Foundation Prompt (Separate Job)
 
-Use this once when manager golden-reference snapshots are missing:
-
-```bash
-UI_BASE_URL=http://127.0.0.1:4173 \
-UI_ROUTE_MANAGER_DASHBOARD=/store \
-UI_ROUTE_CHECKIN=/runs/123/rider-checkin \
-UI_ROUTE_REMIT=/runs/123/remit \
-npm run ui:test:update -- --project=manager-desktop --project=manager-mobile
-```
-
-## 6. Business-Flow Smoke Prompt (Separate Job)
-
-Use this when you want setup-driven smoke checks for delivery flow records.
+Use this when you want deterministic delivery setup records for downstream scenario-family QA.
 
 ```md
-Run business-flow smoke automation using the deterministic engine.
+Run the deterministic business-flow foundation and report whether the setup completed cleanly.
 
 Runbook authority:
 1. `docs/automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
 
 Task:
-1. Execute `npm run automation:flow:smoke`.
-2. Do not require `UI_RUN_ID`; use generated context from setup (`FLOW_CONTEXT_FILE`).
-3. Report whether setup, auth, smoke, and cleanup completed.
+1. Execute `npm run automation:flow:setup`.
+2. Do not require `UI_RUN_ID`; use the engine outputs as the context source of truth.
+3. Report whether setup completed and whether cleanup is still required.
 4. Include latest context and summary artifacts:
    - `test-results/automation/business-flow/context.latest.json`
    - `test-results/automation/business-flow/summary.latest.md`
-5. If failed, classify the failed stage (`setup`, `auth`, or `smoke`) and include top failing route/test.
+5. If failed, classify the failed stage (`setup`, `downstream consumer`, or `cleanup`) and include the top failing route or consumer step.
+6. If cleanup is still needed, execute `npm run automation:flow:cleanup` and report the result.
 ```
