@@ -133,6 +133,9 @@ Use this scenario family with the matching setup and cleanup commands:
 17. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:role-switch:happy-path`
 18. `npm run qa:employee:role-switch:happy-path:cleanup`
 
+Current admin access governance is covered through this employee scenario-family cluster.
+The live app does not currently expose a separate branch or access maintenance UI outside these employee admin routes, so role, branch, invite, profile, and resulting lane checks should stay mapped here unless a dedicated admin surface is added later.
+
 ### Product
 
 1. `product/product-catalog-admin-happy-path-checklist.md`

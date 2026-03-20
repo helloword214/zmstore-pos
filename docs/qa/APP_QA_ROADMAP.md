@@ -105,18 +105,18 @@ Exit criteria:
 Focus:
 
 1. schedule publish and visibility
-2. admin user, role, and branch access maintenance
+2. admin user, role, and branch access maintenance through the live employee admin surfaces
 3. any remaining manager-side setup pages that gate workforce or product operations
 
 Target families:
 
 1. `schedule-publish-and-visibility`
-2. `admin-user-role-branch-access`
+2. employee admin access cluster reconciliation across onboarding, account management, profile edit, and role switch
 
 Exit criteria:
 
 1. schedule and admin flows are represented by real scenario families
-2. role and branch boundary checks are tied to current identity rules
+2. role and branch boundary checks are tied to current identity rules, even when the live app exposes them through employee admin routes instead of a separate admin-only maintenance page
 
 ### Phase 4 - Edge Cases, Recovery, And Secondary Monitors
 
@@ -142,7 +142,7 @@ Use this implementation order unless a production issue forces reprioritization:
 4. `cashier-shift-open-close`
 5. `product-catalog-admin-happy-path`
 6. `schedule-publish-and-visibility`
-7. `admin-user-role-branch-access`
+7. employee admin access cluster reconciliation
 8. `delivery-run-handoff-and-remit-access`
 
 ## WIP Control Rule
