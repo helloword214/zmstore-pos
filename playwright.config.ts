@@ -177,6 +177,15 @@ export default defineConfig({
       },
     },
     {
+      name: "delivery-payroll-deduction-follow-through",
+      testMatch:
+        /delivery\/delivery-payroll-deduction-follow-through\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "employee-onboarding-create-happy-path",
       testMatch: /employee\/employee-onboarding-create-happy-path\.spec\.ts/,
       use: {
