@@ -66,6 +66,14 @@ export default defineConfig({
       },
     },
     {
+      name: "cashier-opening-dispute-resend-path",
+      testMatch: /cashier\/cashier-opening-dispute-resend-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "cashier-shift-dispute-shortage-path",
       testMatch: /cashier\/cashier-shift-dispute-shortage-path\.spec\.ts/,
       use: {
