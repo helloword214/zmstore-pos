@@ -175,6 +175,14 @@ export default defineConfig({
       },
     },
     {
+      name: "employee-profile-edit-happy-path",
+      testMatch: /employee\/employee-profile-edit-happy-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "employee-role-switch-happy-path",
       testMatch: /employee\/employee-role-switch-happy-path\.spec\.ts/,
       use: {

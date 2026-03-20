@@ -105,7 +105,8 @@ Use this scenario family with the matching setup and cleanup commands:
 2. `employee/employee-onboarding-rider-happy-path-checklist.md`
 3. `employee/employee-onboarding-store-manager-happy-path-checklist.md`
 4. `employee/employee-account-management-happy-path-checklist.md`
-5. `employee/employee-role-switch-happy-path-checklist.md`
+5. `employee/employee-profile-edit-happy-path-checklist.md`
+6. `employee/employee-role-switch-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -121,9 +122,12 @@ Use this scenario family with the matching setup and cleanup commands:
 10. `npm run qa:employee:account-management:happy-path:setup`
 11. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:account-management:happy-path`
 12. `npm run qa:employee:account-management:happy-path:cleanup`
-13. `npm run qa:employee:role-switch:happy-path:setup`
-14. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:role-switch:happy-path`
-15. `npm run qa:employee:role-switch:happy-path:cleanup`
+13. `npm run qa:employee:profile-edit:happy-path:setup`
+14. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:profile-edit:happy-path`
+15. `npm run qa:employee:profile-edit:happy-path:cleanup`
+16. `npm run qa:employee:role-switch:happy-path:setup`
+17. perform the manual QA steps in the checklist, or run `npm run ui:test:employee:role-switch:happy-path`
+18. `npm run qa:employee:role-switch:happy-path:cleanup`
 
 ### Product
 
