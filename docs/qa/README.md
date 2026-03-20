@@ -55,7 +55,8 @@ Use this checklist after running the matching scenario setup command:
 
 1. `cashier/cashier-shift-open-close-happy-path-checklist.md`
 2. `cashier/cashier-shift-dispute-shortage-path-checklist.md`
-3. `cashier/cashier-opening-dispute-resend-path-checklist.md`
+3. `cashier/cashier-shift-waive-info-only-path-checklist.md`
+4. `cashier/cashier-opening-dispute-resend-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -65,9 +66,12 @@ Use this scenario family with the matching setup and cleanup commands:
 4. `npm run qa:cashier:shift-dispute-shortage-path:setup`
 5. perform the manual QA steps in the shortage checklist, or run `npm run ui:test:cashier:shift-dispute-shortage-path`
 6. `npm run qa:cashier:shift-dispute-shortage-path:cleanup`
-7. `npm run qa:cashier:opening-dispute-resend-path:setup`
-8. perform the manual QA steps in the dispute-resend checklist, or run `npm run ui:test:cashier:opening-dispute-resend-path`
-9. `npm run qa:cashier:opening-dispute-resend-path:cleanup`
+7. `npm run qa:cashier:shift-waive-info-only-path:setup`
+8. perform the manual QA steps in the alternate-decision checklist, or run `npm run ui:test:cashier:shift-waive-info-only-path`
+9. `npm run qa:cashier:shift-waive-info-only-path:cleanup`
+10. `npm run qa:cashier:opening-dispute-resend-path:setup`
+11. perform the manual QA steps in the dispute-resend checklist, or run `npm run ui:test:cashier:opening-dispute-resend-path`
+12. `npm run qa:cashier:opening-dispute-resend-path:cleanup`
 
 ### Delivery
 
