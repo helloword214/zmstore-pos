@@ -84,6 +84,7 @@ Use this scenario family with the matching setup and cleanup commands:
 7. `delivery/delivery-rider-acceptance-path-checklist.md`
 8. `delivery/delivery-final-settlement-gating-checklist.md`
 9. `delivery/delivery-final-settlement-info-only-waive-path-checklist.md`
+10. `delivery/delivery-payroll-deduction-follow-through-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -114,6 +115,9 @@ Use this scenario family with the matching setup and cleanup commands:
 25. `npm run qa:delivery:final-settlement-info-only-waive-path:setup`
 26. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-info-only-waive-path`
 27. `npm run qa:delivery:final-settlement-info-only-waive-path:cleanup`
+28. `npm run qa:delivery:payroll-deduction-follow-through:setup`
+29. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:payroll-deduction-follow-through`
+30. `npm run qa:delivery:payroll-deduction-follow-through:cleanup`
 
 ### Employee
 
