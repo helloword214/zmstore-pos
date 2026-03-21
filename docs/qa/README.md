@@ -157,6 +157,7 @@ The live app does not currently expose a separate branch or access maintenance U
 1. `product/product-catalog-admin-happy-path-checklist.md`
 2. `product/product-open-pack-happy-path-checklist.md`
 3. `product/product-photo-upload-happy-path-checklist.md`
+4. `product/product-target-indication-tagging-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -169,6 +170,9 @@ Use this scenario family with the matching setup and cleanup commands:
 7. `npm run qa:product:photo-upload:happy-path:setup`
 8. perform the manual QA steps in the checklist, or run `npm run ui:test:product:photo-upload:happy-path`
 9. `npm run qa:product:photo-upload:happy-path:cleanup`
+10. `npm run qa:product:target-indication-tagging:happy-path:setup`
+11. perform the manual QA steps in the checklist, or run `npm run ui:test:product:target-indication-tagging:happy-path`
+12. `npm run qa:product:target-indication-tagging:happy-path:cleanup`
 
 ### Workforce
 
