@@ -155,12 +155,16 @@ The live app does not currently expose a separate branch or access maintenance U
 ### Product
 
 1. `product/product-catalog-admin-happy-path-checklist.md`
+2. `product/product-open-pack-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
 1. `npm run qa:product:catalog-admin:happy-path:setup`
 2. perform the manual QA steps in the checklist, or run `npm run ui:test:product:catalog-admin:happy-path`
 3. `npm run qa:product:catalog-admin:happy-path:cleanup`
+4. `npm run qa:product:open-pack:happy-path:setup`
+5. perform the manual QA steps in the checklist, or run `npm run ui:test:product:open-pack:happy-path`
+6. `npm run qa:product:open-pack:happy-path:cleanup`
 
 ### Workforce
 
