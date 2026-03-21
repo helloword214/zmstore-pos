@@ -170,8 +170,9 @@ Use this scenario family with the matching setup and cleanup commands:
 4. `workforce/workforce-schedule-template-create-edit-happy-path-checklist.md`
 5. `workforce/workforce-schedule-planner-assignment-gating-path-checklist.md`
 6. `workforce/workforce-schedule-row-update-or-cancel-path-checklist.md`
-7. `workforce/workforce-schedule-append-event-history-path-checklist.md`
-8. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
+7. `workforce/workforce-schedule-published-row-maintenance-path-checklist.md`
+8. `workforce/workforce-schedule-append-event-history-path-checklist.md`
+9. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -193,9 +194,12 @@ Use this scenario family with the matching setup and cleanup commands:
 16. `npm run qa:workforce:schedule-row-update-or-cancel-path:setup`
 17. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-row-update-or-cancel-path`
 18. `npm run qa:workforce:schedule-row-update-or-cancel-path:cleanup`
-19. `npm run qa:workforce:schedule-append-event-history-path:setup`
-20. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-append-event-history-path`
-21. `npm run qa:workforce:schedule-append-event-history-path:cleanup`
-22. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
-23. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
-24. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
+19. `npm run qa:workforce:schedule-published-row-maintenance-path:setup`
+20. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-published-row-maintenance-path`
+21. `npm run qa:workforce:schedule-published-row-maintenance-path:cleanup`
+22. `npm run qa:workforce:schedule-append-event-history-path:setup`
+23. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-append-event-history-path`
+24. `npm run qa:workforce:schedule-append-event-history-path:cleanup`
+25. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
+26. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
+27. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
