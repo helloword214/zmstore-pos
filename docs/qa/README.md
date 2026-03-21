@@ -166,8 +166,9 @@ Use this scenario family with the matching setup and cleanup commands:
 
 1. `workforce/workforce-payroll-happy-path-checklist.md`
 2. `workforce/workforce-schedule-template-assignment-happy-path-checklist.md`
-3. `workforce/workforce-schedule-template-create-edit-happy-path-checklist.md`
-4. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
+3. `workforce/workforce-schedule-template-assignment-status-path-checklist.md`
+4. `workforce/workforce-schedule-template-create-edit-happy-path-checklist.md`
+5. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -177,9 +178,12 @@ Use this scenario family with the matching setup and cleanup commands:
 4. `npm run qa:workforce:schedule-template-assignment:happy-path:setup`
 5. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-template-assignment:happy-path`
 6. `npm run qa:workforce:schedule-template-assignment:happy-path:cleanup`
-7. `npm run qa:workforce:schedule-template-create-edit:happy-path:setup`
-8. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-template-create-edit:happy-path`
-9. `npm run qa:workforce:schedule-template-create-edit:happy-path:cleanup`
-10. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
-11. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
-12. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
+7. `npm run qa:workforce:schedule-template-assignment-status-path:setup`
+8. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-template-assignment-status-path`
+9. `npm run qa:workforce:schedule-template-assignment-status-path:cleanup`
+10. `npm run qa:workforce:schedule-template-create-edit:happy-path:setup`
+11. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-template-create-edit:happy-path`
+12. `npm run qa:workforce:schedule-template-create-edit:happy-path:cleanup`
+13. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
+14. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
+15. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
