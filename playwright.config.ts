@@ -286,6 +286,15 @@ export default defineConfig({
       },
     },
     {
+      name: "workforce-schedule-row-update-or-cancel-path",
+      testMatch:
+        /workforce\/workforce-schedule-row-update-or-cancel-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "workforce-schedule-planner-publish-visibility-happy-path",
       testMatch:
         /workforce\/workforce-schedule-planner-publish-visibility-happy-path\.spec\.ts/,
