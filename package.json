@@ -69,6 +69,8 @@
     "qa:workforce:schedule-planner-assignment-gating-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-planner-assignment-gating-path-cleanup.ts",
     "qa:workforce:schedule-row-update-or-cancel-path:setup": "tsx scripts/qa/workforce/workforce-schedule-row-update-or-cancel-path-setup.ts",
     "qa:workforce:schedule-row-update-or-cancel-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-row-update-or-cancel-path-cleanup.ts",
+    "qa:workforce:schedule-append-event-history-path:setup": "tsx scripts/qa/workforce/workforce-schedule-append-event-history-path-setup.ts",
+    "qa:workforce:schedule-append-event-history-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-append-event-history-path-cleanup.ts",
     "qa:workforce:schedule-planner-publish-visibility:happy-path:setup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-setup.ts",
     "qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-cleanup.ts",
     "automation:flow:setup": "node scripts/automation/business-flow/index.mjs setup",
@@ -101,6 +103,7 @@
     "ui:test:workforce:schedule-template-create-edit:happy-path": "QA_WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-template-create-edit-happy-path",
     "ui:test:workforce:schedule-planner-assignment-gating-path": "QA_WORKFORCE_SCHEDULE_PLANNER_ASSIGNMENT_GATING_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-planner-assignment-gating-path",
     "ui:test:workforce:schedule-row-update-or-cancel-path": "QA_WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-row-update-or-cancel-path",
+    "ui:test:workforce:schedule-append-event-history-path": "QA_WORKFORCE_SCHEDULE_APPEND_EVENT_HISTORY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-append-event-history-path",
     "ui:test:workforce:schedule-planner-publish-visibility:happy-path": "QA_WORKFORCE_SCHEDULE_PLANNER_PUBLISH_VISIBILITY_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-planner-publish-visibility-happy-path",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
