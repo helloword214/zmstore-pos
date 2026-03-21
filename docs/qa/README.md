@@ -168,7 +168,8 @@ Use this scenario family with the matching setup and cleanup commands:
 2. `workforce/workforce-schedule-template-assignment-happy-path-checklist.md`
 3. `workforce/workforce-schedule-template-assignment-status-path-checklist.md`
 4. `workforce/workforce-schedule-template-create-edit-happy-path-checklist.md`
-5. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
+5. `workforce/workforce-schedule-planner-assignment-gating-path-checklist.md`
+6. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -184,6 +185,9 @@ Use this scenario family with the matching setup and cleanup commands:
 10. `npm run qa:workforce:schedule-template-create-edit:happy-path:setup`
 11. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-template-create-edit:happy-path`
 12. `npm run qa:workforce:schedule-template-create-edit:happy-path:cleanup`
-13. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
-14. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
-15. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
+13. `npm run qa:workforce:schedule-planner-assignment-gating-path:setup`
+14. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-assignment-gating-path`
+15. `npm run qa:workforce:schedule-planner-assignment-gating-path:cleanup`
+16. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
+17. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
+18. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
