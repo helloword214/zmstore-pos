@@ -75,6 +75,8 @@
     "qa:workforce:schedule-append-event-history-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-append-event-history-path-cleanup.ts",
     "qa:workforce:schedule-planner-publish-visibility:happy-path:setup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-setup.ts",
     "qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-schedule-planner-publish-visibility-happy-path-cleanup.ts",
+    "qa:workforce:attendance-recording:happy-path:setup": "tsx scripts/qa/workforce/workforce-attendance-recording-happy-path-setup.ts",
+    "qa:workforce:attendance-recording:happy-path:cleanup": "tsx scripts/qa/workforce/workforce-attendance-recording-happy-path-cleanup.ts",
     "automation:flow:setup": "node scripts/automation/business-flow/index.mjs setup",
     "automation:flow:cleanup": "node scripts/automation/business-flow/index.mjs cleanup",
     "ui:test": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts",
@@ -108,6 +110,7 @@
     "ui:test:workforce:schedule-published-row-maintenance-path": "QA_WORKFORCE_SCHEDULE_PUBLISHED_ROW_MAINTENANCE_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-published-row-maintenance-path",
     "ui:test:workforce:schedule-append-event-history-path": "QA_WORKFORCE_SCHEDULE_APPEND_EVENT_HISTORY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-append-event-history-path",
     "ui:test:workforce:schedule-planner-publish-visibility:happy-path": "QA_WORKFORCE_SCHEDULE_PLANNER_PUBLISH_VISIBILITY_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-schedule-planner-publish-visibility-happy-path",
+    "ui:test:workforce:attendance-recording:happy-path": "QA_WORKFORCE_ATTENDANCE_RECORDING_HAPPY_PATH_ENABLE=1 npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --project=workforce-attendance-recording-happy-path",
     "ui:test:update": "npm exec --yes --package=@playwright/test -- playwright test --config=playwright.config.ts --update-snapshots",
     "ui:cycle": "node scripts/automation/run-ui-cycle.mjs"
   },

@@ -173,6 +173,7 @@ Use this scenario family with the matching setup and cleanup commands:
 7. `workforce/workforce-schedule-published-row-maintenance-path-checklist.md`
 8. `workforce/workforce-schedule-append-event-history-path-checklist.md`
 9. `workforce/workforce-schedule-planner-publish-visibility-happy-path-checklist.md`
+10. `workforce/workforce-attendance-recording-happy-path-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
@@ -203,3 +204,6 @@ Use this scenario family with the matching setup and cleanup commands:
 25. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`
 26. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:schedule-planner-publish-visibility:happy-path`
 27. `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:cleanup`
+28. `npm run qa:workforce:attendance-recording:happy-path:setup`
+29. perform the manual QA steps in the checklist, or run `npm run ui:test:workforce:attendance-recording:happy-path`
+30. `npm run qa:workforce:attendance-recording:happy-path:cleanup`
