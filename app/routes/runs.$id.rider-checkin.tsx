@@ -57,6 +57,16 @@ type StockRow = {
 
 type UIUnitKind = "PACK" | "RETAIL";
 const PACK: UIUnitKind = "PACK";
+type ParentOrderStatusUI =
+  | "DRAFT"
+  | "UNPAID"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "CANCELLED"
+  | "VOIDED";
+type DeliveryAttemptOutcomeUI =
+  | "NO_RELEASE_REATTEMPT"
+  | "NO_RELEASE_CANCELLED";
 
 // CCS naming convention (v2.5):
 // Manager decision snapshot (read-only for rider)
@@ -83,6 +93,18 @@ const isApproveDecision = (d: unknown) =>
   d === "APPROVE_OPEN_BALANCE" ||
   d === "APPROVE_DISCOUNT_OVERRIDE" ||
   d === "APPROVE_HYBRID";
+
+const isNoReleaseAttemptOutcome = (
+  value: unknown,
+): value is DeliveryAttemptOutcomeUI =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
+const formatAttemptOutcomeLabel = (value: DeliveryAttemptOutcomeUI | null | undefined) =>
+  value === "NO_RELEASE_REATTEMPT"
+    ? "No release • return to dispatch"
+    : value === "NO_RELEASE_CANCELLED"
+      ? "No release • cancel order"
+      : "Normal delivery";
 
 // CCS v2.6 SETTLED definition (for gating submit)
 const isSettled = (args: {
@@ -155,6 +177,7 @@ type ParentLineUI = {
 type ParentReceiptUI = {
   key: string;
   orderId: number;
+  orderStatus: ParentOrderStatusUI;
   customerId: number | null;
   needsClearance: boolean; // derived from CCS open case
   clearancePending?: boolean;
@@ -165,6 +188,9 @@ type ParentReceiptUI = {
   voided?: boolean;
   clearanceReason?: string;
   clearanceIntent?: ClearanceIntentUI;
+  attemptOutcome?: DeliveryAttemptOutcomeUI | null;
+  attemptNote?: string;
+  attemptFinalizedAt?: string | null;
   customerLabel: string;
   lines: ParentLineUI[];
   // orderTotal comes from frozen DB snapshot line totals
@@ -198,6 +224,10 @@ type LoaderData = {
 
 // CCS SoT key helpers
 const parentReceiptKey = (orderId: number) => `PARENT:${orderId}`;
+
+const shouldBypassClearanceForAttempt = (rec: {
+  attemptOutcome?: DeliveryAttemptOutcomeUI | null;
+}) => isNoReleaseAttemptOutcome(rec.attemptOutcome);
 
 type ActionData =
   | {
@@ -602,10 +632,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // 2. MAIN SOLD (from delivery orders – parent PAD orders)
   const links = await db.deliveryRunOrder.findMany({
     where: { runId: id },
-    include: {
+    select: {
+      attemptOutcome: true,
+      attemptNote: true,
+      attemptFinalizedAt: true,
       order: {
         select: {
           id: true,
+          status: true,
           isOnCredit: true,
           customerId: true,
           customer: {
@@ -677,9 +711,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const dbCash = parentPaymentsFromDb.get(o.id);
       const prk = parentReceiptKey(Number(o.id));
       const ccs = caseByReceiptKey.get(prk);
+      const attemptOutcome = isNoReleaseAttemptOutcome(L.attemptOutcome)
+        ? L.attemptOutcome
+        : null;
       const pending = ccs?.status === "NEEDS_CLEARANCE";
       const decided = ccs?.status === "DECIDED";
-      const needsClearance = pending; // derived
+      const needsClearance = !attemptOutcome && pending; // derived
       const clearanceReason = ccs?.note
         ? String(ccs.note).slice(0, 200)
         : undefined;
@@ -713,6 +750,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       return {
         key: `p-rec-${idx}`,
         orderId: o.id,
+        orderStatus: (o.status ?? "UNPAID") as ParentOrderStatusUI,
         customerId: o.customerId ?? null,
         needsClearance,
         clearancePending: pending,
@@ -727,9 +765,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         voided: isVoidedNote(
           (run.receipts || []).find((x) => x.receiptKey === prk)?.note,
         ),
-
         clearanceReason,
         clearanceIntent,
+        attemptOutcome,
+        attemptNote:
+          typeof L.attemptNote === "string" ? String(L.attemptNote) : undefined,
+        attemptFinalizedAt: fmtIso(L.attemptFinalizedAt),
         customerLabel,
         lines,
         // ✅ frozen total shown immediately
@@ -1007,6 +1048,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   type ParentOrderSnapLite = {
     id: number;
+    status: ParentOrderStatusUI;
     customerId: number | null;
     items: Array<{ lineTotal: unknown }>;
   };
@@ -1084,6 +1126,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     String(parentPaymentsJson || "[]"),
   ) as Array<{ orderId: number; cashCollected: number }>;
 
+  const parentAttemptJson = fd.get("parentAttemptJson");
+  const rawParentAttempts = JSON.parse(
+    String(parentAttemptJson || "[]"),
+  ) as Array<{
+    orderId: number;
+    attemptOutcome?: DeliveryAttemptOutcomeUI | null;
+    attemptNote?: string;
+  }>;
+
   // ✅ Pricing SoT: DO NOT accept parent quoted prices from client.
   // Parent orders are already frozen at order creation; downstream must read DB snapshot only.
 
@@ -1096,6 +1147,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     new Set([
       ...rawParentClearance.map((o) => Number(o.orderId) || 0),
       ...rawParentPayments.map((p) => Number(p.orderId) || 0),
+      ...rawParentAttempts.map((a) => Number(a.orderId) || 0),
     ]),
   ).filter((x) => x > 0);
 
@@ -1158,6 +1210,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ]),
   );
 
+  const attemptByOrderId = new Map<
+    number,
+    { attemptOutcome: DeliveryAttemptOutcomeUI | null; attemptNote?: string }
+  >(
+    rawParentAttempts
+      .map((x) => ({
+        orderId: Number(x.orderId) || 0,
+        attemptOutcome: isNoReleaseAttemptOutcome(x.attemptOutcome)
+          ? x.attemptOutcome
+          : null,
+        attemptNote:
+          typeof x.attemptNote === "string"
+            ? x.attemptNote.trim().slice(0, 200)
+            : undefined,
+      }))
+      .filter((x) => x.orderId > 0)
+      .map((x) => [
+        x.orderId,
+        {
+          attemptOutcome: x.attemptOutcome,
+          attemptNote: x.attemptNote,
+        },
+      ]),
+  );
+
   // ✅ Parent clearance intent map (required by action validations + claim type)
   type ClearanceIntent = "OPEN_BALANCE" | "PRICE_BARGAIN";
   const parentIntentByOrderId = new Map<number, ClearanceIntent>(
@@ -1182,6 +1259,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           where: { id: { in: orderIds } },
           select: {
             id: true,
+            status: true,
             subtotal: true,
             totalBeforeDiscount: true,
             customerId: true,
@@ -1347,6 +1425,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
+    const activeParentCaseKeys = new Set(
+      (
+        await tx.clearanceCase.findMany({
+          where: {
+            runId: id,
+            receiptKey: { in: orderIds.map(parentReceiptKey) },
+            status: {
+              in: [
+                ClearanceCaseStatus.NEEDS_CLEARANCE,
+                ClearanceCaseStatus.DECIDED,
+              ],
+            },
+          },
+          select: { receiptKey: true },
+        })
+      )
+        .map((c) => normalizeKey(c.receiptKey))
+        .filter(Boolean),
+    );
+
     // Parent receipts (POS orders) => kind PARENT, keyed by orderId
     // ✅ Save header + lines snapshot (for cashier/audit)
     // IMPORTANT: iterate orderIds (not overrides) so missing override doesn't skip persistence.
@@ -1366,6 +1464,35 @@ export async function action({ request, params }: ActionFunctionArgs) {
         o,
         parentPaidRawByOrderId.get(orderId) ?? 0,
       );
+      const receiptKeyCCS = parentReceiptKey(orderId);
+      const attemptMeta = attemptByOrderId.get(orderId);
+      const attemptOutcome = attemptMeta?.attemptOutcome ?? null;
+      const hasAttemptOutcome = isNoReleaseAttemptOutcome(attemptOutcome);
+      const receiptCash = hasAttemptOutcome ? 0 : Number(paid || 0);
+
+      if (hasAttemptOutcome && activeParentCaseKeys.has(receiptKeyCCS)) {
+        throw new Response(
+          `Cannot mark no-release for parent order ${orderId}: clearance already exists for this receipt.`,
+          { status: 400 },
+        );
+      }
+
+      if (hasAttemptOutcome && paid > MONEY_EPS) {
+        throw new Response(
+          `No-release attempt requires zero rider cash for parent order ${orderId}.`,
+          { status: 400 },
+        );
+      }
+
+      if (
+        attemptOutcome === "NO_RELEASE_CANCELLED" &&
+        o.status === "PARTIALLY_PAID"
+      ) {
+        throw new Response(
+          `Cannot cancel parent order ${orderId}: partially paid orders need refund/void flow, not no-release cancel.`,
+          { status: 400 },
+        );
+      }
 
       // ✅ Two gates:
       // - PAYMENT gate: remaining > EPS
@@ -1373,7 +1500,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // v2.5 SoT: submit-checkin is allowed ONLY if PENDING ClearanceCase exists for any remaining > EPS.
       // UI "needsClearance" checkbox is NOT the source of truth (it's just a helper UX).
       const metaFromUi = clearanceByOrderId.get(orderId);
-      const needsClearanceEffective = remaining > MONEY_EPS;
+      const needsClearanceEffective =
+        !hasAttemptOutcome && remaining > MONEY_EPS;
 
       if (isSubmit && needsClearanceEffective) {
         const msg = String(metaFromUi?.clearanceReason || "").trim();
@@ -1398,8 +1526,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
         (c?.alias && c.alias.trim()) ||
         [c?.firstName, c?.lastName].filter(Boolean).join(" ") ||
         null;
-
-      const receiptKeyCCS = parentReceiptKey(orderId);
 
       // ✅ Build PARENT lines ONLY from DB-frozen OrderItems (SoT)
       const frozenLines = (o.items || [])
@@ -1465,7 +1591,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerId: o.customerId ?? null,
           customerName,
           customerPhone: c?.phone ?? null,
-          cashCollected: new Prisma.Decimal(Number(paid || 0)),
+          cashCollected: new Prisma.Decimal(receiptCash),
           lines: { create: lines },
         },
         update: {
@@ -1473,12 +1599,33 @@ export async function action({ request, params }: ActionFunctionArgs) {
           customerId: o.customerId ?? null,
           customerName,
           customerPhone: c?.phone ?? null,
-          cashCollected: new Prisma.Decimal(Number(paid || 0)),
+          cashCollected: new Prisma.Decimal(receiptCash),
           lines: {
             deleteMany: {}, // wipe lines of this receipt only
             create: lines,
           },
         },
+      });
+
+      await tx.deliveryRunOrder.update({
+        where: { runId_orderId: { runId: id, orderId } },
+        data: hasAttemptOutcome
+          ? {
+              attemptOutcome,
+              attemptNote: attemptMeta?.attemptNote || null,
+              attemptReportedAt: new Date(),
+              attemptReportedById: actorId,
+              attemptFinalizedAt: null,
+              attemptFinalizedById: null,
+            }
+          : {
+              attemptOutcome: null,
+              attemptNote: null,
+              attemptReportedAt: null,
+              attemptReportedById: null,
+              attemptFinalizedAt: null,
+              attemptFinalizedById: null,
+            },
       });
 
       // CCS v2.5: submit-checkin MUST NOT create cases.
@@ -1622,8 +1769,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // This enforces: "kapag may for clearance na isa, bawal i-submit kahit yung fully paid"
     if (isSubmit) {
       const receiptKeysToCheck: string[] = [];
-      for (const orderId of orderIds)
+      for (const orderId of orderIds) {
+        const attemptOutcome = attemptByOrderId.get(orderId)?.attemptOutcome;
+        if (isNoReleaseAttemptOutcome(attemptOutcome)) continue;
         receiptKeysToCheck.push(parentReceiptKey(orderId));
+      }
       for (const r of roadReceipts || [])
         receiptKeysToCheck.push(
           String(r.key || "")
@@ -1737,6 +1887,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       for (const orderId of orderIds) {
         const o = parentOrderById.get(orderId);
         if (!o) continue;
+        const attemptOutcome = attemptByOrderId.get(orderId)?.attemptOutcome;
+        if (isNoReleaseAttemptOutcome(attemptOutcome)) continue;
         const { remaining } = calcParentPayable(
           o,
           parentPaidRawByOrderId.get(orderId) ?? 0,
@@ -1899,6 +2051,7 @@ export default function RiderCheckinPage() {
   }, [clearanceSent, voided, parentReceipts]);
 
   const remainingForParent = React.useCallback((rec: ParentReceiptUI) => {
+    if (shouldBypassClearanceForAttempt(rec)) return 0;
     const total = Number(rec.orderTotal || 0);
     const cash = Number(rec.cashCollected || 0);
     return Math.max(0, Number((total - cash).toFixed(2)));
@@ -2033,6 +2186,17 @@ export default function RiderCheckinPage() {
 
   const summaryParent = React.useCallback(
     (rec: ParentReceiptUI) => {
+      if (shouldBypassClearanceForAttempt(rec)) {
+        return (
+          <span className="text-amber-700">
+            {formatAttemptOutcomeLabel(rec.attemptOutcome)}
+            <span className="ml-1 text-slate-500">
+              • Manager will finalize on remit
+            </span>
+          </span>
+        );
+      }
+
       const rem = remainingForParent(rec);
 
       // prefer cashInput (typed) → else cashCollected → else 0
@@ -2168,30 +2332,6 @@ export default function RiderCheckinPage() {
     [getBaseFor, peso],
   );
 
-  // quick-sold by pid (from initial ROAD receipts hydration)
-  const snapshotQuickSoldByPid = React.useMemo(() => {
-    const m = new Map<number, number>();
-    for (const rec of initialRoadReceipts || []) {
-      for (const ln of rec.lines || []) {
-        if (ln.productId == null) continue;
-        const pid = ln.productId;
-        m.set(pid, (m.get(pid) || 0) + Number(ln.qty || 0));
-      }
-    }
-    return m;
-  }, [initialRoadReceipts]);
-
-  // baseSoldByPid = loader.sold - snapshot quick (meaning: main POS only)
-  const baseSoldByPid = React.useMemo(() => {
-    const m = new Map<number, number>();
-    for (const r of rows) {
-      const snap = snapshotQuickSoldByPid.get(r.productId) ?? 0;
-      const base = Math.max(0, (r.sold || 0) - snap);
-      m.set(r.productId, base);
-    }
-    return m;
-  }, [rows, snapshotQuickSoldByPid]);
-
   // receipts state (quick sales UI)
   const [receipts, setReceipts] = React.useState<SoldReceiptUI[]>(() =>
     Array.isArray(initialRoadReceipts)
@@ -2256,6 +2396,20 @@ export default function RiderCheckinPage() {
     },
     [parseMoney],
   );
+
+  const currentParentSoldByPid = React.useMemo(() => {
+    const m = new Map<number, number>();
+    for (const rec of parentReceiptsState) {
+      if (shouldBypassClearanceForAttempt(rec)) continue;
+      for (const ln of rec.lines || []) {
+        if (ln.productId == null) continue;
+        const pid = ln.productId;
+        m.set(pid, (m.get(pid) || 0) + Number(ln.qty || 0));
+      }
+    }
+    return m;
+  }, [parentReceiptsState]);
+
   // allocateCashAcrossLines removed (we use receipt-level cash now)
   // current quick-sold by pid (based on receipts state – live)
   const currentQuickSoldByPid = React.useMemo(() => {
@@ -2276,11 +2430,11 @@ export default function RiderCheckinPage() {
       const row = rows.find((rr) => rr.productId === pid);
       if (!row) return 0;
       const loaded = row.loaded;
-      const base = baseSoldByPid.get(pid) ?? 0;
+      const base = currentParentSoldByPid.get(pid) ?? 0;
       const quick = currentQuickSoldByPid.get(pid) ?? 0;
       return loaded - base - quick;
     },
-    [rows, baseSoldByPid, currentQuickSoldByPid],
+    [rows, currentParentSoldByPid, currentQuickSoldByPid],
   );
 
   // Only show products in dropdown na may natitirang stock
@@ -2305,11 +2459,11 @@ export default function RiderCheckinPage() {
   // helper: display sold for recap = base + current quick
   const displaySold = React.useCallback(
     (pid: number) => {
-      const base = baseSoldByPid.get(pid) ?? 0;
+      const base = currentParentSoldByPid.get(pid) ?? 0;
       const quick = currentQuickSoldByPid.get(pid) ?? 0;
       return base + quick;
     },
-    [baseSoldByPid, currentQuickSoldByPid],
+    [currentParentSoldByPid, currentQuickSoldByPid],
   );
 
   // Stock recap is audit-driven: returned is auto-derived from loaded - sold.
@@ -2690,9 +2844,12 @@ export default function RiderCheckinPage() {
                   );
                   const showStatus = !open; // ✅ show badges only when collapsed
                   const recLocked = isReceiptLocked(hasCaseStatus);
-                  const autoNeeds = rem > MONEY_EPS;
+                  const hasAttemptOutcome = shouldBypassClearanceForAttempt(rec);
+                  const autoNeeds = !hasAttemptOutcome && rem > MONEY_EPS;
                   const rejected = rec.clearanceDecision === "REJECT";
                   const voided = !!rec.voided;
+                  const canCancelBeforeRelease =
+                    rec.orderStatus !== "PARTIALLY_PAID";
                   return (
                     <div
                       key={rec.key}
@@ -2710,7 +2867,14 @@ export default function RiderCheckinPage() {
                         }`}
                         subtitle={summaryParent(rec)}
                         pill={
-                          showStatus && pending ? (
+                          showStatus && hasAttemptOutcome ? (
+                            <>
+                              <StatusPill status="INFO" label="NO RELEASE" />
+                              <span className="text-[11px] text-slate-500">
+                                {formatAttemptOutcomeLabel(rec.attemptOutcome)}
+                              </span>
+                            </>
+                          ) : showStatus && pending ? (
                             <>
                               <StatusPill
                                 status="PENDING"
@@ -2804,6 +2968,139 @@ export default function RiderCheckinPage() {
                             })}
                           </div>
                         </div>
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
+                          <div className="font-medium">
+                            Delivery attempt outcome
+                          </div>
+                          <div className="mt-2 grid gap-2 md:grid-cols-3">
+                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                              <input
+                                type="radio"
+                                name={`attempt-ui-${rec.orderId}`}
+                                checked={!hasAttemptOutcome}
+                                disabled={recLocked}
+                                onChange={() =>
+                                  setParentReceiptsState((prev) =>
+                                    prev.map((r) =>
+                                      r.key === rec.key
+                                        ? {
+                                            ...r,
+                                            attemptOutcome: null,
+                                            attemptNote: r.attemptNote ?? "",
+                                          }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                              />
+                              <span>Normal delivery</span>
+                            </label>
+                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                              <input
+                                type="radio"
+                                name={`attempt-ui-${rec.orderId}`}
+                                checked={
+                                  rec.attemptOutcome ===
+                                  "NO_RELEASE_REATTEMPT"
+                                }
+                                disabled={recLocked}
+                                onChange={() =>
+                                  setParentReceiptsState((prev) =>
+                                    prev.map((r) =>
+                                      r.key === rec.key
+                                        ? {
+                                            ...r,
+                                            attemptOutcome:
+                                              "NO_RELEASE_REATTEMPT",
+                                            cashCollected: undefined,
+                                            cashInput: "",
+                                            needsClearance: false,
+                                            clearanceReason: "",
+                                          }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                              />
+                              <span>Return to dispatch</span>
+                            </label>
+                            <label
+                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+                                canCancelBeforeRelease
+                                  ? "border-amber-200 bg-white"
+                                  : "border-slate-200 bg-slate-100 text-slate-400"
+                              }`}
+                              title={
+                                canCancelBeforeRelease
+                                  ? undefined
+                                  : "Partially paid parent orders need refund/void flow before cancellation."
+                              }
+                            >
+                              <input
+                                type="radio"
+                                name={`attempt-ui-${rec.orderId}`}
+                                checked={
+                                  rec.attemptOutcome ===
+                                  "NO_RELEASE_CANCELLED"
+                                }
+                                disabled={recLocked || !canCancelBeforeRelease}
+                                onChange={() =>
+                                  setParentReceiptsState((prev) =>
+                                    prev.map((r) =>
+                                      r.key === rec.key
+                                        ? {
+                                            ...r,
+                                            attemptOutcome:
+                                              "NO_RELEASE_CANCELLED",
+                                            cashCollected: undefined,
+                                            cashInput: "",
+                                            needsClearance: false,
+                                            clearanceReason: "",
+                                          }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                              />
+                              <span>Cancel before release</span>
+                            </label>
+                          </div>
+                          <div className="mt-2">
+                            <textarea
+                              rows={2}
+                              disabled={recLocked}
+                              value={rec.attemptNote ?? ""}
+                              onChange={(e) =>
+                                setParentReceiptsState((prev) =>
+                                  prev.map((r) =>
+                                    r.key === rec.key
+                                      ? {
+                                          ...r,
+                                          attemptNote: e.target.value
+                                            .slice(0, 200),
+                                        }
+                                      : r,
+                                  ),
+                                )
+                              }
+                              placeholder="Reason / note for manager (optional)"
+                              className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus-visible:border-amber-300 focus-visible:ring-2 focus-visible:ring-amber-100"
+                            />
+                          </div>
+                          {hasAttemptOutcome ? (
+                            <div className="mt-2 text-[11px] text-amber-800">
+                              No-release outcomes bypass clearance for this
+                              parent order. Manager will confirm the final
+                              disposition during remit.
+                            </div>
+                          ) : null}
+                          {!canCancelBeforeRelease ? (
+                            <div className="mt-2 text-[11px] text-slate-500">
+                              Cancel before release is disabled for partially
+                              paid orders until refund/void flow exists.
+                            </div>
+                          ) : null}
+                        </div>
                         {/* ✅ Payment (Parent) — match Quick Sales layout/wording */}
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                           <div className="flex items-start justify-between gap-3">
@@ -2831,12 +3128,14 @@ export default function RiderCheckinPage() {
                                 type="text"
                                 inputMode="decimal"
                                 placeholder={Number(
-                                  rec.orderTotal || 0,
+                                  hasAttemptOutcome ? 0 : rec.orderTotal || 0,
                                 ).toFixed(2)}
-                                disabled={recLocked}
+                                disabled={recLocked || hasAttemptOutcome}
                                 className="w-28 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-right text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 value={
-                                  rec.cashInput ??
+                                  hasAttemptOutcome
+                                    ? "0.00"
+                                    : rec.cashInput ??
                                   (rec.cashCollected != null
                                     ? rec.cashCollected.toFixed(2)
                                     : Number(rec.orderTotal || 0).toFixed(2))
@@ -2920,6 +3219,13 @@ export default function RiderCheckinPage() {
                          - Collapsible to reduce noise (esp. when pending)
                     */}
                         <div className="mt-3 space-y-2">
+                          {hasAttemptOutcome ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                              Clearance is skipped for this parent order because
+                              the rider marked it as no-release. Final outcome:
+                              manager remit.
+                            </div>
+                          ) : null}
                           {autoNeeds ? (
                             <ClearanceCard
                               id={`p:${rec.orderId}`}
@@ -3511,7 +3817,8 @@ export default function RiderCheckinPage() {
                                     }
 
                                     const loaded = row.loaded;
-                                    const base = baseSoldByPid.get(pid) ?? 0;
+                                    const base =
+                                      currentParentSoldByPid.get(pid) ?? 0;
 
                                     // Other quick quantities (all lines except ln)
                                     let otherQuick = 0;
@@ -3920,6 +4227,18 @@ export default function RiderCheckinPage() {
               )}
             />
 
+            <input
+              type="hidden"
+              name="parentAttemptJson"
+              value={JSON.stringify(
+                parentReceiptsState.map((rec) => ({
+                  orderId: rec.orderId,
+                  attemptOutcome: rec.attemptOutcome ?? null,
+                  attemptNote: rec.attemptNote ?? "",
+                })),
+              )}
+            />
+
             {/* Hidden: parent order cash collected (snapshot only) */}
             <input
               type="hidden"
@@ -3928,7 +4247,9 @@ export default function RiderCheckinPage() {
                 parentReceiptsState
                   .map((rec) => {
                     const total = Number(rec.orderTotal || 0);
-                    const raw = rec.cashInput ?? rec.cashCollected ?? "";
+                    const raw = shouldBypassClearanceForAttempt(rec)
+                      ? "0"
+                      : rec.cashInput ?? rec.cashCollected ?? "";
                     const { clamped } = clampCashToTotal(total, raw);
                     return {
                       orderId: rec.orderId,

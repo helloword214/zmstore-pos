@@ -18,6 +18,9 @@ const n = (v: unknown) => {
   return Number.isFinite(x) ? x : 0;
 };
 
+const isNoReleaseAttemptOutcome = (value: unknown) =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
 /**
  * Source-of-truth recap for a run:
  * - loaded: from deliveryRun.loadoutSnapshot (fallback: implicitly loaded = parent sold if missing)
@@ -67,6 +70,7 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
   const parentLinks = await dbx.deliveryRunOrder.findMany({
     where: { runId },
     select: {
+      attemptOutcome: true,
       order: {
         select: {
           orderCode: true,
@@ -82,6 +86,7 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
     const o = L.order;
     if (!o) continue;
     if ((o.orderCode || "").startsWith("RS-")) continue; // ignore posted roadside orders
+    if (isNoReleaseAttemptOutcome(L.attemptOutcome)) continue;
     for (const it of o.items || []) {
       const pid = Number(it.productId ?? 0);
       const qty = Math.max(0, n(it.qty));

@@ -504,6 +504,11 @@ enum FulfillmentStatus {
   ON_HOLD
 }
 
+enum DeliveryAttemptOutcome {
+  NO_RELEASE_REATTEMPT
+  NO_RELEASE_CANCELLED
+}
+
 enum LpgSwapKind {
   REFILL
   SWAP_CATGAS
@@ -532,21 +537,21 @@ model Employee {
   defaultVehicle   Vehicle? @relation("DefaultVehicle", fields: [defaultVehicleId], references: [id], onDelete: SetNull)
 
   // Back-relations
-  ordersAsRider               Order[]                      @relation("OrderRider")
-  runsAsRider                 DeliveryRun[]                @relation("RunRider")
+  ordersAsRider               Order[]                             @relation("OrderRider")
+  runsAsRider                 DeliveryRun[]                       @relation("RunRider")
   user                        User?
   address                     EmployeeAddress?
   documents                   EmployeeDocument[]
   riderVariances              RiderRunVariance[]
-  scheduleTemplateAssignments ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsOnEmployee")
-  workerSchedules             WorkerSchedule[]             @relation("WorkerSchedulesOnEmployee")
-  attendanceDutyResults       AttendanceDutyResult[]       @relation("AttendanceDutyResultsOnEmployee")
-  suspensionRecords           SuspensionRecord[]           @relation("SuspensionRecordsOnEmployee")
-  payProfiles                 EmployeePayProfile[]         @relation("EmployeePayProfilesOnEmployee")
+  scheduleTemplateAssignments ScheduleTemplateAssignment[]        @relation("WorkerScheduleTemplateAssignmentsOnEmployee")
+  workerSchedules             WorkerSchedule[]                    @relation("WorkerSchedulesOnEmployee")
+  attendanceDutyResults       AttendanceDutyResult[]              @relation("AttendanceDutyResultsOnEmployee")
+  suspensionRecords           SuspensionRecord[]                  @relation("SuspensionRecordsOnEmployee")
+  payProfiles                 EmployeePayProfile[]                @relation("EmployeePayProfilesOnEmployee")
   statutoryDeductionProfiles  EmployeeStatutoryDeductionProfile[] @relation("EmployeeStatutoryDeductionProfilesOnEmployee")
-  payrollRunLines             PayrollRunLine[]             @relation("PayrollRunLinesOnEmployee")
-  scheduleEventSubjects       ScheduleEvent[]              @relation("WorkerScheduleEventSubjects")
-  scheduleEventRelatedWorkers ScheduleEvent[]              @relation("WorkerScheduleEventRelatedWorkers")
+  payrollRunLines             PayrollRunLine[]                    @relation("PayrollRunLinesOnEmployee")
+  scheduleEventSubjects       ScheduleEvent[]                     @relation("WorkerScheduleEventSubjects")
+  scheduleEventRelatedWorkers ScheduleEvent[]                     @relation("WorkerScheduleEventRelatedWorkers")
 
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -886,23 +891,23 @@ model WorkerSchedule {
 }
 
 model AttendanceDutyResult {
-  id                  Int                   @id @default(autoincrement())
-  workerId            Int
-  scheduleId          Int?                  @unique
-  dutyDate            DateTime              @db.Date
-  dayType             AttendanceDayType
-  attendanceResult    AttendanceResult
-  workContext         AttendanceWorkContext @default(REGULAR)
-  leaveType           AttendanceLeaveType?
-  lateFlag            AttendanceLateFlag    @default(NO)
-  note                String?
-  recordedById        Int?
-  recordedAt          DateTime              @default(now())
-  payProfileId        Int?
-  dailyRate           Decimal?              @db.Decimal(12, 2)
-  halfDayFactor       Decimal               @default(0.5) @db.Decimal(5, 4)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  id               Int                   @id @default(autoincrement())
+  workerId         Int
+  scheduleId       Int?                  @unique
+  dutyDate         DateTime              @db.Date
+  dayType          AttendanceDayType
+  attendanceResult AttendanceResult
+  workContext      AttendanceWorkContext @default(REGULAR)
+  leaveType        AttendanceLeaveType?
+  lateFlag         AttendanceLateFlag    @default(NO)
+  note             String?
+  recordedById     Int?
+  recordedAt       DateTime              @default(now())
+  payProfileId     Int?
+  dailyRate        Decimal?              @db.Decimal(12, 2)
+  halfDayFactor    Decimal               @default(0.5) @db.Decimal(5, 4)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
   worker     Employee            @relation("AttendanceDutyResultsOnEmployee", fields: [workerId], references: [id], onDelete: Cascade)
   schedule   WorkerSchedule?     @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
@@ -1066,25 +1071,25 @@ model PayrollRun {
 }
 
 model PayrollRunLine {
-  id                        Int      @id @default(autoincrement())
-  payrollRunId              Int
-  employeeId                Int
-  attendanceSnapshotIds     Json?
-  baseAttendancePay         Decimal  @default(0) @db.Decimal(12, 2)
-  attendanceIncentiveAmount Decimal  @default(0) @db.Decimal(12, 2)
-  totalAdditions            Decimal  @default(0) @db.Decimal(12, 2)
-  grossPay                  Decimal  @default(0) @db.Decimal(12, 2)
-  chargeDeductionAmount     Decimal  @default(0) @db.Decimal(12, 2)
-  statutoryDeductionAmount  Decimal  @default(0) @db.Decimal(12, 2)
-  totalDeductions           Decimal  @default(0) @db.Decimal(12, 2)
-  netPay                    Decimal  @default(0) @db.Decimal(12, 2)
-  policySnapshot            Json?
-  additionSnapshot          Json?
+  id                         Int      @id @default(autoincrement())
+  payrollRunId               Int
+  employeeId                 Int
+  attendanceSnapshotIds      Json?
+  baseAttendancePay          Decimal  @default(0) @db.Decimal(12, 2)
+  attendanceIncentiveAmount  Decimal  @default(0) @db.Decimal(12, 2)
+  totalAdditions             Decimal  @default(0) @db.Decimal(12, 2)
+  grossPay                   Decimal  @default(0) @db.Decimal(12, 2)
+  chargeDeductionAmount      Decimal  @default(0) @db.Decimal(12, 2)
+  statutoryDeductionAmount   Decimal  @default(0) @db.Decimal(12, 2)
+  totalDeductions            Decimal  @default(0) @db.Decimal(12, 2)
+  netPay                     Decimal  @default(0) @db.Decimal(12, 2)
+  policySnapshot             Json?
+  additionSnapshot           Json?
   statutoryDeductionSnapshot Json?
-  deductionSnapshot         Json?
-  managerOverrideNote       String?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  deductionSnapshot          Json?
+  managerOverrideNote        String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
   employee   Employee   @relation("PayrollRunLinesOnEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
@@ -1273,11 +1278,28 @@ model DeliveryRunOrder {
   orderId  Int
   sequence Int? // optional stop ordering
 
+  // No-release outcome for this specific run attempt.
+  attemptOutcome DeliveryAttemptOutcome?
+  attemptNote    String?                 @db.VarChar(200)
+
+  // Rider report audit
+  attemptReportedAt   DateTime?
+  attemptReportedById Int?
+  attemptReportedBy   User?     @relation("DeliveryRunOrderAttemptReportedBy", fields: [attemptReportedById], references: [id], onDelete: SetNull)
+
+  // Manager final disposition audit
+  attemptFinalizedAt   DateTime?
+  attemptFinalizedById Int?
+  attemptFinalizedBy   User?     @relation("DeliveryRunOrderAttemptFinalizedBy", fields: [attemptFinalizedById], references: [id], onDelete: SetNull)
+
   run   DeliveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   order Order       @relation("OrderRunLinks", fields: [orderId], references: [id], onDelete: Cascade)
 
   @@id([runId, orderId])
   @@index([orderId])
+  @@index([attemptOutcome])
+  @@index([attemptReportedById])
+  @@index([attemptFinalizedById])
 }
 
 // ────────────── Rider Cash Variance (Shortages / Over) ──────────────
@@ -1913,6 +1935,10 @@ model User {
   // v2.6: who voided a receipt
   voidedRunReceipts RunReceipt[] @relation("RunReceiptVoidedBy")
 
+  // Delivery attempt outcome audit
+  deliveryRunOrderAttemptsReported  DeliveryRunOrder[] @relation("DeliveryRunOrderAttemptReportedBy")
+  deliveryRunOrderAttemptsFinalized DeliveryRunOrder[] @relation("DeliveryRunOrderAttemptFinalizedBy")
+
   // ✅ NEW: manager/admin who final-closed a shift (audit trail)
   cashierShiftsFinalClosed CashierShift[] @relation("CashierShiftFinalClosedBy")
 
@@ -1920,33 +1946,33 @@ model User {
   cashierShiftsOpeningVerified CashierShift[] @relation("CashierShiftOpeningVerifiedBy")
 
   // Role lifecycle and immutable audit
-  roleAssignments                          UserRoleAssignment[]         @relation("UserRoleAssignments")
-  roleAssignmentsAuthored                  UserRoleAssignment[]         @relation("UserRoleAssignmentsChangedBy")
-  roleAuditEvents                          UserRoleAuditEvent[]         @relation("UserRoleAuditEventsOnUser")
-  roleAuditEventsAuthored                  UserRoleAuditEvent[]         @relation("UserRoleAuditEventsChangedBy")
-  passwordResetTokens                      PasswordResetToken[]
-  loginOtpChallenges                       LoginOtpChallenge[]
-  employeeDocumentsUploaded                EmployeeDocument[]           @relation("EmployeeDocumentsUploadedBy")
-  workerScheduleTemplatesCreated           ScheduleTemplate[]           @relation("WorkerScheduleTemplatesCreatedBy")
-  workerScheduleTemplatesUpdated           ScheduleTemplate[]           @relation("WorkerScheduleTemplatesUpdatedBy")
-  workerScheduleTemplateAssignmentsCreated ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsCreatedBy")
-  workerScheduleTemplateAssignmentsUpdated ScheduleTemplateAssignment[] @relation("WorkerScheduleTemplateAssignmentsUpdatedBy")
-  workerSchedulesCreated                   WorkerSchedule[]             @relation("WorkerSchedulesCreatedBy")
-  workerSchedulesUpdated                   WorkerSchedule[]             @relation("WorkerSchedulesUpdatedBy")
-  workerSchedulesPublished                 WorkerSchedule[]             @relation("WorkerSchedulesPublishedBy")
-  workerScheduleEventsAuthored             ScheduleEvent[]              @relation("WorkerScheduleEventsAuthoredBy")
-  workerAttendanceDutyResultsRecorded      AttendanceDutyResult[]       @relation("AttendanceDutyResultsRecordedBy")
-  workerSuspensionRecordsApplied           SuspensionRecord[]           @relation("WorkerSuspensionRecordsAppliedBy")
-  workerSuspensionRecordsLifted            SuspensionRecord[]           @relation("WorkerSuspensionRecordsLiftedBy")
-  employeePayProfilesCreated               EmployeePayProfile[]         @relation("EmployeePayProfilesCreatedBy")
-  employeePayProfilesUpdated               EmployeePayProfile[]         @relation("EmployeePayProfilesUpdatedBy")
+  roleAssignments                           UserRoleAssignment[]                @relation("UserRoleAssignments")
+  roleAssignmentsAuthored                   UserRoleAssignment[]                @relation("UserRoleAssignmentsChangedBy")
+  roleAuditEvents                           UserRoleAuditEvent[]                @relation("UserRoleAuditEventsOnUser")
+  roleAuditEventsAuthored                   UserRoleAuditEvent[]                @relation("UserRoleAuditEventsChangedBy")
+  passwordResetTokens                       PasswordResetToken[]
+  loginOtpChallenges                        LoginOtpChallenge[]
+  employeeDocumentsUploaded                 EmployeeDocument[]                  @relation("EmployeeDocumentsUploadedBy")
+  workerScheduleTemplatesCreated            ScheduleTemplate[]                  @relation("WorkerScheduleTemplatesCreatedBy")
+  workerScheduleTemplatesUpdated            ScheduleTemplate[]                  @relation("WorkerScheduleTemplatesUpdatedBy")
+  workerScheduleTemplateAssignmentsCreated  ScheduleTemplateAssignment[]        @relation("WorkerScheduleTemplateAssignmentsCreatedBy")
+  workerScheduleTemplateAssignmentsUpdated  ScheduleTemplateAssignment[]        @relation("WorkerScheduleTemplateAssignmentsUpdatedBy")
+  workerSchedulesCreated                    WorkerSchedule[]                    @relation("WorkerSchedulesCreatedBy")
+  workerSchedulesUpdated                    WorkerSchedule[]                    @relation("WorkerSchedulesUpdatedBy")
+  workerSchedulesPublished                  WorkerSchedule[]                    @relation("WorkerSchedulesPublishedBy")
+  workerScheduleEventsAuthored              ScheduleEvent[]                     @relation("WorkerScheduleEventsAuthoredBy")
+  workerAttendanceDutyResultsRecorded       AttendanceDutyResult[]              @relation("AttendanceDutyResultsRecordedBy")
+  workerSuspensionRecordsApplied            SuspensionRecord[]                  @relation("WorkerSuspensionRecordsAppliedBy")
+  workerSuspensionRecordsLifted             SuspensionRecord[]                  @relation("WorkerSuspensionRecordsLiftedBy")
+  employeePayProfilesCreated                EmployeePayProfile[]                @relation("EmployeePayProfilesCreatedBy")
+  employeePayProfilesUpdated                EmployeePayProfile[]                @relation("EmployeePayProfilesUpdatedBy")
   employeeStatutoryDeductionProfilesCreated EmployeeStatutoryDeductionProfile[] @relation("EmployeeStatutoryDeductionProfilesCreatedBy")
   employeeStatutoryDeductionProfilesUpdated EmployeeStatutoryDeductionProfile[] @relation("EmployeeStatutoryDeductionProfilesUpdatedBy")
-  companyPayrollPoliciesCreated            CompanyPayrollPolicy[]       @relation("CompanyPayrollPoliciesCreatedBy")
-  companyPayrollPoliciesUpdated            CompanyPayrollPolicy[]       @relation("CompanyPayrollPoliciesUpdatedBy")
-  payrollRunsCreated                       PayrollRun[]                 @relation("PayrollRunsCreatedBy")
-  payrollRunsFinalized                     PayrollRun[]                 @relation("PayrollRunsFinalizedBy")
-  payrollRunsPaid                          PayrollRun[]                 @relation("PayrollRunsPaidBy")
+  companyPayrollPoliciesCreated             CompanyPayrollPolicy[]              @relation("CompanyPayrollPoliciesCreatedBy")
+  companyPayrollPoliciesUpdated             CompanyPayrollPolicy[]              @relation("CompanyPayrollPoliciesUpdatedBy")
+  payrollRunsCreated                        PayrollRun[]                        @relation("PayrollRunsCreatedBy")
+  payrollRunsFinalized                      PayrollRun[]                        @relation("PayrollRunsFinalizedBy")
+  payrollRunsPaid                           PayrollRun[]                        @relation("PayrollRunsPaidBy")
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())

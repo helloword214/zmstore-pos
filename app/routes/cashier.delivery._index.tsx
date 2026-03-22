@@ -34,6 +34,9 @@ type LoaderData = {
   rows: RunRow[];
 };
 
+const isNoReleaseAttemptOutcome = (value: unknown) =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
 export async function loader({ request }: LoaderFunctionArgs) {
   // Cashier/admin with open shift lang ang makaka-access
   const me = await requireOpenShift(request);
@@ -60,7 +63,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 100,
     include: {
       orders: {
-        include: {
+        select: {
+          attemptOutcome: true,
           order: {
             select: {
               id: true,
@@ -88,6 +92,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const lockOwnerIds = new Set<number>();
   for (const run of runs) {
     for (const ro of run.orders) {
+      if (isNoReleaseAttemptOutcome(ro.attemptOutcome)) continue;
       const o = ro.order;
       if (!o) continue;
       if (o.status !== "UNPAID" && o.status !== "PARTIALLY_PAID") continue;
@@ -157,6 +162,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         : null;
 
       const openOrders = run.orders
+        .filter((ro) => !isNoReleaseAttemptOutcome(ro.attemptOutcome))
         .map((ro) => ro.order)
         .filter(
           (o: RunOrder) =>

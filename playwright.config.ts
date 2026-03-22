@@ -107,6 +107,15 @@ export default defineConfig({
       },
     },
     {
+      name: "delivery-order-attempt-outcome-path",
+      testMatch:
+        /delivery\/delivery-order-attempt-outcome-path\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 900 },
+      },
+    },
+    {
       name: "delivery-manager-remit-posting-happy-path",
       testMatch:
         /delivery\/delivery-manager-remit-posting-happy-path\.spec\.ts/,
