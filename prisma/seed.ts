@@ -294,6 +294,31 @@ type SeedCustomerFixture = {
   };
 };
 
+type SeedEmployeeFixture = {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  alias?: string;
+  phone: string;
+  email: string;
+  role: EmployeeRole;
+  birthDate?: string;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  defaultVehicleKey?: string;
+  address: {
+    line1: string;
+    barangay: string;
+    city: string;
+    province: string;
+    postalCode?: string;
+    purok?: string;
+    landmark?: string;
+    geoLat?: number;
+    geoLng?: number;
+  };
+};
+
 const brandsByCategory: Record<SeedCatalogCategory, string[]> = {
   "Animal Feeds": ["BMEG", "New Hope", "Robina", "Vitarich"],
   "Binhi (Seeds)": [
@@ -1262,6 +1287,171 @@ const ASINGAN_CUSTOMERS: SeedCustomerFixture[] = [
   },
 ];
 
+const SEEDED_RIDERS: SeedEmployeeFixture[] = [
+  {
+    firstName: "Noel",
+    middleName: "B.",
+    lastName: "Villanueva",
+    alias: "Noel",
+    phone: "09170000101",
+    email: "noel.villanueva@example.com",
+    role: EmployeeRole.RIDER,
+    birthDate: "1991-04-12",
+    licenseNumber: "N01-91-456782",
+    licenseExpiry: "2028-06-30",
+    defaultVehicleKey: "Tricycle A:TRICYCLE",
+    address: {
+      line1: "Mabini St.",
+      barangay: "Poblacion East",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Asingan Town Plaza",
+      geoLat: 16.011,
+      geoLng: 120.67,
+    },
+  },
+  {
+    firstName: "Arvin",
+    middleName: "S.",
+    lastName: "Guzman",
+    alias: "Arvin",
+    phone: "09170000102",
+    email: "arvin.guzman@example.com",
+    role: EmployeeRole.RIDER,
+    birthDate: "1989-09-03",
+    licenseNumber: "N02-89-781245",
+    licenseExpiry: "2029-02-15",
+    defaultVehicleKey: "Motorcycle A:MOTORCYCLE",
+    address: {
+      line1: "Quezon Ave.",
+      barangay: "San Vicente West",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Near chapel",
+      geoLat: 16.018,
+      geoLng: 120.664,
+    },
+  },
+  {
+    firstName: "Jayson",
+    middleName: "M.",
+    lastName: "Ferrer",
+    alias: "Jayson",
+    phone: "09170000103",
+    email: "jayson.ferrer@example.com",
+    role: EmployeeRole.RIDER,
+    birthDate: "1994-01-18",
+    licenseNumber: "N03-94-223641",
+    licenseExpiry: "2028-11-20",
+    defaultVehicleKey: "Sidecar A:SIDECAR",
+    address: {
+      line1: "Sitio Centro",
+      barangay: "Carosucan Norte",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Carosucan Norte Trike Terminal",
+      geoLat: 16.02,
+      geoLng: 120.653,
+    },
+  },
+];
+
+const SEEDED_MANAGERS: SeedEmployeeFixture[] = [
+  {
+    firstName: "Sheila",
+    middleName: "R.",
+    lastName: "Manalo",
+    alias: "Sheila",
+    phone: "09170000111",
+    email: "sheila.manalo@example.com",
+    role: EmployeeRole.MANAGER,
+    birthDate: "1987-06-21",
+    address: {
+      line1: "M. H. Del Pilar St.",
+      barangay: "Poblacion West",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Asingan Public Market",
+      geoLat: 16.009,
+      geoLng: 120.669,
+    },
+  },
+  {
+    firstName: "Rowena",
+    middleName: "C.",
+    lastName: "Delos Reyes",
+    alias: "Weng",
+    phone: "09170000112",
+    email: "rowena.delosreyes@example.com",
+    role: EmployeeRole.MANAGER,
+    birthDate: "1985-11-07",
+    address: {
+      line1: "Rizal Ave.",
+      barangay: "San Vicente East",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near barangay hall",
+      geoLat: 16.018,
+      geoLng: 120.676,
+    },
+  },
+];
+
+const SEEDED_CASHIERS: SeedEmployeeFixture[] = [
+  {
+    firstName: "Maricel",
+    middleName: "A.",
+    lastName: "Aquino",
+    alias: "Cely",
+    phone: "09170000121",
+    email: "maricel.aquino@example.com",
+    role: EmployeeRole.STAFF,
+    birthDate: "1993-08-14",
+    address: {
+      line1: "Purok Uno",
+      barangay: "Bantog",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near basketball court",
+      geoLat: 16.022,
+      geoLng: 120.642,
+    },
+  },
+  {
+    firstName: "Paolo",
+    middleName: "L.",
+    lastName: "Ramos",
+    alias: "Pao",
+    phone: "09170000122",
+    email: "paolo.ramos@example.com",
+    role: EmployeeRole.STAFF,
+    birthDate: "1996-02-26",
+    address: {
+      line1: "Quezon St.",
+      barangay: "Domanpot",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near elementary school",
+      geoLat: 16.004,
+      geoLng: 120.648,
+    },
+  },
+];
+
 // ─────────────────────────────────────────
 // 2️⃣ Helpers
 // ─────────────────────────────────────────
@@ -1508,6 +1698,150 @@ async function upsertSeedCustomer(
   });
 }
 
+async function upsertSeedEmployee(
+  employeeSeed: SeedEmployeeFixture,
+  fallbackProvinceId: number,
+  vehiclesByKey: Record<string, { id: number }>
+) {
+  const defaultVehicleId = employeeSeed.defaultVehicleKey
+    ? vehiclesByKey[employeeSeed.defaultVehicleKey]?.id ?? null
+    : null;
+
+  const employee = await db.employee.upsert({
+    where: { email: employeeSeed.email },
+    update: {
+      firstName: employeeSeed.firstName,
+      middleName: employeeSeed.middleName ?? null,
+      lastName: employeeSeed.lastName,
+      alias: employeeSeed.alias ?? null,
+      birthDate: employeeSeed.birthDate ? new Date(employeeSeed.birthDate) : null,
+      phone: employeeSeed.phone,
+      role: employeeSeed.role,
+      active: true,
+      defaultVehicleId,
+      licenseNumber: employeeSeed.licenseNumber ?? null,
+      licenseExpiry: employeeSeed.licenseExpiry
+        ? new Date(employeeSeed.licenseExpiry)
+        : null,
+    },
+    create: {
+      firstName: employeeSeed.firstName,
+      middleName: employeeSeed.middleName ?? null,
+      lastName: employeeSeed.lastName,
+      alias: employeeSeed.alias ?? null,
+      birthDate: employeeSeed.birthDate ? new Date(employeeSeed.birthDate) : null,
+      phone: employeeSeed.phone,
+      email: employeeSeed.email,
+      role: employeeSeed.role,
+      active: true,
+      defaultVehicleId,
+      licenseNumber: employeeSeed.licenseNumber ?? null,
+      licenseExpiry: employeeSeed.licenseExpiry
+        ? new Date(employeeSeed.licenseExpiry)
+        : null,
+    },
+  });
+
+  const found = await db.barangay.findFirst({
+    where: {
+      name: employeeSeed.address.barangay,
+      municipality: {
+        name: employeeSeed.address.city,
+        province: { name: employeeSeed.address.province },
+      },
+    },
+    select: {
+      id: true,
+      municipalityId: true,
+      municipality: { select: { provinceId: true } },
+    },
+  });
+
+  if (!found) {
+    throw new Error(
+      `Missing barangay master for employee address: ${employeeSeed.address.barangay}, ${employeeSeed.address.city}`
+    );
+  }
+
+  const zoneRef =
+    employeeSeed.address.purok
+      ? await db.zone.upsert({
+          where: {
+            barangayId_name: {
+              barangayId: found.id,
+              name: employeeSeed.address.purok,
+            },
+          },
+          update: { isActive: true },
+          create: {
+            barangayId: found.id,
+            name: employeeSeed.address.purok,
+            isActive: true,
+          },
+          select: { id: true },
+        })
+      : null;
+
+  let landmarkRef: { id: number } | null = null;
+  if (employeeSeed.address.landmark) {
+    landmarkRef =
+      (await db.landmark.findFirst({
+        where: {
+          barangayId: found.id,
+          name: employeeSeed.address.landmark,
+        },
+        select: { id: true },
+      })) ??
+      (await db.landmark.create({
+        data: {
+          barangayId: found.id,
+          name: employeeSeed.address.landmark,
+          isActive: true,
+        },
+        select: { id: true },
+      }));
+  }
+
+  await db.employeeAddress.upsert({
+    where: { employeeId: employee.id },
+    update: {
+      line1: employeeSeed.address.line1,
+      provinceId: found.municipality.provinceId ?? fallbackProvinceId,
+      municipalityId: found.municipalityId,
+      barangayId: found.id,
+      zoneId: zoneRef?.id ?? null,
+      landmarkId: landmarkRef?.id ?? null,
+      province: employeeSeed.address.province,
+      city: employeeSeed.address.city,
+      barangay: employeeSeed.address.barangay,
+      purok: employeeSeed.address.purok ?? null,
+      postalCode: employeeSeed.address.postalCode ?? null,
+      landmark: employeeSeed.address.landmark ?? null,
+      geoLat: employeeSeed.address.geoLat ?? null,
+      geoLng: employeeSeed.address.geoLng ?? null,
+    },
+    create: {
+      employeeId: employee.id,
+      line1: employeeSeed.address.line1,
+      provinceId: found.municipality.provinceId ?? fallbackProvinceId,
+      municipalityId: found.municipalityId,
+      barangayId: found.id,
+      zoneId: zoneRef?.id ?? null,
+      landmarkId: landmarkRef?.id ?? null,
+      province: employeeSeed.address.province,
+      city: employeeSeed.address.city,
+      barangay: employeeSeed.address.barangay,
+      purok: employeeSeed.address.purok ?? null,
+      postalCode: employeeSeed.address.postalCode ?? null,
+      landmark: employeeSeed.address.landmark ?? null,
+      geoLat: employeeSeed.address.geoLat ?? null,
+      geoLng: employeeSeed.address.geoLng ?? null,
+    },
+  });
+
+  return employee;
+}
+
 // ─────────────────────────────────────────
 // 4️⃣ Seed Function
 // ─────────────────────────────────────────
@@ -1698,143 +2032,35 @@ async function seed() {
   }
 
   console.log("👷 Creating employees (riders / cashiers / managers)...");
-  // RIDERS
-  const riders = [
-    {
-      firstName: "Juan",
-      lastName: "Dela Cruz",
-      alias: "Juan",
-      phone: "09170000001",
-      email: "juan.rider@example.com",
-      role: EmployeeRole.RIDER,
-      dv: "Tricycle A:TRICYCLE",
-    },
-    {
-      firstName: "Maria",
-      lastName: "Santos",
-      alias: "Maria",
-      phone: "09170000002",
-      email: "maria.rider@example.com",
-      role: EmployeeRole.RIDER,
-      dv: "Motorcycle A:MOTORCYCLE",
-    },
-    {
-      firstName: "Pedro",
-      lastName: "Reyes",
-      alias: "Pedro",
-      phone: "09170000003",
-      email: "pedro.rider@example.com",
-      role: EmployeeRole.RIDER,
-      dv: "Sidecar A:SIDECAR",
-    },
-  ];
-  for (const r of riders) {
-    await db.employee.upsert({
-      where: { email: r.email },
-      update: {
-        firstName: r.firstName,
-        lastName: r.lastName,
-        alias: r.alias,
-        phone: r.phone,
-        role: r.role,
-        active: true,
-        defaultVehicleId: vehiclesByKey[r.dv]?.id ?? null,
-      },
-      create: {
-        firstName: r.firstName,
-        lastName: r.lastName,
-        alias: r.alias,
-        phone: r.phone,
-        email: r.email,
-        role: r.role,
-        active: true,
-        defaultVehicleId: vehiclesByKey[r.dv]?.id ?? null,
-      },
-    });
-  }
-
-  // MANAGERS (EmployeeRole.MANAGER)
   const managerEmployees: { id: number }[] = [];
-  const managersSeed = [
-    {
-      firstName: "Liza",
-      lastName: "Cruz",
-      alias: "Liza",
-      phone: "09170000011",
-      email: "liza.manager@example.com",
-    },
-    {
-      firstName: "Mark",
-      lastName: "Reyes",
-      alias: "Mark",
-      phone: "09170000012",
-      email: "mark.manager@example.com",
-    },
-  ];
-  for (const m of managersSeed) {
-    const emp = await db.employee.upsert({
-      where: { email: m.email },
-      update: {
-        firstName: m.firstName,
-        lastName: m.lastName,
-        alias: m.alias,
-        phone: m.phone,
-        role: EmployeeRole.MANAGER,
-        active: true,
-      },
-      create: {
-        firstName: m.firstName,
-        lastName: m.lastName,
-        alias: m.alias,
-        phone: m.phone,
-        email: m.email,
-        role: EmployeeRole.MANAGER,
-        active: true,
-      },
-    });
-    managerEmployees.push({ id: emp.id });
+  const cashierEmployees: { id: number }[] = [];
+  const riderEmployees: { id: number }[] = [];
+
+  for (const riderSeed of SEEDED_RIDERS) {
+    const employee = await upsertSeedEmployee(
+      riderSeed,
+      provinceId,
+      vehiclesByKey
+    );
+    riderEmployees.push({ id: employee.id });
   }
 
-  // CASHIERS (EmployeeRole.STAFF) – pwede itong maging cashier/utility staff
-  const cashierEmployees: { id: number }[] = [];
-  const cashiersSeed = [
-    {
-      firstName: "Joy",
-      lastName: "Santos",
-      alias: "Joy",
-      phone: "09170000021",
-      email: "joy.cashier@example.com",
-    },
-    {
-      firstName: "Leo",
-      lastName: "Garcia",
-      alias: "Leo",
-      phone: "09170000022",
-      email: "leo.cashier@example.com",
-    },
-  ];
-  for (const c of cashiersSeed) {
-    const emp = await db.employee.upsert({
-      where: { email: c.email },
-      update: {
-        firstName: c.firstName,
-        lastName: c.lastName,
-        alias: c.alias,
-        phone: c.phone,
-        role: EmployeeRole.STAFF,
-        active: true,
-      },
-      create: {
-        firstName: c.firstName,
-        lastName: c.lastName,
-        alias: c.alias,
-        phone: c.phone,
-        email: c.email,
-        role: EmployeeRole.STAFF,
-        active: true,
-      },
-    });
-    cashierEmployees.push({ id: emp.id });
+  for (const managerSeed of SEEDED_MANAGERS) {
+    const employee = await upsertSeedEmployee(
+      managerSeed,
+      provinceId,
+      vehiclesByKey
+    );
+    managerEmployees.push({ id: employee.id });
+  }
+
+  for (const cashierSeed of SEEDED_CASHIERS) {
+    const employee = await upsertSeedEmployee(
+      cashierSeed,
+      provinceId,
+      vehiclesByKey
+    );
+    cashierEmployees.push({ id: employee.id });
   }
 
   // ─────────────────────────────────────────
@@ -1923,13 +2149,8 @@ async function seed() {
   }
 
   // EMPLOYEE USERS (frontline: riders / sellers etc.) → UserRole.EMPLOYEE
-  const allRiderEmployees = await db.employee.findMany({
-    where: { role: EmployeeRole.RIDER, active: true },
-    orderBy: { id: "asc" },
-  });
-
-  for (let i = 0; i < allRiderEmployees.length; i++) {
-    const emp = allRiderEmployees[i];
+  for (let i = 0; i < riderEmployees.length; i++) {
+    const emp = riderEmployees[i];
     const idx = i + 1;
     await db.user.upsert({
       where: { email: `rider${idx}@local` },
