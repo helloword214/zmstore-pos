@@ -48,6 +48,10 @@ type DecisionKindUI =
   | "APPROVE_HYBRID"
   | "REJECT";
 
+type DeliveryAttemptOutcomeUI =
+  | "NO_RELEASE_REATTEMPT"
+  | "NO_RELEASE_CANCELLED";
+
 type CaseInfo = {
   status: "NEEDS_CLEARANCE" | "DECIDED";
   decisionKind: DecisionKindUI | null;
@@ -65,6 +69,20 @@ const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
         : raw === "APPROVE_HYBRID"
           ? "APPROVE_HYBRID"
           : null;
+
+const isNoReleaseAttemptOutcome = (
+  value: unknown,
+): value is DeliveryAttemptOutcomeUI =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
+const formatAttemptOutcomeLabel = (
+  value: DeliveryAttemptOutcomeUI | null | undefined,
+) =>
+  value === "NO_RELEASE_REATTEMPT"
+    ? "Return to dispatch"
+    : value === "NO_RELEASE_CANCELLED"
+      ? "Cancel before release"
+      : "Normal delivery";
 
 const applyDecisionFinancial = (remainingRaw: number, c?: CaseInfo) => {
   const remaining = r2(Math.max(0, Number(remainingRaw || 0)));
@@ -172,6 +190,7 @@ type ParentOrderRow = {
   orderId: number;
   isCredit: boolean;
   customerLabel: string;
+  orderStatus: string;
   lines: ParentOrderLine[];
   orderTotal: number;
   collectedCash?: number;
@@ -183,6 +202,9 @@ type ParentOrderRow = {
   rejectedUnresolved: number;
   caseStatus: "NEEDS_CLEARANCE" | "DECIDED" | null;
   decisionKind: DecisionKindUI | null;
+  attemptOutcome: DeliveryAttemptOutcomeUI | null;
+  attemptNote?: string | null;
+  attemptFinalizedAt?: string | null;
 };
 
 type LoaderData = {
@@ -270,6 +292,7 @@ async function loadStockUnitValues(
   const parentLinks = await db.deliveryRunOrder.findMany({
     where: { runId },
     select: {
+      attemptOutcome: true,
       order: {
         select: {
           orderCode: true,
@@ -286,6 +309,7 @@ async function loadStockUnitValues(
     const o = link.order;
     if (!o) continue;
     if ((o.orderCode || "").startsWith("RS-")) continue;
+    if (isNoReleaseAttemptOutcome(link.attemptOutcome)) continue;
     for (const it of o.items || []) {
       const pid = Number(it.productId);
       const qty = Math.max(0, Number(it.qty ?? 0));
@@ -416,6 +440,39 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       [r?.firstName, r?.lastName].filter(Boolean).join(" ") ||
       null;
   }
+
+  const attemptByOrderId = new Map<
+    number,
+    {
+      attemptOutcome: DeliveryAttemptOutcomeUI | null;
+      attemptNote: string | null;
+      attemptFinalizedAt: string | null;
+    }
+  >(
+    (
+      await db.deliveryRunOrder.findMany({
+        where: { runId: id },
+        select: {
+          orderId: true,
+          attemptOutcome: true,
+          attemptNote: true,
+          attemptFinalizedAt: true,
+        },
+      })
+    ).map((link) => [
+      Number(link.orderId),
+      {
+        attemptOutcome: isNoReleaseAttemptOutcome(link.attemptOutcome)
+          ? link.attemptOutcome
+          : null,
+        attemptNote:
+          typeof link.attemptNote === "string" ? link.attemptNote : null,
+        attemptFinalizedAt: link.attemptFinalizedAt
+          ? new Date(link.attemptFinalizedAt).toISOString()
+          : null,
+      },
+    ]),
+  );
 
   // ✅ Stock recap (source of truth)
   const recap = await loadRunRecap(db, id);
@@ -570,6 +627,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         where: { id: { in: parentOrderIds } },
         select: {
           id: true,
+          status: true,
           subtotal: true,
           totalBeforeDiscount: true,
           customerId: true,
@@ -679,9 +737,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // Source: frozen helper = SUM(lineTotal) with same rounding rules.
     const orderTotal = r2(frozen.computedSubtotal);
     const systemDiscount = sumLineDiscountTotal(lines);
+    const attemptInfo = attemptByOrderId.get(Number(o.id));
 
     return {
       orderId: Number(o.id),
+      orderStatus: String(o.status ?? "UNPAID"),
       isCredit: Boolean(o.isOnCredit),
       customerLabel,
       lines,
@@ -695,6 +755,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       rejectedUnresolved: 0,
       caseStatus: caseInfo?.status ?? null,
       decisionKind: caseInfo?.decisionKind ?? null,
+      attemptOutcome: attemptInfo?.attemptOutcome ?? null,
+      attemptNote: attemptInfo?.attemptNote ?? null,
+      attemptFinalizedAt: attemptInfo?.attemptFinalizedAt ?? null,
     };
   });
 
@@ -740,6 +803,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   for (const o of parentOrders) {
+    if (isNoReleaseAttemptOutcome(o.attemptOutcome)) {
+      o.collectedCash = undefined;
+      o.ar = 0;
+      o.approvedDiscount = 0;
+      o.pendingClearance = 0;
+      o.rejectedUnresolved = 0;
+      o.isCredit = false;
+      continue;
+    }
+
     const raw = Number(parentCashByOrderIdLocal.get(o.orderId) || 0);
     const capped = Math.max(0, Math.min(o.orderTotal, raw));
     o.collectedCash = capped > 0 ? capped : undefined;
@@ -911,6 +984,57 @@ export async function action({ request, params }: ActionFunctionArgs) {
       decision,
     };
   });
+
+  const noReleaseLinks = await db.deliveryRunOrder.findMany({
+    where: {
+      runId: id,
+      attemptOutcome: { not: null },
+    },
+    select: {
+      orderId: true,
+      attemptOutcome: true,
+      order: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  const managerAttemptOutcomeByOrderId = new Map<
+    number,
+    DeliveryAttemptOutcomeUI
+  >();
+  for (const link of noReleaseLinks) {
+    const orderId = Number(link.orderId);
+    if (!orderId) continue;
+    const raw =
+      String(formData.get(`attemptOutcome_${orderId}`) || "").trim() ||
+      String(link.attemptOutcome || "").trim();
+    if (!isNoReleaseAttemptOutcome(raw)) {
+      return json<ActionData>(
+        {
+          ok: false,
+          error: `Manager disposition required for parent order #${orderId}.`,
+        },
+        { status: 400 },
+      );
+    }
+    if (
+      raw === "NO_RELEASE_CANCELLED" &&
+      String(link.order?.status || "") === "PARTIALLY_PAID"
+    ) {
+      return json<ActionData>(
+        {
+          ok: false,
+          error:
+            `Cannot cancel parent order #${orderId}: partially paid orders need refund/void flow before cancellation.`,
+        },
+        { status: 400 },
+      );
+    }
+    managerAttemptOutcomeByOrderId.set(orderId, raw);
+  }
 
   // Pull soldRows from rider check-in snapshot
   // SOURCE OF TRUTH: RunReceipt kind=ROAD (receipt-level quick sales)
@@ -1369,6 +1493,37 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
+    for (const [orderId, attemptOutcome] of managerAttemptOutcomeByOrderId) {
+      await tx.order.update({
+        where: { id: orderId },
+        data:
+          attemptOutcome === "NO_RELEASE_CANCELLED"
+            ? {
+                status: "CANCELLED",
+                fulfillmentStatus: "ON_HOLD",
+                dispatchedAt: null,
+                deliveredAt: null,
+              }
+            : {
+                fulfillmentStatus: "ON_HOLD",
+                dispatchedAt: null,
+                deliveredAt: null,
+              },
+      });
+
+      await tx.deliveryRunOrder.update({
+        where: { runId_orderId: { runId: id, orderId } },
+        data: {
+          attemptOutcome,
+          attemptFinalizedAt: new Date(),
+          attemptFinalizedById:
+            managerApprovedById && managerApprovedById > 0
+              ? managerApprovedById
+              : null,
+        },
+      });
+    }
+
     // Finally, CLOSE the run – dito nagiging CLOSED ang status
     // after ma-post lahat ng roadside orders + stock returns.
     await tx.deliveryRun.update({
@@ -1475,6 +1630,16 @@ export default function RunRemitPage() {
       stockVerificationRows
         .filter((r) => r.unsold > 0)
         .map((r) => [r.productId, "present" as const]),
+    ),
+  );
+
+  const [attemptDecision, setAttemptDecision] = React.useState<
+    Record<number, DeliveryAttemptOutcomeUI>
+  >(() =>
+    Object.fromEntries(
+      parentOrders
+        .filter((o) => isNoReleaseAttemptOutcome(o.attemptOutcome))
+        .map((o) => [o.orderId, o.attemptOutcome as DeliveryAttemptOutcomeUI]),
     ),
   );
 
@@ -1751,15 +1916,30 @@ export default function RunRemitPage() {
 
               <div className="px-4 py-4 space-y-3">
                 {parentOrders.map((o, idx) => {
-                  const badge = getFinancialBadge({
-                    pendingClearance: o.pendingClearance,
-                    rejectedUnresolved: o.rejectedUnresolved,
-                    approvedDiscount: o.approvedDiscount,
-                    ar: o.ar,
-                  });
+                  const hasAttemptOutcome = isNoReleaseAttemptOutcome(
+                    o.attemptOutcome,
+                  );
+                  const badge = hasAttemptOutcome
+                    ? {
+                        label: "No Release Attempt",
+                        tone: "info" as const,
+                      }
+                    : getFinancialBadge({
+                        pendingClearance: o.pendingClearance,
+                        rejectedUnresolved: o.rejectedUnresolved,
+                        approvedDiscount: o.approvedDiscount,
+                        ar: o.ar,
+                      });
                   const cash = r2(
                     Math.max(0, Math.min(o.orderTotal, Number(o.collectedCash ?? 0))),
                   );
+                  const selectedAttempt =
+                    attemptDecision[o.orderId] ??
+                    (isNoReleaseAttemptOutcome(o.attemptOutcome)
+                      ? o.attemptOutcome
+                      : undefined);
+                  const canCancelBeforeRelease =
+                    o.orderStatus !== "PARTIALLY_PAID";
 
                   return (
                     <SoTCard key={`${o.orderId}-${idx}`} compact>
@@ -1825,6 +2005,85 @@ export default function RunRemitPage() {
                           </div>
                         ))}
                       </div>
+
+                      {hasAttemptOutcome ? (
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
+                          <input
+                            type="hidden"
+                            name={`attemptOutcome_${o.orderId}`}
+                            value={selectedAttempt ?? ""}
+                          />
+                          <div className="font-medium">
+                            Manager final disposition for no-release attempt
+                          </div>
+                          <div className="mt-1 text-[11px] text-amber-800">
+                            Rider reported:{" "}
+                            <span className="font-semibold">
+                              {formatAttemptOutcomeLabel(o.attemptOutcome)}
+                            </span>
+                            {o.attemptFinalizedAt ? (
+                              <span className="ml-1 text-slate-500">
+                                • previously finalized
+                              </span>
+                            ) : null}
+                          </div>
+                          {o.attemptNote ? (
+                            <div className="mt-1 text-[11px] text-slate-600">
+                              Note: {o.attemptNote}
+                            </div>
+                          ) : null}
+                          <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                              <input
+                                type="radio"
+                                name={`attempt-ui-${o.orderId}`}
+                                checked={
+                                  selectedAttempt === "NO_RELEASE_REATTEMPT"
+                                }
+                                onChange={() =>
+                                  setAttemptDecision((prev) => ({
+                                    ...prev,
+                                    [o.orderId]: "NO_RELEASE_REATTEMPT",
+                                  }))
+                                }
+                              />
+                              <span>Return to dispatch</span>
+                            </label>
+                            <label
+                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+                                canCancelBeforeRelease
+                                  ? "border-amber-200 bg-white"
+                                  : "border-slate-200 bg-slate-100 text-slate-400"
+                              }`}
+                              title={
+                                canCancelBeforeRelease
+                                  ? undefined
+                                  : "Partially paid parent orders need refund/void flow before cancellation."
+                              }
+                            >
+                              <input
+                                type="radio"
+                                name={`attempt-ui-${o.orderId}`}
+                                checked={
+                                  selectedAttempt === "NO_RELEASE_CANCELLED"
+                                }
+                                disabled={!canCancelBeforeRelease}
+                                onChange={() =>
+                                  setAttemptDecision((prev) => ({
+                                    ...prev,
+                                    [o.orderId]: "NO_RELEASE_CANCELLED",
+                                  }))
+                                }
+                              />
+                              <span>Cancel before release</span>
+                            </label>
+                          </div>
+                          <div className="mt-2 text-[11px] text-amber-800">
+                            Stock verification below still decides whether these
+                            returned items are present or rider-chargeable.
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                         <span className="text-slate-600">

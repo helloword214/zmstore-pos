@@ -106,13 +106,13 @@ This map is the primary route-level reference for canonical target behavior.
 | Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority + creator audit (`createdById`, `createdByRole`) |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders and create/assign run | Order eligibility only, no AR authority |
 | Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
-| Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage | `runReceipt`, `clearanceCase/decision`, recap services |
-| Rider check-in | Rider | `app/routes/runs.$id.rider-checkin.tsx` | Encode receipt cash and send clearance requests | `runReceipt`, `clearanceCase(status=NEEDS_CLEARANCE)` |
+| Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage plus no-release attempt trace | `runReceipt`, `deliveryRunOrder.attemptOutcome`, `clearanceCase/decision`, recap services |
+| Rider check-in | Rider | `app/routes/runs.$id.rider-checkin.tsx` | Encode receipt cash, report no-release parent-order outcomes, and send clearance requests | `runReceipt`, `deliveryRunOrder.attemptOutcome` rider report, `clearanceCase(status=NEEDS_CLEARANCE)` |
 | Clearance inbox | Manager | `app/routes/store.clearance.tsx` | View pending clearance workload | `clearanceCase` pending list |
 | Clearance decision | Manager | `app/routes/store.clearance_.$caseId.tsx` | Approve/reject and classify decision | `clearanceDecision`, `customerAr` creation when `arBalance > 0` |
 | Opening balance batch staging | Admin | `app/routes/creation.opening-ar-batches.tsx` | Encode/import pre-system open-balance rows into pending clearance | `clearanceCase(status=NEEDS_CLEARANCE)` creation only; no decision authority |
 | Opening balance batch decision | Manager | `app/routes/store.clearance-opening-batches.tsx` | Bulk approve valid rows, reject exceptions | Per-row `clearanceDecision` + `customerAr` for approved rows |
-| Manager remit | Manager | `app/routes/runs.$id.remit.tsx` | Stock audit and close run | Stock return/missing flow, no direct AR authority |
+| Manager remit | Manager | `app/routes/runs.$id.remit.tsx` | Stock audit, finalize no-release parent-order outcomes, and close run | Stock return/missing flow, `deliveryRunOrder.attemptOutcome` finalization, no direct AR authority |
 | Cashier run list | Cashier | `app/routes/cashier.delivery._index.tsx` | Open closed runs for turnover remit | Run/order cash turnover visibility |
 | Cashier run remit hub | Cashier | `app/routes/cashier.delivery.$runId.tsx` | Track turnover cash gap and finalize run settlement | `runReceipt.cashCollected` vs cashier cash payments |
 | Cashier order remit | Cashier | `app/routes/delivery-remit.$id.tsx` | Post per-order cash turnover | `payment` + rider shortage bridge workflow |
@@ -170,12 +170,12 @@ This retirement does not change AR authority: `customerAr` remains decision-back
 | --- | --- |
 | `app/routes/pad-order._index.tsx` | Finalize payable totals without `/orders/new` server validation/freeze |
 | `app/routes/orders.new.tsx` | Reprice an already-created order or mix CSS override discount into policy discount freeze |
-| `app/routes/runs.$id.rider-checkin.tsx` | Auto-approve AR/discount without manager decision |
+| `app/routes/runs.$id.rider-checkin.tsx` | Auto-approve AR/discount without manager decision or route no-release parent attempts into clearance shortage flow |
 | `app/routes/creation.opening-ar-batches.tsx` | Create `customerAr` directly or issue manager decision outcomes |
 | `app/routes/store.clearance-opening-batches.tsx` | Skip per-row decision artifacts when processing batch approvals |
 | `app/routes/runs.$id.remit.tsx` | Infer customer AR from `PARTIALLY_PAID` alone |
 | `app/routes/cashier.delivery.$runId.tsx` | Treat turnover shortage as automatic customer AR |
-| `app/routes/delivery-remit.$id.tsx` | Recompute prices from product table for remit totals |
+| `app/routes/delivery-remit.$id.tsx` | Recompute prices from product table for remit totals or open cashier remit for no-release attempts |
 | `app/routes/cashier.shift.tsx` | Re-open shift or keep drawer writable after count submit |
 | `app/routes/store.cashier-shifts.tsx` | Final-close without submitted gate, manager recount, and shortage controls (decision + paper ref) |
 | `app/routes/store.cashier-variances.tsx` | Accept decision writes; manager decisions are captured at final close in `store.cashier-shifts.tsx` |
@@ -207,9 +207,20 @@ Per receipt:
 - If `remaining <= EPS`: settled by cash.
 - If `remaining > EPS`: must create `ClearanceCase(status=NEEDS_CLEARANCE)`.
 
+Per parent delivery order:
+
+- Rider may report a no-release attempt only when goods were not released to the customer.
+- Allowed no-release outcomes are:
+  - `NO_RELEASE_REATTEMPT`
+  - `NO_RELEASE_CANCELLED`
+- No-release attempts are logistics outcomes, not commercial shortage outcomes.
+- A no-release attempt must bypass clearance send logic for that parent order.
+- A no-release cancel is not valid for partially paid parent orders until refund/void flow exists.
+
 Submit gate:
 
 - Run cannot move to `CHECKED_IN` when any receipt is pending clearance or unresolved reject.
+- No-release parent attempts do not require clearance settlement, but they remain pending manager disposition until remit.
 
 ### T3 Manager Clearance (Commercial Authority)
 
@@ -236,6 +247,9 @@ Decision effects:
 ### T4 Manager Remit (Stock Audit, not AR Authority)
 
 - Validate stock returns and missing stocks.
+- Finalize rider-reported no-release parent outcomes after goods are physically verified.
+- `NO_RELEASE_REATTEMPT` returns the parent order to dispatch eligibility by clearing dispatch state and keeping the order commercially open.
+- `NO_RELEASE_CANCELLED` ends the parent order before release and must not create cashier turnover work.
 - Missing stock may trigger rider charge/variance path.
 - Close run to `CLOSED` only after checks pass.
 
@@ -243,6 +257,7 @@ Decision effects:
 
 - Compare rider-collected cash SoT vs cashier-recorded cash.
 - Handle turnover shortage using rider-shortage workflow.
+- No-release parent attempts are excluded from cashier turnover remit because no rider cash should exist for that run attempt.
 - This flow addresses rider accountability, not customer AR authority.
 
 ### T6 AR Module (Customer Ledger)

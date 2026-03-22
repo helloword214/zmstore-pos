@@ -24,6 +24,9 @@ import {
   EPS,
 } from "~/services/settlementSoT";
 
+const isNoReleaseAttemptOutcome = (value: unknown) =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
 // Lock TTL: ilang minuto valid ang lock ng cashier bago i-consider na expired
 const REMIT_LOCK_TTL_MINUTES = 10;
 
@@ -239,6 +242,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const id = Number(params.id);
   const fromRunIdParam = url.searchParams.get("fromRunId");
+  const fromRunId =
+    fromRunIdParam != null && Number.isFinite(Number(fromRunIdParam))
+      ? Number(fromRunIdParam)
+      : null;
   if (!Number.isFinite(id)) throw new Response("Invalid ID", { status: 400 });
 
   const order = await db.order.findUnique({
@@ -344,7 +351,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // 2) normal run delivery order: find its PARENT receipt
   const parentReceipt = !order.originRunReceiptId
     ? await db.runReceipt.findFirst({
-        where: { kind: "PARENT", parentOrderId: order.id },
+        where: {
+          kind: "PARENT",
+          parentOrderId: order.id,
+          ...(fromRunId ? { runId: fromRunId } : {}),
+        },
+        orderBy: fromRunId ? undefined : { runId: "desc" },
         select: {
           id: true,
           receiptKey: true,
@@ -366,6 +378,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         },
       })
     : null;
+
+  const scopedRunLink = await db.deliveryRunOrder.findFirst({
+    where: {
+      orderId: order.id,
+      ...(fromRunId ? { runId: fromRunId } : {}),
+    },
+    orderBy: fromRunId ? undefined : { runId: "desc" },
+    select: {
+      runId: true,
+      attemptOutcome: true,
+    },
+  });
+
+  if (isNoReleaseAttemptOutcome(scopedRunLink?.attemptOutcome)) {
+    throw new Response(
+      "This parent order was marked as no-release for this run. No cashier cash remit is allowed here.",
+      { status: 400 },
+    );
+  }
 
   const parentLines: FrozenLine[] =
     parentReceipt?.lines?.map((ln) =>
@@ -517,7 +548,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     riderCash,
     commercialDecision,
     runId,
-    fromRunId: fromRunIdParam ? Number(fromRunIdParam) : null,
+    fromRunId,
     ui: {
       customerName,
     },
@@ -557,10 +588,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // Optional: resolve the delivery run for this order (for redirect after remit)
   const runLink = await db.deliveryRunOrder.findFirst({
-    where: { orderId: id },
-    select: { runId: true },
+    where: {
+      orderId: id,
+      ...(fromRunId ? { runId: fromRunId } : {}),
+    },
+    orderBy: fromRunId ? undefined : { runId: "desc" },
+    select: { runId: true, attemptOutcome: true },
   });
   const runId = runLink?.runId ?? null;
+
+  if (isNoReleaseAttemptOutcome(runLink?.attemptOutcome)) {
+    return json(
+      {
+        ok: false,
+        error:
+          "This parent order was marked as no-release for this run. No cashier cash remit is allowed here.",
+      },
+      { status: 400 },
+    );
+  }
 
   if (!Number.isFinite(cashGiven) || cashGiven < 0) {
     return json(
@@ -645,7 +691,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const parentReceipt = !order.originRunReceiptId
     ? await db.runReceipt.findFirst({
-        where: { kind: "PARENT", parentOrderId: id },
+        where: {
+          kind: "PARENT",
+          parentOrderId: id,
+          ...(fromRunId ? { runId: Number(fromRunId) } : {}),
+        },
+        orderBy: fromRunId ? undefined : { runId: "desc" },
         select: {
           id: true,
           cashCollected: true,

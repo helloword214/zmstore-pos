@@ -2,8 +2,8 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-15
-Diagram Version: v3.0
+Last Reviewed: 2026-03-22
+Diagram Version: v3.1
 
 ## Purpose
 
@@ -26,7 +26,9 @@ flowchart TD
     A2 --> A3["Freeze OrderItem + Order pricing snapshots"]
     A3 --> A["Dispatch (PLANNED -> DISPATCHED)"]
     A --> B["Rider Check-in (receipts + cash)"]
-    B --> C{"remaining > EPS?"}
+    B --> B1{"No-release parent attempt?"}
+    B1 -- "Yes" --> B2["Flag NO_RELEASE_REATTEMPT or NO_RELEASE_CANCELLED"]
+    B1 -- "No" --> C{"remaining > EPS?"}
     C -- "No" --> D["Receipt settled by cash"]
     C -- "Yes" --> E["ClearanceCase(status=NEEDS_CLEARANCE)"]
     E --> F["Manager decision"]
@@ -39,7 +41,11 @@ flowchart TD
     I --> K
     J --> K
     K --> L["Run CHECKED_IN gate passes"]
-    L --> M["Manager Remit (stock audit)"]
+    B2 --> L
+    L --> M["Manager Remit (stock audit + no-release finalization)"]
+    M --> M1{"No-release disposition"}
+    M1 -- "Return to dispatch" --> M2["Clear dispatch state and re-queue order"]
+    M1 -- "Cancel before release" --> M3["Cancel parent order before cashier turnover"]
     M --> N["Run CLOSED"]
     N --> O["Cashier collections (walk-in + delivery remit + AR payment)"]
     O --> P{"Delivery turnover short?"}
@@ -60,7 +66,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Receipt during check-in"] --> B{"remaining > EPS?"}
+    A["Receipt during check-in"] --> A1{"No release before goods handoff?"}
+    A1 -- "Yes" --> A2["Skip clearance; wait for manager remit disposition"]
+    A1 -- "No" --> B{"remaining > EPS?"}
     B -- "No" --> C["No clearance needed"]
     B -- "Yes" --> D["Send clearance request"]
     D --> E["Manager decision"]
@@ -169,11 +177,11 @@ Authority note:
 | --- | --- |
 | `pad-order._index.tsx` | client cart/preflight only (not final pricing authority) |
 | `orders.new.tsx` | policy discount engine apply + frozen `order/orderItem` pricing snapshots |
-| `runs.$id.rider-checkin.tsx` | `runReceipt`, `clearanceCase` |
+| `runs.$id.rider-checkin.tsx` | `runReceipt`, `deliveryRunOrder.attemptOutcome`, `clearanceCase` |
 | `store.clearance_.$caseId.tsx` | `clearanceDecision`, `customerAr` |
 | `creation.opening-ar-batches.tsx` | admin staging of opening balance rows into pending `clearanceCase` only |
 | `store.clearance-opening-batches.tsx` | manager bulk decision lane (`clearanceDecision`, `customerAr`) |
-| `runs.$id.remit.tsx` | stock recap + run close records |
+| `runs.$id.remit.tsx` | stock recap + no-release disposition + run close records |
 | `cashier.delivery.$runId.tsx` | turnover comparison (`runReceipt.cashCollected` vs `payment`) |
 | `delivery-remit.$id.tsx` | per-order `payment` + shortage bridge records |
 | `cashier.$id.tsx` | walk-in cash posting to `payment` (shift-tagged) |

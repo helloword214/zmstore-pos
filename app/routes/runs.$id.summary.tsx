@@ -50,6 +50,10 @@ type DecisionKindUI =
   | "APPROVE_HYBRID"
   | "REJECT";
 
+type DeliveryAttemptOutcomeUI =
+  | "NO_RELEASE_REATTEMPT"
+  | "NO_RELEASE_CANCELLED";
+
 type LoaderData = {
   run: {
     id: number;
@@ -81,6 +85,12 @@ type LoaderData = {
     pendingClearance: number;
     rejectedUnresolved: number;
   };
+  attempts: Array<{
+    orderId: number;
+    outcome: DeliveryAttemptOutcomeUI;
+    note: string | null;
+    finalizedAt: string | null;
+  }>;
   ui: {
     isFinalized: boolean;
     stageLabel: string;
@@ -166,6 +176,20 @@ const parseDecisionKind = (raw: unknown): DecisionKindUI | null =>
         : raw === "APPROVE_HYBRID"
           ? "APPROVE_HYBRID"
           : null;
+
+const isNoReleaseAttemptOutcome = (
+  value: unknown,
+): value is DeliveryAttemptOutcomeUI =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
+const formatAttemptOutcomeLabel = (
+  value: DeliveryAttemptOutcomeUI | null | undefined,
+) =>
+  value === "NO_RELEASE_REATTEMPT"
+    ? "Return to dispatch"
+    : value === "NO_RELEASE_CANCELLED"
+      ? "Cancel before release"
+      : "Normal delivery";
 
 const stageMeta = (status: RunStatus) => {
   if (status === "PLANNED") {
@@ -375,6 +399,41 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   });
 
+  const attemptLinks = await db.deliveryRunOrder.findMany({
+    where: {
+      runId: id,
+      attemptOutcome: { not: null },
+    },
+    select: {
+      orderId: true,
+      attemptOutcome: true,
+      attemptNote: true,
+      attemptFinalizedAt: true,
+    },
+  });
+  const attemptByOrderId = new Map<
+    number,
+    {
+      outcome: DeliveryAttemptOutcomeUI;
+      note: string | null;
+      finalizedAt: string | null;
+    }
+  >();
+  for (const link of attemptLinks) {
+    const outcome = isNoReleaseAttemptOutcome(link.attemptOutcome)
+      ? link.attemptOutcome
+      : null;
+    const orderId = Number(link.orderId ?? 0);
+    if (!outcome || !orderId) continue;
+    attemptByOrderId.set(orderId, {
+      outcome,
+      note: typeof link.attemptNote === "string" ? link.attemptNote : null,
+      finalizedAt: link.attemptFinalizedAt
+        ? new Date(link.attemptFinalizedAt).toISOString()
+        : null,
+    });
+  }
+
   const cases = await db.clearanceCase.findMany({
     where: {
       runId: id,
@@ -501,6 +560,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (isRoadside) continue;
 
     const orderKey = `PARENT:${o.id}`;
+    if (attemptByOrderId.has(o.id)) continue;
     if (voidedReceiptKeys.has(orderKey) || parentVoidedMap.get(o.id)) continue;
 
     const orderItems: FrozenOrderItem[] = (o.items || []).map((it) => ({
@@ -596,6 +656,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       pendingClearance: r2(pendingClearanceAmount),
       rejectedUnresolved: r2(rejectedUnresolvedAmount),
     },
+    attempts: Array.from(attemptByOrderId.entries()).map(([orderId, meta]) => ({
+      orderId,
+      outcome: meta.outcome,
+      note: meta.note,
+      finalizedAt: meta.finalizedAt,
+    })),
     ui: { isFinalized, stageLabel, stageNote },
     role: me.role,
   });
@@ -644,7 +710,7 @@ function SmallCard({ label, value }: { label: string; value: string | number }) 
 }
 
 export default function RunSummaryPage() {
-  const { run, rows, totals, counts, amounts, role, ui } = useLoaderData<LoaderData>();
+  const { run, rows, totals, counts, amounts, attempts, role, ui } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
   const justPosted = sp.get("posted") === "1";
   const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
@@ -738,6 +804,7 @@ export default function RunSummaryPage() {
             <SmallCard label="Approved Decisions" value={counts.clearanceApproved} />
             <SmallCard label="Rejected Decisions" value={counts.clearanceRejected} />
             <SmallCard label="Voided Receipts" value={counts.clearanceVoided} />
+            <SmallCard label="No-Release Attempts" value={attempts.length} />
             <SmallCard label="Pending Amount" value={peso(amounts.pendingClearance)} />
           </div>
           {amounts.rejectedUnresolved > MONEY_EPS ? (
@@ -755,6 +822,37 @@ export default function RunSummaryPage() {
             </div>
           )}
         </section>
+
+        {attempts.length > 0 ? (
+          <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <h2 className="text-sm font-medium text-amber-900">
+              No-Release Attempt Outcomes
+            </h2>
+            <div className="mt-3 space-y-2 text-sm text-amber-900">
+              {attempts.map((attempt) => (
+                <div
+                  key={`attempt-${attempt.orderId}`}
+                  className="rounded-xl border border-amber-200 bg-white px-3 py-2"
+                >
+                  <div className="font-medium">
+                    Parent order #{attempt.orderId} •{" "}
+                    {formatAttemptOutcomeLabel(attempt.outcome)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    {attempt.finalizedAt
+                      ? `Manager finalized at ${attempt.finalizedAt}.`
+                      : "Pending manager disposition."}
+                  </div>
+                  {attempt.note ? (
+                    <div className="mt-1 text-[11px] text-slate-600">
+                      Note: {attempt.note}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">

@@ -22,6 +22,9 @@ import { requireOpenShift } from "~/utils/auth.server";
 import { resolveFinalTotalFreezeFirst } from "~/services/orderTotals.server";
 import { loadRunReceiptCashMaps } from "~/services/runReceipts.server";
 
+const isNoReleaseAttemptOutcome = (value: unknown) =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
+
 type LoaderData = {
   run: {
     id: number;
@@ -375,7 +378,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       rider: true,
       vehicle: true,
       orders: {
-        include: {
+        select: {
+          attemptOutcome: true,
           order: {
             select: {
               id: true,
@@ -714,6 +718,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   expectedCash += expectedCashRoad;
 
   const mappedOrders = run.orders
+    .filter((ro) => !isNoReleaseAttemptOutcome(ro.attemptOutcome))
     .map((ro) => ro.order)
     .filter((o): o is NonNullable<typeof o> => !!o)
     .filter((o) => o.channel === "DELIVERY");
@@ -1066,7 +1071,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       rider: true,
       vehicle: true,
       orders: {
-        include: {
+        select: {
+          attemptOutcome: true,
           order: {
             select: {
               id: true,
@@ -1164,6 +1170,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const mappedOrders = run.orders
+    .filter((ro) => !isNoReleaseAttemptOutcome(ro.attemptOutcome))
     .map((ro) => ro.order)
     .filter((o): o is NonNullable<typeof o> => !!o)
     .filter((o) => o.channel === "DELIVERY");

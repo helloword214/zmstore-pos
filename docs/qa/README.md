@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-03-19
+Last Reviewed: 2026-03-22
 
 This file is a router for `docs/qa`.
 It points readers to QA scenario docs and must not become the owner of QA/testing architecture rules.
@@ -76,48 +76,52 @@ Use this scenario family with the matching setup and cleanup commands:
 ### Delivery
 
 1. `delivery/delivery-run-handoff-and-remit-access-happy-path-checklist.md`
-2. `delivery/delivery-manager-remit-posting-happy-path-checklist.md`
-3. `delivery/delivery-cashier-order-remit-posting-happy-path-checklist.md`
-4. `delivery/delivery-cashier-order-remit-shortage-path-checklist.md`
-5. `delivery/delivery-manager-shortage-review-charge-path-checklist.md`
-6. `delivery/delivery-manager-shortage-waive-info-only-path-checklist.md`
-7. `delivery/delivery-rider-acceptance-path-checklist.md`
-8. `delivery/delivery-final-settlement-gating-checklist.md`
-9. `delivery/delivery-final-settlement-info-only-waive-path-checklist.md`
-10. `delivery/delivery-payroll-deduction-follow-through-checklist.md`
+2. `delivery/delivery-order-attempt-outcome-path-checklist.md`
+3. `delivery/delivery-manager-remit-posting-happy-path-checklist.md`
+4. `delivery/delivery-cashier-order-remit-posting-happy-path-checklist.md`
+5. `delivery/delivery-cashier-order-remit-shortage-path-checklist.md`
+6. `delivery/delivery-manager-shortage-review-charge-path-checklist.md`
+7. `delivery/delivery-manager-shortage-waive-info-only-path-checklist.md`
+8. `delivery/delivery-rider-acceptance-path-checklist.md`
+9. `delivery/delivery-final-settlement-gating-checklist.md`
+10. `delivery/delivery-final-settlement-info-only-waive-path-checklist.md`
+11. `delivery/delivery-payroll-deduction-follow-through-checklist.md`
 
 Use this scenario family with the matching setup and cleanup commands:
 
 1. `npm run qa:delivery:run-handoff-and-remit-access:happy-path:setup`
 2. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:run-handoff-and-remit-access:happy-path`
 3. `npm run qa:delivery:run-handoff-and-remit-access:happy-path:cleanup`
-4. `npm run qa:delivery:manager-remit-posting:happy-path:setup`
-5. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-remit-posting:happy-path`
-6. `npm run qa:delivery:manager-remit-posting:happy-path:cleanup`
-7. `npm run qa:delivery:cashier-order-remit-posting:happy-path:setup`
-8. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-posting:happy-path`
-9. `npm run qa:delivery:cashier-order-remit-posting:happy-path:cleanup`
-10. `npm run qa:delivery:cashier-order-remit-shortage-path:setup`
-11. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-shortage-path`
-12. `npm run qa:delivery:cashier-order-remit-shortage-path:cleanup`
-13. `npm run qa:delivery:manager-shortage-review-charge-path:setup`
-14. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-review-charge-path`
-15. `npm run qa:delivery:manager-shortage-review-charge-path:cleanup`
-16. `npm run qa:delivery:manager-shortage-waive-info-only-path:setup`
-17. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-waive-info-only-path`
-18. `npm run qa:delivery:manager-shortage-waive-info-only-path:cleanup`
-19. `npm run qa:delivery:rider-acceptance-path:setup`
-20. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:rider-acceptance-path`
-21. `npm run qa:delivery:rider-acceptance-path:cleanup`
-22. `npm run qa:delivery:final-settlement-gating:setup`
-23. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-gating`
-24. `npm run qa:delivery:final-settlement-gating:cleanup`
-25. `npm run qa:delivery:final-settlement-info-only-waive-path:setup`
-26. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-info-only-waive-path`
-27. `npm run qa:delivery:final-settlement-info-only-waive-path:cleanup`
-28. `npm run qa:delivery:payroll-deduction-follow-through:setup`
-29. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:payroll-deduction-follow-through`
-30. `npm run qa:delivery:payroll-deduction-follow-through:cleanup`
+4. `npm run qa:delivery:order-attempt-outcome-path:setup`
+5. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:order-attempt-outcome-path`
+6. `npm run qa:delivery:order-attempt-outcome-path:cleanup`
+7. `npm run qa:delivery:manager-remit-posting:happy-path:setup`
+8. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-remit-posting:happy-path`
+9. `npm run qa:delivery:manager-remit-posting:happy-path:cleanup`
+10. `npm run qa:delivery:cashier-order-remit-posting:happy-path:setup`
+11. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-posting:happy-path`
+12. `npm run qa:delivery:cashier-order-remit-posting:happy-path:cleanup`
+13. `npm run qa:delivery:cashier-order-remit-shortage-path:setup`
+14. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:cashier-order-remit-shortage-path`
+15. `npm run qa:delivery:cashier-order-remit-shortage-path:cleanup`
+16. `npm run qa:delivery:manager-shortage-review-charge-path:setup`
+17. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-review-charge-path`
+18. `npm run qa:delivery:manager-shortage-review-charge-path:cleanup`
+19. `npm run qa:delivery:manager-shortage-waive-info-only-path:setup`
+20. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:manager-shortage-waive-info-only-path`
+21. `npm run qa:delivery:manager-shortage-waive-info-only-path:cleanup`
+22. `npm run qa:delivery:rider-acceptance-path:setup`
+23. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:rider-acceptance-path`
+24. `npm run qa:delivery:rider-acceptance-path:cleanup`
+25. `npm run qa:delivery:final-settlement-gating:setup`
+26. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-gating`
+27. `npm run qa:delivery:final-settlement-gating:cleanup`
+28. `npm run qa:delivery:final-settlement-info-only-waive-path:setup`
+29. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:final-settlement-info-only-waive-path`
+30. `npm run qa:delivery:final-settlement-info-only-waive-path:cleanup`
+31. `npm run qa:delivery:payroll-deduction-follow-through:setup`
+32. perform the manual QA steps in the checklist, or run `npm run ui:test:delivery:payroll-deduction-follow-through`
+33. `npm run qa:delivery:payroll-deduction-follow-through:cleanup`
 
 ### Employee
 
