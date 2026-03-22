@@ -237,71 +237,6 @@ const categories = [
   "Binhi (Seeds)",
 ] as const;
 
-const globalTags = [
-  "Vitamins",
-  "Antibiotic",
-  "Antiparasitic",
-  "Booster",
-  "Laxative",
-  "Organic",
-  "Fortified",
-  "Deworming",
-  "Pain Reliever",
-  "Energy",
-  "Weight Gain",
-  "Immunity",
-  "Stress Relief",
-  "First Aid",
-];
-
-const brandsByCategory: Record<string, string[]> = {
-  "Animal Feeds": ["BMEG", "FeedPro", "New Hope", "Pigrolac", "ACE"],
-  "Binhi (Seeds)": ["RC 160", "RC 216", "Triple 2,", "Agelica"],
-  Medicines: ["Medilife", "VetRx"],
-  "Pet Supplies": ["PawCare", "FurMed"],
-  LPG: [
-    "Regasco",
-    "Gerona",
-    "Island",
-    "Solane",
-    "Axel",
-    "Fiesta",
-    "Petron Gasul",
-    "MDS",
-  ],
-  "Rices & Grains": ["Angelica", "160", "Sinandomeng", "Pandan"],
-  "Agriculture Products": ["AgroTech", "GreenPlus", "GrowWell"],
-  Equipment: ["ToolPro", "AgriTools", "EquipMax"],
-};
-
-const locationsByCategory: Record<string, string> = {
-  "Animal Feeds": "Feeds Section",
-  "Binhi (Seeds)": "Seed Rack",
-  Medicines: "Medicine Shelf",
-  "Pet Supplies": "Pet Corner",
-  LPG: "LPG Area",
-  "Rices & Grains": "Rice Display",
-  "Agriculture Products": "Agri Shelf",
-  Equipment: "Tool Section",
-};
-
-const indicationsByCategory: Record<string, string[]> = {
-  Medicines: [
-    "Fever",
-    "Pain Relief",
-    "Deworming",
-    "Antibiotic",
-    "Appetite Booster",
-  ],
-  "Animal Feeds": ["Weight Gain", "Growth Boost", "Energy", "Stress Relief"],
-  "Pet Supplies": ["Vitamins", "Immune Support", "Laxative"],
-  "Binhi (Seeds)": ["Germination", "High Yield", "Resistant Variety"],
-  LPG: ["Cooking", "Heating"],
-  Equipment: ["First Aid", "Animal Handling"],
-  "Rices & Grains": ["Staple Food", "Energy Source"],
-  "Agriculture Products": ["Pest Control", "Fertilizer", "Organic Growth"],
-};
-
 const unitNames = ["kg", "gram", "ml", "cc", "tablet", "liter", "unit"];
 const packingUnitNames = [
   "sack",
@@ -315,115 +250,1028 @@ const packingUnitNames = [
   "unit",
 ];
 
-const globalTargets = [
-  { name: "Dog", categories: ["Animal Feeds", "Medicines", "Pet Supplies"] },
-  { name: "Cat", categories: ["Animal Feeds", "Medicines", "Pet Supplies"] },
-  { name: "Hog", categories: ["Animal Feeds", "Medicines"] },
-  { name: "Fish", categories: ["Animal Feeds", "Medicines", "Pet Supplies"] },
-  { name: "Chicken", categories: ["Animal Feeds", "Medicines"] },
-  { name: "Rice", categories: ["Binhi (Seeds)"] },
-  { name: "Corn", categories: ["Binhi (Seeds)"] },
-  { name: "Eggplants", categories: ["Binhi (Seeds)"] },
-  { name: "Others", categories: ["Binhi (Seeds)", "LPG", "Equipment"] },
-  { name: "Human", categories: ["Rices & Grains"] },
-  { name: "Plants", categories: ["Agriculture Products"] },
-];
+type SeedCatalogCategory = (typeof categories)[number];
+type SeedUnitName = (typeof unitNames)[number];
+type SeedPackingUnitName = (typeof packingUnitNames)[number];
 
-const productNamesByCategory: Record<string, string[]> = {
+type SeedCatalogItem = {
+  category: SeedCatalogCategory;
+  brand: string;
+  name: string;
+  description: string;
+  unit: SeedUnitName;
+  packingUnit: SeedPackingUnitName;
+  packingSize: number;
+  packPrice: number;
+  dealerPrice: number;
+  allowPackSale: boolean;
+  unitPrice?: number;
+  packingStock: number;
+  stock: number;
+  minStock: number;
+  targets: string[];
+  indications: string[];
+};
+
+type SeedCustomerFixture = {
+  alias: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  notes?: string;
+  addr: {
+    label: string;
+    line1: string;
+    barangay: string;
+    city: string;
+    province: string;
+    postalCode?: string;
+    purok?: string;
+    landmark?: string;
+    geoLat?: number;
+    geoLng?: number;
+  };
+};
+
+const brandsByCategory: Record<SeedCatalogCategory, string[]> = {
+  "Animal Feeds": ["BMEG", "New Hope", "Robina", "Vitarich"],
+  "Binhi (Seeds)": [
+    "East-West Seed",
+    "Ramgo",
+    "Condor",
+    "Known-You",
+    "PhilRice",
+  ],
+  Medicines: ["VetRx", "Medilife", "GeneriVet", "Virbac"],
+  "Pet Supplies": ["TopBreed", "Powercat", "Cosi", "Cature"],
+  LPG: ["Petron Gasul", "Solane", "Regasco", "Fiesta"],
+  "Rices & Grains": ["Well-Milled", "Sinandomeng", "Dinorado", "Jasmine"],
+  "Agriculture Products": ["Yara", "Atlas", "Bio-N", "Crop Giant"],
+  Equipment: ["Ingco", "Lotus", "Truper", "Generic"],
+};
+
+const locationsByCategory: Record<SeedCatalogCategory, string> = {
+  "Animal Feeds": "Feeds Section",
+  "Binhi (Seeds)": "Seed Rack",
+  Medicines: "Medicine Shelf",
+  "Pet Supplies": "Pet Corner",
+  LPG: "LPG Area",
+  "Rices & Grains": "Rice Display",
+  "Agriculture Products": "Agri Shelf",
+  Equipment: "Tool Section",
+};
+
+const targetNamesByCategory: Record<SeedCatalogCategory, string[]> = {
+  "Animal Feeds": ["Hog", "Chicken", "Fish"],
+  "Binhi (Seeds)": ["Rice", "Corn", "Eggplants", "Plants"],
+  Medicines: ["Hog", "Chicken", "Dog", "Cat"],
+  "Pet Supplies": ["Dog", "Cat"],
+  LPG: ["Others"],
+  "Rices & Grains": ["Human"],
+  "Agriculture Products": ["Plants", "Rice", "Corn"],
+  Equipment: ["Others", "Plants"],
+};
+
+const indicationsByCategory: Record<SeedCatalogCategory, string[]> = {
   "Animal Feeds": [
-    "Hog Grower Pellets",
-    "Chick Booster Crumble",
-    "Layer Mash",
-    "Broiler Starter Feed",
-    "Dog Chow Premium",
-    "Cat Food Supreme",
-    "Aqua Pellets 3mm",
-    "BIO 1000",
-    "BIO 2000",
-    "BIO 3000",
-    "Darak",
-    "Corn 1/2 Grains",
-    "Corn 1/8 Grains",
-    "Corn 1/4 Grains",
-    "Corn whole Grains",
-  ],
-  Medicines: [
-    "Amoxicillin Syrup",
-    "Paracetamol Drops",
-    "Multivitamin Injection",
-    "Ivermectin Oral",
-    "Loperamide Tablets",
-    "Vitamin B Complex",
-    "Tylosin Solution",
-  ],
-  "Pet Supplies": [
-    "Dog Shampoo",
-    "Pet Tali",
-    "Tick & Flea Powder",
-    "Cat Litter Crystals",
-    "Bird Cage Cleaner",
-    "Puppy Pads",
-  ],
-  "Rices & Grains": [
-    "Grade A Whole Grain Rice",
-    "Whole Grain Rice",
-    "Well-Milled Rice",
-    "Brown Rice",
-    "Dikit",
-    "Cracked Corn",
-  ],
-  LPG: ["Petron Gasul 11kg", "Solane Tank 7kg", "Regasco Refill 2.7kg"],
-  "Agriculture Products": [
-    "Urea Fertilizer",
-    "Complete 14-14-14",
-    "Organic Foliar Spray",
-    "Carbaryl Insecticide",
-    "Molasses Booster",
-  ],
-  Equipment: [
-    "Plastic Feeder",
-    "Manual Sprayer",
-    "Watering Can",
-    "Machete (Itak)",
-    "Steel Cage",
-    "Rake Handle",
+    "Starter Feed",
+    "Grower Feed",
+    "Layer Support",
+    "Finisher Feed",
   ],
   "Binhi (Seeds)": [
-    "Hybrid Tomato Seeds",
-    "Okra Seed Pack",
-    "Eggplant Black Beauty",
-    "Sweet Corn Seeds",
-    "Ampalaya F1",
+    "High Yield",
+    "Early Maturity",
+    "Heat Tolerant",
+    "Disease Resistance",
   ],
+  Medicines: [
+    "Antibiotic",
+    "Pain Relief",
+    "Deworming",
+    "Appetite Booster",
+    "Immune Support",
+  ],
+  "Pet Supplies": [
+    "Daily Feeding",
+    "Coat Care",
+    "Hygiene",
+    "Litter Control",
+  ],
+  LPG: ["Cooking", "Heating"],
+  "Rices & Grains": ["Daily Consumption", "Premium Grain"],
+  "Agriculture Products": [
+    "Fertilizer",
+    "Foliar Feed",
+    "Pest Control",
+    "Soil Health",
+  ],
+  Equipment: ["Daily Farm Use", "Spraying", "Harvest Support"],
 };
+
+// Stable March 2026 snapshot for seed realism.
+// Public anchors where available:
+// - DOE LPG monitor (11kg range)
+// - DA weekly rice price monitoring
+// - FPA fertilizer weekly prices
+// Other store items use deterministic local retail ranges to avoid reseed drift.
+const PRODUCT_SNAPSHOTS: SeedCatalogItem[] = [
+  {
+    category: "Animal Feeds",
+    brand: "BMEG",
+    name: "Hog Grower Pellets",
+    description: "25kg hog grower feed sack for backyard and small farm operations.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1120,
+    dealerPrice: 1080,
+    allowPackSale: true,
+    unitPrice: 44.8,
+    packingStock: 10,
+    stock: 250,
+    minStock: 50,
+    targets: ["Hog"],
+    indications: ["Grower Feed"],
+  },
+  {
+    category: "Animal Feeds",
+    brand: "New Hope",
+    name: "Broiler Starter Crumble",
+    description: "25kg broiler starter crumble for the first feeding stage.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1085,
+    dealerPrice: 1045,
+    allowPackSale: true,
+    unitPrice: 43.4,
+    packingStock: 8,
+    stock: 200,
+    minStock: 50,
+    targets: ["Chicken"],
+    indications: ["Starter Feed"],
+  },
+  {
+    category: "Animal Feeds",
+    brand: "Vitarich",
+    name: "Layer Mash",
+    description: "50kg layer mash feed for egg-laying poultry.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 2060,
+    dealerPrice: 1985,
+    allowPackSale: true,
+    unitPrice: 41.2,
+    packingStock: 6,
+    stock: 300,
+    minStock: 100,
+    targets: ["Chicken"],
+    indications: ["Layer Support"],
+  },
+  {
+    category: "Animal Feeds",
+    brand: "Robina",
+    name: "Aqua Starter Crumble",
+    description: "25kg starter crumble for bangus and tilapia grow-out ponds.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1160,
+    dealerPrice: 1115,
+    allowPackSale: true,
+    unitPrice: 46.4,
+    packingStock: 6,
+    stock: 150,
+    minStock: 50,
+    targets: ["Fish"],
+    indications: ["Starter Feed"],
+  },
+  {
+    category: "Animal Feeds",
+    brand: "BMEG",
+    name: "Chick Booster Crumble",
+    description: "25kg chick booster feed for small poultry raisers.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1060,
+    dealerPrice: 1025,
+    allowPackSale: true,
+    unitPrice: 42.4,
+    packingStock: 8,
+    stock: 175,
+    minStock: 50,
+    targets: ["Chicken"],
+    indications: ["Starter Feed"],
+  },
+  {
+    category: "Medicines",
+    brand: "VetRx",
+    name: "Ivermectin Oral Suspension 100ml",
+    description: "100ml deworming suspension commonly used in farm animal care.",
+    unit: "ml",
+    packingUnit: "bottle",
+    packingSize: 100,
+    packPrice: 245,
+    dealerPrice: 228,
+    allowPackSale: false,
+    packingStock: 12,
+    stock: 0,
+    minStock: 4,
+    targets: ["Hog", "Dog"],
+    indications: ["Deworming"],
+  },
+  {
+    category: "Medicines",
+    brand: "Medilife",
+    name: "Vitamin B Complex 100ml",
+    description: "100ml vitamin booster bottle for livestock recovery and appetite support.",
+    unit: "ml",
+    packingUnit: "bottle",
+    packingSize: 100,
+    packPrice: 185,
+    dealerPrice: 170,
+    allowPackSale: false,
+    packingStock: 15,
+    stock: 0,
+    minStock: 4,
+    targets: ["Hog", "Chicken"],
+    indications: ["Appetite Booster", "Immune Support"],
+  },
+  {
+    category: "Medicines",
+    brand: "GeneriVet",
+    name: "Tylosin Solution 100ml",
+    description: "100ml antibiotic solution for routine farm inventory.",
+    unit: "ml",
+    packingUnit: "bottle",
+    packingSize: 100,
+    packPrice: 315,
+    dealerPrice: 292,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 3,
+    targets: ["Hog", "Chicken"],
+    indications: ["Antibiotic"],
+  },
+  {
+    category: "Medicines",
+    brand: "Virbac",
+    name: "Amoxicillin Oral Suspension 60ml",
+    description: "60ml oral antibiotic suspension for household pet and farm use.",
+    unit: "ml",
+    packingUnit: "bottle",
+    packingSize: 60,
+    packPrice: 168,
+    dealerPrice: 152,
+    allowPackSale: false,
+    packingStock: 14,
+    stock: 0,
+    minStock: 4,
+    targets: ["Dog", "Cat"],
+    indications: ["Antibiotic"],
+  },
+  {
+    category: "Pet Supplies",
+    brand: "TopBreed",
+    name: "TopBreed Adult Dog Food 20kg",
+    description: "20kg dry dog food sack for repeat household buyers and breeders.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 20,
+    packPrice: 1780,
+    dealerPrice: 1715,
+    allowPackSale: true,
+    unitPrice: 89,
+    packingStock: 5,
+    stock: 120,
+    minStock: 20,
+    targets: ["Dog"],
+    indications: ["Daily Feeding"],
+  },
+  {
+    category: "Pet Supplies",
+    brand: "Powercat",
+    name: "Powercat Dry Cat Food 20kg",
+    description: "20kg dry cat food sack for store resale and bulk household orders.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 20,
+    packPrice: 1695,
+    dealerPrice: 1630,
+    allowPackSale: true,
+    unitPrice: 84.75,
+    packingStock: 4,
+    stock: 100,
+    minStock: 20,
+    targets: ["Cat"],
+    indications: ["Daily Feeding"],
+  },
+  {
+    category: "Pet Supplies",
+    brand: "Cosi",
+    name: "Pet Shampoo 500ml",
+    description: "500ml pet shampoo bottle for routine grooming inventory.",
+    unit: "ml",
+    packingUnit: "bottle",
+    packingSize: 500,
+    packPrice: 165,
+    dealerPrice: 148,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 3,
+    targets: ["Dog", "Cat"],
+    indications: ["Coat Care", "Hygiene"],
+  },
+  {
+    category: "Pet Supplies",
+    brand: "Cature",
+    name: "Cat Litter Crystals 10L",
+    description: "10-liter cat litter crystals bag for monthly household use.",
+    unit: "unit",
+    packingUnit: "pack",
+    packingSize: 1,
+    packPrice: 320,
+    dealerPrice: 295,
+    allowPackSale: false,
+    packingStock: 12,
+    stock: 0,
+    minStock: 4,
+    targets: ["Cat"],
+    indications: ["Litter Control"],
+  },
+  {
+    category: "LPG",
+    brand: "Petron Gasul",
+    name: "Petron Gasul 11kg",
+    description: "11kg household LPG cylinder refill priced within the March 2026 DOE range.",
+    unit: "kg",
+    packingUnit: "tank",
+    packingSize: 11,
+    packPrice: 1028,
+    dealerPrice: 1008,
+    allowPackSale: false,
+    packingStock: 12,
+    stock: 0,
+    minStock: 2,
+    targets: ["Others"],
+    indications: ["Cooking"],
+  },
+  {
+    category: "LPG",
+    brand: "Solane",
+    name: "Solane 11kg",
+    description: "11kg household LPG cylinder refill for branded premium buyers.",
+    unit: "kg",
+    packingUnit: "tank",
+    packingSize: 11,
+    packPrice: 1065,
+    dealerPrice: 1040,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 2,
+    targets: ["Others"],
+    indications: ["Cooking"],
+  },
+  {
+    category: "LPG",
+    brand: "Regasco",
+    name: "Regasco 11kg",
+    description: "11kg household LPG cylinder refill for repeat neighborhood delivery sales.",
+    unit: "kg",
+    packingUnit: "tank",
+    packingSize: 11,
+    packPrice: 965,
+    dealerPrice: 945,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 2,
+    targets: ["Others"],
+    indications: ["Cooking"],
+  },
+  {
+    category: "LPG",
+    brand: "Fiesta",
+    name: "Fiesta Gas 11kg",
+    description: "11kg LPG refill kept as value-priced household option.",
+    unit: "kg",
+    packingUnit: "tank",
+    packingSize: 11,
+    packPrice: 918,
+    dealerPrice: 898,
+    allowPackSale: false,
+    packingStock: 8,
+    stock: 0,
+    minStock: 2,
+    targets: ["Others"],
+    indications: ["Cooking"],
+  },
+  {
+    category: "Rices & Grains",
+    brand: "Well-Milled",
+    name: "Well-Milled Rice 50kg",
+    description: "50kg well-milled rice sack for everyday household consumption.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 2290,
+    dealerPrice: 2210,
+    allowPackSale: true,
+    unitPrice: 45.8,
+    packingStock: 6,
+    stock: 300,
+    minStock: 100,
+    targets: ["Human"],
+    indications: ["Daily Consumption"],
+  },
+  {
+    category: "Rices & Grains",
+    brand: "Sinandomeng",
+    name: "Sinandomeng Rice 50kg",
+    description: "50kg Sinandomeng rice sack positioned for mid-range walk-in buyers.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 2390,
+    dealerPrice: 2310,
+    allowPackSale: true,
+    unitPrice: 47.8,
+    packingStock: 7,
+    stock: 350,
+    minStock: 100,
+    targets: ["Human"],
+    indications: ["Daily Consumption"],
+  },
+  {
+    category: "Rices & Grains",
+    brand: "Dinorado",
+    name: "Dinorado Rice 25kg",
+    description: "25kg aromatic rice sack for premium home buyers.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1525,
+    dealerPrice: 1470,
+    allowPackSale: true,
+    unitPrice: 61,
+    packingStock: 5,
+    stock: 125,
+    minStock: 50,
+    targets: ["Human"],
+    indications: ["Premium Grain"],
+  },
+  {
+    category: "Rices & Grains",
+    brand: "Jasmine",
+    name: "Jasmine Rice 25kg",
+    description: "25kg premium jasmine rice sack for store and household orders.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 25,
+    packPrice: 1490,
+    dealerPrice: 1435,
+    allowPackSale: true,
+    unitPrice: 59.6,
+    packingStock: 5,
+    stock: 125,
+    minStock: 50,
+    targets: ["Human"],
+    indications: ["Premium Grain"],
+  },
+  {
+    category: "Agriculture Products",
+    brand: "Yara",
+    name: "Urea Fertilizer 46-0-0 50kg",
+    description: "50kg urea fertilizer sack aligned with Region I public fertilizer pricing.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 1650,
+    dealerPrice: 1605,
+    allowPackSale: false,
+    packingStock: 8,
+    stock: 0,
+    minStock: 2,
+    targets: ["Plants", "Rice", "Corn"],
+    indications: ["Fertilizer"],
+  },
+  {
+    category: "Agriculture Products",
+    brand: "Atlas",
+    name: "Complete Fertilizer 14-14-14 50kg",
+    description: "50kg complete fertilizer sack for vegetable and palay production.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 1580,
+    dealerPrice: 1535,
+    allowPackSale: false,
+    packingStock: 8,
+    stock: 0,
+    minStock: 2,
+    targets: ["Plants", "Rice", "Corn"],
+    indications: ["Fertilizer"],
+  },
+  {
+    category: "Agriculture Products",
+    brand: "Atlas",
+    name: "Ammosul 21-0-0 50kg",
+    description: "50kg ammonium sulfate fertilizer sack for regular field replenishment.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 50,
+    packPrice: 870,
+    dealerPrice: 835,
+    allowPackSale: false,
+    packingStock: 6,
+    stock: 0,
+    minStock: 2,
+    targets: ["Plants", "Rice", "Corn"],
+    indications: ["Fertilizer"],
+  },
+  {
+    category: "Agriculture Products",
+    brand: "Bio-N",
+    name: "Organic Foliar Spray 1L",
+    description: "1-liter foliar feed bottle for vegetable and backyard farm use.",
+    unit: "liter",
+    packingUnit: "bottle",
+    packingSize: 1,
+    packPrice: 265,
+    dealerPrice: 245,
+    allowPackSale: false,
+    packingStock: 12,
+    stock: 0,
+    minStock: 3,
+    targets: ["Plants"],
+    indications: ["Foliar Feed", "Soil Health"],
+  },
+  {
+    category: "Agriculture Products",
+    brand: "Crop Giant",
+    name: "Carbaryl Insecticide 1L",
+    description: "1-liter insecticide bottle for common field and backyard pest issues.",
+    unit: "liter",
+    packingUnit: "bottle",
+    packingSize: 1,
+    packPrice: 345,
+    dealerPrice: 320,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 3,
+    targets: ["Plants"],
+    indications: ["Pest Control"],
+  },
+  {
+    category: "Equipment",
+    brand: "Ingco",
+    name: "Knapsack Sprayer 16L",
+    description: "16-liter knapsack sprayer for fertilizer and pesticide field application.",
+    unit: "unit",
+    packingUnit: "unit",
+    packingSize: 1,
+    packPrice: 980,
+    dealerPrice: 930,
+    allowPackSale: false,
+    packingStock: 5,
+    stock: 0,
+    minStock: 1,
+    targets: ["Plants"],
+    indications: ["Spraying", "Daily Farm Use"],
+  },
+  {
+    category: "Equipment",
+    brand: "Lotus",
+    name: "Watering Can 8L",
+    description: "8-liter watering can for seedling and backyard garden care.",
+    unit: "unit",
+    packingUnit: "unit",
+    packingSize: 1,
+    packPrice: 210,
+    dealerPrice: 190,
+    allowPackSale: false,
+    packingStock: 8,
+    stock: 0,
+    minStock: 2,
+    targets: ["Plants"],
+    indications: ["Daily Farm Use"],
+  },
+  {
+    category: "Equipment",
+    brand: "Truper",
+    name: "Bolo 18in",
+    description: "18-inch bolo for routine clearing and farm work.",
+    unit: "unit",
+    packingUnit: "unit",
+    packingSize: 1,
+    packPrice: 325,
+    dealerPrice: 295,
+    allowPackSale: false,
+    packingStock: 6,
+    stock: 0,
+    minStock: 1,
+    targets: ["Others"],
+    indications: ["Harvest Support", "Daily Farm Use"],
+  },
+  {
+    category: "Equipment",
+    brand: "Generic",
+    name: "Plastic Feeder 10kg",
+    description: "10kg plastic feeder for poultry and small livestock use.",
+    unit: "unit",
+    packingUnit: "unit",
+    packingSize: 1,
+    packPrice: 185,
+    dealerPrice: 165,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 2,
+    targets: ["Others"],
+    indications: ["Daily Farm Use"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "East-West Seed",
+    name: "Hybrid Tomato Seeds 10g",
+    description: "10g hybrid tomato seed sachet for backyard and market gardening.",
+    unit: "gram",
+    packingUnit: "sachet",
+    packingSize: 10,
+    packPrice: 145,
+    dealerPrice: 132,
+    allowPackSale: false,
+    packingStock: 20,
+    stock: 0,
+    minStock: 5,
+    targets: ["Plants"],
+    indications: ["High Yield", "Disease Resistance"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "East-West Seed",
+    name: "Ampalaya F1 Seeds 10g",
+    description: "10g ampalaya F1 seed sachet for vegetable growers.",
+    unit: "gram",
+    packingUnit: "sachet",
+    packingSize: 10,
+    packPrice: 198,
+    dealerPrice: 182,
+    allowPackSale: false,
+    packingStock: 20,
+    stock: 0,
+    minStock: 5,
+    targets: ["Plants"],
+    indications: ["High Yield", "Heat Tolerant"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "Ramgo",
+    name: "Sweet Corn Seeds 250g",
+    description: "250g sweet corn seed pack for small farm planting cycles.",
+    unit: "gram",
+    packingUnit: "pack",
+    packingSize: 250,
+    packPrice: 215,
+    dealerPrice: 198,
+    allowPackSale: false,
+    packingStock: 18,
+    stock: 0,
+    minStock: 5,
+    targets: ["Corn"],
+    indications: ["High Yield", "Early Maturity"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "Condor",
+    name: "Okra Seeds 100g",
+    description: "100g okra seed pack for direct field sowing.",
+    unit: "gram",
+    packingUnit: "pack",
+    packingSize: 100,
+    packPrice: 85,
+    dealerPrice: 76,
+    allowPackSale: false,
+    packingStock: 18,
+    stock: 0,
+    minStock: 5,
+    targets: ["Plants"],
+    indications: ["Early Maturity"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "Known-You",
+    name: "Eggplant Black Beauty Seeds 25g",
+    description: "25g eggplant seed pack for vegetable growers and home gardens.",
+    unit: "gram",
+    packingUnit: "sachet",
+    packingSize: 25,
+    packPrice: 125,
+    dealerPrice: 112,
+    allowPackSale: false,
+    packingStock: 15,
+    stock: 0,
+    minStock: 5,
+    targets: ["Eggplants"],
+    indications: ["Disease Resistance"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "PhilRice",
+    name: "RC 160 Certified Rice Seeds 20kg",
+    description: "20kg certified rice seed bag for palay growers around Asingan.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 20,
+    packPrice: 1280,
+    dealerPrice: 1235,
+    allowPackSale: false,
+    packingStock: 10,
+    stock: 0,
+    minStock: 2,
+    targets: ["Rice"],
+    indications: ["High Yield", "Early Maturity"],
+  },
+  {
+    category: "Binhi (Seeds)",
+    brand: "PhilRice",
+    name: "RC 216 Certified Rice Seeds 20kg",
+    description: "20kg certified rice seed bag suited for irrigated planting schedules.",
+    unit: "kg",
+    packingUnit: "sack",
+    packingSize: 20,
+    packPrice: 1320,
+    dealerPrice: 1270,
+    allowPackSale: false,
+    packingStock: 8,
+    stock: 0,
+    minStock: 2,
+    targets: ["Rice"],
+    indications: ["High Yield", "Disease Resistance"],
+  },
+];
+
+const ASINGAN_CUSTOMERS: SeedCustomerFixture[] = [
+  {
+    alias: "Neri Poultry Supply",
+    firstName: "Nerissa",
+    lastName: "Mendoza",
+    phone: "09180000501",
+    email: "nerissa.mendoza@example.com",
+    notes: "Feeds and poultry supplies repeat account.",
+    addr: {
+      label: "Store",
+      line1: "M. H. Del Pilar St.",
+      barangay: "Poblacion West",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Asingan Public Market",
+      geoLat: 16.009,
+      geoLng: 120.669,
+    },
+  },
+  {
+    alias: "Bautista Household",
+    firstName: "Joel",
+    lastName: "Bautista",
+    phone: "09180000502",
+    email: "joel.bautista@example.com",
+    notes: "Usually books rice and LPG together.",
+    addr: {
+      label: "Home",
+      line1: "Mabini St.",
+      barangay: "Poblacion East",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Asingan Town Plaza",
+      geoLat: 16.011,
+      geoLng: 120.67,
+    },
+  },
+  {
+    alias: "J. Flores Farm",
+    firstName: "Jasper",
+    lastName: "Flores",
+    phone: "09180000503",
+    email: "jasper.flores@example.com",
+    notes: "Field orders are usually fertilizer and seed combos.",
+    addr: {
+      label: "Farm",
+      line1: "Sitio Centro",
+      barangay: "Carosucan Norte",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Carosucan Norte Trike Terminal",
+      geoLat: 16.02,
+      geoLng: 120.653,
+    },
+  },
+  {
+    alias: "San Vicente East Home",
+    firstName: "Marlon",
+    lastName: "Castro",
+    phone: "09180000504",
+    email: "marlon.castro@example.com",
+    notes: "Regular LPG buyer for household use.",
+    addr: {
+      label: "Home",
+      line1: "Purok Uno",
+      barangay: "San Vicente East",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near barangay hall",
+      geoLat: 16.018,
+      geoLng: 120.676,
+    },
+  },
+  {
+    alias: "Westside Rice Buyer",
+    firstName: "Cynthia",
+    lastName: "Labrador",
+    phone: "09180000505",
+    email: "cynthia.labrador@example.com",
+    notes: "Buys rice by sack every payout week.",
+    addr: {
+      label: "Home",
+      line1: "Rizal Ave.",
+      barangay: "San Vicente West",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Near chapel",
+      geoLat: 16.017,
+      geoLng: 120.664,
+    },
+  },
+  {
+    alias: "Macalong Backyard Farm",
+    firstName: "Edgar",
+    lastName: "Rivera",
+    phone: "09180000506",
+    email: "edgar.rivera@example.com",
+    notes: "Orders feeds and dewormer for small livestock.",
+    addr: {
+      label: "Farm",
+      line1: "Sitio Proper",
+      barangay: "Macalong",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near covered court",
+      geoLat: 16.025,
+      geoLng: 120.651,
+    },
+  },
+  {
+    alias: "Domanpot Residence",
+    firstName: "Aileen",
+    lastName: "Soriano",
+    phone: "09180000507",
+    email: "aileen.soriano@example.com",
+    notes: "Prefers morning delivery window.",
+    addr: {
+      label: "Home",
+      line1: "Quezon St.",
+      barangay: "Domanpot",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near elementary school",
+      geoLat: 16.004,
+      geoLng: 120.648,
+    },
+  },
+  {
+    alias: "Bobonan Store",
+    firstName: "Karen",
+    lastName: "Uy",
+    phone: "09180000508",
+    email: "karen.uy@example.com",
+    notes: "Mixed basket orders for sari-sari replenishment.",
+    addr: {
+      label: "Store",
+      line1: "National Road",
+      barangay: "Bobonan",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Near tricycle terminal",
+      geoLat: 16.002,
+      geoLng: 120.661,
+    },
+  },
+  {
+    alias: "Sobol LPG Suki",
+    firstName: "Lorna",
+    lastName: "Apostol",
+    phone: "09180000509",
+    email: "lorna.apostol@example.com",
+    notes: "Household LPG refill customer.",
+    addr: {
+      label: "Home",
+      line1: "Purok Dos",
+      barangay: "Sobol",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Near waiting shed",
+      geoLat: 16.028,
+      geoLng: 120.658,
+    },
+  },
+  {
+    alias: "Cabalitian Hog Raiser",
+    firstName: "Rodel",
+    lastName: "Manalo",
+    phone: "09180000510",
+    email: "rodel.manalo@example.com",
+    notes: "Monthly feeds and livestock medicine account.",
+    addr: {
+      label: "Farm",
+      line1: "Sitio Ilaya",
+      barangay: "Cabalitian",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 3",
+      landmark: "Near barangay health station",
+      geoLat: 16.03,
+      geoLng: 120.67,
+    },
+  },
+  {
+    alias: "Bantog Variety Store",
+    firstName: "Sharon",
+    lastName: "Velasco",
+    phone: "09180000511",
+    email: "sharon.velasco@example.com",
+    notes: "Buys pet supplies and rice weekly.",
+    addr: {
+      label: "Store",
+      line1: "Purok Uno",
+      barangay: "Bantog",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 1",
+      landmark: "Near basketball court",
+      geoLat: 16.022,
+      geoLng: 120.642,
+    },
+  },
+  {
+    alias: "Coldit Family Home",
+    firstName: "Paolo",
+    lastName: "Sarmiento",
+    phone: "09180000512",
+    email: "paolo.sarmiento@example.com",
+    notes: "Occasional fertilizer and seed pickup customer.",
+    addr: {
+      label: "Home",
+      line1: "Sitio Centro",
+      barangay: "Coldit",
+      city: "Asingan",
+      province: "Pangasinan",
+      postalCode: ZIP_BY_MUNI["Asingan"],
+      purok: "Purok 2",
+      landmark: "Near barangay hall",
+      geoLat: 16.026,
+      geoLng: 120.646,
+    },
+  },
+];
 
 // ─────────────────────────────────────────
 // 2️⃣ Helpers
 // ─────────────────────────────────────────
-function pickRandom<T>(arr: T[], count = 2): T[] {
-  if (!Array.isArray(arr)) {
-    console.error("❌ pickRandom() expected array but got:", arr);
-    throw new TypeError("pickRandom: arr is not an array");
-  }
-  const shuffled = [...arr].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count);
+function createSeedBarcode(index: number) {
+  return `480${String(100000000 + index).padStart(9, "0")}`;
 }
 
-function shouldAllowRetail(packingSize: number): boolean {
-  return packingSize >= 20;
-}
-
-function generateBarcode(existing: Set<string>) {
-  let code;
-  do {
-    code = "480" + Math.floor(100000000 + Math.random() * 899999999);
-  } while (existing.has(code));
-  existing.add(code);
-  return code;
-}
-
-function computeRetailPrice(srp: number, packingSize: number): number {
-  return +(srp / packingSize + 3).toFixed(2);
+function requireValue<T>(value: T | null | undefined, message: string): T {
+  if (value == null) throw new Error(message);
+  return value;
 }
 
 async function getOrCreateMap<T extends string>(
@@ -455,630 +1303,209 @@ async function getOrCreateMap<T extends string>(
   return map;
 }
 
-// ─────────────────────────────────────────
-// 3️⃣ Product Generator (Animal Feeds)
-// ─────────────────────────────────────────
-async function makeFeedProducts({
-  categoryId,
-  brandMap,
+async function seedCatalogProducts({
+  categoryMap,
+  brandMapByCategory,
   unitMap,
   packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error("❌ brandMap is empty or undefined in makeFeedProducts()");
-  }
-
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-    const packingSize = [20, 25, 50][i % 3];
-    const allowRetail = shouldAllowRetail(packingSize);
-    const srp = 300 + Math.random() * 300;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
-
-    const unitId = unitMap["kg"];
-    const packingUnitId = packingUnitMap["sack"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 2);
-    console.log("📌 indicationList is:", indicationList);
-    console.log("📌 typeof:", typeof indicationList);
-    console.log("📌 isArray?", Array.isArray(indicationList));
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    if (!indicationList || indicationList.length === 0) {
-      console.warn("⚠️ indicationList is empty for Feed Products!");
-    }
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: "Animal Feeds",
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 50,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 2 + Math.floor(Math.random() * 3),
-          stock: allowRetail ? packingSize * 2 : 0,
-          barcode,
-          isActive: true,
-          minStock: 5,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
+  locationMap,
+  targetLookupByCategory,
+  indicationLookupByCategory,
+}: {
+  categoryMap: Record<string, number>;
+  brandMapByCategory: Record<string, Record<string, number>>;
+  unitMap: Record<SeedUnitName, number>;
+  packingUnitMap: Record<SeedPackingUnitName, number>;
+  locationMap: Record<string, number>;
+  targetLookupByCategory: Record<string, Record<string, { id: number }>>;
+  indicationLookupByCategory: Record<string, Record<string, { id: number }>>;
+}) {
+  for (const [index, item] of PRODUCT_SNAPSHOTS.entries()) {
+    const categoryId = requireValue(
+      categoryMap[item.category],
+      `Missing category id for ${item.category}`
     );
-  }
+    const brandId = requireValue(
+      brandMapByCategory[item.category]?.[item.brand],
+      `Missing brand id for ${item.brand} (${item.category})`
+    );
+    const locationId = requireValue(
+      locationMap[locationsByCategory[item.category]],
+      `Missing location id for ${item.category}`
+    );
+    const targetRows = item.targets.map((targetName) =>
+      requireValue(
+        targetLookupByCategory[item.category]?.[targetName],
+        `Missing target ${targetName} for ${item.category}`
+      )
+    );
+    const indicationRows = item.indications.map((indicationName) =>
+      requireValue(
+        indicationLookupByCategory[item.category]?.[indicationName],
+        `Missing indication ${indicationName} for ${item.category}`
+      )
+    );
 
-  return Promise.all(products);
+    const unitPrice = item.allowPackSale
+      ? +(item.unitPrice ?? item.packPrice / item.packingSize).toFixed(2)
+      : item.packPrice;
+
+    await db.product.create({
+      data: {
+        name: item.name,
+        description: item.description,
+        sku: generateSKU({
+          name: item.name,
+          brand: item.brand,
+          category: item.category,
+          id: index + 1,
+        }),
+        price: unitPrice,
+        srp: item.packPrice,
+        dealerPrice: item.dealerPrice,
+        allowPackSale: item.allowPackSale,
+        packingSize: item.packingSize,
+        packingStock: item.packingStock,
+        stock: item.stock,
+        barcode: createSeedBarcode(index + 1),
+        isActive: true,
+        minStock: item.minStock,
+        categoryId,
+        brandId,
+        locationId,
+        unitId: unitMap[item.unit],
+        packingUnitId: packingUnitMap[item.packingUnit],
+        productTargets: {
+          create: targetRows.map((target) => ({
+            target: { connect: { id: target.id } },
+          })),
+        },
+        productIndications: {
+          create: indicationRows.map((indication) => ({
+            indication: { connect: { id: indication.id } },
+          })),
+        },
+      },
+    });
+  }
 }
 
-async function makeMedicineProducts({
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error(
-      "❌ brandMap is empty or undefined in makeMedicineProducts()"
-    );
-  }
+async function upsertSeedCustomer(
+  customerSeed: SeedCustomerFixture,
+  fallbackProvinceId: number
+) {
+  const customer = await db.customer.upsert({
+    where: { phone: customerSeed.phone },
+    update: {
+      alias: customerSeed.alias,
+      firstName: customerSeed.firstName,
+      lastName: customerSeed.lastName,
+      email: customerSeed.email,
+      notes: customerSeed.notes,
+      isActive: true,
+    },
+    create: {
+      alias: customerSeed.alias,
+      firstName: customerSeed.firstName,
+      lastName: customerSeed.lastName,
+      phone: customerSeed.phone,
+      email: customerSeed.email,
+      notes: customerSeed.notes,
+      isActive: true,
+    },
+  });
 
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-    const packingSize = [10, 30, 100][i % 3];
-    const allowRetail = packingSize >= 10;
-    const srp = 100 + Math.random() * 150;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
+  const existingAddress = await db.customerAddress.findFirst({
+    where: { customerId: customer.id, label: customerSeed.addr.label },
+    select: { id: true },
+  });
 
-    const unitId = unitMap[i % 2 === 0 ? "ml" : "cc"];
-    const packingUnitId = packingUnitMap[i % 2 === 0 ? "bottle" : "vial"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 2);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
+  const found = await db.barangay.findFirst({
+    where: {
+      name: customerSeed.addr.barangay,
+      municipality: {
+        name: customerSeed.addr.city,
+        province: { name: customerSeed.addr.province },
+      },
+    },
+    select: {
+      id: true,
+      municipalityId: true,
+      municipality: { select: { provinceId: true } },
+    },
+  });
 
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: "Medicines",
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 30,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 2 + Math.floor(Math.random() * 2),
-          stock: allowRetail ? packingSize * 2 : 0,
-          barcode,
-          isActive: true,
-          minStock: 5,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
+  const zoneRef =
+    found && customerSeed.addr.purok
+      ? await db.zone.upsert({
+          where: {
+            barangayId_name: {
+              barangayId: found.id,
+              name: customerSeed.addr.purok,
+            },
           },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
+          update: { isActive: true },
+          create: {
+            barangayId: found.id,
+            name: customerSeed.addr.purok,
+            isActive: true,
           },
+          select: { id: true },
+        })
+      : null;
+
+  let landmarkRef: { id: number } | null = null;
+  if (found && customerSeed.addr.landmark) {
+    landmarkRef =
+      (await db.landmark.findFirst({
+        where: {
+          barangayId: found.id,
+          name: customerSeed.addr.landmark,
         },
-      })
-    );
-  }
-
-  return Promise.all(products);
-}
-
-async function makeLpgProducts({
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error("❌ brandMap is empty or undefined in makeLpgProducts()");
-  }
-
-  const products = [];
-  for (let i = 0; i < 15; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-
-    const packingSize = [5, 11, 22][i % 3]; // In kg
-    const allowRetail = false; // No per-kg sale for LPG
-    const srp = 600 + Math.random() * 400;
-    const price = srp;
-
-    const unitId = unitMap["kg"];
-    const packingUnitId = packingUnitMap["tank"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 1);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
+        select: { id: true },
+      })) ??
+      (await db.landmark.create({
         data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: "LPG",
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 80,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 3,
-          stock: 0,
-          barcode,
+          barangayId: found.id,
+          name: customerSeed.addr.landmark,
           isActive: true,
-          minStock: 1,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
         },
-      })
-    );
+        select: { id: true },
+      }));
   }
 
-  return Promise.all(products);
-}
+  const addressData = {
+    line1: customerSeed.addr.line1,
+    barangay: customerSeed.addr.barangay,
+    city: customerSeed.addr.city,
+    province: customerSeed.addr.province,
+    purok: customerSeed.addr.purok ?? null,
+    postalCode: customerSeed.addr.postalCode ?? null,
+    landmark: customerSeed.addr.landmark ?? null,
+    geoLat: customerSeed.addr.geoLat ?? null,
+    geoLng: customerSeed.addr.geoLng ?? null,
+    provinceId: found?.municipality.provinceId ?? fallbackProvinceId,
+    municipalityId: found?.municipalityId ?? null,
+    barangayId: found?.id ?? null,
+    zoneId: zoneRef?.id ?? null,
+    landmarkId: landmarkRef?.id ?? null,
+  } as const;
 
-async function makePetSupplyProducts({
-  categoryName,
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error(
-      "❌ brandMap is empty or undefined in makePetSupplyProducts()"
-    );
+  if (existingAddress) {
+    await db.customerAddress.update({
+      where: { id: existingAddress.id },
+      data: addressData,
+    });
+    return;
   }
 
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-    const packingSize = [0.5, 1, 2][i % 3]; // In kg or liters
-    const allowRetail = packingSize >= 1;
-    const srp = 120 + Math.random() * 150;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
-
-    const unitId = unitMap["kg"];
-    const packingUnitId = packingUnitMap["pack"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 2);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: categoryName,
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 20,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 2 + Math.floor(Math.random() * 2),
-          stock: allowRetail ? packingSize * 2 : 0,
-          barcode,
-          isActive: true,
-          minStock: 3,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
-    );
-  }
-
-  return Promise.all(products);
-}
-
-async function makeRiceProducts({
-  categoryName,
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error("❌ brandMap is empty or undefined in makeRiceProducts()");
-  }
-
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-
-    const packingSize = [25, 50][i % 2]; // Rices often packed in 25kg or 50kg sacks
-    const allowRetail = shouldAllowRetail(packingSize);
-    const srp = 1400 + Math.random() * 800;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
-
-    const unitId = unitMap["kg"];
-    const packingUnitId = packingUnitMap["sack"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 1);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: categoryName,
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 100,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 4 + Math.floor(Math.random() * 3),
-          stock: allowRetail ? packingSize * 3 : 0,
-          barcode,
-          isActive: true,
-          minStock: 10,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
-    );
-  }
-
-  return Promise.all(products);
-}
-
-async function makeEquipmentProducts({
-  categoryName,
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error(
-      "❌ brandMap is empty or undefined in makeEquipmentProducts()"
-    );
-  }
-
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-
-    const packingSize = 1;
-    const allowRetail = false;
-    const srp = 500 + Math.random() * 2000;
-    const price = srp;
-
-    const unitId = unitMap["unit"];
-    const packingUnitId = packingUnitMap["unit"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 1);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: categoryName,
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 200,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 5,
-          stock: 0,
-          barcode,
-          isActive: true,
-          minStock: 1,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
-    );
-  }
-
-  return Promise.all(products);
-}
-
-async function makeBinhiProducts({
-  categoryName,
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error("❌ brandMap is empty or undefined in makeBinhiProducts()");
-  }
-
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-
-    const packingSize = [0.1, 0.25, 0.5][i % 3]; // in kg
-    const allowRetail = packingSize >= 0.25;
-    const srp = 50 + Math.random() * 80;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
-
-    const unitId = unitMap["kg"];
-    const packingUnitId = packingUnitMap["sachet"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 1);
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: categoryName,
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 10,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 10,
-          stock: allowRetail ? packingSize * 5 : 0,
-          barcode,
-          isActive: true,
-          minStock: 2,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
-    );
-  }
-
-  return Promise.all(products);
-}
-
-async function makeAgriProducts({
-  categoryName,
-  categoryId,
-  brandMap,
-  unitMap,
-  packingUnitMap,
-  locationId,
-  targetList,
-  indicationList,
-  usedBarcodes,
-  nameList,
-}: any) {
-  if (!brandMap || Object.keys(brandMap).length === 0) {
-    throw new Error("❌ brandMap is empty or undefined in makeAgriProducts()");
-  }
-
-  const products = [];
-  for (let i = 0; i < 20; i++) {
-    const brandNames = Object.keys(brandMap);
-    const brandName = brandNames[i % brandNames.length];
-    const brandId = brandMap[brandName];
-    const [name] = pickRandom<string>(nameList, 1);
-
-    const packingSize = [0.5, 1, 5][i % 3]; // liters or kg
-    const allowRetail = packingSize >= 1;
-    const srp = 200 + Math.random() * 300;
-    const price = allowRetail ? computeRetailPrice(srp, packingSize) : srp;
-
-    const unitId = unitMap["liter"];
-    const packingUnitId = packingUnitMap["bottle"];
-    const barcode = generateBarcode(usedBarcodes);
-    const selectedTargets = pickRandom(targetList, 1); // always plants
-    const selectedIndications = pickRandom(indicationList ?? [], 2);
-
-    products.push(
-      db.product.create({
-        data: {
-          name,
-          sku: generateSKU({
-            name,
-            brand: brandName,
-            category: categoryName,
-            id: i + 1,
-          }),
-          price,
-          srp,
-          dealerPrice: srp - 30,
-          allowPackSale: allowRetail,
-          packingSize,
-          packingStock: 4 + Math.floor(Math.random() * 3),
-          stock: allowRetail ? packingSize * 3 : 0,
-          barcode,
-          isActive: true,
-          minStock: 5,
-          categoryId,
-          brandId,
-          locationId,
-          unitId,
-          packingUnitId,
-          productTargets: {
-            create: selectedTargets.map((t: any) => ({
-              target: { connect: { id: t.id } },
-            })),
-          },
-          productIndications: {
-            create: selectedIndications.map((i: any) => ({
-              indication: { connect: { id: i.id } },
-            })),
-          },
-        },
-      })
-    );
-  }
-
-  return Promise.all(products);
+  await db.customerAddress.create({
+    data: {
+      customerId: customer.id,
+      label: customerSeed.addr.label,
+      ...addressData,
+    },
+  });
 }
 
 // ─────────────────────────────────────────
@@ -1529,55 +1956,55 @@ async function seed() {
   }
 
   console.log("🎯 Creating targets...");
-  const targetMapByCategory: Record<string, any[]> = {};
+  const targetLookupByCategory: Record<string, Record<string, { id: number }>> =
+    {};
+  for (const [categoryName, targetNames] of Object.entries(targetNamesByCategory)) {
+    const categoryId = categoryMap[categoryName];
+    if (!categoryId) continue;
 
-  for (const target of globalTargets) {
-    for (const category of target.categories) {
-      const categoryId = categoryMap[category];
-      if (!categoryId) continue;
-
-      const existing = await db.target.findFirst({
+    targetLookupByCategory[categoryName] = {};
+    for (const name of targetNames) {
+      const created = await db.target.upsert({
         where: {
-          name: target.name,
-          categoryId,
-        },
-      });
-
-      let createdOrFound = existing;
-      if (!existing) {
-        createdOrFound = await db.target.create({
-          data: {
-            name: target.name,
+          name_categoryId: {
+            name,
             categoryId,
           },
-        });
-      }
-
-      targetMapByCategory[category] ??= [];
-      targetMapByCategory[category].push(createdOrFound);
+        },
+        update: {},
+        create: {
+          name,
+          categoryId,
+        },
+        select: { id: true, name: true },
+      });
+      targetLookupByCategory[categoryName][name] = created;
     }
   }
 
   console.log("💊 Creating indications...");
-
-  const indicationMapByCategory: Record<string, any[]> = {};
-
-  for (const [categoryName, indications] of Object.entries(
-    indicationsByCategory
-  )) {
+  const indicationLookupByCategory: Record<
+    string,
+    Record<string, { id: number }>
+  > = {};
+  for (const [categoryName, indications] of Object.entries(indicationsByCategory)) {
     const categoryId = categoryMap[categoryName];
     if (!categoryId) continue;
 
+    indicationLookupByCategory[categoryName] = {};
     for (const name of indications) {
-      const created = await db.indication.create({
-        data: { name, categoryId },
+      const created = await db.indication.upsert({
+        where: {
+          name_categoryId: {
+            name,
+            categoryId,
+          },
+        },
+        update: {},
+        create: { name, categoryId },
+        select: { id: true, name: true },
       });
-
-      if (!indicationMapByCategory[categoryName]) {
-        indicationMapByCategory[categoryName] = [];
-      }
-
-      indicationMapByCategory[categoryName].push(created);
+      indicationLookupByCategory[categoryName][name] = created;
     }
   }
 
@@ -1610,430 +2037,19 @@ async function seed() {
   }
 
   console.log("🌾 Creating realistic products...");
-  const usedBarcodes = new Set<string>();
-  console.log("🧪 DEBUG:", {
-    unitKeys: Object.keys(unitMap),
-    packingUnitKeys: Object.keys(packingUnitMap),
-    targetCount: targetMapByCategory["Animal Feeds"]?.length ?? 0,
+  await seedCatalogProducts({
+    categoryMap,
+    brandMapByCategory,
+    unitMap: unitMap as Record<SeedUnitName, number>,
+    packingUnitMap: packingUnitMap as Record<SeedPackingUnitName, number>,
+    locationMap,
+    targetLookupByCategory,
+    indicationLookupByCategory,
   });
 
-  await makeFeedProducts({
-    categoryName: "Animal Feeds",
-    categoryId: categoryMap["Animal Feeds"],
-    locationId: locationMap[locationsByCategory["Animal Feeds"]],
-    brandMap: brandMapByCategory["Animal Feeds"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Animal Feeds"],
-    indicationList: indicationMapByCategory["Animal Feeds"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Animal Feeds"],
-  });
-
-  await makeMedicineProducts({
-    categoryName: "Medicines",
-    categoryId: categoryMap["Medicines"],
-    locationId: locationMap[locationsByCategory["Medicines"]],
-    brandMap: brandMapByCategory["Medicines"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Medicines"],
-    indicationList: indicationMapByCategory["Medicines"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Medicines"],
-  });
-
-  await makeLpgProducts({
-    categoryName: "LPG",
-    categoryId: categoryMap["LPG"],
-    locationId: locationMap[locationsByCategory["LPG"]],
-    brandMap: brandMapByCategory["LPG"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["LPG"],
-    indicationList: indicationMapByCategory["LPG"],
-    usedBarcodes,
-    nameList: productNamesByCategory["LPG"],
-  });
-
-  await makePetSupplyProducts({
-    categoryName: "Pet Supplies",
-    categoryId: categoryMap["Pet Supplies"],
-    locationId: locationMap[locationsByCategory["Pet Supplies"]],
-    brandMap: brandMapByCategory["Pet Supplies"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Pet Supplies"],
-    indicationList: indicationMapByCategory["Pet Supplies"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Pet Supplies"],
-  });
-
-  await makeRiceProducts({
-    categoryName: "Rices & Grains",
-    categoryId: categoryMap["Rices & Grains"],
-    locationId: locationMap[locationsByCategory["Rices & Grains"]],
-    brandMap: brandMapByCategory["Rices & Grains"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Rices & Grains"],
-    indicationList: indicationMapByCategory["Rices & Grains"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Rices & Grains"],
-  });
-
-  await makeEquipmentProducts({
-    categoryName: "Equipment",
-    categoryId: categoryMap["Equipment"],
-    locationId: locationMap[locationsByCategory["Equipment"]],
-    brandMap: brandMapByCategory["Equipment"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Equipment"],
-    indicationList: indicationMapByCategory["Equipment"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Equipment"],
-  });
-
-  await makeBinhiProducts({
-    categoryName: "Binhi (Seeds)",
-    categoryId: categoryMap["Binhi (Seeds)"],
-    locationId: locationMap[locationsByCategory["Binhi (Seeds)"]],
-    brandMap: brandMapByCategory["Binhi (Seeds)"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Binhi (Seeds)"],
-    indicationList: indicationMapByCategory["Binhi (Seeds)"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Binhi (Seeds)"],
-  });
-
-  await makeAgriProducts({
-    categoryName: "Agriculture Products",
-    categoryId: categoryMap["Agriculture Products"],
-    locationId: locationMap[locationsByCategory["Agriculture Products"]],
-    brandMap: brandMapByCategory["Agriculture Products"],
-    unitMap,
-    packingUnitMap,
-    targetList: targetMapByCategory["Agriculture Products"],
-    indicationList: indicationMapByCategory["Agriculture Products"],
-    usedBarcodes,
-    nameList: productNamesByCategory["Agriculture Products"],
-  });
-
-  // ─────────────────────────────────────────
-  // NEW: A few customers with addresses (safe upserts)
-  // ─────────────────────────────────────────
-  // ─────────────────────────────────────────
-  // NEW: Customers located in Pangasinan (Asingan/San Nicolas/nearby)
-  // ─────────────────────────────────────────
-  console.log("👨‍👩‍👧‍👦 Creating customers + addresses (Pangasinan) …");
-  const customers = [
-    {
-      alias: "Bahay ni Mang Tonyo",
-      firstName: "Antonio",
-      lastName: "Ramirez",
-      phone: "09180000001",
-      email: "antonio@example.com",
-      notes: "Prefers morning delivery",
-      addr: {
-        label: "Home",
-        line1: "Blk 4 Lot 12, Mabini St.",
-        barangay: "Poblacion East",
-        city: "Asingan",
-        province: "Pangasinan",
-        postalCode: ZIP_BY_MUNI["Asingan"],
-        landmark: "Near sari-sari store",
-        geoLat: 16.012, // approx only
-        geoLng: 120.669,
-      },
-    },
-    {
-      alias: "Apt 2B",
-      firstName: "Jessica",
-      lastName: "Lopez",
-      phone: "09180000002",
-      email: "jessica@example.com",
-      notes: "GCash preferred",
-      addr: {
-        label: "Condo",
-        line1: "Unit 2B, Sunrise Tower",
-        barangay: "San Rafael Centro",
-        city: "San Nicolas",
-        province: "Pangasinan",
-        postalCode: ZIP_BY_MUNI["San Nicolas"],
-        landmark: "Across coffee shop",
-        geoLat: 16.053,
-        geoLng: 120.749,
-      },
-    },
-    {
-      alias: "Carinderia",
-      firstName: "Luisa",
-      lastName: "Garcia",
-      phone: "09180000003",
-      email: "luisa@example.com",
-      notes: "Bulk LPG every Friday",
-      addr: {
-        label: "Store",
-        line1: "P. Burgos St.",
-        barangay: "Poblacion",
-        city: "Rosales",
-        province: "Pangasinan",
-        postalCode: ZIP_BY_MUNI["Rosales"],
-        landmark: "Beside pharmacy",
-        geoLat: 15.894,
-        geoLng: 120.633,
-      },
-    },
-  ];
-
-  for (const c of customers) {
-    const customer = await db.customer.upsert({
-      where: { phone: c.phone }, // phone is unique
-
-      update: {
-        alias: c.alias,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        email: c.email,
-        notes: c.notes,
-        isActive: true,
-      },
-      create: {
-        alias: c.alias,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        phone: c.phone,
-        email: c.email,
-        notes: c.notes,
-        isActive: true,
-      },
-    });
-
-    // Ensure one address by (customerId,label)
-    const existing = await db.customerAddress.findFirst({
-      where: { customerId: customer.id, label: c.addr.label },
-      select: { id: true },
-    });
-    // Resolve FK refs (province/municipality/barangay) if available
-    const found = await db.barangay.findFirst({
-      where: {
-        name: c.addr.barangay,
-        municipality: {
-          name: c.addr.city,
-          province: { name: c.addr.province },
-        },
-      },
-      select: {
-        id: true,
-        municipalityId: true,
-        municipality: { select: { provinceId: true } },
-      },
-    });
-
-    // Try to attach default Zone ('Purok 1') and ensure Landmark ref exists
-    // Ensure merong "Purok 1" only when needed
-    const zoneRef = found
-      ? await db.zone.upsert({
-          where: { barangayId_name: { barangayId: found.id, name: "Purok 1" } },
-          update: {},
-          create: { barangayId: found.id, name: "Purok 1" },
-          select: { id: true },
-        })
-      : null;
-    let landmarkRef: { id: number } | null = null;
-    if (found && c.addr.landmark) {
-      landmarkRef =
-        (await db.landmark.findFirst({
-          where: { barangayId: found.id, name: c.addr.landmark },
-          select: { id: true },
-        })) ??
-        (await db.landmark.create({
-          data: { barangayId: found.id, name: c.addr.landmark, isActive: true },
-          select: { id: true },
-        }));
-    }
-
-    const addrData = {
-      line1: c.addr.line1,
-      barangay: c.addr.barangay,
-      city: c.addr.city,
-      province: c.addr.province,
-      postalCode: c.addr.postalCode ?? null,
-      landmark: c.addr.landmark ?? null,
-      geoLat: c.addr.geoLat ?? null,
-      geoLng: c.addr.geoLng ?? null,
-      // FK links
-      provinceId: found?.municipality.provinceId ?? provinceId,
-      municipalityId: found?.municipalityId ?? null,
-      barangayId: found?.id ?? null,
-      zoneId: zoneRef?.id ?? null,
-      landmarkId: landmarkRef?.id ?? null,
-    } as const;
-
-    if (existing) {
-      await db.customerAddress.update({
-        where: { id: existing.id },
-        data: addrData,
-      });
-    } else {
-      await db.customerAddress.create({
-        data: { customerId: customer.id, label: c.addr.label, ...addrData },
-      });
-    }
-  }
-  // ─────────────────────────────────────────
-  // EXTRA: generate 25 more dummy customers (unique phones) in Pangasinan
-  // ─────────────────────────────────────────
-  const firstNames = [
-    "Alex",
-    "Bea",
-    "Carlo",
-    "Diane",
-    "Eli",
-    "Faye",
-    "Gio",
-    "Hannah",
-    "Ivan",
-    "Janna",
-    "Kyle",
-    "Lia",
-    "Mico",
-    "Nina",
-    "Owen",
-    "Pia",
-    "Quin",
-    "Rhea",
-    "Seth",
-    "Tina",
-    "Uli",
-    "Vera",
-    "Wade",
-    "Yani",
-    "Zach",
-  ];
-  const lastNames = [
-    "Alonso",
-    "Bautista",
-    "Cruz",
-    "Dizon",
-    "Escobar",
-    "Flores",
-    "Garcia",
-    "Hernandez",
-    "Ilagan",
-    "Jimenez",
-    "Katigbak",
-    "Lopez",
-    "Mendoza",
-    "Navarro",
-    "Ortega",
-    "Perez",
-    "Quiambao",
-    "Ramos",
-    "Santos",
-    "Trinidad",
-    "Uy",
-    "Villanueva",
-    "Wong",
-    "Yap",
-    "Zamora",
-  ];
-  function pad(n: number, len = 6) {
-    return String(n).padStart(len, "0");
-  }
-
-  const pangasinanMuns = Object.keys(PANGASINAN.barangaysByMunicipality);
-  for (let i = 1; i <= 25; i++) {
-    const fn = firstNames[(i - 1) % firstNames.length];
-    const ln = lastNames[(i - 1) % lastNames.length];
-    const phone = `0918${pad(100000 + i)}`;
-    const email = `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@example.com`;
-    const alias = `${fn} ${ln}`;
-    const muni = pangasinanMuns[i % pangasinanMuns.length];
-    const brgyList = PANGASINAN.barangaysByMunicipality[muni] ?? ["Poblacion"];
-    const barangay = brgyList[i % brgyList.length];
-    const label = ["Home", "Shop", "Office", "Store"][i % 4];
-    const customer = await db.customer.upsert({
-      where: { phone },
-      update: { alias, firstName: fn, lastName: ln, email, isActive: true },
-      create: {
-        alias,
-        firstName: fn,
-        lastName: ln,
-        phone,
-        email,
-        isActive: true,
-      },
-    });
-
-    const existing = await db.customerAddress.findFirst({
-      where: { customerId: customer.id, label },
-      select: { id: true },
-    });
-
-    const found = await db.barangay.findFirst({
-      where: {
-        name: barangay,
-        municipality: { name: muni, province: { name: "Pangasinan" } },
-      },
-      select: {
-        id: true,
-        municipalityId: true,
-        municipality: { select: { provinceId: true, name: true } },
-      },
-    });
-    // find zone + (optional) create a landmark entry per barangay
-    // Same lazy-create for dummy customers
-    const zone2 = found
-      ? await db.zone.upsert({
-          where: { barangayId_name: { barangayId: found.id, name: "Purok 1" } },
-          update: {},
-          create: { barangayId: found.id, name: "Purok 1" },
-          select: { id: true },
-        })
-      : null;
-    const lmText = "Near trike terminal";
-    let lm2: { id: number } | null = null;
-    if (found) {
-      lm2 =
-        (await db.landmark.findFirst({
-          where: { barangayId: found.id, name: lmText },
-          select: { id: true },
-        })) ??
-        (await db.landmark.create({
-          data: { barangayId: found.id, name: lmText, isActive: true },
-          select: { id: true },
-        }));
-    }
-
-    const addrData = {
-      line1: `#${100 + i} Mabini St.`,
-      barangay,
-      city: found?.municipality.name ?? muni,
-      province: "Pangasinan",
-      postalCode: ZIP_BY_MUNI[muni] ?? null,
-      landmark: lmText,
-      geoLat: 15.9 + i * 0.001,
-      geoLng: 120.6 + i * 0.001,
-      provinceId: found?.municipality.provinceId ?? provinceId,
-      municipalityId: found?.municipalityId ?? null,
-      barangayId: found?.id ?? null,
-      zoneId: zone2?.id ?? null,
-      landmarkId: lm2?.id ?? null,
-    } as const;
-
-    if (existing) {
-      await db.customerAddress.update({
-        where: { id: existing.id },
-        data: addrData,
-      });
-    } else {
-      await db.customerAddress.create({
-        data: { customerId: customer.id, label, ...addrData },
-      });
-    }
+  console.log("👨‍👩‍👧‍👦 Creating Asingan-first customers + addresses…");
+  for (const customerSeed of ASINGAN_CUSTOMERS) {
+    await upsertSeedCustomer(customerSeed, provinceId);
   }
 
   console.log("\n✅ Seeding complete!");
