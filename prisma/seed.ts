@@ -1299,7 +1299,7 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     birthDate: "1991-04-12",
     licenseNumber: "N01-91-456782",
     licenseExpiry: "2028-06-30",
-    defaultVehicleKey: "Tricycle A:TRICYCLE",
+    defaultVehicleKey: "Asingan Delivery Trike 01:TRICYCLE",
     address: {
       line1: "Mabini St.",
       barangay: "Poblacion East",
@@ -1323,7 +1323,7 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     birthDate: "1989-09-03",
     licenseNumber: "N02-89-781245",
     licenseExpiry: "2029-02-15",
-    defaultVehicleKey: "Motorcycle A:MOTORCYCLE",
+    defaultVehicleKey: "Asingan Delivery Motor 01:MOTORCYCLE",
     address: {
       line1: "Quezon Ave.",
       barangay: "San Vicente West",
@@ -1347,7 +1347,7 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     birthDate: "1994-01-18",
     licenseNumber: "N03-94-223641",
     licenseExpiry: "2028-11-20",
-    defaultVehicleKey: "Sidecar A:SIDECAR",
+    defaultVehicleKey: "Asingan Utility Sidecar 01:SIDECAR",
     address: {
       line1: "Sitio Centro",
       barangay: "Carosucan Norte",
@@ -1970,31 +1970,47 @@ async function seed() {
 
   const vehiclesData = [
     {
-      name: "Tricycle A",
+      name: "Asingan Delivery Trike 01",
       type: VehicleType.TRICYCLE,
-      capacityUnits: 150, // kg
-      notes: "Main trike",
+      plateNumber: "UAK 3814",
+      orNumber: "2026-TRI-0003814",
+      crNumber: "2026-CR-0003814",
+      ltoRegistrationExpiry: new Date("2027-09-30"),
+      capacityUnits: 165, // kg
+      notes: "Primary poblacion tricycle for rice, LPG, and mixed basket deliveries.",
       active: true,
     },
     {
-      name: "Motorcycle A",
+      name: "Asingan Delivery Motor 01",
       type: VehicleType.MOTORCYCLE,
-      capacityUnits: 60, // kg
-      notes: "Rack installed",
+      plateNumber: "9563-UA",
+      orNumber: "2026-MC-0009563",
+      crNumber: "2026-CR-0009563",
+      ltoRegistrationExpiry: new Date("2027-06-15"),
+      capacityUnits: 85, // kg
+      notes: "Motorcycle with rear rack for urgent medicine and small-basket dispatches.",
       active: true,
     },
     {
-      name: "Sidecar A",
+      name: "Asingan Utility Sidecar 01",
       type: VehicleType.SIDECAR,
-      capacityUnits: 120, // kg
-      notes: null,
+      plateNumber: "4431-UA",
+      orNumber: "2026-SDC-0004431",
+      crNumber: "2026-CR-0004431",
+      ltoRegistrationExpiry: new Date("2027-11-21"),
+      capacityUnits: 125, // kg
+      notes: "Sidecar unit used for agri supply drops and barangay edge deliveries.",
       active: true,
     },
     {
-      name: "Multicab A",
+      name: "Asingan Cargo Multicab 01",
       type: VehicleType.MULTICAB,
-      capacityUnits: 300, // kg
-      notes: "High capacity",
+      plateNumber: "NCQ 2147",
+      orNumber: "2026-MCB-0002147",
+      crNumber: "2026-CR-0002147",
+      ltoRegistrationExpiry: new Date("2027-12-31"),
+      capacityUnits: 420, // kg
+      notes: "High-capacity multicab for bulk feeds, fertilizer, and scheduled branch transfers.",
       active: true,
     },
   ];
