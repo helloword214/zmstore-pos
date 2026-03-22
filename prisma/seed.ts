@@ -1849,41 +1849,79 @@ async function seed() {
   console.log("🧹 Resetting (FK-safe order)...");
   // Wrap in a single transaction for speed & consistency
   await db.$transaction([
-    // ── Auth/RBAC first (to free Location FKs later)
-    db.cashierShift.deleteMany(),
-    db.userBranch.deleteMany(),
-    db.user.deleteMany(),
-    // ── M3/M2 artifacts first (may reference Product & Order)
-    db.deliveryRunOrder.deleteMany(),
-    db.stockMovement.deleteMany(),
+    // ── Session/auth + role history
+    db.loginOtpChallenge.deleteMany(),
+    db.passwordResetToken.deleteMany(),
+    db.loginRateLimitState.deleteMany(),
+    db.userRoleAuditEvent.deleteMany(),
+    db.userRoleAssignment.deleteMany(),
 
-    // ── Order graph
+    // ── Cash / charge / variance / receipt / CCS / AR artifacts
+    db.cashDrawerTxn.deleteMany(),
+    db.cashierChargePayment.deleteMany(),
+    db.riderChargePayment.deleteMany(),
+    db.customerArPayment.deleteMany(),
     db.payment.deleteMany(),
+    db.cashierCharge.deleteMany(),
+    db.riderCharge.deleteMany(),
+    db.cashierShiftVariance.deleteMany(),
+    db.riderRunVariance.deleteMany(),
+    db.runReceiptLine.deleteMany(),
+    db.deliveryRunOrder.deleteMany(),
+    db.runReceipt.deleteMany(),
+    db.clearanceClaim.deleteMany(),
+    db.customerAr.deleteMany(),
+    db.clearanceDecision.deleteMany(),
+    db.clearanceCase.deleteMany(),
+
+    // ── Run / order / stock graph
+    db.stockMovement.deleteMany(),
     db.orderItem.deleteMany(),
     db.order.deleteMany(),
+    db.deliveryRun.deleteMany(),
 
-    // ── Product-side many-to-many & details
-    db.productIndication.deleteMany(),
-    db.productTarget.deleteMany(),
+    // ── Schedule / payroll / employee-side artifacts
+    db.scheduleEvent.deleteMany(),
+    db.attendanceDutyResult.deleteMany(),
+    db.workerSchedule.deleteMany(),
+    db.scheduleTemplateAssignment.deleteMany(),
+    db.scheduleTemplateDay.deleteMany(),
+    db.scheduleTemplate.deleteMany(),
+    db.suspensionRecord.deleteMany(),
+    db.payrollRunLine.deleteMany(),
+    db.payrollRun.deleteMany(),
+    db.companyPayrollPolicy.deleteMany(),
+    db.employeePayProfile.deleteMany(),
+    db.employeeStatutoryDeductionProfile.deleteMany(),
+    db.employeeDocument.deleteMany(),
+    db.employeeAddress.deleteMany(),
 
-    // ── Customers (if you want a clean slate for your product seeding run)
-    //    Keep these if you prefer to retain customers/addresses.
+    // ── Customer-side artifacts
+    db.customerAddressPhoto.deleteMany(),
     db.customerAddress.deleteMany(),
     db.customerItemPrice.deleteMany(),
     db.customer.deleteMany(),
 
-    // ── Core catalog
+    // ── Product-side artifacts
+    db.productPhoto.deleteMany(),
+    db.productIndication.deleteMany(),
+    db.productTarget.deleteMany(),
     db.product.deleteMany(),
     db.brand.deleteMany(),
     db.target.deleteMany(),
     db.indication.deleteMany(),
     db.category.deleteMany(),
 
+    // ── Cashier scopes / auth / branches
+    db.cashierShift.deleteMany(),
+    db.userBranch.deleteMany(),
+    db.user.deleteMany(),
+    db.branch.deleteMany(),
+
     // ── Static refs
     db.unit.deleteMany(),
     db.packingUnit.deleteMany(),
     db.location.deleteMany(),
-    db.branch.deleteMany(),
 
     // ── Geo refs (wipe before reseed)
     db.landmark.deleteMany(),
@@ -1892,9 +1930,7 @@ async function seed() {
     db.municipality.deleteMany(),
     db.province.deleteMany(),
 
-    // ── Optional: if you also want a clean slate for fleet/workforce
-    // Comment out if you want to keep them across seeds.
-    // db.deliveryRun.deleteMany(),
+    // ── Fleet/workforce roots
     db.vehicleCapacityProfile.deleteMany(),
     db.vehicle.deleteMany(),
     db.employee.deleteMany(),
