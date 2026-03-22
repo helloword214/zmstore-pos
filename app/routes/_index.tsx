@@ -202,49 +202,6 @@ export default function AdminDashboardIndex() {
           </div>
         </section>
 
-        <SoTCard className="border-sky-200 bg-sky-50 p-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-sky-900">
-                Product Route Test Links (Temporary)
-              </h3>
-              <span className="text-xs text-sky-700">
-                Phase 1 split validation
-              </span>
-            </div>
-            <p className="text-xs text-sky-800">
-              Use these links to test the new product route split flow directly from
-              admin dashboard.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                to="/products"
-                className="inline-flex h-9 items-center rounded-xl border border-sky-300 bg-white px-3 text-sm font-medium text-sky-900 hover:bg-sky-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Product List
-              </Link>
-              <Link
-                to="/products/new"
-                className="inline-flex h-9 items-center rounded-xl border border-sky-300 bg-white px-3 text-sm font-medium text-sky-900 hover:bg-sky-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                New Product
-              </Link>
-              <Link
-                to="/products/1"
-                className="inline-flex h-9 items-center rounded-xl border border-sky-300 bg-white px-3 text-sm font-medium text-sky-900 hover:bg-sky-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Detail (ID 1)
-              </Link>
-              <Link
-                to="/products/1/edit"
-                className="inline-flex h-9 items-center rounded-xl border border-sky-300 bg-white px-3 text-sm font-medium text-sky-900 hover:bg-sky-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Edit (ID 1)
-              </Link>
-            </div>
-          </div>
-        </SoTCard>
-
         <SoTCard className="border-amber-200 bg-amber-50 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>

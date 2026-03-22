@@ -45,6 +45,15 @@ type LoaderData = {
     openShiftVariances: number; // shift variances OPEN
   };
 
+  workforce: {
+    activeTemplates: number;
+    activeAssignments: number;
+    scheduledToday: number;
+    attendanceRecordedToday: number;
+    draftSchedulesNext14Days: number;
+    activeSuspensionsToday: number;
+  };
+
   // Exceptions (small cards)
   exceptions: {
     riderVariancesOpen: number; // OPEN or MANAGER_APPROVED
@@ -82,6 +91,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
+  const planningWindowEnd = new Date(todayStart);
+  planningWindowEnd.setDate(planningWindowEnd.getDate() + 13);
 
   const [
     // Dispatch lane
@@ -99,6 +110,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     cashSalesTodayAgg,
     drawerTxnsTodayRows,
     openShiftVariances,
+
+    // Workforce ops
+    activeWorkforceTemplates,
+    activeWorkforceAssignments,
+    scheduledToday,
+    attendanceRecordedToday,
+    draftSchedulesNext14Days,
+    activeSuspensionsToday,
 
     // Exceptions
     riderVariancesOpen,
@@ -153,6 +172,56 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     // Open shift variances (manager audit)
     db.cashierShiftVariance.count({ where: { status: "OPEN" } }),
+
+    // Workforce ops
+    db.scheduleTemplate.count({
+      where: {
+        status: "ACTIVE",
+        effectiveFrom: { lte: todayStart },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
+      },
+    }),
+    db.scheduleTemplateAssignment.count({
+      where: {
+        status: "ACTIVE",
+        effectiveFrom: { lte: todayStart },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
+        template: {
+          is: {
+            status: "ACTIVE",
+            effectiveFrom: { lte: todayStart },
+            OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
+          },
+        },
+      },
+    }),
+    db.workerSchedule.count({
+      where: {
+        scheduleDate: todayStart,
+        status: { not: "CANCELLED" },
+      },
+    }),
+    db.attendanceDutyResult.count({
+      where: {
+        dutyDate: todayStart,
+      },
+    }),
+    db.workerSchedule.count({
+      where: {
+        scheduleDate: {
+          gte: todayStart,
+          lte: planningWindowEnd,
+        },
+        status: "DRAFT",
+      },
+    }),
+    db.suspensionRecord.count({
+      where: {
+        status: "ACTIVE",
+        startDate: { lte: todayStart },
+        endDate: { gte: todayStart },
+      },
+    }),
 
     // Exceptions
     db.riderRunVariance.count({
@@ -280,6 +349,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       drawerTxnsToday,
       openShiftVariances,
     },
+    workforce: {
+      activeTemplates: activeWorkforceTemplates,
+      activeAssignments: activeWorkforceAssignments,
+      scheduledToday,
+      attendanceRecordedToday,
+      draftSchedulesNext14Days,
+      activeSuspensionsToday,
+    },
     exceptions: {
       riderVariancesOpen,
       cashierShiftVariancesOpen,
@@ -293,7 +370,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function StoreManagerDashboard() {
-  const { me, dispatch, runs, cash, exceptions } = useLoaderData<LoaderData>();
+  const { me, dispatch, runs, cash, workforce, exceptions } = useLoaderData<LoaderData>();
 
   const identityLabel = me.alias ? `${me.alias} (${me.name})` : me.name;
   const varianceDecisionCount =
@@ -302,6 +379,48 @@ export default function StoreManagerDashboard() {
     exceptions.payrollRiderAR + exceptions.payrollCashierAR;
   const exceptionCount =
     varianceDecisionCount + payrollTaggedCount + exceptions.clearancePending;
+  const attendancePendingToday = Math.max(
+    workforce.scheduledToday - workforce.attendanceRecordedToday,
+    0,
+  );
+  const workforceStatusLabel =
+    attendancePendingToday > 0
+      ? `${attendancePendingToday} pending today`
+      : workforce.scheduledToday > 0
+        ? "Attendance caught up"
+        : "Awaiting today's schedule";
+  const workforceStatusToneClass =
+    attendancePendingToday > 0
+      ? "border-amber-300 bg-amber-100/90 text-amber-900"
+      : workforce.scheduledToday > 0
+        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+        : "border-slate-200 bg-white/90 text-slate-700";
+  const attendanceSummary =
+    workforce.scheduledToday === 0
+      ? "No schedules are loaded for today yet. You can still review attendance facts or move straight to schedule planning."
+      : attendancePendingToday > 0
+        ? `${attendancePendingToday} of ${workforce.scheduledToday} scheduled workers still need attendance review today.`
+        : `All ${workforce.scheduledToday} scheduled workers already have attendance results recorded today.`;
+  const workforcePlannerSummary =
+    workforce.draftSchedulesNext14Days > 0
+      ? `${workforce.draftSchedulesNext14Days} draft schedule ${
+          workforce.draftSchedulesNext14Days === 1 ? "row is" : "rows are"
+        } waiting across the next 14 days.`
+      : "No draft schedule rows are waiting across the next 14 days.";
+  const workforceTemplateSummary =
+    workforce.activeTemplates > 0
+      ? `${workforce.activeTemplates} active template${
+          workforce.activeTemplates === 1 ? "" : "s"
+        } support ${workforce.activeAssignments} live assignment${
+          workforce.activeAssignments === 1 ? "" : "s"
+        }.`
+      : "No active workforce templates are live yet.";
+  const workforceSuspensionSummary =
+    workforce.activeSuspensionsToday > 0
+      ? `${workforce.activeSuspensionsToday} active suspension${
+          workforce.activeSuspensionsToday === 1 ? " is" : "s are"
+        } affecting today's workforce lane.`
+      : "No active suspensions are affecting today's workforce lane.";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -383,7 +502,7 @@ export default function StoreManagerDashboard() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Operations Monitor
               </h2>
-              <span className="text-xs text-slate-500">Secondary metrics.</span>
+              <span className="text-xs text-slate-500">Live queues and control lanes.</span>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -502,47 +621,145 @@ export default function StoreManagerDashboard() {
 
               <div
                 className={sotCardClass({
-                  className: "border-amber-200 bg-amber-50/50 md:col-span-2",
+                  className: "border-amber-200 bg-amber-50/70 md:col-span-2",
                 })}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-                      Workforce Ops
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                        Workforce Ops
+                      </div>
+                      <div className="mt-1 text-base font-semibold text-slate-900">
+                        Coverage, attendance, and schedule readiness
+                      </div>
+                      <p className="mt-1 max-w-2xl text-sm text-slate-600">
+                        Daily workforce controls with live signals for attendance
+                        review, planning backlog, and active suspensions.
+                      </p>
                     </div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">
-                      Schedule, attendance, and suspension controls
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-xs font-semibold text-amber-800 shadow-sm">
+                        Today
+                      </span>
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${workforceStatusToneClass}`}
+                      >
+                        {workforceStatusLabel}
+                      </span>
                     </div>
                   </div>
-                  <span className="rounded-xl border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800">
-                    Phase 2
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <Link
-                    to="/store/workforce/schedule-templates"
-                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Schedule templates →
-                  </Link>
-                  <Link
-                    to="/store/workforce/schedule-planner"
-                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Schedule planner →
-                  </Link>
-                  <Link
-                    to="/store/workforce/attendance-review"
-                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Attendance review →
-                  </Link>
-                  <Link
-                    to="/store/workforce/suspension-records"
-                    className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Suspension records →
-                  </Link>
+
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <WorkforceMetricPill
+                      label="Assignments live"
+                      value={workforce.activeAssignments}
+                      caption={`${workforce.activeTemplates} active template${
+                        workforce.activeTemplates === 1 ? "" : "s"
+                      } backing current coverage`}
+                    />
+                    <WorkforceMetricPill
+                      label="Scheduled today"
+                      value={workforce.scheduledToday}
+                      caption="Workers loaded into today's attendance lane"
+                    />
+                    <WorkforceMetricPill
+                      label="Attendance pending"
+                      value={attendancePendingToday}
+                      caption={`${workforce.attendanceRecordedToday} recorded so far today`}
+                    />
+                    <WorkforceMetricPill
+                      label="Active suspensions"
+                      value={workforce.activeSuspensionsToday}
+                      caption="Suspension overlays affecting today's roster"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 xl:grid-cols-5">
+                    <Link
+                      to="/store/workforce/attendance-review"
+                      className="group rounded-2xl border border-amber-300 bg-white/95 p-4 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 xl:col-span-3"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                            Today's lane
+                          </div>
+                          <div className="mt-1 text-base font-semibold text-slate-900">
+                            Attendance review
+                          </div>
+                          <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">
+                            {attendanceSummary}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            attendancePendingToday > 0
+                              ? "border-amber-300 bg-amber-100 text-amber-900"
+                              : "border-emerald-300 bg-emerald-50 text-emerald-900"
+                          }`}
+                        >
+                          {attendancePendingToday > 0 ? "Needs review" : "Ready"}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <SoTDataRow
+                          label="Scheduled today"
+                          value={workforce.scheduledToday}
+                          className="border-amber-100 bg-amber-50/70"
+                        />
+                        <SoTDataRow
+                          label="Recorded today"
+                          value={workforce.attendanceRecordedToday}
+                          className="border-amber-100 bg-amber-50/70"
+                        />
+                      </div>
+                      <div className="mt-4 inline-flex items-center text-sm font-semibold text-amber-900">
+                        Open attendance review →
+                      </div>
+                    </Link>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-1">
+                      <WorkforceActionLink
+                        to="/store/workforce/schedule-planner"
+                        eyebrow="Planning"
+                        title="Schedule planner"
+                        description={workforcePlannerSummary}
+                        accent={
+                          workforce.draftSchedulesNext14Days > 0
+                            ? `${workforce.draftSchedulesNext14Days} draft${
+                                workforce.draftSchedulesNext14Days === 1 ? "" : "s"
+                              }`
+                            : "Up to date"
+                        }
+                        cta="Open schedule planner →"
+                      />
+                      <WorkforceActionLink
+                        to="/store/workforce/schedule-templates"
+                        eyebrow="Template library"
+                        title="Schedule templates"
+                        description={workforceTemplateSummary}
+                        accent={
+                          workforce.activeTemplates > 0
+                            ? `${workforce.activeTemplates} active`
+                            : "No live templates"
+                        }
+                        cta="Open schedule templates →"
+                      />
+                      <WorkforceActionLink
+                        to="/store/workforce/suspension-records"
+                        eyebrow="Controls"
+                        title="Suspension records"
+                        description={workforceSuspensionSummary}
+                        accent={
+                          workforce.activeSuspensionsToday > 0
+                            ? `${workforce.activeSuspensionsToday} active`
+                            : "Clear today"
+                        }
+                        cta="Open suspension records →"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -550,6 +767,65 @@ export default function StoreManagerDashboard() {
         </div>
       </div>
     </main>
+  );
+}
+
+function WorkforceMetricPill({
+  label,
+  value,
+  caption,
+}: {
+  label: string;
+  value: number;
+  caption: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-amber-200/80 bg-white/85 px-3 py-3 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold leading-none text-slate-900">
+        {value}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-slate-500">{caption}</p>
+    </div>
+  );
+}
+
+function WorkforceActionLink({
+  to,
+  eyebrow,
+  title,
+  description,
+  accent,
+  cta,
+}: {
+  to: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  accent: string;
+  cta: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group rounded-2xl border border-amber-200 bg-white/90 p-3.5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+            {eyebrow}
+          </div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{title}</div>
+        </div>
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+          {accent}
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-5 text-slate-600">{description}</p>
+      <div className="mt-3 text-sm font-medium text-amber-900">{cta}</div>
+    </Link>
   );
 }
 
