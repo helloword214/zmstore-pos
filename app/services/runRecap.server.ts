@@ -12,6 +12,7 @@ export type RecapRow = {
 };
 
 type LoadoutRow = { productId: number; name: string; qty: number };
+type QtyRow = { name: string; qty: number };
 
 const n = (v: unknown) => {
   const x = Number(v ?? 0);
@@ -21,9 +22,23 @@ const n = (v: unknown) => {
 const isNoReleaseAttemptOutcome = (value: unknown) =>
   value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
 
+const addQty = (
+  map: Map<number, QtyRow>,
+  productId: number,
+  name: string,
+  qty: number,
+) => {
+  if (!Number.isFinite(productId) || productId <= 0 || qty <= 0) return;
+  const prev = map.get(productId);
+  map.set(productId, {
+    name: prev?.name || name || `#${productId}`,
+    qty: (prev?.qty || 0) + qty,
+  });
+};
+
 /**
  * Source-of-truth recap for a run:
- * - loaded: from deliveryRun.loadoutSnapshot (fallback: implicitly loaded = parent sold if missing)
+ * - loaded: total physical run load = linked parent-order qty + extra loadoutSnapshot qty
  * - parent sold: from deliveryRunOrder -> order.items, excluding RS-* (posted roadside orders)
  * - road sold: from runReceipt(kind="ROAD") lines
  * - returned: from stockMovement RETURN_IN if present else riderCheckinSnapshot.stockRows
@@ -32,7 +47,7 @@ const isNoReleaseAttemptOutcome = (value: unknown) =>
  * - recapRows: per product Loaded/Sold/Returned/Diff
  * - hasDiffIssues: any diff != 0
  * - diffIssues: human-readable lines (for server-side guard)
- * - maps: loadedByPid, soldByPid, returnedByPid (if you need reuse)
+ * - maps: loadedByPid, parentReservedByPid, parentSoldByPid, roadSoldByPid, returnedByPid
  */
 export async function loadRunRecap(dbx: typeof db, runId: number) {
   const run = await dbx.deliveryRun.findUnique({
@@ -45,7 +60,7 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
   });
   if (!run) throw new Response("Run not found", { status: 404 });
 
-  // 1) Loaded (from loadoutSnapshot)
+  // 1) Extra load (from loadoutSnapshot)
   const loadout: LoadoutRow[] = Array.isArray(run.loadoutSnapshot)
     ? (run.loadoutSnapshot as any[])
         .map((l) => ({
@@ -58,15 +73,12 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
         )
     : [];
 
-  const loadedByPid = new Map<number, { name: string; qty: number }>();
+  const extraLoadByPid = new Map<number, QtyRow>();
   for (const l of loadout) {
-    loadedByPid.set(l.productId, {
-      name: l.name,
-      qty: (loadedByPid.get(l.productId)?.qty || 0) + l.qty,
-    });
+    addQty(extraLoadByPid, l.productId, l.name, l.qty);
   }
 
-  // 2) Parent sold (from deliveryRunOrder orders, excluding RS-*)
+  // 2) Parent reserved and sold (from deliveryRunOrder orders, excluding RS-*)
   const parentLinks = await dbx.deliveryRunOrder.findMany({
     where: { runId },
     select: {
@@ -80,32 +92,35 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
     },
   });
 
+  const parentReservedByPid = new Map<number, QtyRow>();
   const parentSoldByPid = new Map<number, number>();
   const parentNameByPid = new Map<number, string>();
   for (const L of parentLinks) {
     const o = L.order;
     if (!o) continue;
     if ((o.orderCode || "").startsWith("RS-")) continue; // ignore posted roadside orders
-    if (isNoReleaseAttemptOutcome(L.attemptOutcome)) continue;
+    const isNoRelease = isNoReleaseAttemptOutcome(L.attemptOutcome);
     for (const it of o.items || []) {
       const pid = Number(it.productId ?? 0);
       const qty = Math.max(0, n(it.qty));
       if (!pid || qty <= 0) continue;
-      parentSoldByPid.set(pid, (parentSoldByPid.get(pid) || 0) + qty);
-      if (!parentNameByPid.has(pid) && it.name)
-        parentNameByPid.set(pid, String(it.name));
+      const name = String(it.name ?? "");
+      addQty(parentReservedByPid, pid, name, qty);
+      if (!isNoRelease) {
+        parentSoldByPid.set(pid, (parentSoldByPid.get(pid) || 0) + qty);
+      }
+      if (!parentNameByPid.has(pid) && it.name) {
+        parentNameByPid.set(pid, name);
+      }
     }
   }
 
-  // ✅ Align with UI/guard logic: if parent sold exists but missing in loadoutSnapshot,
-  // treat as implicitly loaded at least the sold qty (legacy runs).
-  for (const [pid, soldQty] of parentSoldByPid.entries()) {
-    if (!loadedByPid.has(pid) && soldQty > 0) {
-      loadedByPid.set(pid, {
-        name: parentNameByPid.get(pid) ?? `#${pid}`,
-        qty: soldQty,
-      });
-    }
+  const loadedByPid = new Map<number, QtyRow>();
+  for (const [pid, row] of extraLoadByPid.entries()) {
+    addQty(loadedByPid, pid, row.name, row.qty);
+  }
+  for (const [pid, row] of parentReservedByPid.entries()) {
+    addQty(loadedByPid, pid, row.name, row.qty);
   }
 
   // 3) Road sold (from ROAD receipts lines)
@@ -192,6 +207,7 @@ export async function loadRunRecap(dbx: typeof db, runId: number) {
     hasDiffIssues: diffIssues.length > 0,
     diffIssues,
     loadedByPid,
+    parentReservedByPid,
     parentSoldByPid,
     roadSoldByPid,
     returnedByPid,

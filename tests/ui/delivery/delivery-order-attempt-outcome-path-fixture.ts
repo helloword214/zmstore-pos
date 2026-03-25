@@ -158,7 +158,7 @@ export async function openDeliveryOrderAttemptOutcomePathCashierRunRemitPage(
 
 async function resolveAttemptNoteInput(page: Page) {
   const placeholderNote = page.getByPlaceholder(
-    "Reason / note for manager (optional)",
+    "Why did the delivery fail? (required)",
   );
   if ((await placeholderNote.count()) > 0) {
     return placeholderNote.first();
@@ -166,8 +166,8 @@ async function resolveAttemptNoteInput(page: Page) {
 
   const labelledInput = page
     .locator("label")
-    .filter({ hasText: "Message to manager (required)" })
-    .locator("input[type='text']");
+    .filter({ hasText: /why did the delivery fail/i })
+    .locator("textarea");
 
   if ((await labelledInput.count()) > 0) {
     return labelledInput.first();
@@ -179,33 +179,22 @@ async function resolveAttemptNoteInput(page: Page) {
 export async function submitDeliveryOrderAttemptOutcomeRiderCheckin(args: {
   page: Page;
   scenario: DeliveryOrderAttemptOutcomePathScenario;
-  outcome: DeliveryOrderAttemptOutcome;
   note: string;
 }) {
-  const targetLabel =
-    args.outcome === "NO_RELEASE_REATTEMPT"
-      ? /^Return to dispatch$/
-      : /^Cancel before release$/;
-  const attemptLabel = args.page
-    .locator("label")
-    .filter({ hasText: targetLabel })
-    .first();
+  const attemptButton = args.page.getByRole("button", {
+    name: /mark as failed delivery/i,
+  });
   const cashInput = args.page.getByRole("textbox", {
     name: "Cash received:",
   });
 
-  await expect(attemptLabel).toBeVisible();
-  await attemptLabel.click();
+  await expect(attemptButton).toBeVisible();
+  await attemptButton.click();
 
   await expect(
     args.page.locator('input[name="parentAttemptJson"]'),
-  ).toHaveValue(new RegExp(args.outcome));
+  ).toHaveValue(/NO_RELEASE_REATTEMPT/);
   await expect(cashInput).toBeDisabled();
-
-  const attemptRadios = args.page.locator(
-    `input[name="attempt-ui-${args.scenario.activeOrder.id}"]`,
-  );
-  await expect(attemptRadios).toHaveCount(3);
 
   const noteInput = await resolveAttemptNoteInput(args.page);
   await noteInput.fill(args.note);
@@ -227,12 +216,11 @@ export async function submitDeliveryOrderAttemptOutcomeRiderCheckin(args: {
 export async function finalizeDeliveryOrderAttemptOutcomeOnManagerRemit(args: {
   page: Page;
   scenario: DeliveryOrderAttemptOutcomePathScenario;
-  outcome: DeliveryOrderAttemptOutcome;
   markMissing: boolean;
 }) {
   await expect(
-    args.page.locator(`input[name="attemptOutcome_${args.scenario.activeOrder.id}"]`),
-  ).toHaveValue(args.outcome);
+    args.page.getByText(/failed delivery pending dispatch review/i),
+  ).toBeVisible();
 
   if (args.markMissing) {
     const verifyRadios = args.page.locator(
@@ -269,10 +257,58 @@ export async function finalizeDeliveryOrderAttemptOutcomeOnManagerRemit(args: {
   );
 }
 
+export async function resolveDeliveryOrderAttemptOutcomeOnDispatch(args: {
+  page: Page;
+  scenario: DeliveryOrderAttemptOutcomePathScenario;
+  outcome: DeliveryOrderAttemptOutcome;
+}) {
+  const orderRow = args.page
+    .locator("div.px-4.py-3", {
+      hasText: args.scenario.activeOrder.orderCode,
+    })
+    .first();
+  const selectButton = orderRow.getByRole("button", {
+    name: /select for re-dispatch/i,
+  });
+
+  await expect(orderRow).toBeVisible();
+  await expect(selectButton).toBeVisible();
+
+  if (args.outcome === "NO_RELEASE_CANCELLED") {
+    const cancelButton = orderRow.getByRole("button", {
+      name: /^cancel order$/i,
+    });
+    await expect(cancelButton).toBeVisible();
+    await cancelButton.click();
+    await expect(orderRow).toHaveCount(0);
+    return;
+  }
+
+  await selectButton.click();
+  await args.page
+    .getByRole("button", {
+      name: /create run from selected/i,
+    })
+    .click();
+
+  await args.page.waitForURL(
+    (target) => /^\/runs\/\d+\/dispatch$/.test(target.pathname),
+    { timeout: 10_000 },
+  );
+}
+
 export async function resolveDeliveryOrderAttemptOutcomePathDbState() {
   const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
 
-  const [activeRun, activeOrder, runLink, parentReceipt, clearances, riderVariance] =
+  const [
+    activeRun,
+    activeOrder,
+    runLink,
+    activeRunLinks,
+    parentReceipt,
+    clearances,
+    riderVariance,
+  ] =
     await Promise.all([
       db.deliveryRun.findUnique({
         where: { id: scenario.activeRun.id },
@@ -311,6 +347,25 @@ export async function resolveDeliveryOrderAttemptOutcomePathDbState() {
           attemptReportedAt: true,
           attemptFinalizedAt: true,
           attemptFinalizedById: true,
+        },
+      }),
+      db.deliveryRunOrder.findMany({
+        where: {
+          orderId: scenario.activeOrder.id,
+          run: {
+            status: {
+              in: ["PLANNED", "DISPATCHED", "CHECKED_IN"],
+            },
+          },
+        },
+        orderBy: { runId: "asc" },
+        select: {
+          runId: true,
+          run: {
+            select: {
+              status: true,
+            },
+          },
         },
       }),
       db.runReceipt.findFirst({
@@ -374,6 +429,15 @@ export async function resolveDeliveryOrderAttemptOutcomePathDbState() {
       channel: "DELIVERY",
       status: { in: ["UNPAID", "PARTIALLY_PAID"] },
       dispatchedAt: null,
+      runOrders: {
+        none: {
+          run: {
+            status: {
+              in: ["PLANNED", "DISPATCHED", "CHECKED_IN"],
+            },
+          },
+        },
+      },
     },
   });
 
@@ -395,6 +459,7 @@ export async function resolveDeliveryOrderAttemptOutcomePathDbState() {
   return {
     activeOrder,
     activeRun,
+    activeRunLinks,
     clearances,
     dispatchEligibleOrderCount,
     parentReceipt,
@@ -428,11 +493,16 @@ export function expectDeliveryOrderAttemptOutcomePathInitialDbState(
   expect(state.runLink?.attemptFinalizedAt).toBeNull();
   expect(state.runLink?.attemptFinalizedById).toBeNull();
 
-  expect(state.parentReceipt).toBeNull();
-  expect(state.clearances).toHaveLength(0);
-  expect(state.dispatchEligibleOrderCount).toBe(0);
-  expect(state.riderVariance).toBeNull();
-  expect(state.riderCharge).toBeNull();
+	  expect(state.parentReceipt).toBeNull();
+	  expect(state.clearances).toHaveLength(0);
+	  expect(state.activeRunLinks).toHaveLength(1);
+	  expect(state.activeRunLinks[0]).toEqual({
+	    runId: scenario.activeRun.id,
+	    run: { status: "DISPATCHED" },
+	  });
+	  expect(state.dispatchEligibleOrderCount).toBe(0);
+	  expect(state.riderVariance).toBeNull();
+	  expect(state.riderCharge).toBeNull();
 
   expect(state.taggedShift?.status).toBe(CashierShiftStatus.OPEN);
   expect(state.taggedShift?.closedAt).toBeNull();
@@ -463,9 +533,39 @@ export function expectDeliveryOrderAttemptOutcomePathReattemptDbState(args: {
     "0.00",
   );
   expect(args.state.clearances).toHaveLength(0);
-  expect(args.state.dispatchEligibleOrderCount).toBe(1);
+  expect(args.state.dispatchEligibleOrderCount).toBe(0);
+  expect(args.state.activeRunLinks).toHaveLength(1);
+  expect(args.state.activeRunLinks[0]?.run?.status).toBe("PLANNED");
   expect(args.state.riderVariance).toBeNull();
   expect(args.state.riderCharge).toBeNull();
+}
+
+export function expectDeliveryOrderAttemptOutcomePathPendingDispatchReviewDbState(args: {
+  note: string;
+  scenario: DeliveryOrderAttemptOutcomePathScenario;
+  state: Awaited<ReturnType<typeof resolveDeliveryOrderAttemptOutcomePathDbState>>;
+}) {
+  expect(args.state.activeRun?.status).toBe("CLOSED");
+  expect(args.state.activeOrder?.status).toBe("UNPAID");
+  expect(args.state.activeOrder?.fulfillmentStatus).toBe("ON_HOLD");
+  expect(args.state.activeOrder?.dispatchedAt).toBeNull();
+  expect(args.state.activeOrder?.deliveredAt).toBeNull();
+
+  expect(args.state.runLink?.attemptOutcome).toBe("NO_RELEASE_REATTEMPT");
+  expect(args.state.runLink?.attemptNote).toBe(args.note);
+  expect(args.state.runLink?.attemptReportedAt).not.toBeNull();
+  expect(args.state.runLink?.attemptFinalizedAt).toBeNull();
+  expect(args.state.runLink?.attemptFinalizedById).toBeNull();
+
+  expect(args.state.parentReceipt?.receiptKey).toBe(
+    `PARENT:${args.scenario.activeOrder.id}`,
+  );
+  expect(Number(args.state.parentReceipt?.cashCollected ?? 0).toFixed(2)).toBe(
+    "0.00",
+  );
+  expect(args.state.clearances).toHaveLength(0);
+  expect(args.state.dispatchEligibleOrderCount).toBe(1);
+  expect(args.state.activeRunLinks).toHaveLength(0);
 }
 
 export function expectDeliveryOrderAttemptOutcomePathCancelledDbState(args: {
@@ -493,6 +593,7 @@ export function expectDeliveryOrderAttemptOutcomePathCancelledDbState(args: {
   );
   expect(args.state.clearances).toHaveLength(0);
   expect(args.state.dispatchEligibleOrderCount).toBe(0);
+  expect(args.state.activeRunLinks).toHaveLength(0);
   expect(args.state.riderVariance).toBeNull();
   expect(args.state.riderCharge).toBeNull();
 }
@@ -502,25 +603,7 @@ export function expectDeliveryOrderAttemptOutcomePathMissingChargeDbState(args: 
   scenario: DeliveryOrderAttemptOutcomePathScenario;
   state: Awaited<ReturnType<typeof resolveDeliveryOrderAttemptOutcomePathDbState>>;
 }) {
-  expect(args.state.activeRun?.status).toBe("CLOSED");
-  expect(args.state.activeOrder?.status).toBe("UNPAID");
-  expect(args.state.activeOrder?.fulfillmentStatus).toBe("ON_HOLD");
-  expect(args.state.activeOrder?.dispatchedAt).toBeNull();
-
-  expect(args.state.runLink?.attemptOutcome).toBe("NO_RELEASE_REATTEMPT");
-  expect(args.state.runLink?.attemptNote).toBe(args.note);
-  expect(args.state.runLink?.attemptReportedAt).not.toBeNull();
-  expect(args.state.runLink?.attemptFinalizedAt).not.toBeNull();
-  expect(args.state.runLink?.attemptFinalizedById).toBe(args.scenario.manager.id);
-
-  expect(args.state.parentReceipt?.receiptKey).toBe(
-    `PARENT:${args.scenario.activeOrder.id}`,
-  );
-  expect(Number(args.state.parentReceipt?.cashCollected ?? 0).toFixed(2)).toBe(
-    "0.00",
-  );
-  expect(args.state.clearances).toHaveLength(0);
-  expect(args.state.dispatchEligibleOrderCount).toBe(1);
+  expectDeliveryOrderAttemptOutcomePathPendingDispatchReviewDbState(args);
 
   expect(args.state.riderVariance?.status).toBe("MANAGER_APPROVED");
   expect(args.state.riderVariance?.resolution).toBe("CHARGE_RIDER");

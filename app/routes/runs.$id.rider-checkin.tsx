@@ -101,9 +101,9 @@ const isNoReleaseAttemptOutcome = (
 
 const formatAttemptOutcomeLabel = (value: DeliveryAttemptOutcomeUI | null | undefined) =>
   value === "NO_RELEASE_REATTEMPT"
-    ? "No release • return to dispatch"
+    ? "Failed delivery"
     : value === "NO_RELEASE_CANCELLED"
-      ? "No release • cancel order"
+      ? "Failed delivery • cancelled"
       : "Normal delivery";
 
 // CCS v2.6 SETTLED definition (for gating submit)
@@ -1472,24 +1472,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       if (hasAttemptOutcome && activeParentCaseKeys.has(receiptKeyCCS)) {
         throw new Response(
-          `Cannot mark no-release for parent order ${orderId}: clearance already exists for this receipt.`,
+          `Cannot report failed delivery for parent order ${orderId}: clearance already exists for this receipt.`,
           { status: 400 },
         );
       }
 
       if (hasAttemptOutcome && paid > MONEY_EPS) {
         throw new Response(
-          `No-release attempt requires zero rider cash for parent order ${orderId}.`,
+          `Failed delivery requires zero rider cash for parent order ${orderId}.`,
           { status: 400 },
         );
       }
 
-      if (
-        attemptOutcome === "NO_RELEASE_CANCELLED" &&
-        o.status === "PARTIALLY_PAID"
-      ) {
+      if (hasAttemptOutcome && !attemptMeta?.attemptNote) {
         throw new Response(
-          `Cannot cancel parent order ${orderId}: partially paid orders need refund/void flow, not no-release cancel.`,
+          `Failed delivery reason required for parent order ${orderId}.`,
           { status: 400 },
         );
       }
@@ -2191,7 +2188,7 @@ export default function RiderCheckinPage() {
           <span className="text-amber-700">
             {formatAttemptOutcomeLabel(rec.attemptOutcome)}
             <span className="ml-1 text-slate-500">
-              • Manager will finalize on remit
+              • Dispatch manager will review after stock check
             </span>
           </span>
         );
@@ -2424,7 +2421,7 @@ export default function RiderCheckinPage() {
     return m;
   }, [receipts]);
 
-  // Remaining stock helper per product (loaded - baseSold - quickSales)
+  // Remaining quick-sale capacity = total run load - parent deliveries still consuming stock - quick sales.
   const remainingStockFor = React.useCallback(
     (pid: number) => {
       const row = rows.find((rr) => rr.productId === pid);
@@ -2466,7 +2463,8 @@ export default function RiderCheckinPage() {
     [currentParentSoldByPid, currentQuickSoldByPid],
   );
 
-  // Stock recap is audit-driven: returned is auto-derived from loaded - sold.
+  // Loaded already includes parent-reserved qty plus extra run load.
+  // Returned is whatever remains after parent + quick-sale consumption.
   const stockRowsPayload = React.useMemo(
     () =>
       rows.map((r) => {
@@ -2780,12 +2778,17 @@ export default function RiderCheckinPage() {
 
           {/* Stock Recap */}
           <h2 className="text-sm font-medium mb-2">1. Stock Recap</h2>
+          <p className="mb-2 text-xs text-slate-500">
+            Loaded reflects the full run load for each product: linked parent
+            orders plus extra run load. Quick-sale availability only uses what
+            remains after the parent-order quantities are accounted for.
+          </p>
           <div className="rounded-xl border overflow-x-auto bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-left">Product</th>
-                  <th className="px-3 py-2 text-right">Loaded</th>
+                  <th className="px-3 py-2 text-right">Loaded (run total)</th>
                   <th className="px-3 py-2 text-right">Sold (auto)</th>
                   <th className="px-3 py-2 text-right">Expected Ret</th>
                   <th className="px-3 py-2 text-right">Returned (auto)</th>
@@ -2848,8 +2851,6 @@ export default function RiderCheckinPage() {
                   const autoNeeds = !hasAttemptOutcome && rem > MONEY_EPS;
                   const rejected = rec.clearanceDecision === "REJECT";
                   const voided = !!rec.voided;
-                  const canCancelBeforeRelease =
-                    rec.orderStatus !== "PARTIALLY_PAID";
                   return (
                     <div
                       key={rec.key}
@@ -2869,7 +2870,10 @@ export default function RiderCheckinPage() {
                         pill={
                           showStatus && hasAttemptOutcome ? (
                             <>
-                              <StatusPill status="INFO" label="NO RELEASE" />
+                              <StatusPill
+                                status="INFO"
+                                label="FAILED DELIVERY"
+                              />
                               <span className="text-[11px] text-slate-500">
                                 {formatAttemptOutcomeLabel(rec.attemptOutcome)}
                               </span>
@@ -2969,42 +2973,36 @@ export default function RiderCheckinPage() {
                           </div>
                         </div>
                         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
-                          <div className="font-medium">
-                            Delivery attempt outcome
-                          </div>
-                          <div className="mt-2 grid gap-2 md:grid-cols-3">
-                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
-                              <input
-                                type="radio"
-                                name={`attempt-ui-${rec.orderId}`}
-                                checked={!hasAttemptOutcome}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="font-medium">Failed delivery</div>
+                            {hasAttemptOutcome ? (
+                              <button
+                                type="button"
                                 disabled={recLocked}
-                                onChange={() =>
+                                onClick={() =>
                                   setParentReceiptsState((prev) =>
                                     prev.map((r) =>
                                       r.key === rec.key
                                         ? {
                                             ...r,
                                             attemptOutcome: null,
-                                            attemptNote: r.attemptNote ?? "",
+                                            attemptNote: "",
+                                            cashCollected: undefined,
+                                            cashInput: "",
                                           }
                                         : r,
                                     ),
                                   )
                                 }
-                              />
-                              <span>Normal delivery</span>
-                            </label>
-                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
-                              <input
-                                type="radio"
-                                name={`attempt-ui-${rec.orderId}`}
-                                checked={
-                                  rec.attemptOutcome ===
-                                  "NO_RELEASE_REATTEMPT"
-                                }
+                                className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                Back to normal delivery
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
                                 disabled={recLocked}
-                                onChange={() =>
+                                onClick={() =>
                                   setParentReceiptsState((prev) =>
                                     prev.map((r) =>
                                       r.key === rec.key
@@ -3012,6 +3010,7 @@ export default function RiderCheckinPage() {
                                             ...r,
                                             attemptOutcome:
                                               "NO_RELEASE_REATTEMPT",
+                                            attemptNote: r.attemptNote ?? "",
                                             cashCollected: undefined,
                                             cashInput: "",
                                             needsClearance: false,
@@ -3021,83 +3020,48 @@ export default function RiderCheckinPage() {
                                     ),
                                   )
                                 }
-                              />
-                              <span>Return to dispatch</span>
-                            </label>
-                            <label
-                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
-                                canCancelBeforeRelease
-                                  ? "border-amber-200 bg-white"
-                                  : "border-slate-200 bg-slate-100 text-slate-400"
-                              }`}
-                              title={
-                                canCancelBeforeRelease
-                                  ? undefined
-                                  : "Partially paid parent orders need refund/void flow before cancellation."
-                              }
-                            >
-                              <input
-                                type="radio"
-                                name={`attempt-ui-${rec.orderId}`}
-                                checked={
-                                  rec.attemptOutcome ===
-                                  "NO_RELEASE_CANCELLED"
-                                }
-                                disabled={recLocked || !canCancelBeforeRelease}
-                                onChange={() =>
+                                className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                Mark as failed delivery
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-1 text-[11px] text-amber-800">
+                            Use this only when the goods were not released to
+                            the customer. Dispatch will decide later whether to
+                            re-dispatch or cancel after the stock return is
+                            checked.
+                          </div>
+                          {hasAttemptOutcome ? (
+                            <div className="mt-2">
+                              <textarea
+                                rows={2}
+                                disabled={recLocked}
+                                value={rec.attemptNote ?? ""}
+                                onChange={(e) =>
                                   setParentReceiptsState((prev) =>
                                     prev.map((r) =>
                                       r.key === rec.key
                                         ? {
                                             ...r,
-                                            attemptOutcome:
-                                              "NO_RELEASE_CANCELLED",
-                                            cashCollected: undefined,
-                                            cashInput: "",
-                                            needsClearance: false,
-                                            clearanceReason: "",
+                                            attemptNote: e.target.value
+                                              .slice(0, 200),
                                           }
                                         : r,
                                     ),
                                   )
                                 }
+                                placeholder="Why did the delivery fail? (required)"
+                                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus-visible:border-amber-300 focus-visible:ring-2 focus-visible:ring-amber-100"
                               />
-                              <span>Cancel before release</span>
-                            </label>
-                          </div>
-                          <div className="mt-2">
-                            <textarea
-                              rows={2}
-                              disabled={recLocked}
-                              value={rec.attemptNote ?? ""}
-                              onChange={(e) =>
-                                setParentReceiptsState((prev) =>
-                                  prev.map((r) =>
-                                    r.key === rec.key
-                                      ? {
-                                          ...r,
-                                          attemptNote: e.target.value
-                                            .slice(0, 200),
-                                        }
-                                      : r,
-                                  ),
-                                )
-                              }
-                              placeholder="Reason / note for manager (optional)"
-                              className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus-visible:border-amber-300 focus-visible:ring-2 focus-visible:ring-amber-100"
-                            />
-                          </div>
-                          {hasAttemptOutcome ? (
-                            <div className="mt-2 text-[11px] text-amber-800">
-                              No-release outcomes bypass clearance for this
-                              parent order. Manager will confirm the final
-                              disposition during remit.
                             </div>
                           ) : null}
-                          {!canCancelBeforeRelease ? (
-                            <div className="mt-2 text-[11px] text-slate-500">
-                              Cancel before release is disabled for partially
-                              paid orders until refund/void flow exists.
+                          {hasAttemptOutcome ? (
+                            <div className="mt-2 text-[11px] text-amber-800">
+                              Failed delivery bypasses clearance for this
+                              parent order. Remit will verify the returned
+                              stocks, then dispatch manager will decide the
+                              next action.
                             </div>
                           ) : null}
                         </div>
@@ -3221,9 +3185,10 @@ export default function RiderCheckinPage() {
                         <div className="mt-3 space-y-2">
                           {hasAttemptOutcome ? (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-                              Clearance is skipped for this parent order because
-                              the rider marked it as no-release. Final outcome:
-                              manager remit.
+                              Clearance is skipped for this parent order
+                              because the rider reported failed delivery.
+                              Manager decision moves to the dispatch review
+                              queue after remit.
                             </div>
                           ) : null}
                           {autoNeeds ? (

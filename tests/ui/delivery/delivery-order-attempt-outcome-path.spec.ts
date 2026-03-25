@@ -6,6 +6,7 @@ import {
   expectDeliveryOrderAttemptOutcomePathCancelledDbState,
   expectDeliveryOrderAttemptOutcomePathInitialDbState,
   expectDeliveryOrderAttemptOutcomePathMissingChargeDbState,
+  expectDeliveryOrderAttemptOutcomePathPendingDispatchReviewDbState,
   expectDeliveryOrderAttemptOutcomePathReattemptDbState,
   finalizeDeliveryOrderAttemptOutcomeOnManagerRemit,
   isDeliveryOrderAttemptOutcomePathEnabled,
@@ -14,6 +15,7 @@ import {
   openDeliveryOrderAttemptOutcomePathManagerRemitPage,
   openDeliveryOrderAttemptOutcomePathRiderCheckinPage,
   resetDeliveryOrderAttemptOutcomePathQaState,
+  resolveDeliveryOrderAttemptOutcomeOnDispatch,
   resolveDeliveryOrderAttemptOutcomePathDbState,
   resolveDeliveryOrderAttemptOutcomePathScenario,
   submitDeliveryOrderAttemptOutcomeRiderCheckin,
@@ -33,12 +35,12 @@ test.describe("delivery order attempt outcome path", () => {
     await cleanupDeliveryOrderAttemptOutcomePathQaState();
   });
 
-  test("rider and manager can return a no-release order back to dispatch", async ({
+  test("rider reports failed delivery and dispatch manager can return the order to dispatch", async ({
     browser,
   }) => {
     const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
     const initialState = await resolveDeliveryOrderAttemptOutcomePathDbState();
-    const note = "QA no-release reattempt";
+    const note = "QA failed delivery for redispatch";
 
     expectDeliveryOrderAttemptOutcomePathInitialDbState(initialState, scenario);
 
@@ -58,32 +60,29 @@ test.describe("delivery order attempt outcome path", () => {
         riderPage.getByText(scenario.activeRun.runCode, { exact: false }),
       ).toBeVisible();
       await expect(
-        riderPage.getByText(/return to dispatch/i),
+        riderPage.getByRole("button", { name: /mark as failed delivery/i }),
       ).toBeVisible();
 
       await submitDeliveryOrderAttemptOutcomeRiderCheckin({
         page: riderPage,
         scenario,
-        outcome: "NO_RELEASE_REATTEMPT",
         note,
       });
 
       const managerPage = await managerContext.newPage();
       await openDeliveryOrderAttemptOutcomePathManagerRemitPage(managerPage);
-      await expect(managerPage.getByText(/no release attempt/i)).toBeVisible();
       await expect(
-        managerPage.getByText(/rider reported: return to dispatch/i),
+        managerPage.getByText(/failed delivery pending dispatch review/i),
       ).toBeVisible();
 
       await finalizeDeliveryOrderAttemptOutcomeOnManagerRemit({
         page: managerPage,
         scenario,
-        outcome: "NO_RELEASE_REATTEMPT",
         markMissing: false,
       });
 
       const postedState = await resolveDeliveryOrderAttemptOutcomePathDbState();
-      expectDeliveryOrderAttemptOutcomePathReattemptDbState({
+      expectDeliveryOrderAttemptOutcomePathPendingDispatchReviewDbState({
         note,
         scenario,
         state: postedState,
@@ -91,8 +90,22 @@ test.describe("delivery order attempt outcome path", () => {
 
       await openDeliveryOrderAttemptOutcomePathDispatchPage(managerPage);
       await expect(
-        managerPage.getByText(scenario.activeOrder.orderCode, { exact: false }),
+        managerPage.getByText(/failed delivery pending dispatch review/i),
       ).toBeVisible();
+      await expect(managerPage.getByText(note, { exact: false })).toBeVisible();
+
+      await resolveDeliveryOrderAttemptOutcomeOnDispatch({
+        page: managerPage,
+        scenario,
+        outcome: "NO_RELEASE_REATTEMPT",
+      });
+
+      const redispatchState = await resolveDeliveryOrderAttemptOutcomePathDbState();
+      expectDeliveryOrderAttemptOutcomePathReattemptDbState({
+        note,
+        scenario,
+        state: redispatchState,
+      });
 
       const cashierPage = await cashierContext.newPage();
       await openDeliveryOrderAttemptOutcomePathCashierRunRemitPage(cashierPage);
@@ -111,12 +124,12 @@ test.describe("delivery order attempt outcome path", () => {
     }
   });
 
-  test("rider and manager can cancel a no-release order before release", async ({
+  test("rider reports failed delivery and dispatch manager can cancel the order", async ({
     browser,
   }) => {
     const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
     const initialState = await resolveDeliveryOrderAttemptOutcomePathDbState();
-    const note = "QA no-release cancel";
+    const note = "QA failed delivery for cancel";
 
     expectDeliveryOrderAttemptOutcomePathInitialDbState(initialState, scenario);
 
@@ -136,21 +149,35 @@ test.describe("delivery order attempt outcome path", () => {
       await submitDeliveryOrderAttemptOutcomeRiderCheckin({
         page: riderPage,
         scenario,
-        outcome: "NO_RELEASE_CANCELLED",
         note,
       });
 
       const managerPage = await managerContext.newPage();
       await openDeliveryOrderAttemptOutcomePathManagerRemitPage(managerPage);
       await expect(
-        managerPage.getByText(/rider reported: cancel before release/i),
+        managerPage.getByText(/failed delivery pending dispatch review/i),
       ).toBeVisible();
 
       await finalizeDeliveryOrderAttemptOutcomeOnManagerRemit({
         page: managerPage,
         scenario,
-        outcome: "NO_RELEASE_CANCELLED",
         markMissing: false,
+      });
+
+      const pendingState = await resolveDeliveryOrderAttemptOutcomePathDbState();
+      expectDeliveryOrderAttemptOutcomePathPendingDispatchReviewDbState({
+        note,
+        scenario,
+        state: pendingState,
+      });
+
+      await openDeliveryOrderAttemptOutcomePathDispatchPage(managerPage);
+      await expect(managerPage.getByText(note, { exact: false })).toBeVisible();
+
+      await resolveDeliveryOrderAttemptOutcomeOnDispatch({
+        page: managerPage,
+        scenario,
+        outcome: "NO_RELEASE_CANCELLED",
       });
 
       const postedState = await resolveDeliveryOrderAttemptOutcomePathDbState();
@@ -160,7 +187,6 @@ test.describe("delivery order attempt outcome path", () => {
         state: postedState,
       });
 
-      await openDeliveryOrderAttemptOutcomePathDispatchPage(managerPage);
       await expect(
         managerPage.getByText(scenario.activeOrder.orderCode, { exact: false }),
       ).toHaveCount(0);
@@ -182,12 +208,12 @@ test.describe("delivery order attempt outcome path", () => {
     }
   });
 
-  test("manager can charge rider for missing stock without routing the no-release attempt into CCS", async ({
+  test("manager can charge rider for missing stock while keeping failed delivery pending in dispatch review", async ({
     browser,
   }) => {
     const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
     const initialState = await resolveDeliveryOrderAttemptOutcomePathDbState();
-    const note = "QA no-release missing stock";
+    const note = "QA failed delivery missing stock";
 
     expectDeliveryOrderAttemptOutcomePathInitialDbState(initialState, scenario);
 
@@ -207,7 +233,6 @@ test.describe("delivery order attempt outcome path", () => {
       await submitDeliveryOrderAttemptOutcomeRiderCheckin({
         page: riderPage,
         scenario,
-        outcome: "NO_RELEASE_REATTEMPT",
         note,
       });
 
@@ -217,7 +242,6 @@ test.describe("delivery order attempt outcome path", () => {
       await finalizeDeliveryOrderAttemptOutcomeOnManagerRemit({
         page: managerPage,
         scenario,
-        outcome: "NO_RELEASE_REATTEMPT",
         markMissing: true,
       });
 
@@ -232,6 +256,7 @@ test.describe("delivery order attempt outcome path", () => {
       await expect(
         managerPage.getByText(scenario.activeOrder.orderCode, { exact: false }),
       ).toBeVisible();
+      await expect(managerPage.getByText(note, { exact: false })).toBeVisible();
 
       const cashierPage = await cashierContext.newPage();
       await openDeliveryOrderAttemptOutcomePathCashierRunRemitPage(cashierPage);
