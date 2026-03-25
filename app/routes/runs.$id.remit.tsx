@@ -79,9 +79,9 @@ const formatAttemptOutcomeLabel = (
   value: DeliveryAttemptOutcomeUI | null | undefined,
 ) =>
   value === "NO_RELEASE_REATTEMPT"
-    ? "Return to dispatch"
+    ? "Failed delivery reported"
     : value === "NO_RELEASE_CANCELLED"
-      ? "Cancel before release"
+      ? "Cancelled after dispatch review"
       : "Normal delivery";
 
 const applyDecisionFinancial = (remainingRaw: number, c?: CaseInfo) => {
@@ -985,7 +985,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     };
   });
 
-  const noReleaseLinks = await db.deliveryRunOrder.findMany({
+  const failedDeliveryLinks = await db.deliveryRunOrder.findMany({
     where: {
       runId: id,
       attemptOutcome: { not: null },
@@ -993,48 +993,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     select: {
       orderId: true,
       attemptOutcome: true,
-      order: {
-        select: {
-          status: true,
-        },
-      },
     },
   });
-
-  const managerAttemptOutcomeByOrderId = new Map<
-    number,
-    DeliveryAttemptOutcomeUI
-  >();
-  for (const link of noReleaseLinks) {
-    const orderId = Number(link.orderId);
-    if (!orderId) continue;
-    const raw =
-      String(formData.get(`attemptOutcome_${orderId}`) || "").trim() ||
-      String(link.attemptOutcome || "").trim();
-    if (!isNoReleaseAttemptOutcome(raw)) {
-      return json<ActionData>(
-        {
-          ok: false,
-          error: `Manager disposition required for parent order #${orderId}.`,
-        },
-        { status: 400 },
-      );
-    }
-    if (
-      raw === "NO_RELEASE_CANCELLED" &&
-      String(link.order?.status || "") === "PARTIALLY_PAID"
-    ) {
-      return json<ActionData>(
-        {
-          ok: false,
-          error:
-            `Cannot cancel parent order #${orderId}: partially paid orders need refund/void flow before cancellation.`,
-        },
-        { status: 400 },
-      );
-    }
-    managerAttemptOutcomeByOrderId.set(orderId, raw);
-  }
 
   // Pull soldRows from rider check-in snapshot
   // SOURCE OF TRUTH: RunReceipt kind=ROAD (receipt-level quick sales)
@@ -1493,33 +1453,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    for (const [orderId, attemptOutcome] of managerAttemptOutcomeByOrderId) {
+    for (const link of failedDeliveryLinks) {
+      const orderId = Number(link.orderId || 0);
+      if (!orderId || !isNoReleaseAttemptOutcome(link.attemptOutcome)) continue;
+
       await tx.order.update({
         where: { id: orderId },
-        data:
-          attemptOutcome === "NO_RELEASE_CANCELLED"
-            ? {
-                status: "CANCELLED",
-                fulfillmentStatus: "ON_HOLD",
-                dispatchedAt: null,
-                deliveredAt: null,
-              }
-            : {
-                fulfillmentStatus: "ON_HOLD",
-                dispatchedAt: null,
-                deliveredAt: null,
-              },
-      });
-
-      await tx.deliveryRunOrder.update({
-        where: { runId_orderId: { runId: id, orderId } },
         data: {
-          attemptOutcome,
-          attemptFinalizedAt: new Date(),
-          attemptFinalizedById:
-            managerApprovedById && managerApprovedById > 0
-              ? managerApprovedById
-              : null,
+          fulfillmentStatus: "ON_HOLD",
+          dispatchedAt: null,
+          deliveredAt: null,
         },
       });
     }
@@ -1630,16 +1573,6 @@ export default function RunRemitPage() {
       stockVerificationRows
         .filter((r) => r.unsold > 0)
         .map((r) => [r.productId, "present" as const]),
-    ),
-  );
-
-  const [attemptDecision, setAttemptDecision] = React.useState<
-    Record<number, DeliveryAttemptOutcomeUI>
-  >(() =>
-    Object.fromEntries(
-      parentOrders
-        .filter((o) => isNoReleaseAttemptOutcome(o.attemptOutcome))
-        .map((o) => [o.orderId, o.attemptOutcome as DeliveryAttemptOutcomeUI]),
     ),
   );
 
@@ -1921,7 +1854,7 @@ export default function RunRemitPage() {
                   );
                   const badge = hasAttemptOutcome
                     ? {
-                        label: "No Release Attempt",
+                        label: "Failed Delivery Reported",
                         tone: "info" as const,
                       }
                     : getFinancialBadge({
@@ -1933,13 +1866,6 @@ export default function RunRemitPage() {
                   const cash = r2(
                     Math.max(0, Math.min(o.orderTotal, Number(o.collectedCash ?? 0))),
                   );
-                  const selectedAttempt =
-                    attemptDecision[o.orderId] ??
-                    (isNoReleaseAttemptOutcome(o.attemptOutcome)
-                      ? o.attemptOutcome
-                      : undefined);
-                  const canCancelBeforeRelease =
-                    o.orderStatus !== "PARTIALLY_PAID";
 
                   return (
                     <SoTCard key={`${o.orderId}-${idx}`} compact>
@@ -2008,13 +1934,8 @@ export default function RunRemitPage() {
 
                       {hasAttemptOutcome ? (
                         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900">
-                          <input
-                            type="hidden"
-                            name={`attemptOutcome_${o.orderId}`}
-                            value={selectedAttempt ?? ""}
-                          />
                           <div className="font-medium">
-                            Manager final disposition for no-release attempt
+                            Failed delivery pending dispatch review
                           </div>
                           <div className="mt-1 text-[11px] text-amber-800">
                             Rider reported:{" "}
@@ -2023,7 +1944,7 @@ export default function RunRemitPage() {
                             </span>
                             {o.attemptFinalizedAt ? (
                               <span className="ml-1 text-slate-500">
-                                • previously finalized
+                                • dispatch review already completed
                               </span>
                             ) : null}
                           </div>
@@ -2032,55 +1953,11 @@ export default function RunRemitPage() {
                               Note: {o.attemptNote}
                             </div>
                           ) : null}
-                          <div className="mt-2 grid gap-2 md:grid-cols-2">
-                            <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
-                              <input
-                                type="radio"
-                                name={`attempt-ui-${o.orderId}`}
-                                checked={
-                                  selectedAttempt === "NO_RELEASE_REATTEMPT"
-                                }
-                                onChange={() =>
-                                  setAttemptDecision((prev) => ({
-                                    ...prev,
-                                    [o.orderId]: "NO_RELEASE_REATTEMPT",
-                                  }))
-                                }
-                              />
-                              <span>Return to dispatch</span>
-                            </label>
-                            <label
-                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
-                                canCancelBeforeRelease
-                                  ? "border-amber-200 bg-white"
-                                  : "border-slate-200 bg-slate-100 text-slate-400"
-                              }`}
-                              title={
-                                canCancelBeforeRelease
-                                  ? undefined
-                                  : "Partially paid parent orders need refund/void flow before cancellation."
-                              }
-                            >
-                              <input
-                                type="radio"
-                                name={`attempt-ui-${o.orderId}`}
-                                checked={
-                                  selectedAttempt === "NO_RELEASE_CANCELLED"
-                                }
-                                disabled={!canCancelBeforeRelease}
-                                onChange={() =>
-                                  setAttemptDecision((prev) => ({
-                                    ...prev,
-                                    [o.orderId]: "NO_RELEASE_CANCELLED",
-                                  }))
-                                }
-                              />
-                              <span>Cancel before release</span>
-                            </label>
-                          </div>
                           <div className="mt-2 text-[11px] text-amber-800">
-                            Stock verification below still decides whether these
-                            returned items are present or rider-chargeable.
+                            Remit only verifies whether these returned items
+                            are present or rider-chargeable. Re-dispatch or
+                            cancel now lives in the dispatch queue after this
+                            run closes.
                           </div>
                         </div>
                       ) : null}

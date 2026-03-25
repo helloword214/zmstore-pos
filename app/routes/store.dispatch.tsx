@@ -38,6 +38,10 @@ function clampTake(n: number, fallback = 50) {
 
 type SortKey = "id" | "printedAt" | "stagedAt" | "amount";
 type SortDir = "asc" | "desc";
+const ACTIVE_RUN_STATUSES = ["PLANNED", "DISPATCHED", "CHECKED_IN"] as const;
+
+const isNoReleaseAttemptOutcome = (value: unknown) =>
+  value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
 
 function parseSortKey(raw: string | null): SortKey {
   const v = String(raw || "").trim();
@@ -65,6 +69,38 @@ function buildDispatchOrderBy(
   return [{ id: dir }];
 }
 
+async function loadPendingFailedDeliveryLinks(
+  tx: Pick<typeof db, "deliveryRunOrder">,
+  orderIds: number[],
+) {
+  const rows = await tx.deliveryRunOrder.findMany({
+    where: {
+      orderId: { in: orderIds },
+      attemptOutcome: { not: null },
+      attemptFinalizedAt: null,
+    },
+    orderBy: [{ attemptReportedAt: "desc" }, { runId: "desc" }],
+    select: {
+      runId: true,
+      orderId: true,
+      attemptOutcome: true,
+    },
+  });
+
+  const latestByOrderId = new Map<number, { runId: number; orderId: number }>();
+  for (const row of rows) {
+    const orderId = Number(row.orderId || 0);
+    if (!orderId || latestByOrderId.has(orderId)) continue;
+    if (!isNoReleaseAttemptOutcome(row.attemptOutcome)) continue;
+    latestByOrderId.set(orderId, {
+      runId: Number(row.runId),
+      orderId,
+    });
+  }
+
+  return latestByOrderId;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   // Store manager lane only
   await requireRole(request, ["STORE_MANAGER"]);
@@ -78,11 +114,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Build orderBy
   const orderBy = buildDispatchOrderBy(sort, dir);
 
-  const forDispatch = await db.order.findMany({
+  const forDispatchRows = await db.order.findMany({
     where: {
       channel: "DELIVERY",
       status: { in: ["UNPAID", "PARTIALLY_PAID"] },
       dispatchedAt: null,
+      runOrders: {
+        none: {
+          run: {
+            status: {
+              in: [...ACTIVE_RUN_STATUSES],
+            },
+          },
+        },
+      },
       ...(q
         ? {
             OR: [
@@ -134,12 +179,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     orderBy,
     take,
-    select: {
-      id: true,
-      orderCode: true,
-      riderName: true,
-      stagedAt: true,
-      dispatchedAt: true,
+	    select: {
+	      id: true,
+	      orderCode: true,
+	      status: true,
+	      riderName: true,
+	      stagedAt: true,
+	      dispatchedAt: true,
       fulfillmentStatus: true,
       subtotal: true,
       totalBeforeDiscount: true,
@@ -152,7 +198,53 @@ export async function loader({ request }: LoaderFunctionArgs) {
           phone: true,
         },
       },
+      runOrders: {
+        where: {
+          attemptOutcome: { not: null },
+        },
+        orderBy: [{ attemptReportedAt: "desc" }, { runId: "desc" }],
+        select: {
+          runId: true,
+          attemptOutcome: true,
+          attemptNote: true,
+          attemptReportedAt: true,
+          attemptFinalizedAt: true,
+          run: {
+            select: {
+              runCode: true,
+              status: true,
+            },
+          },
+        },
+      },
     },
+  });
+
+  const forDispatch = forDispatchRows.map((order) => {
+    const { runOrders, ...orderBase } = order;
+    const failedAttempts = (runOrders || []).filter((link) =>
+      isNoReleaseAttemptOutcome(link.attemptOutcome),
+    );
+    const latestFailedAttempt = failedAttempts[0] ?? null;
+    const pendingFailedReview = Boolean(
+      latestFailedAttempt && !latestFailedAttempt.attemptFinalizedAt,
+    );
+
+    return {
+      ...orderBase,
+      failedAttemptCount: failedAttempts.length,
+      latestFailedReason:
+        typeof latestFailedAttempt?.attemptNote === "string"
+          ? latestFailedAttempt.attemptNote
+          : null,
+      latestFailedReportedAt: latestFailedAttempt?.attemptReportedAt
+        ? new Date(latestFailedAttempt.attemptReportedAt).toISOString()
+        : null,
+      latestFailedRunCode: latestFailedAttempt?.run?.runCode ?? null,
+      pendingFailedReview,
+      canCancelFailedReview:
+        pendingFailedReview && order.status !== "PARTIALLY_PAID",
+    };
   });
 
   // PLANNED runs only (pwede pag-assign-an)
@@ -191,9 +283,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await requireRole(request, ["STORE_MANAGER"]);
+  const me = await requireRole(request, ["STORE_MANAGER"]);
   const fd = await request.formData();
   const intent = String(fd.get("intent") || "");
+  const managerApprovedById = Number(me.userId) || null;
 
   const idsRaw = String(fd.get("orderIds") || "").trim();
   const orderIds = idsRaw
@@ -215,6 +308,15 @@ export async function action({ request }: ActionFunctionArgs) {
       channel: "DELIVERY",
       status: { in: ["UNPAID", "PARTIALLY_PAID"] },
       dispatchedAt: null,
+      runOrders: {
+        none: {
+          run: {
+            status: {
+              in: [...ACTIVE_RUN_STATUSES],
+            },
+          },
+        },
+      },
     },
     select: { id: true },
   });
@@ -250,6 +352,28 @@ export async function action({ request }: ActionFunctionArgs) {
         // if you have unique constraint (runId,orderId), this prevents duplicates
         skipDuplicates: true,
       });
+
+      const pendingLinks = await loadPendingFailedDeliveryLinks(tx, finalIds);
+      for (const orderId of finalIds) {
+        const pendingLink = pendingLinks.get(orderId);
+        if (!pendingLink) continue;
+        await tx.deliveryRunOrder.update({
+          where: {
+            runId_orderId: {
+              runId: pendingLink.runId,
+              orderId,
+            },
+          },
+          data: {
+            attemptOutcome: "NO_RELEASE_REATTEMPT",
+            attemptFinalizedAt: new Date(),
+            attemptFinalizedById:
+              managerApprovedById && managerApprovedById > 0
+                ? managerApprovedById
+                : null,
+          },
+        });
+      }
       return newRun;
     });
 
@@ -276,12 +400,108 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await db.deliveryRunOrder.createMany({
-      data: finalIds.map((orderId) => ({ runId, orderId })),
-      skipDuplicates: true,
+    await db.$transaction(async (tx) => {
+      await tx.deliveryRunOrder.createMany({
+        data: finalIds.map((orderId) => ({ runId, orderId })),
+        skipDuplicates: true,
+      });
+
+      const pendingLinks = await loadPendingFailedDeliveryLinks(tx, finalIds);
+      for (const orderId of finalIds) {
+        const pendingLink = pendingLinks.get(orderId);
+        if (!pendingLink) continue;
+        await tx.deliveryRunOrder.update({
+          where: {
+            runId_orderId: {
+              runId: pendingLink.runId,
+              orderId,
+            },
+          },
+          data: {
+            attemptOutcome: "NO_RELEASE_REATTEMPT",
+            attemptFinalizedAt: new Date(),
+            attemptFinalizedById:
+              managerApprovedById && managerApprovedById > 0
+                ? managerApprovedById
+                : null,
+          },
+        });
+      }
     });
 
     return redirect(`/runs/${runId}/dispatch`);
+  }
+
+  if (intent === "cancel-failed-delivery") {
+    const targetOrderId = finalIds[0];
+    const targetOrder = await db.order.findUnique({
+      where: { id: targetOrderId },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!targetOrder) {
+      return json<ActionData>(
+        { ok: false, error: "Order no longer exists." },
+        { status: 404 }
+      );
+    }
+
+    if (targetOrder.status === "PARTIALLY_PAID") {
+      return json<ActionData>(
+        {
+          ok: false,
+          error:
+            "Partially paid orders need refund/void flow before cancellation.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const pendingLinks = await loadPendingFailedDeliveryLinks(db, [targetOrderId]);
+    const pendingLink = pendingLinks.get(targetOrderId);
+    if (!pendingLink) {
+      return json<ActionData>(
+        {
+          ok: false,
+          error: "No pending failed-delivery review found for this order.",
+        },
+        { status: 400 }
+      );
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: targetOrderId },
+        data: {
+          status: "CANCELLED",
+          fulfillmentStatus: "ON_HOLD",
+          dispatchedAt: null,
+          deliveredAt: null,
+        },
+      });
+
+      await tx.deliveryRunOrder.update({
+        where: {
+          runId_orderId: {
+            runId: pendingLink.runId,
+            orderId: targetOrderId,
+          },
+        },
+        data: {
+          attemptOutcome: "NO_RELEASE_CANCELLED",
+          attemptFinalizedAt: new Date(),
+          attemptFinalizedById:
+            managerApprovedById && managerApprovedById > 0
+              ? managerApprovedById
+              : null,
+        },
+      });
+    });
+
+    return redirect("/store/dispatch");
   }
 
   return json<ActionData>(
@@ -317,6 +537,22 @@ export default function StoreDispatchQueuePage() {
   const selectedCsv = Array.from(selected).join(",");
   const allChecked =
     allIds.length > 0 && allIds.every((id: number) => selected.has(id));
+  const selectedFailedReviewCount = forDispatch.filter(
+    (o) => selected.has(o.id) && o.pendingFailedReview,
+  ).length;
+
+  const toggleSelectedOrder = React.useCallback(
+    (orderId: number, force?: boolean) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        const shouldSelect = force ?? !next.has(orderId);
+        if (shouldSelect) next.add(orderId);
+        else next.delete(orderId);
+        return next;
+      });
+    },
+    [],
+  );
 
   const sortLabel = (k: string) => {
     if (k === "printedAt") return "Printed time";
@@ -348,7 +584,7 @@ export default function StoreDispatchQueuePage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Delivery Dispatch Queue"
-        subtitle="Orders from pad-order marked as DELIVERY and not yet dispatched."
+        subtitle="Undispatched delivery orders plus failed-delivery returns waiting for manager dispatch review."
         maxWidthClassName="max-w-5xl"
       />
 
@@ -506,6 +742,15 @@ export default function StoreDispatchQueuePage() {
             </Form>
           </div>
 
+          {selectedFailedReviewCount > 0 ? (
+            <div className="mt-2 text-xs text-amber-700">
+              Re-dispatch review: assigning or creating a run will finalize{" "}
+              {selectedFailedReviewCount} failed delivery
+              {selectedFailedReviewCount > 1 ? " reports" : " report"} as
+              ready for dispatch again.
+            </div>
+          ) : null}
+
           <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
             <Button
               type="button"
@@ -606,16 +851,99 @@ export default function StoreDispatchQueuePage() {
                             ? new Date(r.printedAt).toLocaleString()
                             : "—"}
                         </div>
+                        {r.failedAttemptCount > 0 ? (
+                          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                            <div className="font-medium">
+                              {r.pendingFailedReview
+                                ? "Failed delivery pending dispatch review"
+                                : "Failed delivery history"}
+                            </div>
+                            <div className="mt-1">
+                              Attempts:{" "}
+                              <span className="font-semibold">
+                                {r.failedAttemptCount}
+                              </span>
+                              {r.latestFailedRunCode ? (
+                                <span className="text-amber-800">
+                                  {" "}
+                                  • Last run: {r.latestFailedRunCode}
+                                </span>
+                              ) : null}
+                            </div>
+                            {r.latestFailedReportedAt ? (
+                              <div className="mt-1 text-slate-600">
+                                Reported{" "}
+                                {new Date(
+                                  r.latestFailedReportedAt,
+                                ).toLocaleString()}
+                              </div>
+                            ) : null}
+                            {r.latestFailedReason ? (
+                              <div className="mt-1 text-slate-600">
+                                Rider reason: {r.latestFailedReason}
+                              </div>
+                            ) : null}
+                            {r.pendingFailedReview ? (
+                              <div className="mt-1 text-amber-800">
+                                Re-dispatch or cancel must be decided here in
+                                dispatch after remit closes the run.
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
-                    <Link
-                      to={`/orders/${r.id}/dispatch`}
-                      className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                      title="Will redirect to run dispatch if already assigned; otherwise returns here for assignment."
-                    >
-                      Open dispatch →
-                    </Link>
+                    {r.failedAttemptCount > 0 ? (
+                      <div className="flex flex-col items-end gap-2">
+                        <Button
+                          type="button"
+                          variant={
+                            selected.has(r.id) ? "secondary" : "primary"
+                          }
+                          onClick={() =>
+                            toggleSelectedOrder(r.id, !selected.has(r.id))
+                          }
+                        >
+                          {selected.has(r.id)
+                            ? "Selected for re-dispatch"
+                            : "Select for re-dispatch"}
+                        </Button>
+                        {r.pendingFailedReview ? (
+                          <Form method="post" className="flex flex-col items-end gap-1">
+                            <input type="hidden" name="orderIds" value={String(r.id)} />
+                            <Button
+                              type="submit"
+                              name="intent"
+                              value="cancel-failed-delivery"
+                              variant="tertiary"
+                              disabled={!r.canCancelFailedReview}
+                              title={
+                                r.canCancelFailedReview
+                                  ? "Cancel this failed delivery order from the dispatch queue"
+                                  : "Partially paid orders need refund/void before cancellation."
+                              }
+                            >
+                              Cancel order
+                            </Button>
+                            {!r.canCancelFailedReview ? (
+                              <span className="text-[11px] text-slate-500">
+                                Partially paid orders need refund/void before
+                                cancel.
+                              </span>
+                            ) : null}
+                          </Form>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <Link
+                        to={`/orders/${r.id}/dispatch`}
+                        className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                        title="Will redirect to run dispatch if already assigned; otherwise returns here for assignment."
+                      >
+                        Open dispatch →
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))

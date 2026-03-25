@@ -184,12 +184,15 @@ const isNoReleaseAttemptOutcome = (
 
 const formatAttemptOutcomeLabel = (
   value: DeliveryAttemptOutcomeUI | null | undefined,
+  finalizedAt?: string | null,
 ) =>
   value === "NO_RELEASE_REATTEMPT"
-    ? "Return to dispatch"
+    ? finalizedAt
+      ? "Returned to dispatch"
+      : "Failed delivery reported"
     : value === "NO_RELEASE_CANCELLED"
-      ? "Cancel before release"
-      : "Normal delivery";
+      ? "Cancelled after dispatch review"
+      : "Failed delivery not set";
 
 const stageMeta = (status: RunStatus) => {
   if (status === "PLANNED") {
@@ -804,7 +807,7 @@ export default function RunSummaryPage() {
             <SmallCard label="Approved Decisions" value={counts.clearanceApproved} />
             <SmallCard label="Rejected Decisions" value={counts.clearanceRejected} />
             <SmallCard label="Voided Receipts" value={counts.clearanceVoided} />
-            <SmallCard label="No-Release Attempts" value={attempts.length} />
+            <SmallCard label="Failed Deliveries" value={attempts.length} />
             <SmallCard label="Pending Amount" value={peso(amounts.pendingClearance)} />
           </div>
           {amounts.rejectedUnresolved > MONEY_EPS ? (
@@ -814,7 +817,7 @@ export default function RunSummaryPage() {
           ) : null}
           {!ui.isFinalized ? (
             <div className="mt-3 text-[11px] text-slate-500">
-              Final cash, A/R, and override discount settle after rider check-in and manager decision.
+              Final cash, A/R, and override discount settle after rider check-in and manager review.
             </div>
           ) : (
             <div className="mt-3 text-[11px] text-slate-500">
@@ -826,8 +829,12 @@ export default function RunSummaryPage() {
         {attempts.length > 0 ? (
           <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <h2 className="text-sm font-medium text-amber-900">
-              No-Release Attempt Outcomes
+              Failed Delivery Reports
             </h2>
+            <div className="mt-1 text-[11px] text-amber-800">
+              Normal delivery stays on the main stock and settlement flow, so
+              only parent orders with a failed-delivery report appear here.
+            </div>
             <div className="mt-3 space-y-2 text-sm text-amber-900">
               {attempts.map((attempt) => (
                 <div
@@ -836,12 +843,17 @@ export default function RunSummaryPage() {
                 >
                   <div className="font-medium">
                     Parent order #{attempt.orderId} •{" "}
-                    {formatAttemptOutcomeLabel(attempt.outcome)}
+                    {formatAttemptOutcomeLabel(
+                      attempt.outcome,
+                      attempt.finalizedAt,
+                    )}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-600">
                     {attempt.finalizedAt
-                      ? `Manager finalized at ${attempt.finalizedAt}.`
-                      : "Pending manager disposition."}
+                      ? attempt.outcome === "NO_RELEASE_CANCELLED"
+                        ? `Dispatch manager cancelled this order at ${attempt.finalizedAt}.`
+                        : `Dispatch manager returned this order to dispatch at ${attempt.finalizedAt}.`
+                      : "Pending dispatch review."}
                   </div>
                   {attempt.note ? (
                     <div className="mt-1 text-[11px] text-slate-600">
@@ -857,12 +869,15 @@ export default function RunSummaryPage() {
         <section className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
             <h2 className="text-sm font-medium text-slate-800">Stock Movement</h2>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Loaded reflects linked parent-order quantity plus extra run load.
+            </p>
           </div>
           <SoTTable>
             <SoTTableHead className="bg-white">
               <tr>
                 <SoTTh>Product</SoTTh>
-                <SoTTh align="right">Loaded</SoTTh>
+                <SoTTh align="right">Loaded (run total)</SoTTh>
                 <SoTTh align="right">Sold</SoTTh>
                 <SoTTh align="right">Returned</SoTTh>
                 <SoTTh align="right">Δ</SoTTh>
