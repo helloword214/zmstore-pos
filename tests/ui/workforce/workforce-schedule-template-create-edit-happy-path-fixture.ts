@@ -171,7 +171,11 @@ export async function resolveWorkforceScheduleTemplateCreateEditHappyPathDbState
   const templates = await db.scheduleTemplate.findMany({
     where: {
       templateName: {
-        in: [scenario.initialTemplateName, scenario.editedTemplateName],
+        in: [
+          scenario.existingTemplateName,
+          scenario.initialTemplateName,
+          scenario.editedTemplateName,
+        ],
       },
     },
     select: {
@@ -201,8 +205,20 @@ export async function resolveWorkforceScheduleTemplateCreateEditHappyPathDbState
     orderBy: [{ id: "asc" }],
   });
 
+  const existingTemplate =
+    templates.find(
+      (template) => template.templateName === scenario.existingTemplateName,
+    ) ?? null;
+  const template =
+    templates.find((currentTemplate) =>
+      [scenario.initialTemplateName, scenario.editedTemplateName].includes(
+        currentTemplate.templateName,
+      ),
+    ) ?? null;
+
   return {
-    template: templates[0] ?? null,
+    existingTemplate,
+    template,
     templates,
   };
 }
@@ -211,9 +227,14 @@ export function expectWorkforceScheduleTemplateCreateEditHappyPathInitialDbState
   state: Awaited<
     ReturnType<typeof resolveWorkforceScheduleTemplateCreateEditHappyPathDbState>
   >,
+  scenario: WorkforceScheduleTemplateCreateEditHappyPathScenarioContext,
 ) {
-  expect(state.templates).toHaveLength(0);
+  expect(state.templates).toHaveLength(1);
   expect(state.template).toBeNull();
+  expect(state.existingTemplate?.templateName).toBe(scenario.existingTemplateName);
+  expect(state.existingTemplate?.status).toBe(WorkerScheduleTemplateStatus.ACTIVE);
+  expect(state.existingTemplate?.assignments).toHaveLength(0);
+  expect(state.existingTemplate?.days).toHaveLength(1);
 }
 
 export function expectWorkforceScheduleTemplateCreateEditHappyPathCreatedDbState(
@@ -221,8 +242,14 @@ export function expectWorkforceScheduleTemplateCreateEditHappyPathCreatedDbState
     ReturnType<typeof resolveWorkforceScheduleTemplateCreateEditHappyPathDbState>
   >,
   scenario: WorkforceScheduleTemplateCreateEditHappyPathScenarioContext,
+  originalExistingTemplateId: number,
 ) {
-  expect(state.templates).toHaveLength(1);
+  expect(state.templates).toHaveLength(2);
+  expect(state.existingTemplate?.id).toBe(originalExistingTemplateId);
+  expect(state.existingTemplate?.templateName).toBe(scenario.existingTemplateName);
+  expect(state.existingTemplate?.status).toBe(WorkerScheduleTemplateStatus.ACTIVE);
+  expect(state.existingTemplate?.assignments).toHaveLength(0);
+  expect(state.existingTemplate?.days).toHaveLength(1);
   expect(state.template?.templateName).toBe(scenario.initialTemplateName);
   expect(state.template?.branchId).toBeNull();
   expect(state.template?.role).toBe(
@@ -253,8 +280,14 @@ export function expectWorkforceScheduleTemplateCreateEditHappyPathEditedDbState(
   >,
   scenario: WorkforceScheduleTemplateCreateEditHappyPathScenarioContext,
   originalTemplateId: number,
+  originalExistingTemplateId: number,
 ) {
-  expect(state.templates).toHaveLength(1);
+  expect(state.templates).toHaveLength(2);
+  expect(state.existingTemplate?.id).toBe(originalExistingTemplateId);
+  expect(state.existingTemplate?.templateName).toBe(scenario.existingTemplateName);
+  expect(state.existingTemplate?.status).toBe(WorkerScheduleTemplateStatus.ACTIVE);
+  expect(state.existingTemplate?.assignments).toHaveLength(0);
+  expect(state.existingTemplate?.days).toHaveLength(1);
   expect(state.template?.id).toBe(originalTemplateId);
   expect(state.template?.templateName).toBe(scenario.editedTemplateName);
   expect(state.template?.branchId).toBeNull();
@@ -309,9 +342,14 @@ export async function expectWorkforceScheduleTemplateCreateEditHappyPathSelected
 ) {
   for (const day of args.days) {
     await expect(panel.getByText(day, { exact: true })).toBeVisible();
-    await expect(panel.getByText(args.timeWindowLabel, { exact: true })).toBeVisible();
-    await expect(panel.getByText(args.note, { exact: true })).toBeVisible();
   }
+
+  await expect(
+    panel.getByText(args.timeWindowLabel, { exact: true }),
+  ).toHaveCount(args.days.length);
+  await expect(panel.getByText(args.note, { exact: true })).toHaveCount(
+    args.days.length,
+  );
 }
 
 export function resolveWorkforceScheduleTemplateCreateEditHappyPathInitialTimeInput() {
