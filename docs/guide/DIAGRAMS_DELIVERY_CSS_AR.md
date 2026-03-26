@@ -65,6 +65,12 @@ flowchart TD
     H --> AA["AR list/ledger from open customerAr balances"]
 ```
 
+Dispatch assignment invariant:
+
+1. A delivery order may have many historical run attempts over time.
+2. Only one active run link is valid at a time.
+3. Active means `PLANNED`, `DISPATCHED`, or `CHECKED_IN`.
+
 ## 2) Clearance Decision Tree
 
 ```mermaid

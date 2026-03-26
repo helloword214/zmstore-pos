@@ -17,6 +17,10 @@ import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { Prisma } from "@prisma/client";
+import {
+  ACTIVE_DELIVERY_RUN_STATUSES,
+  loadActiveDeliveryRunLinksByOrderIds,
+} from "~/services/delivery-run-assignment.server";
 
 type ActionData =
   | { ok: true; redirectedTo: string }
@@ -38,7 +42,6 @@ function clampTake(n: number, fallback = 50) {
 
 type SortKey = "id" | "printedAt" | "stagedAt" | "amount";
 type SortDir = "asc" | "desc";
-const ACTIVE_RUN_STATUSES = ["PLANNED", "DISPATCHED", "CHECKED_IN"] as const;
 
 const isNoReleaseAttemptOutcome = (value: unknown) =>
   value === "NO_RELEASE_REATTEMPT" || value === "NO_RELEASE_CANCELLED";
@@ -123,7 +126,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         none: {
           run: {
             status: {
-              in: [...ACTIVE_RUN_STATUSES],
+              in: [...ACTIVE_DELIVERY_RUN_STATUSES],
             },
           },
         },
@@ -179,13 +182,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     orderBy,
     take,
-	    select: {
-	      id: true,
-	      orderCode: true,
-	      status: true,
-	      riderName: true,
-	      stagedAt: true,
-	      dispatchedAt: true,
+    select: {
+      id: true,
+      orderCode: true,
+      status: true,
+      riderName: true,
+      stagedAt: true,
+      dispatchedAt: true,
       fulfillmentStatus: true,
       subtotal: true,
       totalBeforeDiscount: true,
@@ -219,33 +222,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     },
   });
+  const visibleActiveRunLinks = await loadActiveDeliveryRunLinksByOrderIds(
+    db,
+    forDispatchRows.map((order) => order.id),
+  );
 
-  const forDispatch = forDispatchRows.map((order) => {
-    const { runOrders, ...orderBase } = order;
-    const failedAttempts = (runOrders || []).filter((link) =>
-      isNoReleaseAttemptOutcome(link.attemptOutcome),
-    );
-    const latestFailedAttempt = failedAttempts[0] ?? null;
-    const pendingFailedReview = Boolean(
-      latestFailedAttempt && !latestFailedAttempt.attemptFinalizedAt,
-    );
+  const forDispatch = forDispatchRows
+    .filter((order) => !visibleActiveRunLinks.has(order.id))
+    .map((order) => {
+      const { runOrders, ...orderBase } = order;
+      const failedAttempts = (runOrders || []).filter((link) =>
+        isNoReleaseAttemptOutcome(link.attemptOutcome),
+      );
+      const latestFailedAttempt = failedAttempts[0] ?? null;
+      const pendingFailedReview = Boolean(
+        latestFailedAttempt && !latestFailedAttempt.attemptFinalizedAt,
+      );
 
-    return {
-      ...orderBase,
-      failedAttemptCount: failedAttempts.length,
-      latestFailedReason:
-        typeof latestFailedAttempt?.attemptNote === "string"
-          ? latestFailedAttempt.attemptNote
+      return {
+        ...orderBase,
+        failedAttemptCount: failedAttempts.length,
+        latestFailedReason:
+          typeof latestFailedAttempt?.attemptNote === "string"
+            ? latestFailedAttempt.attemptNote
+            : null,
+        latestFailedReportedAt: latestFailedAttempt?.attemptReportedAt
+          ? new Date(latestFailedAttempt.attemptReportedAt).toISOString()
           : null,
-      latestFailedReportedAt: latestFailedAttempt?.attemptReportedAt
-        ? new Date(latestFailedAttempt.attemptReportedAt).toISOString()
-        : null,
-      latestFailedRunCode: latestFailedAttempt?.run?.runCode ?? null,
-      pendingFailedReview,
-      canCancelFailedReview:
-        pendingFailedReview && order.status !== "PARTIALLY_PAID",
-    };
-  });
+        latestFailedRunCode: latestFailedAttempt?.run?.runCode ?? null,
+        pendingFailedReview,
+        canCancelFailedReview:
+          pendingFailedReview && order.status !== "PARTIALLY_PAID",
+      };
+    });
 
   // PLANNED runs only (pwede pag-assign-an)
   const plannedRuns = await db.deliveryRun.findMany({
@@ -302,30 +311,39 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Safety: only eligible orders
-  const eligible = await db.order.findMany({
+  const baseEligible = await db.order.findMany({
     where: {
       id: { in: orderIds },
       channel: "DELIVERY",
       status: { in: ["UNPAID", "PARTIALLY_PAID"] },
       dispatchedAt: null,
-      runOrders: {
-        none: {
-          run: {
-            status: {
-              in: [...ACTIVE_RUN_STATUSES],
-            },
-          },
-        },
-      },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      orderCode: true,
+    },
   });
-  const eligibleIds = new Set(eligible.map((o) => o.id));
-  const finalIds = orderIds.filter((id) => eligibleIds.has(id));
+  const eligibleIds = new Set(baseEligible.map((o) => o.id));
+  const requestedEligibleIds = orderIds.filter((orderId) => eligibleIds.has(orderId));
+  const activeRunLinks = await loadActiveDeliveryRunLinksByOrderIds(
+    db,
+    requestedEligibleIds,
+  );
+  const finalIds = requestedEligibleIds.filter(
+    (orderId) => !activeRunLinks.has(orderId),
+  );
   if (finalIds.length === 0) {
+    const hasActiveRunConflict = requestedEligibleIds.some((orderId) =>
+      activeRunLinks.has(orderId),
+    );
     return json<ActionData>(
-      { ok: false, error: "Selected orders are no longer eligible." },
-      { status: 400 }
+      {
+        ok: false,
+        error: hasActiveRunConflict
+          ? "Selected orders are already assigned to another active run."
+          : "Selected orders are no longer eligible.",
+      },
+      { status: hasActiveRunConflict ? 409 : 400 }
     );
   }
 

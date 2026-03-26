@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
+import { loadActiveDeliveryRunLinksByOrderIds } from "~/services/delivery-run-assignment.server";
 
 // Run-centric bridge:
 //  - URL pa rin: /orders/:id/dispatch
@@ -23,10 +24,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       id: true,
       orderCode: true,
       channel: true,
-      runOrders: {
-        select: { runId: true },
-        take: 1,
-      },
     },
   });
 
@@ -39,8 +36,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return redirect("/cashier?tab=dispatch");
   }
 
-  // 1️⃣ Kung meron nang naka-link na run → diretsong punta sa run dispatch UI
-  const existing = order.runOrders[0];
+  // 1️⃣ Kung meron nang active run link → diretsong punta sa active run dispatch UI
+  const activeRunLinks = await loadActiveDeliveryRunLinksByOrderIds(db, [order.id]);
+  const existing = activeRunLinks.get(order.id);
   if (existing) {
     return redirect(`/runs/${existing.runId}/dispatch`);
   }

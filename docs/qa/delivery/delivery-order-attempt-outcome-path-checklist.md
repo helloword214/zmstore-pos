@@ -38,6 +38,7 @@ Default rider-check-in expectation:
 2. rider sees one failed-delivery control, not separate `Return to dispatch` and `Cancel before release` choices
 3. failed delivery requires a rider reason
 4. stock recap `Loaded` reflects linked parent-order quantity plus any extra run load
+5. a parent order already attached to an active run is hidden from dispatch assignment, and `/orders/:id/dispatch` resolves back to that active run
 
 ## Scenario 1: Failed Delivery -> Re-Dispatch
 
@@ -126,3 +127,4 @@ Expected:
 3. Quick roadside receipts are unaffected by the parent-order failed-delivery controls.
 4. Closed-run cashier list excludes failed-delivery parent attempts from cash-turnover workload.
 5. Extra run stock stays available for quick sales after parent-order quantities are reserved against the same product.
+6. A delivery order already assigned to one active run cannot be assigned to another active run through dispatch queue or `/orders/:id/dispatch`.

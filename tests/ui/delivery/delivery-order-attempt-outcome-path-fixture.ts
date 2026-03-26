@@ -141,6 +141,18 @@ export async function openDeliveryOrderAttemptOutcomePathDispatchPage(
   });
 }
 
+export async function openDeliveryOrderAttemptOutcomePathOrderDispatchBridgePage(args: {
+  page: Page;
+  expectedPathname: string;
+}) {
+  const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
+  await openDeliveryOrderAttemptOutcomePathRoute({
+    page: args.page,
+    route: `/orders/${scenario.activeOrder.id}/dispatch`,
+    expectedPathname: args.expectedPathname,
+  });
+}
+
 export async function openDeliveryOrderAttemptOutcomePathCashierRunRemitPage(
   page: Page,
 ) {
