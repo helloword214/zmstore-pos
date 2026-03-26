@@ -1514,6 +1514,10 @@ function addDays(reference: Date, days: number) {
   return next;
 }
 
+function addHours(reference: Date, hours: number) {
+  return new Date(reference.getTime() + hours * 60 * 60 * 1000);
+}
+
 function addYears(reference: Date, years: number) {
   const next = new Date(reference);
   next.setFullYear(next.getFullYear() + years);
@@ -1546,6 +1550,31 @@ function slugifySeedEmployeeDocumentKey(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function formatSeedPersonLabel(args: {
+  alias?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}) {
+  return (
+    args.alias?.trim() ||
+    [args.firstName, args.lastName].filter(Boolean).join(" ").trim() ||
+    "Seed User"
+  );
+}
+
+function pickSeedOrderUnitPrice(product: {
+  price?: number | string | { toString(): string } | null;
+  srp?: number | string | { toString(): string } | null;
+}) {
+  const srp = Number(product.srp ?? 0);
+  if (Number.isFinite(srp) && srp > 0) return Math.round(srp * 100) / 100;
+
+  const price = Number(product.price ?? 0);
+  if (Number.isFinite(price) && price > 0) return Math.round(price * 100) / 100;
+
+  return 1;
 }
 
 function buildSeedEmployeeDocumentRows(args: {
@@ -1655,6 +1684,392 @@ async function seedEmployeeDocumentBaseline(args: {
   await db.employeeDocument.createMany({
     data: documentRows,
   });
+}
+
+async function seedDeliveryTransactionBaseline(args: {
+  adminUserId: number;
+  cashierUserId: number | null;
+  riderUserId: number | null;
+  riderEmployee: SeededEmployeeRecord | null;
+  riderVehicleId: number | null;
+  riderVehicleName: string | null;
+}) {
+  if (!args.riderEmployee) {
+    return;
+  }
+
+  const [queueProduct, activeProduct, deliveredProduct, failedProduct] =
+    await Promise.all([
+      db.product.findFirst({
+        where: { name: "Hog Grower Pellets", isActive: true },
+        select: { id: true, name: true, price: true, srp: true },
+      }),
+      db.product.findFirst({
+        where: { name: "Petron Gasul 11kg", isActive: true },
+        select: { id: true, name: true, price: true, srp: true },
+      }),
+      db.product.findFirst({
+        where: { name: "Well-Milled Rice 50kg", isActive: true },
+        select: { id: true, name: true, price: true, srp: true },
+      }),
+      db.product.findFirst({
+        where: { name: "Fiesta Gas 11kg", isActive: true },
+        select: { id: true, name: true, price: true, srp: true },
+      }),
+    ]);
+
+  const [queueCustomer, activeCustomer, deliveredCustomer, failedCustomer] =
+    await Promise.all([
+      db.customer.findFirst({
+        where: { alias: "Neri Poultry Supply" },
+        include: { addresses: { orderBy: { id: "asc" }, take: 1 } },
+      }),
+      db.customer.findFirst({
+        where: { alias: "Bautista Household" },
+        include: { addresses: { orderBy: { id: "asc" }, take: 1 } },
+      }),
+      db.customer.findFirst({
+        where: { alias: "Westside Rice Buyer" },
+        include: { addresses: { orderBy: { id: "asc" }, take: 1 } },
+      }),
+      db.customer.findFirst({
+        where: { alias: "Sobol LPG Suki" },
+        include: { addresses: { orderBy: { id: "asc" }, take: 1 } },
+      }),
+    ]);
+
+  const resolvedQueueProduct = requireValue(
+    queueProduct,
+    "Missing seeded queue product for delivery transaction baseline.",
+  );
+  const resolvedActiveProduct = requireValue(
+    activeProduct,
+    "Missing seeded active-run product for delivery transaction baseline.",
+  );
+  const resolvedDeliveredProduct = requireValue(
+    deliveredProduct,
+    "Missing seeded delivered-order product for delivery transaction baseline.",
+  );
+  const resolvedFailedProduct = requireValue(
+    failedProduct,
+    "Missing seeded failed-order product for delivery transaction baseline.",
+  );
+  const resolvedQueueCustomer = requireValue(
+    queueCustomer,
+    "Missing seeded queue customer for delivery transaction baseline.",
+  );
+  const resolvedActiveCustomer = requireValue(
+    activeCustomer,
+    "Missing seeded active customer for delivery transaction baseline.",
+  );
+  const resolvedDeliveredCustomer = requireValue(
+    deliveredCustomer,
+    "Missing seeded delivered customer for delivery transaction baseline.",
+  );
+  const resolvedFailedCustomer = requireValue(
+    failedCustomer,
+    "Missing seeded failed customer for delivery transaction baseline.",
+  );
+
+  const queueAddress = requireValue(
+    resolvedQueueCustomer.addresses[0],
+    "Missing seeded queue customer address for delivery transaction baseline.",
+  );
+  const activeAddress = requireValue(
+    resolvedActiveCustomer.addresses[0],
+    "Missing seeded active customer address for delivery transaction baseline.",
+  );
+  const deliveredAddress = requireValue(
+    resolvedDeliveredCustomer.addresses[0],
+    "Missing seeded delivered customer address for delivery transaction baseline.",
+  );
+  const failedAddress = requireValue(
+    resolvedFailedCustomer.addresses[0],
+    "Missing seeded failed customer address for delivery transaction baseline.",
+  );
+
+  const actorUserId = args.cashierUserId ?? args.adminUserId;
+  const actorUserRole =
+    args.cashierUserId != null ? UserRole.CASHIER : UserRole.ADMIN;
+  const riderLabel = formatSeedPersonLabel({
+    alias: args.riderEmployee.seed.alias ?? null,
+    firstName: args.riderEmployee.seed.firstName,
+    lastName: args.riderEmployee.seed.lastName,
+  });
+  const traceId = "SEED-DELIVERY-BASELINE";
+
+  const now = new Date();
+  const queuePrintedAt = addHours(now, -6);
+  const queueStagedAt = addHours(now, -5);
+  const activeDispatchedAt = addHours(now, -2);
+  const activeStagedAt = addHours(now, -3);
+  const closedDispatchedAt = addHours(now, -26);
+  const closedStagedAt = addHours(now, -27);
+  const closedCheckinAt = addHours(now, -22);
+  const closedAt = addHours(now, -21);
+
+  const createDeliveryOrder = async (input: {
+    orderCode: string;
+    customer: typeof resolvedQueueCustomer;
+    address: typeof queueAddress;
+    product: typeof resolvedQueueProduct;
+    qty: number;
+    stagedAt?: Date | null;
+    fulfillmentStatus: "NEW" | "STAGED" | "DISPATCHED" | "DELIVERED" | "ON_HOLD";
+    dispatchedAt?: Date | null;
+    deliveredAt?: Date | null;
+    riderId?: number | null;
+    riderName?: string | null;
+    vehicleId?: number | null;
+    vehicleName?: string | null;
+    remitGroup?: string | null;
+  }) => {
+    const unitPrice = pickSeedOrderUnitPrice(input.product);
+    const lineTotal = Math.round(unitPrice * input.qty * 100) / 100;
+    const customerLabel = formatSeedPersonLabel({
+      alias: input.customer.alias ?? null,
+      firstName: input.customer.firstName,
+      lastName: input.customer.lastName,
+    });
+    const deliverTo = `${customerLabel} — ${input.address.line1}, ${input.address.barangay}, ${input.address.city}`;
+
+    return db.order.create({
+      data: {
+        orderCode: input.orderCode,
+        status: "UNPAID",
+        channel: "DELIVERY",
+        subtotal: lineTotal,
+        totalBeforeDiscount: lineTotal,
+        printedAt: input.stagedAt ?? queuePrintedAt,
+        expiryAt: addDays(input.stagedAt ?? queuePrintedAt, 1),
+        terminalId: "SEED-DELIVERY",
+        createdById: actorUserId,
+        createdByRole: actorUserRole,
+        customerId: input.customer.id,
+        deliveryAddressId: input.address.id,
+        deliverTo,
+        deliverPhone: input.customer.phone ?? null,
+        deliverLandmark: input.address.landmark ?? null,
+        deliverGeoLat: input.address.geoLat ?? null,
+        deliverGeoLng: input.address.geoLng ?? null,
+        fulfillmentStatus: input.fulfillmentStatus,
+        stagedAt: input.stagedAt ?? null,
+        dispatchedAt: input.dispatchedAt ?? null,
+        deliveredAt: input.deliveredAt ?? null,
+        riderId: input.riderId ?? null,
+        riderName: input.riderName ?? null,
+        vehicleId: input.vehicleId ?? null,
+        vehicleName: input.vehicleName ?? null,
+        loadoutSnapshot: [
+          {
+            productId: input.product.id,
+            name: input.product.name,
+            qty: input.qty,
+            unitKind: "PACK",
+          },
+        ],
+        remitGroup: input.remitGroup ?? null,
+        items: {
+          create: [
+            {
+              productId: input.product.id,
+              name: input.product.name,
+              qty: input.qty,
+              unitPrice,
+              lineTotal,
+              unitKind: "PACK",
+              baseUnitPrice: unitPrice,
+              discountAmount: 0,
+              isLpg:
+                input.product.name.includes("Gasul") ||
+                input.product.name.includes("Gas "),
+            },
+          ],
+        },
+      },
+      select: {
+        id: true,
+        orderCode: true,
+        customerId: true,
+        deliverTo: true,
+        deliverPhone: true,
+      },
+    });
+  };
+
+  const queueOrder = await createDeliveryOrder({
+    orderCode: "SEED-ORD-QUEUE-001",
+    customer: resolvedQueueCustomer,
+    address: queueAddress,
+    product: resolvedQueueProduct,
+    qty: 1,
+    stagedAt: queueStagedAt,
+    fulfillmentStatus: "STAGED",
+  });
+
+  const activeOrder = await createDeliveryOrder({
+    orderCode: "SEED-ORD-ACTIVE-001",
+    customer: resolvedActiveCustomer,
+    address: activeAddress,
+    product: resolvedActiveProduct,
+    qty: 1,
+    stagedAt: activeStagedAt,
+    fulfillmentStatus: "DISPATCHED",
+    dispatchedAt: activeDispatchedAt,
+    riderId: args.riderEmployee.id,
+    riderName: riderLabel,
+    vehicleId: args.riderVehicleId,
+    vehicleName: args.riderVehicleName,
+    remitGroup: `${traceId}-ACTIVE`,
+  });
+
+  const deliveredOrder = await createDeliveryOrder({
+    orderCode: "SEED-ORD-CLOSED-001",
+    customer: resolvedDeliveredCustomer,
+    address: deliveredAddress,
+    product: resolvedDeliveredProduct,
+    qty: 1,
+    stagedAt: closedStagedAt,
+    fulfillmentStatus: "DELIVERED",
+    dispatchedAt: closedDispatchedAt,
+    deliveredAt: closedCheckinAt,
+    riderId: args.riderEmployee.id,
+    riderName: riderLabel,
+    vehicleId: args.riderVehicleId,
+    vehicleName: args.riderVehicleName,
+    remitGroup: `${traceId}-CLOSED`,
+  });
+
+  const failedReviewOrder = await createDeliveryOrder({
+    orderCode: "SEED-ORD-FAILED-001",
+    customer: resolvedFailedCustomer,
+    address: failedAddress,
+    product: resolvedFailedProduct,
+    qty: 1,
+    stagedAt: closedStagedAt,
+    fulfillmentStatus: "ON_HOLD",
+    riderId: args.riderEmployee.id,
+    riderName: riderLabel,
+    vehicleId: args.riderVehicleId,
+    vehicleName: args.riderVehicleName,
+    remitGroup: `${traceId}-FAILED`,
+  });
+
+  const plannedRun = await db.deliveryRun.create({
+    data: {
+      runCode: "SEED-RUN-PLAN-001",
+      status: "PLANNED",
+      riderId: args.riderEmployee.id,
+      vehicleId: args.riderVehicleId,
+      notes: "Seed delivery baseline planned run for dispatch assignment visibility.",
+    },
+  });
+
+  const activeRun = await db.deliveryRun.create({
+    data: {
+      runCode: "SEED-RUN-ACTIVE-001",
+      status: "DISPATCHED",
+      riderId: args.riderEmployee.id,
+      vehicleId: args.riderVehicleId,
+      dispatchedAt: activeDispatchedAt,
+      loadoutSnapshot: [
+        {
+          productId: resolvedDeliveredProduct.id,
+          name: resolvedDeliveredProduct.name,
+          qty: 1,
+          unitKind: "PACK",
+        },
+      ],
+      notes: "Seed delivery baseline active dispatched run.",
+    },
+  });
+
+  const closedRun = await db.deliveryRun.create({
+    data: {
+      runCode: "SEED-RUN-CLOSED-001",
+      status: "CLOSED",
+      riderId: args.riderEmployee.id,
+      vehicleId: args.riderVehicleId,
+      dispatchedAt: closedDispatchedAt,
+      riderCheckinAt: closedCheckinAt,
+      riderCheckinSnapshot: {
+        source: "seed",
+        traceId,
+        parentOrderIds: [deliveredOrder.id, failedReviewOrder.id],
+      },
+      riderCheckinNotes: "Seed baseline check-in completed with one failed-delivery return.",
+      closedAt,
+      notes: "Seed delivery baseline closed run with remit-ready history.",
+    },
+  });
+
+  await db.deliveryRunOrder.createMany({
+    data: [
+      {
+        runId: activeRun.id,
+        orderId: activeOrder.id,
+        sequence: 1,
+      },
+      {
+        runId: closedRun.id,
+        orderId: deliveredOrder.id,
+        sequence: 1,
+      },
+      {
+        runId: closedRun.id,
+        orderId: failedReviewOrder.id,
+        sequence: 2,
+        attemptOutcome: "NO_RELEASE_REATTEMPT",
+        attemptNote: "Customer not home during delivery window. Goods returned complete.",
+        attemptReportedAt: closedCheckinAt,
+        attemptReportedById: args.riderUserId,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  const deliveredUnitPrice = pickSeedOrderUnitPrice(resolvedDeliveredProduct);
+  await db.runReceipt.create({
+    data: {
+      runId: closedRun.id,
+      kind: "PARENT",
+      receiptKey: "SEED-RR-PARENT-001",
+      parentOrderId: deliveredOrder.id,
+      customerId: resolvedDeliveredCustomer.id,
+      customerName: formatSeedPersonLabel({
+        alias: resolvedDeliveredCustomer.alias ?? null,
+        firstName: resolvedDeliveredCustomer.firstName,
+        lastName: resolvedDeliveredCustomer.lastName,
+      }),
+      customerPhone: resolvedDeliveredCustomer.phone ?? null,
+      cashCollected: deliveredUnitPrice,
+      note: "Seed reviewed parent receipt for cashier remit visibility.",
+      status: "REVIEWED",
+      reviewedAt: closedAt,
+      lines: {
+        create: [
+          {
+            productId: resolvedDeliveredProduct.id,
+            name: resolvedDeliveredProduct.name,
+            qty: 1,
+            unitPrice: deliveredUnitPrice,
+            lineTotal: deliveredUnitPrice,
+            unitKind: "PACK",
+            baseUnitPrice: deliveredUnitPrice,
+            discountAmount: 0,
+          },
+        ],
+      },
+    },
+  });
+
+  return {
+    plannedRunId: plannedRun.id,
+    activeRunId: activeRun.id,
+    closedRunId: closedRun.id,
+    queueOrderId: queueOrder.id,
+    failedReviewOrderId: failedReviewOrder.id,
+  };
 }
 
 async function seedWorkforcePayrollAndScheduleBaseline(args: {
@@ -2503,6 +2918,8 @@ async function seed() {
   );
   const hash = (s: string) => bcrypt.hashSync(s, 12);
   if (!mainBranchId) throw new Error("No Branch found. Seed branches first.");
+  let primaryCashierUserId: number | null = null;
+  let primaryRiderUserId: number | null = null;
 
   // ADMIN (walang Employee; system-level)
   const adminUser = await db.user.upsert({
@@ -2527,7 +2944,7 @@ async function seed() {
   for (let i = 0; i < cashierEmployees.length; i++) {
     const emp = cashierEmployees[i];
     const idx = i + 1;
-    await db.user.upsert({
+    const user = await db.user.upsert({
       where: { email: `cashier${idx}@local` },
       update: {
         employeeId: emp.id,
@@ -2550,6 +2967,9 @@ async function seed() {
         branches: { create: { branchId: mainBranchId } },
       },
     });
+    if (!primaryCashierUserId) {
+      primaryCashierUserId = user.id;
+    }
   }
 
   // MANAGER USERS (STORE_MANAGER role, linked sa managerEmployees)
@@ -2584,7 +3004,7 @@ async function seed() {
   for (let i = 0; i < riderEmployees.length; i++) {
     const emp = riderEmployees[i];
     const idx = i + 1;
-    await db.user.upsert({
+    const user = await db.user.upsert({
       where: { email: `rider${idx}@local` },
       update: {
         employeeId: emp.id,
@@ -2606,6 +3026,9 @@ async function seed() {
         branches: { create: { branchId: mainBranchId } },
       },
     });
+    if (!primaryRiderUserId) {
+      primaryRiderUserId = user.id;
+    }
   }
 
   console.log("🪪 Seeding employee government numbers and document metadata...");
@@ -2723,6 +3146,21 @@ async function seed() {
   for (const customerSeed of ASINGAN_CUSTOMERS) {
     await upsertSeedCustomer(customerSeed, provinceId);
   }
+
+  console.log("🚚 Seeding delivery order and run baseline...");
+  await seedDeliveryTransactionBaseline({
+    adminUserId: adminUser.id,
+    cashierUserId: primaryCashierUserId,
+    riderUserId: primaryRiderUserId,
+    riderEmployee: riderEmployees[0] ?? null,
+    riderVehicleId:
+      riderEmployees[0]?.seed.defaultVehicleKey
+        ? (vehiclesByKey[riderEmployees[0].seed.defaultVehicleKey]?.id ?? null)
+        : null,
+    riderVehicleName: riderEmployees[0]?.seed.defaultVehicleKey
+      ? riderEmployees[0].seed.defaultVehicleKey.split(":")[0] ?? null
+      : null,
+  });
 
   console.log("\n✅ Seeding complete!");
   await db.$disconnect();
