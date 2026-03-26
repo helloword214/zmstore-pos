@@ -294,7 +294,9 @@ export default function ProductDetailRoute() {
               value={product.packingSize == null ? "-" : String(product.packingSize)}
             />
             <SoTDataRow label="Whole Price" value={formatMoney(product.srp)} />
-            <SoTDataRow label="Retail Price" value={formatMoney(product.price)} />
+            {product.allowPackSale ? (
+              <SoTDataRow label="Retail Price" value={formatMoney(product.price)} />
+            ) : null}
             <SoTDataRow label="Cost Price" value={formatMoney(product.dealerPrice)} />
             <SoTDataRow
               label="Whole Stock"
