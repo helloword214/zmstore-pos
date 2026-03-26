@@ -4,6 +4,7 @@ import "dotenv/config";
 import {
   PrismaClient,
   EmployeeRole,
+  EmployeeDocumentType,
   VehicleType,
   UserRole,
   UserAuthState,
@@ -317,6 +318,8 @@ type SeedEmployeeFixture = {
   email: string;
   role: EmployeeRole;
   birthDate?: string;
+  sssNumber?: string;
+  pagIbigNumber?: string;
   licenseNumber?: string;
   licenseExpiry?: string;
   defaultVehicleKey?: string;
@@ -331,6 +334,11 @@ type SeedEmployeeFixture = {
     geoLat?: number;
     geoLng?: number;
   };
+};
+
+type SeededEmployeeRecord = {
+  id: number;
+  seed: SeedEmployeeFixture;
 };
 
 const brandsByCategory: Record<SeedCatalogCategory, string[]> = {
@@ -1311,6 +1319,8 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     email: "noel.villanueva@example.com",
     role: EmployeeRole.RIDER,
     birthDate: "1991-04-12",
+    sssNumber: "34-1000101-3",
+    pagIbigNumber: "1001-0001-0101",
     licenseNumber: "N01-91-456782",
     licenseExpiry: "2028-06-30",
     defaultVehicleKey: "Asingan Delivery Trike 01:TRICYCLE",
@@ -1335,6 +1345,8 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     email: "arvin.guzman@example.com",
     role: EmployeeRole.RIDER,
     birthDate: "1989-09-03",
+    sssNumber: "34-1000102-1",
+    pagIbigNumber: "1001-0001-0102",
     licenseNumber: "N02-89-781245",
     licenseExpiry: "2029-02-15",
     defaultVehicleKey: "Asingan Delivery Motor 01:MOTORCYCLE",
@@ -1359,6 +1371,8 @@ const SEEDED_RIDERS: SeedEmployeeFixture[] = [
     email: "jayson.ferrer@example.com",
     role: EmployeeRole.RIDER,
     birthDate: "1994-01-18",
+    sssNumber: "34-1000103-9",
+    pagIbigNumber: "1001-0001-0103",
     licenseNumber: "N03-94-223641",
     licenseExpiry: "2028-11-20",
     defaultVehicleKey: "Asingan Utility Sidecar 01:SIDECAR",
@@ -1386,6 +1400,8 @@ const SEEDED_MANAGERS: SeedEmployeeFixture[] = [
     email: "sheila.manalo@example.com",
     role: EmployeeRole.MANAGER,
     birthDate: "1987-06-21",
+    sssNumber: "34-1000111-6",
+    pagIbigNumber: "1001-0001-0111",
     address: {
       line1: "M. H. Del Pilar St.",
       barangay: "Poblacion West",
@@ -1407,6 +1423,8 @@ const SEEDED_MANAGERS: SeedEmployeeFixture[] = [
     email: "rowena.delosreyes@example.com",
     role: EmployeeRole.MANAGER,
     birthDate: "1985-11-07",
+    sssNumber: "34-1000112-4",
+    pagIbigNumber: "1001-0001-0112",
     address: {
       line1: "Rizal Ave.",
       barangay: "San Vicente East",
@@ -1431,6 +1449,8 @@ const SEEDED_CASHIERS: SeedEmployeeFixture[] = [
     email: "maricel.aquino@example.com",
     role: EmployeeRole.STAFF,
     birthDate: "1993-08-14",
+    sssNumber: "34-1000121-1",
+    pagIbigNumber: "1001-0001-0121",
     address: {
       line1: "Purok Uno",
       barangay: "Bantog",
@@ -1452,6 +1472,8 @@ const SEEDED_CASHIERS: SeedEmployeeFixture[] = [
     email: "paolo.ramos@example.com",
     role: EmployeeRole.STAFF,
     birthDate: "1996-02-26",
+    sssNumber: "34-1000122-9",
+    pagIbigNumber: "1001-0001-0122",
     address: {
       line1: "Quezon St.",
       barangay: "Domanpot",
@@ -1492,6 +1514,12 @@ function addDays(reference: Date, days: number) {
   return next;
 }
 
+function addYears(reference: Date, years: number) {
+  const next = new Date(reference);
+  next.setFullYear(next.getFullYear() + years);
+  return next;
+}
+
 function startOfNextWeek(reference: Date) {
   const base = toDateOnly(reference);
   const day = base.getDay();
@@ -1511,6 +1539,122 @@ function buildTemplateDays(args: {
     endMinute: args.endMinute,
     note: args.note,
   }));
+}
+
+function slugifySeedEmployeeDocumentKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildSeedEmployeeDocumentRows(args: {
+  employeeId: number;
+  employeeSeed: SeedEmployeeFixture;
+  uploadedById: number;
+}) {
+  const slugBase = slugifySeedEmployeeDocumentKey(
+    `${args.employeeSeed.firstName}-${args.employeeSeed.lastName}`,
+  );
+
+  const baseRows: Array<{
+    docType: EmployeeDocumentType;
+    extension: "jpg" | "pdf";
+    mimeType: "image/jpeg" | "application/pdf";
+    sizeBytes: number;
+    expiresAt?: Date | null;
+    notes: string;
+  }> = [
+    {
+      docType: EmployeeDocumentType.VALID_ID,
+      extension: "jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 248_000,
+      notes: "Seeded sample front ID capture metadata.",
+    },
+    {
+      docType: EmployeeDocumentType.BARANGAY_CLEARANCE,
+      extension: "pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 186_000,
+      notes: "Seeded barangay clearance metadata for compliance demos.",
+    },
+    {
+      docType: EmployeeDocumentType.PHOTO_2X2,
+      extension: "jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 96_000,
+      notes: "Seeded 2x2 employee photo metadata placeholder.",
+    },
+  ];
+
+  if (args.employeeSeed.licenseNumber) {
+    baseRows.push({
+      docType: EmployeeDocumentType.DRIVER_LICENSE_SCAN,
+      extension: "jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 214_000,
+      expiresAt: args.employeeSeed.licenseExpiry
+        ? new Date(args.employeeSeed.licenseExpiry)
+        : addYears(new Date(), 2),
+      notes: "Seeded driver license scan metadata for rider compliance demos.",
+    });
+  } else if (args.employeeSeed.role === EmployeeRole.MANAGER) {
+    baseRows.push({
+      docType: EmployeeDocumentType.NBI_CLEARANCE,
+      extension: "pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 202_000,
+      notes: "Seeded NBI clearance metadata for manager compliance demos.",
+    });
+  } else {
+    baseRows.push({
+      docType: EmployeeDocumentType.POLICE_CLEARANCE,
+      extension: "pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 198_000,
+      notes: "Seeded police clearance metadata for store staff compliance demos.",
+    });
+  }
+
+  return baseRows.map((row) => {
+    const docSlug = slugifySeedEmployeeDocumentKey(row.docType);
+    const fileName = `${docSlug}.${row.extension}`;
+    const fileKey = `seed/employee-documents/${slugBase}/${fileName}`;
+
+    return {
+      employeeId: args.employeeId,
+      docType: row.docType,
+      fileKey,
+      fileUrl: `https://seed.local/${fileKey}`,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      expiresAt: row.expiresAt ?? null,
+      uploadedById: args.uploadedById,
+      notes: row.notes,
+    };
+  });
+}
+
+async function seedEmployeeDocumentBaseline(args: {
+  actorUserId: number;
+  seededEmployees: SeededEmployeeRecord[];
+}) {
+  const documentRows = args.seededEmployees.flatMap((employee) =>
+    buildSeedEmployeeDocumentRows({
+      employeeId: employee.id,
+      employeeSeed: employee.seed,
+      uploadedById: args.actorUserId,
+    }),
+  );
+
+  if (documentRows.length === 0) {
+    return;
+  }
+
+  await db.employeeDocument.createMany({
+    data: documentRows,
+  });
 }
 
 async function seedWorkforcePayrollAndScheduleBaseline(args: {
@@ -1950,6 +2094,8 @@ async function upsertSeedEmployee(
       phone: employeeSeed.phone,
       role: employeeSeed.role,
       active: true,
+      sssNumber: employeeSeed.sssNumber ?? null,
+      pagIbigNumber: employeeSeed.pagIbigNumber ?? null,
       defaultVehicleId,
       licenseNumber: employeeSeed.licenseNumber ?? null,
       licenseExpiry: employeeSeed.licenseExpiry
@@ -1966,6 +2112,8 @@ async function upsertSeedEmployee(
       email: employeeSeed.email,
       role: employeeSeed.role,
       active: true,
+      sssNumber: employeeSeed.sssNumber ?? null,
+      pagIbigNumber: employeeSeed.pagIbigNumber ?? null,
       defaultVehicleId,
       licenseNumber: employeeSeed.licenseNumber ?? null,
       licenseExpiry: employeeSeed.licenseExpiry
@@ -2316,9 +2464,9 @@ async function seed() {
   }
 
   console.log("👷 Creating employees (riders / cashiers / managers)...");
-  const managerEmployees: { id: number }[] = [];
-  const cashierEmployees: { id: number }[] = [];
-  const riderEmployees: { id: number }[] = [];
+  const managerEmployees: SeededEmployeeRecord[] = [];
+  const cashierEmployees: SeededEmployeeRecord[] = [];
+  const riderEmployees: SeededEmployeeRecord[] = [];
 
   for (const riderSeed of SEEDED_RIDERS) {
     const employee = await upsertSeedEmployee(
@@ -2326,7 +2474,7 @@ async function seed() {
       provinceId,
       vehiclesByKey
     );
-    riderEmployees.push({ id: employee.id });
+    riderEmployees.push({ id: employee.id, seed: riderSeed });
   }
 
   for (const managerSeed of SEEDED_MANAGERS) {
@@ -2335,7 +2483,7 @@ async function seed() {
       provinceId,
       vehiclesByKey
     );
-    managerEmployees.push({ id: employee.id });
+    managerEmployees.push({ id: employee.id, seed: managerSeed });
   }
 
   for (const cashierSeed of SEEDED_CASHIERS) {
@@ -2344,7 +2492,7 @@ async function seed() {
       provinceId,
       vehiclesByKey
     );
-    cashierEmployees.push({ id: employee.id });
+    cashierEmployees.push({ id: employee.id, seed: cashierSeed });
   }
 
   // ─────────────────────────────────────────
@@ -2459,6 +2607,16 @@ async function seed() {
       },
     });
   }
+
+  console.log("🪪 Seeding employee government numbers and document metadata...");
+  await seedEmployeeDocumentBaseline({
+    actorUserId: adminUser.id,
+    seededEmployees: [
+      ...riderEmployees,
+      ...managerEmployees,
+      ...cashierEmployees,
+    ],
+  });
 
   console.log("🗓️ Seeding workforce payroll policy, salary, deductions, and schedules...");
   await seedWorkforcePayrollAndScheduleBaseline({
