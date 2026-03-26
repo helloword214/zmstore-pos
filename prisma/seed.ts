@@ -8,8 +8,22 @@ import {
   UserRole,
   UserAuthState,
   ManagerKind,
+  PayrollFrequency,
+  SickLeavePayTreatment,
+  WorkerScheduleRole,
+  WorkerScheduleTemplateDayOfWeek,
 } from "@prisma/client";
 import { generateSKU } from "~/utils/skuHelpers";
+import {
+  upsertCompanyPayrollPolicy,
+  upsertEmployeePayProfile,
+  upsertEmployeeStatutoryDeductionProfile,
+} from "~/services/worker-payroll-policy.server";
+import {
+  assignWorkerScheduleTemplateToWorkers,
+  upsertWorkerScheduleTemplate,
+} from "~/services/worker-schedule-template.server";
+import { generateWorkerSchedulesFromTemplateAssignments } from "~/services/worker-schedule-publication.server";
 import * as bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
@@ -1464,6 +1478,224 @@ function requireValue<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
+function toDateOnly(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function startOfCurrentMonth(reference: Date) {
+  return new Date(reference.getFullYear(), reference.getMonth(), 1);
+}
+
+function addDays(reference: Date, days: number) {
+  const next = new Date(reference);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfNextWeek(reference: Date) {
+  const base = toDateOnly(reference);
+  const day = base.getDay();
+  const daysUntilMonday = ((8 - day) % 7) || 7;
+  return addDays(base, daysUntilMonday);
+}
+
+function buildTemplateDays(args: {
+  dayOfWeeks: WorkerScheduleTemplateDayOfWeek[];
+  startMinute: number;
+  endMinute: number;
+  note: string;
+}) {
+  return args.dayOfWeeks.map((dayOfWeek) => ({
+    dayOfWeek,
+    startMinute: args.startMinute,
+    endMinute: args.endMinute,
+    note: args.note,
+  }));
+}
+
+async function seedWorkforcePayrollAndScheduleBaseline(args: {
+  actorUserId: number;
+  branchId: number;
+  riderWorkerIds: number[];
+  managerWorkerIds: number[];
+  cashierWorkerIds: number[];
+}) {
+  const now = new Date();
+  const policyEffectiveFrom = startOfCurrentMonth(now);
+  const scheduleRangeStart = startOfNextWeek(now);
+  const scheduleRangeEnd = addDays(scheduleRangeStart, 13);
+
+  await upsertCompanyPayrollPolicy(
+    {
+      effectiveFrom: policyEffectiveFrom,
+      payFrequency: PayrollFrequency.SEMI_MONTHLY,
+      customCutoffNote: "Default seed policy: 1st-15th and 16th-end of month.",
+      restDayWorkedPremiumPercent: 30,
+      regularHolidayWorkedPremiumPercent: 100,
+      specialHolidayWorkedPremiumPercent: 30,
+      sickLeavePayTreatment: SickLeavePayTreatment.PAID,
+      attendanceIncentiveEnabled: true,
+      attendanceIncentiveAmount: 300,
+      attendanceIncentiveRequireNoLate: true,
+      attendanceIncentiveRequireNoAbsent: true,
+      attendanceIncentiveRequireNoSuspension: true,
+      sssDeductionEnabled: true,
+      philhealthDeductionEnabled: true,
+      pagIbigDeductionEnabled: true,
+      allowManagerOverride: true,
+      actorUserId: args.actorUserId,
+    },
+    db,
+  );
+
+  const workforceGroups = [
+    {
+      workerIds: args.riderWorkerIds,
+      dailyRate: 620,
+      sssAmount: 320,
+      philhealthAmount: 150,
+      pagIbigAmount: 100,
+      note: "Seed baseline for active rider payroll and deductions.",
+    },
+    {
+      workerIds: args.managerWorkerIds,
+      dailyRate: 980,
+      sssAmount: 430,
+      philhealthAmount: 210,
+      pagIbigAmount: 100,
+      note: "Seed baseline for store manager payroll and deductions.",
+    },
+    {
+      workerIds: args.cashierWorkerIds,
+      dailyRate: 580,
+      sssAmount: 290,
+      philhealthAmount: 140,
+      pagIbigAmount: 100,
+      note: "Seed baseline for cashier payroll and deductions.",
+    },
+  ];
+
+  for (const group of workforceGroups) {
+    for (const workerId of group.workerIds) {
+      await upsertEmployeePayProfile(
+        {
+          employeeId: workerId,
+          dailyRate: group.dailyRate,
+          effectiveFrom: policyEffectiveFrom,
+          note: group.note,
+          actorUserId: args.actorUserId,
+        },
+        db,
+      );
+
+      await upsertEmployeeStatutoryDeductionProfile(
+        {
+          employeeId: workerId,
+          sssAmount: group.sssAmount,
+          philhealthAmount: group.philhealthAmount,
+          pagIbigAmount: group.pagIbigAmount,
+          effectiveFrom: policyEffectiveFrom,
+          note: group.note,
+          actorUserId: args.actorUserId,
+        },
+        db,
+      );
+    }
+  }
+
+  const templateSpecs = [
+    {
+      templateName: "Seed Rider Delivery Week",
+      role: WorkerScheduleRole.EMPLOYEE,
+      workerIds: args.riderWorkerIds,
+      days: buildTemplateDays({
+        dayOfWeeks: [
+          WorkerScheduleTemplateDayOfWeek.MONDAY,
+          WorkerScheduleTemplateDayOfWeek.TUESDAY,
+          WorkerScheduleTemplateDayOfWeek.WEDNESDAY,
+          WorkerScheduleTemplateDayOfWeek.THURSDAY,
+          WorkerScheduleTemplateDayOfWeek.FRIDAY,
+          WorkerScheduleTemplateDayOfWeek.SATURDAY,
+        ],
+        startMinute: 8 * 60,
+        endMinute: 17 * 60,
+        note: "Delivery and field coverage baseline shift.",
+      }),
+    },
+    {
+      templateName: "Seed Cashier Counter Week",
+      role: WorkerScheduleRole.CASHIER,
+      workerIds: args.cashierWorkerIds,
+      days: buildTemplateDays({
+        dayOfWeeks: [
+          WorkerScheduleTemplateDayOfWeek.MONDAY,
+          WorkerScheduleTemplateDayOfWeek.TUESDAY,
+          WorkerScheduleTemplateDayOfWeek.WEDNESDAY,
+          WorkerScheduleTemplateDayOfWeek.THURSDAY,
+          WorkerScheduleTemplateDayOfWeek.FRIDAY,
+          WorkerScheduleTemplateDayOfWeek.SATURDAY,
+        ],
+        startMinute: 7 * 60 + 30,
+        endMinute: 16 * 60 + 30,
+        note: "Counter opening and cashier handoff baseline shift.",
+      }),
+    },
+    {
+      templateName: "Seed Manager Store Week",
+      role: WorkerScheduleRole.STORE_MANAGER,
+      workerIds: args.managerWorkerIds,
+      days: buildTemplateDays({
+        dayOfWeeks: [
+          WorkerScheduleTemplateDayOfWeek.MONDAY,
+          WorkerScheduleTemplateDayOfWeek.TUESDAY,
+          WorkerScheduleTemplateDayOfWeek.WEDNESDAY,
+          WorkerScheduleTemplateDayOfWeek.THURSDAY,
+          WorkerScheduleTemplateDayOfWeek.FRIDAY,
+        ],
+        startMinute: 8 * 60,
+        endMinute: 17 * 60,
+        note: "Manager supervision and approval baseline shift.",
+      }),
+    },
+  ];
+
+  for (const spec of templateSpecs) {
+    if (spec.workerIds.length === 0) continue;
+
+    const template = await upsertWorkerScheduleTemplate(
+      {
+        templateName: spec.templateName,
+        branchId: args.branchId,
+        role: spec.role,
+        effectiveFrom: policyEffectiveFrom,
+        days: spec.days,
+        actorUserId: args.actorUserId,
+      },
+      db,
+    );
+
+    await assignWorkerScheduleTemplateToWorkers(
+      {
+        templateId: template.id,
+        workerIds: spec.workerIds,
+        effectiveFrom: policyEffectiveFrom,
+        actorUserId: args.actorUserId,
+      },
+      db,
+    );
+  }
+
+  await generateWorkerSchedulesFromTemplateAssignments(
+    {
+      rangeStart: scheduleRangeStart,
+      rangeEnd: scheduleRangeEnd,
+      branchId: args.branchId,
+      actorUserId: args.actorUserId,
+    },
+    db,
+  );
+}
+
 async function getOrCreateMap<T extends string>(
   table: "unit" | "location" | "packingUnit",
   names: T[]
@@ -2125,7 +2357,7 @@ async function seed() {
   if (!mainBranchId) throw new Error("No Branch found. Seed branches first.");
 
   // ADMIN (walang Employee; system-level)
-  await db.user.upsert({
+  const adminUser = await db.user.upsert({
     where: { email: "admin@local" },
     update: {
       role: UserRole.ADMIN,
@@ -2227,6 +2459,15 @@ async function seed() {
       },
     });
   }
+
+  console.log("🗓️ Seeding workforce payroll policy, salary, deductions, and schedules...");
+  await seedWorkforcePayrollAndScheduleBaseline({
+    actorUserId: adminUser.id,
+    branchId: mainBranchId,
+    riderWorkerIds: riderEmployees.map((employee) => employee.id),
+    managerWorkerIds: managerEmployees.map((employee) => employee.id),
+    cashierWorkerIds: cashierEmployees.map((employee) => employee.id),
+  });
 
   console.log("🎯 Creating targets...");
   const targetLookupByCategory: Record<string, Record<string, { id: number }>> =
