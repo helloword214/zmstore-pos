@@ -18,6 +18,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import { loadActiveDeliveryRunLinksByOrderIds } from "~/services/delivery-run-assignment.server";
 
 // Simple built-in fallback capacities (kg) if DB profiles missing
 const VEHICLE_CAPACITY_KG: Record<string, number> = {
@@ -857,6 +858,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const orders = links
         .map((l) => l.order)
         .filter((o): o is NonNullable<(typeof links)[number]["order"]> => !!o);
+      const orderIds = orders.map((order) => order.id);
+
+      const conflictingActiveRunLinks = await loadActiveDeliveryRunLinksByOrderIds(
+        db,
+        orderIds,
+        { excludeRunId: id },
+      );
+      if (conflictingActiveRunLinks.size > 0) {
+        return json<ActionData>(
+          {
+            ok: false,
+            error:
+              "Cannot dispatch because some linked orders are already assigned to another active run.",
+          },
+          { status: 409 }
+        );
+      }
 
       // Dispatch rule:
       // - If there are PAD items, dispatch allowed even with zero EXTRA loadout.

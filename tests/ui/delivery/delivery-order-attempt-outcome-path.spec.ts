@@ -13,6 +13,7 @@ import {
   openDeliveryOrderAttemptOutcomePathCashierRunRemitPage,
   openDeliveryOrderAttemptOutcomePathDispatchPage,
   openDeliveryOrderAttemptOutcomePathManagerRemitPage,
+  openDeliveryOrderAttemptOutcomePathOrderDispatchBridgePage,
   openDeliveryOrderAttemptOutcomePathRiderCheckinPage,
   resetDeliveryOrderAttemptOutcomePathQaState,
   resolveDeliveryOrderAttemptOutcomeOnDispatch,
@@ -33,6 +34,36 @@ test.describe("delivery order attempt outcome path", () => {
 
   test.afterEach(async () => {
     await cleanupDeliveryOrderAttemptOutcomePathQaState();
+  });
+
+  test("active delivery order stays bound to its current active run", async ({
+    browser,
+  }) => {
+    const scenario = await resolveDeliveryOrderAttemptOutcomePathScenario();
+    const initialState = await resolveDeliveryOrderAttemptOutcomePathDbState();
+
+    expectDeliveryOrderAttemptOutcomePathInitialDbState(initialState, scenario);
+
+    const managerContext =
+      await createDeliveryOrderAttemptOutcomePathRoleContext(browser, "manager");
+
+    try {
+      const managerPage = await managerContext.newPage();
+      await openDeliveryOrderAttemptOutcomePathDispatchPage(managerPage);
+      await expect(
+        managerPage.getByText(scenario.activeOrder.orderCode, { exact: false }),
+      ).toHaveCount(0);
+
+      await openDeliveryOrderAttemptOutcomePathOrderDispatchBridgePage({
+        page: managerPage,
+        expectedPathname: `/runs/${scenario.activeRun.id}/dispatch`,
+      });
+      await expect(
+        managerPage.getByText(scenario.activeRun.runCode, { exact: false }),
+      ).toBeVisible();
+    } finally {
+      await managerContext.close();
+    }
   });
 
   test("rider reports failed delivery and dispatch manager can return the order to dispatch", async ({

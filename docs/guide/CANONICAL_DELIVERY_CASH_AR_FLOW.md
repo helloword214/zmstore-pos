@@ -199,6 +199,9 @@ This retirement does not change AR authority: `customerAr` remains decision-back
 - Physical run load is the sum of:
   - linked parent-order quantities
   - extra run load captured in `deliveryRun.loadoutSnapshot`
+- A delivery parent order may accumulate many historical run attempts over time, but only one active run assignment is valid at once.
+- Active run assignment means the order is linked to exactly one run in `PLANNED`, `DISPATCHED`, or `CHECKED_IN`.
+- Reassignment must first release the order from its current active run; closed historical run links remain audit-only.
 - `deliveryRun.loadoutSnapshot` stores extra-only load; parent-order reserved quantity is inferred from the linked delivery orders.
 - Prepare run-linked receipt structures for PARENT orders.
 - No AR creation here.
