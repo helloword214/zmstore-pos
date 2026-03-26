@@ -14,18 +14,24 @@ export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_TEMPLATE
   "QA Workforce Template Create Edit Initial";
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_TEMPLATE_NAME =
   "QA Workforce Template Create Edit Edited";
+export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_TEMPLATE_NAME =
+  "QA Workforce Template Create Edit Existing";
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_EFFECTIVE_FROM_OFFSET_DAYS =
   1;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_ROLE =
   WorkerScheduleRole.CASHIER;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_ROLE =
   WorkerScheduleRole.EMPLOYEE;
+const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_ROLE =
+  WorkerScheduleRole.STORE_MANAGER;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_DAY =
   WorkerScheduleTemplateDayOfWeek.MONDAY;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_DAYS = [
   WorkerScheduleTemplateDayOfWeek.TUESDAY,
   WorkerScheduleTemplateDayOfWeek.THURSDAY,
 ] as const;
+const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_DAY =
+  WorkerScheduleTemplateDayOfWeek.WEDNESDAY;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_START_MINUTE =
   8 * 60;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_END_MINUTE =
@@ -34,10 +40,16 @@ export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_START_MIN
   9 * 60 + 30;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_END_MINUTE =
   18 * 60 + 30;
+const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_START_MINUTE =
+  7 * 60;
+const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_END_MINUTE =
+  16 * 60;
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_INITIAL_DAY_NOTE =
   "QA schedule template create/edit initial note";
 export const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EDITED_DAY_NOTE =
   "QA schedule template create/edit edited note";
+const WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_DAY_NOTE =
+  "QA schedule template create/edit existing note";
 
 type ManagerUser = {
   id: number;
@@ -56,6 +68,7 @@ export type WorkforceScheduleTemplateCreateEditHappyPathScenarioContext = {
   editedTemplateName: string;
   editedTimeWindowLabel: string;
   effectiveFromInput: string;
+  existingTemplateName: string;
   initialTemplateName: string;
   initialTimeWindowLabel: string;
   manager: ManagerUser;
@@ -126,6 +139,13 @@ export function resolveWorkforceScheduleTemplateCreateEditHappyPathEditedTemplat
   ).trim();
 }
 
+export function resolveWorkforceScheduleTemplateCreateEditHappyPathExistingTemplateName() {
+  return (
+    process.env.QA_WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_TEMPLATE_NAME ??
+    WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_TEMPLATE_NAME
+  ).trim();
+}
+
 export function resolveWorkforceScheduleTemplateCreateEditHappyPathEffectiveFrom() {
   return addDays(
     toDateOnly(new Date()),
@@ -157,6 +177,7 @@ export async function deleteWorkforceScheduleTemplateCreateEditHappyPathArtifact
   DeleteSummary
 > {
   const templateNames = [
+    resolveWorkforceScheduleTemplateCreateEditHappyPathExistingTemplateName(),
     resolveWorkforceScheduleTemplateCreateEditHappyPathInitialTemplateName(),
     resolveWorkforceScheduleTemplateCreateEditHappyPathEditedTemplateName(),
   ];
@@ -221,6 +242,30 @@ export async function resetWorkforceScheduleTemplateCreateEditHappyPathState() {
     resolveWorkforceScheduleTemplateCreateEditHappyPathManagerEmail(),
   );
 
+  await db.scheduleTemplate.create({
+    data: {
+      templateName:
+        resolveWorkforceScheduleTemplateCreateEditHappyPathExistingTemplateName(),
+      role: WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_ROLE,
+      effectiveFrom: resolveWorkforceScheduleTemplateCreateEditHappyPathEffectiveFrom(),
+      createdById: manager.id,
+      updatedById: manager.id,
+      days: {
+        create: [
+          {
+            dayOfWeek:
+              WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_DAY,
+            startMinute:
+              WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_START_MINUTE,
+            endMinute:
+              WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_END_MINUTE,
+            note: WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_EXISTING_DAY_NOTE,
+          },
+        ],
+      },
+    },
+  });
+
   return {
     deleted,
     manager,
@@ -244,6 +289,8 @@ export async function resolveWorkforceScheduleTemplateCreateEditHappyPathScenari
     effectiveFromInput: formatDateInput(
       resolveWorkforceScheduleTemplateCreateEditHappyPathEffectiveFrom(),
     ),
+    existingTemplateName:
+      resolveWorkforceScheduleTemplateCreateEditHappyPathExistingTemplateName(),
     initialTemplateName:
       resolveWorkforceScheduleTemplateCreateEditHappyPathInitialTemplateName(),
     initialTimeWindowLabel: formatTimeWindowLabel(
@@ -266,6 +313,7 @@ async function main() {
       "Workforce schedule template create/edit happy path setup is ready.",
       `Manager: ${manager.email ?? `user#${manager.id}`} [userId=${manager.id}]`,
       `Route: ${scenario.route}`,
+      `Pre-existing template name: ${scenario.existingTemplateName}`,
       `Initial template name: ${scenario.initialTemplateName}`,
       `Edited template name: ${scenario.editedTemplateName}`,
       `Effective from: ${scenario.effectiveFromInput}`,
@@ -276,8 +324,9 @@ async function main() {
       `Deleted previous tagged schedules: ${deleted.deletedSchedules}`,
       "Next manual QA steps:",
       "1. Open /store/workforce/schedule-templates as STORE_MANAGER.",
-      "2. Create the printed initial template with one Monday cashier day.",
-      "3. Edit the same template into the printed employee-scoped Tuesday and Thursday pattern.",
+      "2. Confirm the pre-existing template row is already in the library while the main form stays in Create Template mode.",
+      "3. Create the printed initial template with one Monday cashier day.",
+      "4. Edit the same template into the printed employee-scoped Tuesday and Thursday pattern.",
     ].join("\n"),
   );
 }

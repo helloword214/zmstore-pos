@@ -226,9 +226,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
 
   const selectedTemplate =
-    templates.find((template) => template.id === selectedTemplateId) ??
-    templates[0] ??
-    null;
+    selectedTemplateId == null
+      ? null
+      : templates.find((template) => template.id === selectedTemplateId) ?? null;
 
   const workerOptions: WorkerOption[] = workers.map((worker) => ({
     id: worker.id,
@@ -406,7 +406,9 @@ export default function WorkforceScheduleTemplatesRoute() {
                     {selectedTemplate ? "Edit Template" : "Create Template"}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Weekly-only patterns. Generated rows stay separate and auditable.
+                    {selectedTemplate
+                      ? "Weekly-only patterns. Generated rows stay separate and auditable."
+                      : "Start from a blank weekly pattern here. Open a library row only when you want to edit that specific template."}
                   </p>
                 </div>
                 {selectedTemplate ? (
@@ -416,7 +418,11 @@ export default function WorkforceScheduleTemplatesRoute() {
                 ) : null}
               </div>
 
-              <Form method="post" className="space-y-4">
+              <Form
+                key={selectedTemplate?.id ?? "new"}
+                method="post"
+                className="space-y-4"
+              >
                 <input type="hidden" name="_intent" value="save-template" />
                 <input
                   type="hidden"

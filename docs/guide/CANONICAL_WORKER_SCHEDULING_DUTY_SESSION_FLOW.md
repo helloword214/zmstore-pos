@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-14
+Last Reviewed: 2026-03-26
 
 ## Purpose
 
@@ -298,6 +298,7 @@ Recurring template rules:
 5. template edits affect future generation only
 6. existing generated schedules must remain unchanged unless a manager edits those schedule rows directly
 7. generated schedule rows remain the per-date source of truth for attendance, payroll input, and audit history
+8. template creation must start from a blank create lane; editing an existing template requires explicit manager selection and must not silently auto-open another template
 
 ## Attendance / Duty Result Canonical Model
 

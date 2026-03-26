@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   WORKFORCE_SCHEDULE_TEMPLATE_CREATE_EDIT_HAPPY_PATH_ENABLE_ENV,
   bootstrapWorkforceScheduleTemplateCreateEditHappyPathSession,
@@ -18,6 +18,22 @@ import {
   resolveWorkforceScheduleTemplateCreateEditHappyPathInitialTimeInput,
   resolveWorkforceScheduleTemplateCreateEditHappyPathScenario,
 } from "./workforce-schedule-template-create-edit-happy-path-fixture";
+
+async function selectScheduleTemplateRoleScope(args: {
+  page: Page;
+  optionLabel: "Cashier" | "Employee";
+}) {
+  const trigger = args.page.locator("button#role");
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(
+    args.page.getByRole("option", { name: args.optionLabel, exact: true }),
+  ).toBeVisible();
+  await args.page
+    .getByRole("option", { name: args.optionLabel, exact: true })
+    .click();
+  await expect(trigger).toContainText(args.optionLabel);
+}
 
 test.describe("workforce schedule template create/edit happy path", () => {
   test.skip(
@@ -50,10 +66,41 @@ test.describe("workforce schedule template create/edit happy path", () => {
       await resolveWorkforceScheduleTemplateCreateEditHappyPathDbState();
     expectWorkforceScheduleTemplateCreateEditHappyPathInitialDbState(
       initialState,
+      scenario,
     );
 
+    const originalExistingTemplateId = initialState.existingTemplate?.id;
+    if (!originalExistingTemplateId) {
+      throw new Error("Expected the pre-existing template id to exist.");
+    }
+
+    await expect(
+      page.getByRole("heading", { name: /create template/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Create template$/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Save template$/i }),
+    ).toHaveCount(0);
+    await expect(
+      findWorkforceScheduleTemplateCreateEditHappyPathSelectedDaysPanel(page),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Create or select a template first before assigning workers."),
+    ).toBeVisible();
+    await expect(
+      findWorkforceScheduleTemplateCreateEditHappyPathLibraryRow(
+        page,
+        scenario.existingTemplateName,
+      ),
+    ).toBeVisible();
+
     await page.getByLabel(/^Template name$/i).fill(scenario.initialTemplateName);
-    await page.getByLabel(/^Role scope$/i).selectOption("CASHIER");
+    await selectScheduleTemplateRoleScope({
+      page,
+      optionLabel: "Cashier",
+    });
     await page.getByLabel(/^Effective from$/i).fill(scenario.effectiveFromInput);
     await page.locator('input[name="day_MONDAY_enabled"]').check();
     await page
@@ -102,6 +149,7 @@ test.describe("workforce schedule template create/edit happy path", () => {
     expectWorkforceScheduleTemplateCreateEditHappyPathCreatedDbState(
       createdState,
       scenario,
+      originalExistingTemplateId,
     );
 
     const originalTemplateId = createdState.template?.id;
@@ -109,8 +157,18 @@ test.describe("workforce schedule template create/edit happy path", () => {
       throw new Error("Expected the created template id to exist.");
     }
 
+    await expect(
+      findWorkforceScheduleTemplateCreateEditHappyPathLibraryRow(
+        page,
+        scenario.existingTemplateName,
+      ),
+    ).toBeVisible();
+
     await page.getByLabel(/^Template name$/i).fill(scenario.editedTemplateName);
-    await page.getByLabel(/^Role scope$/i).selectOption("EMPLOYEE");
+    await selectScheduleTemplateRoleScope({
+      page,
+      optionLabel: "Employee",
+    });
     await page.locator('input[name="day_MONDAY_enabled"]').uncheck();
     await page.locator('input[name="day_TUESDAY_enabled"]').check();
     await page.locator('input[name="day_TUESDAY_start"]').fill(editedTimeInput.start);
@@ -170,6 +228,23 @@ test.describe("workforce schedule template create/edit happy path", () => {
       editedState,
       scenario,
       originalTemplateId,
+      originalExistingTemplateId,
     );
+
+    await expect(
+      findWorkforceScheduleTemplateCreateEditHappyPathLibraryRow(
+        page,
+        scenario.existingTemplateName,
+      ),
+    ).toBeVisible();
+
+    await page.getByRole("link", { name: /^New template$/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /create template/i }),
+    ).toBeVisible();
+    await expect(page.getByLabel(/^Template name$/i)).toHaveValue("");
+    await expect(
+      findWorkforceScheduleTemplateCreateEditHappyPathSelectedDaysPanel(page),
+    ).toHaveCount(0);
   });
 });
