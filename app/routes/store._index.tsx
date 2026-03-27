@@ -2,7 +2,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
-import { ClearanceCaseStatus } from "@prisma/client";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -14,6 +13,12 @@ import { SoTDataRow } from "~/components/ui/SoTDataRow";
 import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 
 const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
+const CLEARANCE_CASE_STATUS = {
+  NEEDS_CLEARANCE: "NEEDS_CLEARANCE",
+} as const;
+const WORKER_SCHEDULE_ENTRY_TYPE = {
+  WORK: "WORK",
+} as const;
 
 type LoaderData = {
   me: {
@@ -197,6 +202,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     db.workerSchedule.count({
       where: {
+        entryType: WORKER_SCHEDULE_ENTRY_TYPE.WORK,
         scheduleDate: todayStart,
         status: { not: "CANCELLED" },
       },
@@ -208,6 +214,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     db.workerSchedule.count({
       where: {
+        entryType: WORKER_SCHEDULE_ENTRY_TYPE.WORK,
         scheduleDate: {
           gte: todayStart,
           lte: planningWindowEnd,
@@ -246,7 +253,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Excludes opening-balance rows (those are shown in opening-batches lane).
     db.clearanceCase.count({
       where: {
-        status: ClearanceCaseStatus.NEEDS_CLEARANCE,
+        status: CLEARANCE_CASE_STATUS.NEEDS_CLEARANCE,
         OR: [
           { orderId: { not: null } },
           { runReceiptId: { not: null } },
@@ -683,7 +690,7 @@ export default function StoreManagerDashboard() {
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                            Today's lane
+                            Today&apos;s lane
                           </div>
                           <div className="mt-1 text-base font-semibold text-slate-900">
                             Attendance review

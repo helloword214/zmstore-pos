@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-03-21
+Last Reviewed: 2026-03-27
 
 This checklist is a secondary QA artifact.
 It does not own worker scheduling behavior.
@@ -14,18 +14,19 @@ It does not own worker scheduling behavior.
 
 ## Purpose
 
-Verify that a store manager can open one tagged `DRAFT` planner row in `/store/workforce/schedule-planner`, save a one-off time or note edit on that same row, then cancel it without creating a duplicate schedule row.
+Verify that a store manager can select one tagged `DRAFT` planner cell in `/store/workforce/schedule-planner`, save a custom time or note edit on that same cell, then return it to planner `BLANK` without creating a duplicate schedule row.
 
 ## Setup
 
 1. Run `npm run qa:workforce:schedule-row-update-or-cancel-path:setup`.
-2. Copy the printed worker label, range, initial window, edited window, edit note, and cancellation note from the console output.
-3. Keep this scenario limited to one selected row only. Do not publish schedules in this slice.
+2. Copy the printed worker label, range, initial window, edited window, and edit note from the console output.
+3. Ignore any printed cancellation note from older setup output; the current board uses `Clear to blank` without a note field.
+4. Keep this scenario limited to one selected row only. Do not publish schedules in this slice.
 
 ## Browser QA Steps
 
 1. Run `npm run ui:test:workforce:schedule-row-update-or-cancel-path`.
-2. The browser scenario stops after the same tagged row reaches `CANCELLED`.
+2. The browser scenario stops after the same tagged cell returns to `BLANK`.
 
 ## Expected Scenario Shape
 
@@ -40,31 +41,31 @@ The browser flow should:
 
 1. open the printed `/store/workforce/schedule-planner` route as `STORE_MANAGER`
 2. load the printed seeded range
-3. open the tagged row through the real row-level `Open` action
-4. save a one-off edit through `Save one-off edit`
-5. confirm `One-off schedule row updated.`
-6. verify the same row still shows `DRAFT` with the edited window
-7. cancel the same row through `Cancel schedule row`
-8. confirm `Schedule row cancelled with event history preserved.`
-9. verify the same row now shows `CANCELLED`
+3. select the tagged worker-date cell from the board
+4. save a custom edit through `Save custom cell`
+5. confirm `Custom schedule row saved for the selected cell.`
+6. verify the same cell still shows `DRAFT` with the edited window
+7. clear the same cell through `Clear to blank`
+8. confirm `Selected cell returned to blank.`
+9. verify the same target cell now shows `BLANK`
 
 ## Manual QA Steps
 
 1. Log in as the printed manager.
 2. Open the printed planner route.
-3. Enter the printed `Range start` and `Range end`, then click `Load range`.
+3. Enter the printed `Start` and `End` values, then click `Load`.
 4. Find the printed tagged worker row and confirm it starts with:
    - the printed initial time window
    - status `DRAFT`
-5. Click the row-level `Open` link.
-6. In `Selected schedule`, change the start time, end time, and manager note to the printed edit values.
-7. Click `Save one-off edit`.
-8. Confirm the success alert `One-off schedule row updated.` appears.
-9. Confirm the same row still shows `DRAFT` and now uses the printed edited time window.
-10. Enter the printed cancellation note in `Cancellation note`.
-11. Click `Cancel schedule row`.
-12. Confirm the success alert `Schedule row cancelled with event history preserved.` appears.
-13. Confirm the same row now shows `CANCELLED`.
+5. Click the printed worker target cell.
+6. In `Cell editor`, choose the printed start time and end time from the dropdowns, then enter the manager note.
+7. Click `Save custom cell`.
+8. Confirm the success alert `Custom schedule row saved for the selected cell.` appears.
+9. Confirm the same cell still shows `DRAFT` and now uses the printed edited time window.
+10. Click `Clear to blank`.
+11. Confirm the success alert `Selected cell returned to blank.` appears.
+12. Confirm the same target cell now shows `BLANK`.
+13. Note the current planner UI no longer keeps cancelled-row history visible once the cell becomes `BLANK`.
 
 ## Expected Outcomes
 
@@ -72,9 +73,10 @@ The browser flow should:
 2. `startAt`, `endAt`, and `note` change on one-off edit
 3. `status` stays `DRAFT` after the edit
 4. one `MANAGER_NOTE_ADDED` event is appended for the edit
-5. the same row then changes to `CANCELLED`
-6. one `SCHEDULE_CANCELLED` event is appended for the cancel action
+5. clearing the cell changes the underlying row to `CANCELLED` and returns the board cell to `BLANK`
+6. one `SCHEDULE_CANCELLED` event is appended for the clear action
 7. `templateAssignmentId` and worker linkage remain intact throughout
+8. current planner UI does not keep cleared-row history visible once the cell is `BLANK`
 
 ## Cleanup
 

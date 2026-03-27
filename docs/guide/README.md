@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-14
+Last Reviewed: 2026-03-26
 
 This file is a router for `docs/guide`.
 It points readers to owner documents and must not become a secondary specification.
@@ -42,7 +42,7 @@ Use this map to route by concern.
 | Concern | Owner document | Notes |
 | --- | --- | --- |
 | Role boundaries, route access, identity model | `CANONICAL_IDENTITY_ACCESS_FLOW.md` | Owner for role authority and access boundaries |
-| Worker schedule planning, staffing exceptions, rider duty gating | `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` | Owner for schedule/event-log/duty-session separation and cashier schedule boundary |
+| Worker schedule planning, staffing exceptions, rider duty gating | `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md` | Owner for planner-first scheduling, explicit `BLANK / OFF / WORK` planner-cell meaning, manager-editable work preset rules with fixed `OFF`, compact board-cell editing rules, template-optional helper rules, schedule/event-log separation, and cashier schedule boundary |
 | Worker pay profile, payroll defaults, payroll run, payroll deductions | `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` | Owner for payroll policy, hybrid freeze, gross/net pay, and charge deduction handling |
 | Upload/storage contract | `CANONICAL_UPLOAD_STORAGE_SOT.md` | Owner for file storage, keying, validation, lifecycle |
 | Order pricing freeze and creator audit anchors | `CANONICAL_ORDER_PRICING_SOT.md` | Owner for pricing freeze authority |
@@ -58,7 +58,7 @@ Use this map to route by concern.
 Quick lookup reminders:
 
 1. security access targets and retired legacy order settlement routes -> `CANONICAL_IDENTITY_ACCESS_FLOW.md`
-2. worker schedule planning, staffing event history, and rider duty gating -> `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`
+2. worker schedule planning, planner-board direction, `BLANK / OFF / WORK` cell meaning, editable work presets with fixed `OFF`, staffing event history, and rider duty gating -> `CANONICAL_WORKER_SCHEDULING_DUTY_SESSION_FLOW.md`
 3. worker pay profile, payroll defaults, gross/net pay, and payroll deductions -> `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 4. clearance pending counter, legacy receipt-route retirement, and print artifact boundaries -> `CANONICAL_DELIVERY_CASH_AR_FLOW.md`
 5. cashier recount + paper reference + signed paper audit artifact -> `CANONICAL_CASHIER_SHIFT_VARIANCE_FLOW.md`

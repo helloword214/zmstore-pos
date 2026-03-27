@@ -7,6 +7,7 @@ import {
   UserAuthState,
   UserRole,
   WorkerScheduleAssignmentStatus,
+  WorkerScheduleEntryType,
   WorkerScheduleRole,
   WorkerScheduleStatus,
   WorkerScheduleTemplateDayOfWeek,
@@ -139,9 +140,11 @@ function formatDateInput(value: Date | string) {
 }
 
 function minuteToTimeLabel(value: number) {
-  const hour = String(Math.floor(value / 60)).padStart(2, "0");
-  const minute = String(value % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
 function combineDateAndMinute(date: Date, minute: number) {
@@ -535,6 +538,7 @@ async function seedWorkforceScheduleAppendEventHistoryPathState(
         role: WorkerScheduleRole.CASHIER,
         branchId: defaultBranch.id,
         scheduleDate: targetDate,
+        entryType: WorkerScheduleEntryType.WORK,
         startAt: combineDateAndMinute(
           targetDate,
           WORKFORCE_SCHEDULE_APPEND_EVENT_HISTORY_PATH_START_MINUTE,
@@ -617,8 +621,11 @@ export async function resolveWorkforceScheduleAppendEventHistoryPathScenarioCont
     ? await db.workerSchedule.findFirst({
         where: {
           workerId: subjectUser.employee.id,
+          entryType: WorkerScheduleEntryType.WORK,
           scheduleDate: targetDate,
+          status: WorkerScheduleStatus.DRAFT,
         },
+        orderBy: [{ id: "desc" }],
         select: { id: true },
       })
     : null;
@@ -679,8 +686,8 @@ async function main() {
       `Manager: ${manager.email ?? `user#${manager.id}`} [userId=${manager.id}]`,
       `Route: ${scenario.plannerRoute}`,
       `Default branch: ${scenario.defaultBranch.name} [id=${scenario.defaultBranch.id}]`,
-      `Range start: ${scenario.rangeStartInput}`,
-      `Range end: ${scenario.rangeEndInput}`,
+      `Start: ${scenario.rangeStartInput}`,
+      `End: ${scenario.rangeEndInput}`,
       `Target date: ${scenario.targetDateInput}`,
       `Template: ${scenario.templateName} [templateId=${seeded.templateId}]`,
       `Subject worker: ${scenario.subjectWorkerLabel} [employeeId=${seeded.subjectEmployeeId}]`,
@@ -702,9 +709,9 @@ async function main() {
       `Deleted previous tagged schedules: ${deleted.deletedSchedules}`,
       "Next manual QA steps:",
       "1. Open the printed planner route as STORE_MANAGER.",
-      "2. Load the printed range and open the tagged draft row.",
-      "3. Append a Replacement assigned event using the printed related worker and event note.",
-      "4. Confirm the new append-only entry appears in Event history.",
+      "2. Set the printed Start and End values, click Load, then select the tagged draft cell in the board.",
+      "3. In Staffing activity, append a Replacement assigned event using the printed related worker and event note.",
+      "4. Confirm the new append-only entry appears in Cell history.",
     ].join("\n"),
   );
 }

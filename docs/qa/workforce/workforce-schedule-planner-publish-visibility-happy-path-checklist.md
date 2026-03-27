@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-03-20
+Last Reviewed: 2026-03-27
 
 This checklist is a secondary QA artifact.
 It does not own scheduling behavior.
@@ -20,7 +20,7 @@ Verify one manager-owned schedule planner happy path using a repeatable local QA
 
 1. Run `npm run qa:workforce:schedule-planner-publish-visibility:happy-path:setup`.
 2. Copy the printed worker label, date range, target date, and expected time window from the console output.
-3. Keep this first scenario limited to generate and publish only.
+3. Keep this first scenario limited to `Generate` and publish only.
 
 ## Browser QA Steps
 
@@ -39,31 +39,42 @@ The setup creates:
 The browser flow should:
 
 1. load the seeded range in `/store/workforce/schedule-planner`
-2. generate one draft row for the tagged worker
-3. publish that draft row
-4. confirm the same worker is visible in `/store/workforce/attendance-review` for the target date
+2. confirm the tagged worker row already exists on the board and the target cell starts `BLANK`
+3. click `Generate`
+4. confirm `Draft rows generated from active template assignments.`
+5. verify the tagged worker target cell now shows `DRAFT` with the printed time window
+6. publish that draft row
+7. confirm the same worker is visible in `/store/workforce/attendance-review` for the target date
 
 ## Manual QA Steps
 
 1. Log in as `STORE_MANAGER`.
 2. Open `/store/workforce/schedule-planner`.
-3. Load the exact range printed by setup.
-4. Click `Generate Draft Rows`.
-5. Confirm the tagged worker appears with `DRAFT`.
-6. Click `Publish Draft Rows`.
-7. Confirm the tagged worker row changes to `PUBLISHED`.
-8. Open `/store/workforce/attendance-review` using the printed target date.
-9. Confirm the same worker appears in the attendance review list with the same time window.
+3. Enter the printed `Start` and `End` values, then click `Load`.
+4. Confirm the tagged worker row already appears on the board and the printed target cell starts `BLANK`.
+5. Click `Generate`.
+6. Confirm the success alert `Draft rows generated from active template assignments.` appears.
+7. Confirm the tagged worker target cell now shows:
+   - the printed time window
+   - status `DRAFT`
+8. Click `Publish`.
+9. Confirm the success alert `Draft rows in this window were published.` appears.
+10. Confirm the tagged worker target cell now shows `PUBLISHED`.
+11. Open `/store/workforce/attendance-review` using the printed target date.
+12. Confirm the same worker appears in the attendance review list with:
+   - `Scheduled`
+   - the same printed time window
 
 ## Expected Outcomes
 
 1. exactly one `WorkerSchedule` row is created for the tagged worker and target date
-2. the generated row starts as `DRAFT`
-3. publish sets the row to `PUBLISHED`
-4. `publishedById` and `publishedAt` are stamped on the schedule row
-5. `templateAssignmentId` remains linked to the seeded assignment
-6. worker role and branch linkage remain unchanged throughout
-7. this first schedule scenario proves manager-side downstream visibility, not employee self-view
+2. `entryType = WORK` on the generated row
+3. the generated row starts as `DRAFT`
+4. publish sets the row to `PUBLISHED`
+5. `publishedById` and `publishedAt` are stamped on the schedule row
+6. `templateAssignmentId` remains linked to the seeded assignment
+7. worker role and branch linkage remain unchanged throughout
+8. this first schedule scenario proves manager-side downstream visibility, not employee self-view
 
 ## Cleanup
 

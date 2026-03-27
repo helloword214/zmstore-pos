@@ -1,20 +1,69 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   WORKFORCE_SCHEDULE_PUBLISHED_ROW_MAINTENANCE_PATH_ENABLE_ENV,
   bootstrapWorkforceSchedulePublishedRowMaintenancePathSession,
   cleanupWorkforceSchedulePublishedRowMaintenancePathQaState,
-  expectWorkforceSchedulePublishedRowMaintenancePathCancelledDbState,
   expectWorkforceSchedulePublishedRowMaintenancePathEditedDbState,
   expectWorkforceSchedulePublishedRowMaintenancePathInitialDbState,
-  expectWorkforceSchedulePublishedRowMaintenancePathPlannerRowState,
-  findWorkforceSchedulePublishedRowMaintenancePathHistoryEntry,
   findWorkforceSchedulePublishedRowMaintenancePathPlannerRow,
   isWorkforceSchedulePublishedRowMaintenancePathEnabled,
-  openWorkforceSchedulePublishedRowMaintenancePath,
+  resolveWorkforceSchedulePublishedRowMaintenancePathBaseURL,
   resetWorkforceSchedulePublishedRowMaintenancePathQaState,
   resolveWorkforceSchedulePublishedRowMaintenancePathDbState,
   resolveWorkforceSchedulePublishedRowMaintenancePathScenario,
 } from "./workforce-schedule-published-row-maintenance-path-fixture";
+
+const CLEARED_WORK_ROW_NOTE = "Planner board cleared this worker from the duty date.";
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildTimeWindowPattern(value: string) {
+  const [start, end] = value.split("-").map((part) => part.trim());
+  if (!start || !end) {
+    return new RegExp(escapeRegExp(value), "i");
+  }
+  return new RegExp(`${escapeRegExp(start)}\\s*-\\s*${escapeRegExp(end)}`, "i");
+}
+
+function formatHalfHourOptionLabel(value: string) {
+  const [hourToken, minuteToken] = value.split(":");
+  const hour = Number(hourToken);
+  const minute = Number(minuteToken);
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
+}
+
+async function selectDropdownValue(page: Page, label: string, value: string) {
+  await page.getByLabel(new RegExp(`^${escapeRegExp(label)}$`, "i")).click();
+  await page.getByRole("option", { name: formatHalfHourOptionLabel(value) }).click();
+}
+
+async function openPlannerBoard(
+  page: Page,
+  route: string,
+  baseUrl: string,
+) {
+  const url = new URL(route, baseUrl).toString();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForURL(
+    (target) => target.pathname === "/store/workforce/schedule-planner",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(
+    page.getByRole("heading", { name: /workforce planner board/i }),
+  ).toBeVisible();
+}
+
+function findScheduledCellButton(row: Locator, timeWindowLabel: string) {
+  return row.locator("td button").filter({
+    hasText: buildTimeWindowPattern(timeWindowLabel),
+  }).first();
+}
 
 test.describe("workforce schedule published row maintenance path", () => {
   test.skip(
@@ -31,13 +80,17 @@ test.describe("workforce schedule published row maintenance path", () => {
     await cleanupWorkforceSchedulePublishedRowMaintenancePathQaState();
   });
 
-  test("manager can edit one published row in place and then cancel it with event history preserved", async ({
+  test("manager can edit one published cell in place and then clear it back to blank while preserving DB event history", async ({
     page,
   }) => {
     const scenario =
       await resolveWorkforceSchedulePublishedRowMaintenancePathScenario();
 
-    await openWorkforceSchedulePublishedRowMaintenancePath(page);
+    await openPlannerBoard(
+      page,
+      scenario.plannerRoute,
+      resolveWorkforceSchedulePublishedRowMaintenancePathBaseURL(),
+    );
 
     const initialState =
       await resolveWorkforceSchedulePublishedRowMaintenancePathDbState();
@@ -46,9 +99,9 @@ test.describe("workforce schedule published row maintenance path", () => {
       scenario,
     );
 
-    await page.getByLabel(/^Range start$/i).fill(scenario.rangeStartInput);
-    await page.getByLabel(/^Range end$/i).fill(scenario.rangeEndInput);
-    await page.getByRole("button", { name: /^Load range$/i }).click();
+    await page.getByLabel(/^Start$/i).fill(scenario.rangeStartInput);
+    await page.getByLabel(/^End$/i).fill(scenario.rangeEndInput);
+    await page.getByRole("button", { name: /^Load$/i }).click();
 
     await page.waitForURL(
       (target) =>
@@ -66,40 +119,30 @@ test.describe("workforce schedule published row maintenance path", () => {
         scenario.workerLabel,
       );
     await expect(plannerRow).toBeVisible();
-    await expectWorkforceSchedulePublishedRowMaintenancePathPlannerRowState(
-      plannerRow,
-      scenario,
-      {
-        status: "PUBLISHED",
-        timeWindowLabel: scenario.initialTimeWindowLabel,
-      },
+    await expect(plannerRow).toContainText(scenario.workerLabel);
+    await expect(plannerRow).toContainText(/\bPUBLISHED\b/);
+    await expect(plannerRow).toContainText(
+      buildTimeWindowPattern(scenario.initialTimeWindowLabel),
     );
 
-    await plannerRow.getByRole("link", { name: /^Open$/i }).click();
-    await page.waitForURL(
-      (target) =>
-        target.pathname === "/store/workforce/schedule-planner" &&
-        target.searchParams.get("scheduleId") === String(scenario.scheduleId),
-      {
-        timeout: 10_000,
-      },
-    );
-
+    await findScheduledCellButton(plannerRow, scenario.initialTimeWindowLabel).click();
     await expect(
-      page.getByText("No schedule events yet.", { exact: true }),
+      page.getByRole("heading", { name: /^Cell editor$/i }),
     ).toBeVisible();
 
-    await page.getByLabel(/^Start time$/i).fill(scenario.editStartTimeInput);
-    await page.getByLabel(/^End time$/i).fill(scenario.editEndTimeInput);
+    await selectDropdownValue(page, "Start time", scenario.editStartTimeInput);
+    await selectDropdownValue(page, "End time", scenario.editEndTimeInput);
     await page.getByLabel(/^Manager note$/i).fill(scenario.editNote);
-    await page.getByRole("button", { name: /^Save one-off edit$/i }).click();
+    await page.getByRole("button", { name: /^Save custom cell$/i }).click();
 
-    await expect(page.getByText("One-off schedule row updated.")).toBeVisible();
+    await expect(
+      page.getByText("Custom schedule row saved for the selected cell."),
+    ).toBeVisible();
     await page.waitForURL(
       (target) =>
         target.pathname === "/store/workforce/schedule-planner" &&
-        target.searchParams.get("scheduleId") === String(scenario.scheduleId) &&
-        target.searchParams.get("saved") === "schedule-updated",
+        target.searchParams.get("scheduleDate") === scenario.targetDateInput &&
+        target.searchParams.get("saved") === "custom-saved",
       {
         timeout: 10_000,
       },
@@ -109,22 +152,18 @@ test.describe("workforce schedule published row maintenance path", () => {
       page,
       scenario.workerLabel,
     );
-    await expectWorkforceSchedulePublishedRowMaintenancePathPlannerRowState(
-      plannerRow,
-      scenario,
-      {
-        status: "PUBLISHED",
-        timeWindowLabel: scenario.editedTimeWindowLabel,
-      },
+    await expect(plannerRow).toContainText(scenario.workerLabel);
+    await expect(plannerRow).toContainText(/\bPUBLISHED\b/);
+    await expect(plannerRow).toContainText(
+      buildTimeWindowPattern(scenario.editedTimeWindowLabel),
     );
-
-    const managerNoteEntry =
-      findWorkforceSchedulePublishedRowMaintenancePathHistoryEntry(
-        page,
-        scenario.editNote,
-      );
-    await expect(managerNoteEntry).toBeVisible();
-    await expect(managerNoteEntry).toContainText("MANAGER_NOTE_ADDED");
+    await expect(page.getByLabel(/^Start time$/i)).toHaveText(
+      formatHalfHourOptionLabel(scenario.editStartTimeInput),
+    );
+    await expect(page.getByLabel(/^End time$/i)).toHaveText(
+      formatHalfHourOptionLabel(scenario.editEndTimeInput),
+    );
+    await expect(page.getByLabel(/^Manager note$/i)).toHaveValue(scenario.editNote);
 
     const editedState =
       await resolveWorkforceSchedulePublishedRowMaintenancePathDbState();
@@ -133,50 +172,49 @@ test.describe("workforce schedule published row maintenance path", () => {
       scenario,
     );
 
-    await page
-      .getByLabel(/^Cancellation note$/i)
-      .fill(scenario.cancellationNote);
-    await page.getByRole("button", { name: /^Cancel schedule row$/i }).click();
+    await page.getByRole("button", { name: /^Clear to blank$/i }).click();
 
-    await expect(
-      page.getByText("Schedule row cancelled with event history preserved."),
-    ).toBeVisible();
+    await expect(page.getByText("Selected cell returned to blank.")).toBeVisible();
     await page.waitForURL(
       (target) =>
         target.pathname === "/store/workforce/schedule-planner" &&
-        target.searchParams.get("scheduleId") === String(scenario.scheduleId) &&
-        target.searchParams.get("saved") === "schedule-cancelled",
+        target.searchParams.get("scheduleDate") === scenario.targetDateInput &&
+        target.searchParams.get("saved") === "cell-cleared",
       {
         timeout: 10_000,
       },
     );
 
+    await expect(page.getByRole("heading", { name: /^Cell editor$/i })).toHaveCount(0);
+
     plannerRow = findWorkforceSchedulePublishedRowMaintenancePathPlannerRow(
       page,
       scenario.workerLabel,
     );
-    await expectWorkforceSchedulePublishedRowMaintenancePathPlannerRowState(
-      plannerRow,
-      scenario,
-      {
-        status: "CANCELLED",
-        timeWindowLabel: scenario.editedTimeWindowLabel,
-      },
-    );
-
-    const cancelledEntry =
-      findWorkforceSchedulePublishedRowMaintenancePathHistoryEntry(
-        page,
-        scenario.cancellationNote,
-      );
-    await expect(cancelledEntry).toBeVisible();
-    await expect(cancelledEntry).toContainText("SCHEDULE_CANCELLED");
+    await expect(plannerRow).toBeVisible();
+    await expect(plannerRow).not.toContainText(scenario.editedTimeWindowLabel);
+    await expect(plannerRow).not.toContainText(/\bCANCELLED\b/);
 
     const cancelledState =
       await resolveWorkforceSchedulePublishedRowMaintenancePathDbState();
-    expectWorkforceSchedulePublishedRowMaintenancePathCancelledDbState(
-      cancelledState,
-      scenario,
+    expect(cancelledState.workerScheduleCount).toBe(1);
+    expect(cancelledState.workerSchedule?.id).toBe(scenario.scheduleId);
+    expect(cancelledState.workerSchedule?.status).toBe("CANCELLED");
+    expect(cancelledState.workerSchedule?.note).toBe(CLEARED_WORK_ROW_NOTE);
+    expect(cancelledState.workerSchedule?.updatedById).toBe(scenario.manager.id);
+    expect(cancelledState.workerSchedule?.publishedById).toBe(scenario.manager.id);
+    expect(cancelledState.workerSchedule?.publishedAt).not.toBeNull();
+    expect(cancelledState.scheduleEvents).toHaveLength(2);
+
+    const managerNoteEvent = cancelledState.scheduleEvents.find(
+      (event) => event.eventType === "MANAGER_NOTE_ADDED",
     );
+    const cancelledEvent = cancelledState.scheduleEvents.find(
+      (event) => event.eventType === "SCHEDULE_CANCELLED",
+    );
+
+    expect(managerNoteEvent?.note).toContain(scenario.editNote);
+    expect(cancelledEvent?.note).toBe(CLEARED_WORK_ROW_NOTE);
+    expect(cancelledEvent?.actorUserId).toBe(scenario.manager.id);
   });
 });

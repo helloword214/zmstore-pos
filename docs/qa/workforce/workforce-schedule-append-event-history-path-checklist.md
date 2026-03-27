@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-03-21
+Last Reviewed: 2026-03-27
 
 This checklist is a secondary QA artifact.
 It does not own worker scheduling behavior.
@@ -14,7 +14,7 @@ It does not own worker scheduling behavior.
 
 ## Purpose
 
-Verify that a store manager can append one staffing event to a selected draft planner row in `/store/workforce/schedule-planner` and immediately see the append-only entry in `Event history`.
+Verify that a store manager can append one staffing event to a selected draft planner cell in `/store/workforce/schedule-planner` and immediately see the append-only entry in `Cell history`.
 
 ## Setup
 
@@ -25,7 +25,7 @@ Verify that a store manager can append one staffing event to a selected draft pl
 ## Browser QA Steps
 
 1. Run `npm run ui:test:workforce:schedule-append-event-history-path`.
-2. The browser scenario stops after the new replacement event appears in `Event history`.
+2. The browser scenario stops after the new replacement event appears in `Cell history`.
 
 ## Expected Scenario Shape
 
@@ -40,30 +40,30 @@ The browser flow should:
 
 1. open the printed `/store/workforce/schedule-planner` route as `STORE_MANAGER`
 2. load the printed seeded range
-3. open the tagged row through the real row-level `Open` action
-4. use `Append staffing event`
+3. select the tagged worker-date cell from the board
+4. use `Staffing activity`
 5. choose `Replacement assigned`
 6. choose the printed related worker
 7. submit the printed event note
-8. confirm `Schedule event appended.`
-9. verify the new entry appears in `Event history`
+8. confirm `Schedule event appended to the selected row.`
+9. verify the new entry appears in `Cell history`
 
 ## Manual QA Steps
 
 1. Log in as the printed manager.
 2. Open the printed planner route.
-3. Enter the printed `Range start` and `Range end`, then click `Load range`.
+3. Enter the printed `Start` and `End` values, then click `Load`.
 4. Find the printed subject worker row and confirm it starts with:
    - the printed initial time window
    - status `DRAFT`
-5. Click the row-level `Open` link.
-6. Confirm `Event history` initially shows `No schedule events yet.`
-7. In `Append staffing event`, choose:
+5. Click the printed subject worker target cell.
+6. Confirm the `Cell editor` opens for that worker-date and `Cell history` initially shows `No staffing events yet.`
+7. In `Staffing activity`, choose:
    - `Event type`: `Replacement assigned`
    - `Related worker`: the printed related worker
    - `Event note`: the printed event note
 8. Click `Append event`.
-9. Confirm the success alert `Schedule event appended.` appears.
+9. Confirm the success alert `Schedule event appended to the selected row.` appears.
 10. Confirm the new history entry shows:
    - `REPLACEMENT_ASSIGNED`
    - the printed event note

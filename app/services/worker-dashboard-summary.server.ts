@@ -5,6 +5,7 @@ import {
   PayrollFrequency,
   PayrollRunStatus,
   RiderChargeStatus,
+  WorkerScheduleEntryType,
   WorkerScheduleStatus,
 } from "@prisma/client";
 import { db } from "~/utils/db.server";
@@ -418,6 +419,7 @@ export async function getWorkerDashboardSummary(
     prisma.workerSchedule.findMany({
       where: {
         workerId: employeeId,
+        entryType: WorkerScheduleEntryType.WORK,
         status: WorkerScheduleStatus.PUBLISHED,
         scheduleDate: today,
       },
@@ -431,6 +433,7 @@ export async function getWorkerDashboardSummary(
     prisma.workerSchedule.findFirst({
       where: {
         workerId: employeeId,
+        entryType: WorkerScheduleEntryType.WORK,
         status: WorkerScheduleStatus.PUBLISHED,
         endAt: { gte: now },
       },

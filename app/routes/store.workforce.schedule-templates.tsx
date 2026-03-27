@@ -125,12 +125,6 @@ const ASSIGNMENT_STATUS_OPTIONS = [
   { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.ENDED, label: "Ended" },
 ];
 
-const TEMPLATE_STATUS_OPTIONS = [
-  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE, label: "Active" },
-  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED, label: "Paused" },
-  { value: WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED, label: "Ended" },
-];
-
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -170,7 +164,6 @@ function buildEmployeeLabel(args: {
 }) {
   const fullName = `${args.firstName} ${args.lastName}`.trim();
   const aliasPart = args.alias ? ` (${args.alias})` : "";
-  const lane = args.role ?? "UNASSIGNED";
   return `${fullName}${aliasPart}`;
 }
 
@@ -379,7 +372,7 @@ export default function WorkforceScheduleTemplatesRoute() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Workforce Schedule Templates"
-        subtitle="Manager-owned weekly templates, reusable day patterns, and many-worker assignments."
+        subtitle="Optional helper for repeated weekly patterns. Direct scheduling now starts in the planner board."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
@@ -397,18 +390,46 @@ export default function WorkforceScheduleTemplatesRoute() {
           <SoTAlert tone="warning">{actionData.error}</SoTAlert>
         ) : null}
 
+        <SoTCard className="border border-amber-200 bg-amber-50/80">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Template helper only
+              </div>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                Use templates only when a weekly pattern repeats
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Most managers should stay in the planner board. Come here only when the
+                same weekday pattern shows up often enough that saving a reusable helper
+                becomes faster than scheduling manually each week.
+              </p>
+            </div>
+
+            <Link
+              to="/store/workforce/schedule-planner?preset=next-week"
+              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Open planner board
+            </Link>
+          </div>
+        </SoTCard>
+
         <div className="grid gap-5 lg:grid-cols-12">
           <section className="space-y-5 lg:col-span-7">
             <SoTCard interaction="form" className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Step 1
+                  </div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    {selectedTemplate ? "Edit Template" : "Create Template"}
+                    {selectedTemplate ? "Template editor" : "Create template helper"}
                   </h2>
                   <p className="text-xs text-slate-500">
                     {selectedTemplate
-                      ? "Weekly-only patterns. Generated rows stay separate and auditable."
-                      : "Start from a blank weekly pattern here. Open a library row only when you want to edit that specific template."}
+                      ? "Keep this focused on reusable weekday patterns. Generated rows remain separate and auditable."
+                      : "Save only the weekly pattern you expect to reuse. One-off weekly planning still belongs in the board."}
                   </p>
                 </div>
                 {selectedTemplate ? (
@@ -480,7 +501,7 @@ export default function WorkforceScheduleTemplatesRoute() {
                       Weekly work days
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Enable only the days this template should generate as `WORK_DAY`.
+                      Turn on only the weekdays this helper should generate.
                     </p>
                   </div>
 
@@ -554,11 +575,15 @@ export default function WorkforceScheduleTemplatesRoute() {
 
             <SoTCard interaction="form" className="space-y-4">
               <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Step 2
+                </div>
                 <h2 className="text-sm font-semibold text-slate-900">
-                  Template Assignment
+                  Optional worker links
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Assign one template to many workers without rewriting prior generated rows.
+                  Use this only when one helper should repeatedly prefill the same named
+                  workers. Skip it if the board changes week to week.
                 </p>
               </div>
 
@@ -583,25 +608,33 @@ export default function WorkforceScheduleTemplatesRoute() {
                         Workers
                       </div>
                       <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
-                        {workers.map((worker) => (
-                          <label
-                            key={worker.id}
-                            className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                          >
-                            <input
-                              type="checkbox"
-                              name="workerIds"
-                              value={worker.id}
-                              className="mt-1 h-4 w-4 rounded border-slate-300"
-                            />
-                            <span>
-                              <span className="block font-medium">{worker.label}</span>
-                              <span className="block text-xs text-slate-500">
-                                {worker.lane}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
+                        {workers.map((worker) => {
+                          const checkboxId = `assign-worker-${worker.id}`;
+                          const labelId = `${checkboxId}-label`;
+                          return (
+                            <div
+                              key={worker.id}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                            >
+                              <div className="flex items-start gap-2">
+                                <input
+                                  id={checkboxId}
+                                  aria-labelledby={labelId}
+                                  type="checkbox"
+                                  name="workerIds"
+                                  value={worker.id}
+                                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                                />
+                                <label htmlFor={checkboxId} id={labelId}>
+                                  <span className="block font-medium">{worker.label}</span>
+                                  <span className="block text-xs text-slate-500">
+                                    {worker.lane}
+                                  </span>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -699,108 +732,117 @@ export default function WorkforceScheduleTemplatesRoute() {
           <aside className="space-y-5 lg:col-span-5">
             <SoTCard className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900">Template Library</h2>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Pattern library
+                </h2>
                 <SoTStatusBadge tone="info">{templates.length} templates</SoTStatusBadge>
               </div>
+              <p className="text-xs text-slate-500">
+                Open one helper when you need to edit it. Keep this page lean and return to
+                the planner board for normal weekly scheduling.
+              </p>
 
-              <SoTTable>
-                <SoTTableHead>
-                  <SoTTableRow>
-                    <SoTTh>Template</SoTTh>
-                    <SoTTh>Status</SoTTh>
-                    <SoTTh>Actions</SoTTh>
-                  </SoTTableRow>
-                </SoTTableHead>
-                <tbody>
-                  {templates.length === 0 ? (
-                    <SoTTableEmptyRow
-                      colSpan={3}
-                      message="No schedule templates yet."
-                    />
-                  ) : (
-                    templates.map((template) => (
-                      <SoTTableRow key={template.id}>
-                        <SoTTd>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">
-                              {template.templateName}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {template.role ?? "ANY ROLE"} · {template.days.length} work day(s)
-                            </div>
+              {templates.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                  No schedule templates yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {template.templateName}
                           </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <SoTStatusBadge tone={statusTone(template.status)}>
-                            {template.status}
-                          </SoTStatusBadge>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              to={`/store/workforce/schedule-templates?templateId=${template.id}`}
-                              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                              Open
-                            </Link>
-                            <Form method="post">
-                              <input type="hidden" name="_intent" value="set-template-status" />
-                              <input type="hidden" name="templateId" value={template.id} />
-                              <input
-                                type="hidden"
-                                name="status"
-                                value={
-                                  template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                                    ? WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED
-                                    : WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                                }
-                              />
-                              <SoTButton type="submit" size="compact">
-                                {template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                                  ? "Pause"
-                                  : "Activate"}
-                              </SoTButton>
-                            </Form>
-                            <Form method="post">
-                              <input type="hidden" name="_intent" value="set-template-status" />
-                              <input type="hidden" name="templateId" value={template.id} />
-                              <input
-                                type="hidden"
-                                name="status"
-                                value={WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED}
-                              />
-                              <SoTButton type="submit" size="compact" variant="danger">
-                                End
-                              </SoTButton>
-                            </Form>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {template.role ?? "ANY ROLE"} · {template.days.length} work day(s)
                           </div>
-                        </SoTTd>
-                      </SoTTableRow>
-                    ))
-                  )}
-                </tbody>
-              </SoTTable>
+                        </div>
+                        <SoTStatusBadge tone={statusTone(template.status)}>
+                          {template.status}
+                        </SoTStatusBadge>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          to={`/store/workforce/schedule-templates?templateId=${template.id}`}
+                          className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Open
+                        </Link>
+                        <Form method="post">
+                          <input type="hidden" name="_intent" value="set-template-status" />
+                          <input type="hidden" name="templateId" value={template.id} />
+                          <input
+                            type="hidden"
+                            name="status"
+                            value={
+                              template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                                ? WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED
+                                : WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                            }
+                          />
+                          <SoTButton type="submit" size="compact">
+                            {template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                              ? "Pause"
+                              : "Activate"}
+                          </SoTButton>
+                        </Form>
+                        <Form method="post">
+                          <input type="hidden" name="_intent" value="set-template-status" />
+                          <input type="hidden" name="templateId" value={template.id} />
+                          <input
+                            type="hidden"
+                            name="status"
+                            value={WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED}
+                          />
+                          <SoTButton type="submit" size="compact" variant="danger">
+                            End
+                          </SoTButton>
+                        </Form>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </SoTCard>
 
             {selectedTemplate ? (
               <SoTCard className="space-y-3">
-                <h2 className="text-sm font-semibold text-slate-900">Selected template days</h2>
-                <div className="space-y-2">
+                <h2 className="text-sm font-semibold text-slate-900">Selected helper preview</h2>
+                <div className="flex flex-wrap gap-2">
                   {selectedTemplate.days.map((day) => (
                     <div
                       key={day.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
                     >
-                      <div className="font-medium">{day.dayOfWeek}</div>
-                      <div className="text-xs text-slate-500">
+                      <span className="font-medium">{day.dayOfWeek}</span>
+                      <span className="mx-2 text-slate-400">·</span>
+                      <span className="text-xs text-slate-500">
                         {minuteToTimeInput(day.startMinute)} - {minuteToTimeInput(day.endMinute)}
-                      </div>
-                      {day.note ? (
-                        <div className="mt-1 text-xs text-slate-500">{day.note}</div>
-                      ) : null}
+                      </span>
                     </div>
                   ))}
                 </div>
+                {selectedTemplate.days.some((day) => Boolean(day.note)) ? (
+                  <div className="space-y-2">
+                    {selectedTemplate.days
+                      .filter((day) => Boolean(day.note))
+                      .map((day) => (
+                        <div
+                          key={`${day.id}-note`}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                        >
+                          <span className="font-semibold text-slate-800">{day.dayOfWeek}:</span>{" "}
+                          {day.note}
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
               </SoTCard>
             ) : null}
           </aside>

@@ -104,6 +104,11 @@ const WORKER_SCHEDULE_EVENT_TYPE = {
   EMERGENCY_LEAVE_RECORDED: "EMERGENCY_LEAVE_RECORDED",
 } as const;
 
+const WORKER_SCHEDULE_ENTRY_TYPE = {
+  WORK: "WORK",
+  OFF: "OFF",
+} as const;
+
 const DAY_TYPE_OPTIONS = [
   { value: ATTENDANCE_DAY_TYPE.WORK_DAY, label: "Work day" },
   { value: ATTENDANCE_DAY_TYPE.REST_DAY, label: "Rest day" },
@@ -191,6 +196,28 @@ function statusTone(status: string) {
   return "danger" as const;
 }
 
+function isOffSchedule(
+  schedule:
+    | {
+        entryType: string;
+      }
+    | null
+    | undefined,
+) {
+  return schedule?.entryType === WORKER_SCHEDULE_ENTRY_TYPE.OFF;
+}
+
+function isWorkSchedule(
+  schedule:
+    | {
+        entryType: string;
+      }
+    | null
+    | undefined,
+) {
+  return schedule?.entryType === WORKER_SCHEDULE_ENTRY_TYPE.WORK;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER"]);
   const url = new URL(request.url);
@@ -247,8 +274,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       suspension: suspensionByWorkerId.get(worker.id) ?? null,
     }))
     .sort((left, right) => {
-      const leftRank = left.schedule ? 0 : 1;
-      const rightRank = right.schedule ? 0 : 1;
+      const leftRank = isWorkSchedule(left.schedule)
+        ? 0
+        : isOffSchedule(left.schedule)
+          ? 1
+          : 2;
+      const rightRank = isWorkSchedule(right.schedule)
+        ? 0
+        : isOffSchedule(right.schedule)
+          ? 1
+          : 2;
       if (leftRank !== rightRank) return leftRank - rightRank;
       return left.label.localeCompare(right.label);
     });
@@ -369,19 +404,27 @@ export default function WorkforceAttendanceReviewRoute() {
   const { rows, selectedRow, dutyDate, saved } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
 
-  const defaultDayType = selectedRow?.attendance?.dayType ??
-    (selectedRow?.schedule ? ATTENDANCE_DAY_TYPE.WORK_DAY : ATTENDANCE_DAY_TYPE.REST_DAY);
+  const defaultDayType =
+    selectedRow?.attendance?.dayType ??
+    (selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
+      ? ATTENDANCE_DAY_TYPE.WORK_DAY
+      : ATTENDANCE_DAY_TYPE.REST_DAY);
   const defaultAttendanceResult =
     selectedRow?.attendance?.attendanceResult ??
-    (selectedRow?.suspension && selectedRow?.schedule
+    (selectedRow?.suspension && selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
       ? ATTENDANCE_RESULT.SUSPENDED_NO_WORK
-      : selectedRow?.schedule
+      : selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
         ? ATTENDANCE_RESULT.WHOLE_DAY
         : ATTENDANCE_RESULT.NOT_REQUIRED);
   const defaultWorkContext =
     selectedRow?.attendance?.workContext ?? ATTENDANCE_WORK_CONTEXT.REGULAR;
   const defaultLeaveType = selectedRow?.attendance?.leaveType ?? "";
   const defaultLateFlag = selectedRow?.attendance?.lateFlag ?? ATTENDANCE_LATE_FLAG.NO;
+  const selectedPlannedRowLabel = selectedRow?.schedule
+    ? isOffSchedule(selectedRow.schedule)
+      ? "intentional OFF day"
+      : formatTimeWindow(selectedRow.schedule.startAt, selectedRow.schedule.endAt)
+    : "none";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -429,7 +472,8 @@ export default function WorkforceAttendanceReviewRoute() {
                   Worker list for the day
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Scheduled workers are listed first. Select one row to review the factual attendance inputs.
+                  Work rows are listed first, intentional OFF rows next, and blank days last.
+                  Select one row to review the factual attendance inputs.
                 </p>
               </div>
 
@@ -459,12 +503,21 @@ export default function WorkforceAttendanceReviewRoute() {
                         </SoTTd>
                         <SoTTd>
                           {row.schedule ? (
-                            <div className="space-y-1">
-                              <SoTStatusBadge tone="info">Scheduled</SoTStatusBadge>
-                              <div className="text-xs text-slate-500">
-                                {formatTimeWindow(row.schedule.startAt, row.schedule.endAt)}
+                            isOffSchedule(row.schedule) ? (
+                              <div className="space-y-1">
+                                <SoTStatusBadge tone="warning">OFF</SoTStatusBadge>
+                                <div className="text-xs text-slate-500">
+                                  Intentional planner day off
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <SoTStatusBadge tone="info">Scheduled</SoTStatusBadge>
+                                <div className="text-xs text-slate-500">
+                                  {formatTimeWindow(row.schedule.startAt, row.schedule.endAt)}
+                                </div>
+                              </div>
+                            )
                           ) : (
                             <span className="text-sm text-slate-500">No planned row</span>
                           )}
@@ -524,15 +577,7 @@ export default function WorkforceAttendanceReviewRoute() {
                 </div>
 
                 <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  <div>
-                    Planned row:{" "}
-                    {selectedRow.schedule
-                      ? formatTimeWindow(
-                          selectedRow.schedule.startAt,
-                          selectedRow.schedule.endAt,
-                        )
-                      : "none"}
-                  </div>
+                  <div>Planned row: {selectedPlannedRowLabel}</div>
                   <div>
                     Active suspension:{" "}
                     {selectedRow.suspension

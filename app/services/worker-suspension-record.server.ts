@@ -3,6 +3,7 @@ import {
   AttendanceDayType,
   Prisma,
   SuspensionRecordStatus,
+  WorkerScheduleEntryType,
   WorkerScheduleStatus,
   WorkerScheduleEventType,
 } from "@prisma/client";
@@ -126,6 +127,7 @@ export async function liftWorkerSuspensionRecord(
     const schedules = await tx.workerSchedule.findMany({
       where: {
         workerId: record.workerId,
+        entryType: WorkerScheduleEntryType.WORK,
         status: { not: WorkerScheduleStatus.CANCELLED },
         scheduleDate: {
           gte: liftDate,
@@ -287,6 +289,7 @@ async function overlayWorkerSuspensionAttendanceInTx(
   const schedules = await tx.workerSchedule.findMany({
     where: {
       workerId: record.workerId,
+      entryType: WorkerScheduleEntryType.WORK,
       status: { not: WorkerScheduleStatus.CANCELLED },
       scheduleDate: {
         gte: record.startDate,
