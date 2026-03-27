@@ -7,6 +7,7 @@ import {
   UserAuthState,
   UserRole,
   WorkerScheduleAssignmentStatus,
+  WorkerScheduleEntryType,
   WorkerScheduleRole,
   WorkerScheduleStatus,
   WorkerScheduleTemplateDayOfWeek,
@@ -43,7 +44,7 @@ export const WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_END_MINUTE =
 export const WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_START_TIME =
   "09:30";
 export const WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_END_TIME =
-  "18:15";
+  "18:30";
 
 type ManagerUser = {
   id: number;
@@ -112,6 +113,19 @@ function toDateOnly(value: Date | string) {
   return parsed;
 }
 
+function toPrismaDateFieldSafeValue(value: Date | string) {
+  const date = toDateOnly(value);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+    0,
+    0,
+    0,
+  );
+}
+
 function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -134,9 +148,23 @@ function formatDateInput(value: Date | string) {
 }
 
 function minuteToTimeLabel(value: number) {
-  const hour = String(Math.floor(value / 60)).padStart(2, "0");
-  const minute = String(value % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
+}
+
+function timeInputToLabel(value: string) {
+  const [hourToken, minuteToken] = value.trim().split(":");
+  const hour = Number(hourToken);
+  const minute = Number(minuteToken);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    return value;
+  }
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
 function combineDateAndMinute(date: Date, minute: number) {
@@ -209,7 +237,7 @@ export function resolveWorkforceScheduleRowUpdateOrCancelPathRange(now: Date) {
   return {
     rangeEnd: addDays(rangeStart, 6),
     rangeStart,
-    targetDate: rangeStart,
+    targetDate: toPrismaDateFieldSafeValue(rangeStart),
   };
 }
 
@@ -436,6 +464,7 @@ async function seedWorkforceScheduleRowUpdateOrCancelPathState(
         role: WorkerScheduleRole.CASHIER,
         branchId: defaultBranch.id,
         scheduleDate: targetDate,
+        entryType: WorkerScheduleEntryType.WORK,
         startAt: combineDateAndMinute(
           targetDate,
           WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_START_MINUTE,
@@ -512,8 +541,11 @@ export async function resolveWorkforceScheduleRowUpdateOrCancelPathScenarioConte
     ? await db.workerSchedule.findFirst({
         where: {
           workerId: user.employee.id,
+          entryType: WorkerScheduleEntryType.WORK,
           scheduleDate: targetDate,
+          status: WorkerScheduleStatus.DRAFT,
         },
+        orderBy: [{ id: "desc" }],
         select: { id: true },
       })
     : null;
@@ -534,7 +566,7 @@ export async function resolveWorkforceScheduleRowUpdateOrCancelPathScenarioConte
     editStartTimeInput:
       WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_START_TIME,
     editedTimeWindowLabel:
-      `${WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_START_TIME} - ${WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_END_TIME}`,
+      `${timeInputToLabel(WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_START_TIME)} - ${timeInputToLabel(WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_EDIT_END_TIME)}`,
     initialTimeWindowLabel:
       `${minuteToTimeLabel(
         WORKFORCE_SCHEDULE_ROW_UPDATE_OR_CANCEL_PATH_START_MINUTE,
@@ -571,8 +603,8 @@ async function main() {
       `Manager: ${manager.email ?? `user#${manager.id}`} [userId=${manager.id}]`,
       `Route: ${scenario.plannerRoute}`,
       `Default branch: ${scenario.defaultBranch.name} [id=${scenario.defaultBranch.id}]`,
-      `Range start: ${scenario.rangeStartInput}`,
-      `Range end: ${scenario.rangeEndInput}`,
+      `Start: ${scenario.rangeStartInput}`,
+      `End: ${scenario.rangeEndInput}`,
       `Target date: ${scenario.targetDateInput}`,
       `Template: ${scenario.templateName} [templateId=${seeded.templateId}]`,
       `Tagged worker: ${scenario.workerLabel} [employeeId=${seeded.employeeId}]`,
@@ -584,7 +616,6 @@ async function main() {
       `Initial window: ${scenario.initialTimeWindowLabel}`,
       `Edited window: ${scenario.editedTimeWindowLabel}`,
       `Edit note: ${scenario.editNote}`,
-      `Cancellation note: ${scenario.cancellationNote}`,
       `Deleted previous tagged users: ${deleted.deletedUsers}`,
       `Deleted previous tagged employees: ${deleted.deletedEmployees}`,
       `Deleted previous tagged templates: ${deleted.deletedTemplates}`,
@@ -592,9 +623,9 @@ async function main() {
       `Deleted previous tagged schedules: ${deleted.deletedSchedules}`,
       "Next manual QA steps:",
       "1. Open the printed planner route as STORE_MANAGER.",
-      "2. Load the printed range and open the tagged schedule row.",
-      "3. Save the printed one-off edit values and confirm the row stays DRAFT.",
-      "4. Cancel the same row with the printed cancellation note and confirm it becomes CANCELLED.",
+      "2. Set the printed Start and End values, click Load, then select the tagged draft cell in the board.",
+      "3. Save the printed custom time values from the dropdowns and confirm the selected cell stays DRAFT.",
+      "4. Click Clear to blank and confirm the selected cell returns to BLANK.",
     ].join("\n"),
   );
 }

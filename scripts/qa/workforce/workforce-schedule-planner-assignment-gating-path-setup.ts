@@ -131,9 +131,11 @@ function formatDateInput(value: Date | string) {
 }
 
 function minuteToTimeLabel(value: number) {
-  const hour = String(Math.floor(value / 60)).padStart(2, "0");
-  const minute = String(value % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
 function formatWorkerLabel(args: {
@@ -621,8 +623,8 @@ async function main() {
       `Manager: ${manager.email ?? `user#${manager.id}`} [userId=${manager.id}]`,
       `Route: ${scenario.plannerRoute}`,
       `Default branch: ${scenario.defaultBranch.name} [id=${scenario.defaultBranch.id}]`,
-      `Range start: ${scenario.rangeStartInput}`,
-      `Range end: ${scenario.rangeEndInput}`,
+      `Start: ${scenario.rangeStartInput}`,
+      `End: ${scenario.rangeEndInput}`,
       `Target generation date: ${scenario.targetDateInput}`,
       `Template: ${scenario.templateName} [templateId=${seeded.templateId}]`,
       `Active worker: ${scenario.activeWorkerLabel} [employeeId=${seeded.activeEmployeeId}]`,
@@ -641,9 +643,9 @@ async function main() {
       `Deleted previous tagged schedules: ${deleted.deletedSchedules}`,
       "Next manual QA steps:",
       "1. Open the printed planner route as STORE_MANAGER.",
-      "2. Load the printed range and click Generate Draft Rows.",
-      "3. Confirm only the active tagged worker appears in DRAFT rows.",
-      "4. Confirm the ended tagged worker does not appear in planner rows.",
+      "2. Set the printed Start and End values, click Load, then click Generate.",
+      "3. Confirm the active tagged worker gets one DRAFT cell in the board.",
+      "4. Confirm the ended tagged worker still appears only as a BLANK row with no generated duty cell.",
     ].join("\n"),
   );
 }

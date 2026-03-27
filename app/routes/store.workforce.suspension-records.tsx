@@ -41,6 +41,10 @@ const WORKER_SCHEDULE_STATUS = {
   PUBLISHED: "PUBLISHED",
 } as const;
 
+const WORKER_SCHEDULE_ENTRY_TYPE = {
+  WORK: "WORK",
+} as const;
+
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -185,10 +189,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     listWorkerSuspensionRecords(
       selectedWorkerId ? { workerId: selectedWorkerId } : undefined,
     ),
-        selectedWorker
+    selectedWorker
       ? db.workerSchedule.findMany({
           where: {
             workerId: selectedWorker.id,
+            entryType: WORKER_SCHEDULE_ENTRY_TYPE.WORK,
             status: { not: WORKER_SCHEDULE_STATUS.CANCELLED },
             scheduleDate: {
               gte: today,
@@ -586,10 +591,10 @@ export default function WorkforceSuspensionRecordsRoute() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-semibold text-slate-900">
-                        Upcoming scheduled rows
+                        Upcoming scheduled work rows
                       </h2>
                       <p className="text-xs text-slate-500">
-                        Preview of the next 30 days that could be affected by a suspension overlay.
+                        Preview of the next 30 days of planned work that could be affected by a suspension overlay.
                       </p>
                     </div>
                     <Link
@@ -610,10 +615,10 @@ export default function WorkforceSuspensionRecordsRoute() {
                     </SoTTableHead>
                     <tbody>
                       {safeUpcomingSchedules.length === 0 ? (
-                        <SoTTableEmptyRow
-                          colSpan={3}
-                          message="No upcoming non-cancelled schedule rows for this worker."
-                        />
+                          <SoTTableEmptyRow
+                            colSpan={3}
+                            message="No upcoming scheduled work rows for this worker."
+                          />
                       ) : (
                         safeUpcomingSchedules.map((schedule) => (
                           <SoTTableRow key={schedule.id}>

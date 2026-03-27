@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   WORKFORCE_SCHEDULE_PLANNER_PUBLISH_VISIBILITY_HAPPY_PATH_ENABLE_ENV,
   bootstrapWorkforceSchedulePlannerPublishVisibilityHappyPathSession,
@@ -11,11 +11,29 @@ import {
   findWorkforceSchedulePlannerPublishVisibilityHappyPathPlannerRow,
   isWorkforceSchedulePlannerPublishVisibilityHappyPathEnabled,
   openWorkforceAttendanceReviewVisibilityPage,
-  openWorkforceSchedulePlannerPublishVisibilityHappyPath,
+  resolveWorkforceSchedulePlannerPublishVisibilityHappyPathBaseURL,
   resetWorkforceSchedulePlannerPublishVisibilityHappyPathQaState,
   resolveWorkforceSchedulePlannerPublishVisibilityHappyPathDbState,
   resolveWorkforceSchedulePlannerPublishVisibilityHappyPathScenario,
 } from "./workforce-schedule-planner-publish-visibility-happy-path-fixture";
+
+async function openPlannerBoard(
+  page: Page,
+  route: string,
+  baseUrl: string,
+) {
+  const url = new URL(route, baseUrl).toString();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForURL(
+    (target) => target.pathname === "/store/workforce/schedule-planner",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(
+    page.getByRole("heading", { name: /workforce planner board/i }),
+  ).toBeVisible();
+}
 
 test.describe("workforce schedule planner publish visibility happy path", () => {
   test.skip(
@@ -40,7 +58,11 @@ test.describe("workforce schedule planner publish visibility happy path", () => 
     const scenario =
       await resolveWorkforceSchedulePlannerPublishVisibilityHappyPathScenario();
 
-    await openWorkforceSchedulePlannerPublishVisibilityHappyPath(page);
+    await openPlannerBoard(
+      page,
+      scenario.plannerRoute,
+      resolveWorkforceSchedulePlannerPublishVisibilityHappyPathBaseURL(),
+    );
 
     const initialState =
       await resolveWorkforceSchedulePlannerPublishVisibilityHappyPathDbState();
@@ -49,9 +71,9 @@ test.describe("workforce schedule planner publish visibility happy path", () => 
       scenario,
     );
 
-    await page.getByLabel(/^Range start$/i).fill(scenario.rangeStartInput);
-    await page.getByLabel(/^Range end$/i).fill(scenario.rangeEndInput);
-    await page.getByRole("button", { name: /^Load range$/i }).click();
+    await page.getByLabel(/^Start$/i).fill(scenario.rangeStartInput);
+    await page.getByLabel(/^End$/i).fill(scenario.rangeEndInput);
+    await page.getByRole("button", { name: /^Load$/i }).click();
 
     await page.waitForURL(
       (target) =>
@@ -63,14 +85,21 @@ test.describe("workforce schedule planner publish visibility happy path", () => 
       },
     );
 
-    await expect(
-      page.locator("tr").filter({ hasText: scenario.employeeLabel }),
-    ).toHaveCount(0);
+    const emptyPlannerRow =
+      findWorkforceSchedulePlannerPublishVisibilityHappyPathPlannerRow(
+        page,
+        scenario.employeeLabel,
+      );
+    await expect(emptyPlannerRow).toBeVisible();
+    await expect(emptyPlannerRow).not.toContainText(scenario.timeWindowLabel);
+    await expect(emptyPlannerRow).not.toContainText(/\bDRAFT\b/);
 
-    await page.getByRole("button", { name: /^Generate Draft Rows$/i }).click();
+    await page
+      .getByRole("button", { name: /^Generate$/i })
+      .click();
 
     await expect(
-      page.getByText("Draft schedule rows generated for the selected range."),
+      page.getByText("Draft rows generated from active template assignments."),
     ).toBeVisible();
 
     let plannerRow =
@@ -92,10 +121,10 @@ test.describe("workforce schedule planner publish visibility happy path", () => 
       scenario,
     );
 
-    await page.getByRole("button", { name: /^Publish Draft Rows$/i }).click();
+    await page.getByRole("button", { name: /^Publish$/i }).click();
 
     await expect(
-      page.getByText("Draft schedules published for the selected range."),
+      page.getByText("Draft rows in this window were published."),
     ).toBeVisible();
 
     plannerRow =

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   WORKFORCE_SCHEDULE_PLANNER_ASSIGNMENT_GATING_PATH_ENABLE_ENV,
   bootstrapWorkforceSchedulePlannerAssignmentGatingPathSession,
@@ -8,11 +8,29 @@ import {
   expectWorkforceSchedulePlannerAssignmentGatingPathPlannerRowState,
   findWorkforceSchedulePlannerAssignmentGatingPathPlannerRow,
   isWorkforceSchedulePlannerAssignmentGatingPathEnabled,
-  openWorkforceSchedulePlannerAssignmentGatingPath,
+  resolveWorkforceSchedulePlannerAssignmentGatingPathBaseURL,
   resetWorkforceSchedulePlannerAssignmentGatingPathQaState,
   resolveWorkforceSchedulePlannerAssignmentGatingPathDbState,
   resolveWorkforceSchedulePlannerAssignmentGatingPathScenario,
 } from "./workforce-schedule-planner-assignment-gating-path-fixture";
+
+async function openPlannerBoard(
+  page: Page,
+  route: string,
+  baseUrl: string,
+) {
+  const url = new URL(route, baseUrl).toString();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForURL(
+    (target) => target.pathname === "/store/workforce/schedule-planner",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(
+    page.getByRole("heading", { name: /workforce planner board/i }),
+  ).toBeVisible();
+}
 
 test.describe("workforce schedule planner assignment gating path", () => {
   test.skip(
@@ -35,7 +53,11 @@ test.describe("workforce schedule planner assignment gating path", () => {
     const scenario =
       await resolveWorkforceSchedulePlannerAssignmentGatingPathScenario();
 
-    await openWorkforceSchedulePlannerAssignmentGatingPath(page);
+    await openPlannerBoard(
+      page,
+      scenario.plannerRoute,
+      resolveWorkforceSchedulePlannerAssignmentGatingPathBaseURL(),
+    );
 
     const initialState =
       await resolveWorkforceSchedulePlannerAssignmentGatingPathDbState();
@@ -44,9 +66,9 @@ test.describe("workforce schedule planner assignment gating path", () => {
       scenario,
     );
 
-    await page.getByLabel(/^Range start$/i).fill(scenario.rangeStartInput);
-    await page.getByLabel(/^Range end$/i).fill(scenario.rangeEndInput);
-    await page.getByRole("button", { name: /^Load range$/i }).click();
+    await page.getByLabel(/^Start$/i).fill(scenario.rangeStartInput);
+    await page.getByLabel(/^End$/i).fill(scenario.rangeEndInput);
+    await page.getByRole("button", { name: /^Load$/i }).click();
 
     await page.waitForURL(
       (target) =>
@@ -58,17 +80,30 @@ test.describe("workforce schedule planner assignment gating path", () => {
       },
     );
 
-    await expect(
-      page.locator("tr").filter({ hasText: scenario.activeWorkerLabel }),
-    ).toHaveCount(0);
-    await expect(
-      page.locator("tr").filter({ hasText: scenario.endedWorkerLabel }),
-    ).toHaveCount(0);
+    const activeBlankRow =
+      findWorkforceSchedulePlannerAssignmentGatingPathPlannerRow(
+        page,
+        scenario.activeWorkerLabel,
+      );
+    await expect(activeBlankRow).toBeVisible();
+    await expect(activeBlankRow).not.toContainText(scenario.timeWindowLabel);
+    await expect(activeBlankRow).not.toContainText(/\bDRAFT\b/);
 
-    await page.getByRole("button", { name: /^Generate Draft Rows$/i }).click();
+    const endedBlankRow =
+      findWorkforceSchedulePlannerAssignmentGatingPathPlannerRow(
+        page,
+        scenario.endedWorkerLabel,
+      );
+    await expect(endedBlankRow).toBeVisible();
+    await expect(endedBlankRow).not.toContainText(scenario.timeWindowLabel);
+    await expect(endedBlankRow).not.toContainText(/\bDRAFT\b/);
+
+    await page
+      .getByRole("button", { name: /^Generate$/i })
+      .click();
 
     await expect(
-      page.getByText("Draft schedule rows generated for the selected range."),
+      page.getByText("Draft rows generated from active template assignments."),
     ).toBeVisible();
 
     const activeRow =
@@ -82,9 +117,14 @@ test.describe("workforce schedule planner assignment gating path", () => {
       scenario,
     );
 
-    await expect(
-      page.locator("tr").filter({ hasText: scenario.endedWorkerLabel }),
-    ).toHaveCount(0);
+    const endedRow =
+      findWorkforceSchedulePlannerAssignmentGatingPathPlannerRow(
+        page,
+        scenario.endedWorkerLabel,
+      );
+    await expect(endedRow).toBeVisible();
+    await expect(endedRow).not.toContainText(scenario.timeWindowLabel);
+    await expect(endedRow).not.toContainText(/\bDRAFT\b/);
 
     const generatedState =
       await resolveWorkforceSchedulePlannerAssignmentGatingPathDbState();

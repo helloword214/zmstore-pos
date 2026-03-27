@@ -127,9 +127,11 @@ function formatDateLabel(value: Date | string) {
 }
 
 function minuteToTimeLabel(value: number) {
-  const hour = String(Math.floor(value / 60)).padStart(2, "0");
-  const minute = String(value % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  const meridiem = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
 function formatWorkerLabel(args: {
@@ -496,7 +498,8 @@ async function main() {
       `Seeded userId: ${seeded.userId}`,
       `Template: ${scenario.templateName} [templateId=${seeded.templateId}]`,
       `Assignment id: ${seeded.assignmentId}`,
-      `Range: ${scenario.rangeStartInput} to ${scenario.rangeEndInput}`,
+      `Start: ${scenario.rangeStartInput}`,
+      `End: ${scenario.rangeEndInput}`,
       `Target date: ${scenario.targetDateInput} (${scenario.targetDateLabel})`,
       `Expected schedule window: ${scenario.timeWindowLabel}`,
       `Deleted previous tagged users: ${deleted.deletedUsers}`,
@@ -506,9 +509,9 @@ async function main() {
       `Deleted previous tagged schedules: ${deleted.deletedSchedules}`,
       "Next manual QA steps:",
       "1. Open /store/workforce/schedule-planner as STORE_MANAGER.",
-      `2. Load range ${scenario.rangeStartInput} to ${scenario.rangeEndInput}.`,
-      "3. Click Generate Draft Rows, then Publish Draft Rows.",
-      `4. Confirm ${scenario.employeeLabel} appears as DRAFT then PUBLISHED.`,
+      `2. Set Start = ${scenario.rangeStartInput} and End = ${scenario.rangeEndInput}, then click Load.`,
+      "3. Click Generate, then Publish.",
+      `4. Confirm ${scenario.employeeLabel} changes from BLANK to DRAFT, then PUBLISHED.`,
       `5. Open /store/workforce/attendance-review?date=${scenario.targetDateInput} and confirm the same worker and time window are visible.`,
     ].join("\n"),
   );

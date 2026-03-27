@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   WORKFORCE_SCHEDULE_APPEND_EVENT_HISTORY_PATH_ENABLE_ENV,
   bootstrapWorkforceScheduleAppendEventHistoryPathSession,
@@ -9,11 +9,39 @@ import {
   findWorkforceScheduleAppendEventHistoryPathHistoryEntry,
   findWorkforceScheduleAppendEventHistoryPathPlannerRow,
   isWorkforceScheduleAppendEventHistoryPathEnabled,
-  openWorkforceScheduleAppendEventHistoryPath,
+  resolveWorkforceScheduleAppendEventHistoryPathBaseURL,
   resetWorkforceScheduleAppendEventHistoryPathQaState,
   resolveWorkforceScheduleAppendEventHistoryPathDbState,
   resolveWorkforceScheduleAppendEventHistoryPathScenario,
 } from "./workforce-schedule-append-event-history-path-fixture";
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function openPlannerBoard(
+  page: Page,
+  route: string,
+  baseUrl: string,
+) {
+  const url = new URL(route, baseUrl).toString();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForURL(
+    (target) => target.pathname === "/store/workforce/schedule-planner",
+    {
+      timeout: 10_000,
+    },
+  );
+  await expect(
+    page.getByRole("heading", { name: /workforce planner board/i }),
+  ).toBeVisible();
+}
+
+function findScheduledCellButton(row: Locator, timeWindowLabel: string) {
+  return row.locator("td button").filter({
+    hasText: new RegExp(escapeRegExp(timeWindowLabel), "i"),
+  }).first();
+}
 
 test.describe("workforce schedule append event history path", () => {
   test.skip(
@@ -36,7 +64,11 @@ test.describe("workforce schedule append event history path", () => {
     const scenario =
       await resolveWorkforceScheduleAppendEventHistoryPathScenario();
 
-    await openWorkforceScheduleAppendEventHistoryPath(page);
+    await openPlannerBoard(
+      page,
+      scenario.plannerRoute,
+      resolveWorkforceScheduleAppendEventHistoryPathBaseURL(),
+    );
 
     const initialState =
       await resolveWorkforceScheduleAppendEventHistoryPathDbState();
@@ -45,9 +77,9 @@ test.describe("workforce schedule append event history path", () => {
       scenario,
     );
 
-    await page.getByLabel(/^Range start$/i).fill(scenario.rangeStartInput);
-    await page.getByLabel(/^Range end$/i).fill(scenario.rangeEndInput);
-    await page.getByRole("button", { name: /^Load range$/i }).click();
+    await page.getByLabel(/^Start$/i).fill(scenario.rangeStartInput);
+    await page.getByLabel(/^End$/i).fill(scenario.rangeEndInput);
+    await page.getByRole("button", { name: /^Load$/i }).click();
 
     await page.waitForURL(
       (target) =>
@@ -70,18 +102,16 @@ test.describe("workforce schedule append event history path", () => {
       scenario,
     );
 
-    await plannerRow.getByRole("link", { name: /^Open$/i }).click();
-    await page.waitForURL(
-      (target) =>
-        target.pathname === "/store/workforce/schedule-planner" &&
-        target.searchParams.get("scheduleId") === String(scenario.scheduleId),
-      {
-        timeout: 10_000,
-      },
-    );
+    await findScheduledCellButton(
+      plannerRow,
+      scenario.initialTimeWindowLabel,
+    ).click();
+    await expect(
+      page.getByRole("heading", { name: /^Cell editor$/i }),
+    ).toBeVisible();
 
     await expect(
-      page.getByText("No schedule events yet.", { exact: true }),
+      page.getByText("No staffing events yet.", { exact: true }),
     ).toBeVisible();
 
     await page
@@ -93,11 +123,13 @@ test.describe("workforce schedule append event history path", () => {
     await page.getByLabel(/^Event note$/i).fill(scenario.eventNote);
     await page.getByRole("button", { name: /^Append event$/i }).click();
 
-    await expect(page.getByText("Schedule event appended.")).toBeVisible();
+    await expect(
+      page.getByText("Schedule event appended to the selected row."),
+    ).toBeVisible();
     await page.waitForURL(
       (target) =>
         target.pathname === "/store/workforce/schedule-planner" &&
-        target.searchParams.get("scheduleId") === String(scenario.scheduleId) &&
+        target.searchParams.get("scheduleDate") === scenario.targetDateInput &&
         target.searchParams.get("saved") === "event-added",
       {
         timeout: 10_000,

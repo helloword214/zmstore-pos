@@ -719,6 +719,11 @@ enum WorkerScheduleStatus {
   COMPLETED
 }
 
+enum WorkerScheduleEntryType {
+  WORK
+  OFF
+}
+
 enum WorkerScheduleEventType {
   MARKED_ABSENT
   REPLACEMENT_ASSIGNED
@@ -856,12 +861,29 @@ model ScheduleTemplateAssignment {
   @@index([templateId, status])
 }
 
+model WorkerScheduleShiftPreset {
+  id          Int      @id @default(autoincrement())
+  startMinute Int
+  endMinute   Int
+  createdById Int?
+  updatedById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("WorkerScheduleShiftPresetsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("WorkerScheduleShiftPresetsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([startMinute, endMinute])
+  @@index([startMinute, endMinute])
+}
+
 model WorkerSchedule {
   id                   Int                  @id @default(autoincrement())
   workerId             Int
   role                 WorkerScheduleRole
   branchId             Int?
   scheduleDate         DateTime             @db.Date
+  entryType            WorkerScheduleEntryType @default(WORK)
   startAt              DateTime
   endAt                DateTime
   templateAssignmentId Int?
@@ -886,6 +908,7 @@ model WorkerSchedule {
 
   @@unique([workerId, scheduleDate, startAt, endAt])
   @@index([workerId, scheduleDate])
+  @@index([workerId, scheduleDate, entryType])
   @@index([status, scheduleDate])
   @@index([branchId, scheduleDate])
 }
@@ -1957,6 +1980,8 @@ model User {
   workerScheduleTemplatesUpdated            ScheduleTemplate[]                  @relation("WorkerScheduleTemplatesUpdatedBy")
   workerScheduleTemplateAssignmentsCreated  ScheduleTemplateAssignment[]        @relation("WorkerScheduleTemplateAssignmentsCreatedBy")
   workerScheduleTemplateAssignmentsUpdated  ScheduleTemplateAssignment[]        @relation("WorkerScheduleTemplateAssignmentsUpdatedBy")
+  workerScheduleShiftPresetsCreated         WorkerScheduleShiftPreset[]         @relation("WorkerScheduleShiftPresetsCreatedBy")
+  workerScheduleShiftPresetsUpdated         WorkerScheduleShiftPreset[]         @relation("WorkerScheduleShiftPresetsUpdatedBy")
   workerSchedulesCreated                    WorkerSchedule[]                    @relation("WorkerSchedulesCreatedBy")
   workerSchedulesUpdated                    WorkerSchedule[]                    @relation("WorkerSchedulesUpdatedBy")
   workerSchedulesPublished                  WorkerSchedule[]                    @relation("WorkerSchedulesPublishedBy")

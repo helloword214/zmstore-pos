@@ -2,18 +2,20 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-26
+Last Reviewed: 2026-03-27
 
 ## Purpose
 
 Defines one source of truth for:
 
 1. worker schedule planning
-2. recurring worker schedule template and assignment rules
-3. staffing exception history
-4. attendance / duty-result recording as payroll input
-5. rider duty-session access gating
-6. cashier schedule alignment with the existing `CashierShift` lifecycle
+2. planner-first manager scheduling flow and planning-window rules
+3. shift preset helpers and custom time entry boundaries
+4. recurring worker schedule template and assignment rules
+5. staffing exception history
+6. attendance / duty-result recording as payroll input
+7. rider duty-session access gating
+8. cashier schedule alignment with the existing `CashierShift` lifecycle
 
 This document exists so scheduling, operational access, and cashier drawer accountability do not get merged into one unclear flow.
 
@@ -22,13 +24,15 @@ This document exists so scheduling, operational access, and cashier drawer accou
 This document owns:
 
 1. worker schedule planning rules for `CASHIER`, `EMPLOYEE`, and rider-linked `EMPLOYEE`
-2. recurring schedule template and assignment rules used to generate future work-day schedules
-3. staffing exception history through append-only schedule events
-4. attendance / duty-result facts used later by payroll
-5. manager-applied suspension records that block work without deleting schedule history
-6. rider duty-session authority, lifecycle, and access-gating rules
-7. the boundary between cashier schedule planning and cashier drawer shift ownership
-8. real-world staffing scenarios such as absence, replacement, on-call coverage, early out, swap, replacement no-show, and suspension
+2. planner-board-first scheduling direction for manager-controlled workforce planning
+3. shift preset helper rules and the boundary between preset use and custom time entry
+4. recurring schedule template and assignment rules used to generate future work-day schedules
+5. staffing exception history through append-only schedule events
+6. attendance / duty-result facts used later by payroll
+7. manager-applied suspension records that block work without deleting schedule history
+8. rider duty-session authority, lifecycle, and access-gating rules
+9. the boundary between cashier schedule planning and cashier drawer shift ownership
+10. real-world staffing scenarios such as absence, replacement, on-call coverage, early out, swap, replacement no-show, and suspension
 
 ## Does Not Own
 
@@ -54,12 +58,14 @@ This document does not own:
 This document covers:
 
 1. planned schedules for `CASHIER`, `STORE_MANAGER`, and `EMPLOYEE` workers used in store operations
-2. recurring weekly schedule templates and employee template assignments
-3. staffing history for schedule changes and exceptions
-4. attendance / duty-result facts that later feed payroll
-5. manager-applied suspension records for no-work periods
-6. manager-controlled rider duty sessions as the rider operational access gate
-7. cashier schedule planning only, while preserving `CashierShift` as the cashier money-lane SoT
+2. planner-board windows where manager schedules by week first and may expand to two-week or month planning
+3. quick shift preset helpers plus custom time entry for one worker-date cell
+4. recurring weekly schedule templates and employee template assignments as optional helper lanes
+5. staffing history for schedule changes and exceptions
+6. attendance / duty-result facts that later feed payroll
+7. manager-applied suspension records for no-work periods
+8. manager-controlled rider duty sessions as the rider operational access gate
+9. cashier schedule planning only, while preserving `CashierShift` as the cashier money-lane SoT
 
 This document does not yet define:
 
@@ -85,6 +91,42 @@ It answers:
 4. in what role and assignment context
 
 Worker schedule does not, by itself, unlock operational access.
+
+### 1a. Planner Board and Shift Preset Direction
+
+The manager-facing planner must be the primary scheduling entry point.
+
+Binding direction:
+
+1. manager should be able to schedule directly on a planner board without creating a template first
+2. V1 planning should default to a week view, while still allowing longer windows such as two weeks or one month through a denser board presentation
+3. planner rows may list employees directly; grouping by role is optional and not required for V1
+4. planner cells should stay compact and scan-friendly; detailed editing belongs in one focused cell editor rather than inside every grid cell
+5. quick shift presets may be offered for common time windows inside the focused editor
+6. custom time entry must remain available for exceptions, but V1 planner custom time is limited to whole-hour and `:30` increments only
+7. planner cells must distinguish `BLANK`, intentional `OFF`, and timed `WORK` states
+8. `BLANK` means no active schedule row exists for that worker-date
+9. intentional `OFF` means a manager saved a no-work row for that worker-date
+10. clearing a planner cell returns it to `BLANK`
+11. templates are optional helpers only and must not block direct schedule entry
+12. planner time display should remain consistent in `12-hour AM/PM` format across board cells, preset choices, summaries, and history views
+
+`Shift Preset` is a quick-entry helper under the planner board.
+
+It answers:
+
+1. what common time window can be applied with one quick action
+2. how the manager can move faster without retyping the same hours repeatedly
+3. when the manager should switch to custom time entry instead of forcing the preset
+4. which saved work presets the store currently keeps for repeated scheduling
+5. how a manager can add, update, or remove reusable work presets without affecting the fixed `OFF / Day off` choice
+
+Binding rules:
+
+1. work shift presets are store-managed reusable time windows
+2. managers may add, update, and remove work shift presets directly from the planner helper flow
+3. `OFF / Day off` remains a fixed built-in planner action and is not part of the editable work preset library
+4. applying a preset still writes or updates the underlying worker schedule row; presets do not replace the row itself
 
 ### 2. Schedule Event Log
 
@@ -175,14 +217,15 @@ Cashier schedule alone must not unlock cashier money lanes.
 Manager responsibilities:
 
 1. create and publish worker schedules
-2. maintain recurring templates and assign them to workers
-3. record staffing exceptions
-4. record attendance / duty results
-5. apply or lift suspension records with reason
-6. assign replacements and on-call coverage
-7. open and close rider duty sessions
-8. open cashier shifts for the actual cashier on duty
-9. keep staffing history auditable
+2. use the planner board as the primary scheduling lane
+3. maintain recurring templates and assign them to workers only when a pattern repeats
+4. record staffing exceptions
+5. record attendance / duty results
+6. apply or lift suspension records with reason
+7. assign replacements and on-call coverage
+8. open and close rider duty sessions
+9. open cashier shifts for the actual cashier on duty
+10. keep staffing history auditable
 
 ### Rider
 
@@ -224,14 +267,20 @@ Recommended planning fields:
 2. `role`
 3. `branchId` or assignment context
 4. `scheduleDate`
-5. `startAt`
-6. `endAt`
-7. `templateAssignmentId` nullable
-8. `note`
-9. `createdById`
-10. `updatedById`
-11. `publishedById`
-12. `publishedAt`
+5. `entryType`
+6. `startAt`
+7. `endAt`
+8. `templateAssignmentId` nullable
+9. `note`
+10. `createdById`
+11. `updatedById`
+12. `publishedById`
+13. `publishedAt`
+
+Recommended entry types:
+
+1. `WORK`
+2. `OFF`
 
 Recommended schedule statuses:
 
@@ -245,7 +294,16 @@ Planning rules:
 1. no overlapping published schedules for the same worker in the same time window
 2. publish actions must be manager-authored and auditable
 3. schedule edits must not erase prior staffing exceptions
-4. schedule planning is not by itself an access grant
+4. a manager may edit a `PUBLISHED` row in place for time, note, or intentional `OFF` changes, and that row remains `PUBLISHED` unless the manager explicitly clears it
+5. `Clear to blank` must return the planner cell to `BLANK` by moving the underlying active row to `CANCELLED`; the row is not silently deleted
+6. schedule planning is not by itself an access grant
+7. direct planner-board schedule entry is valid even when no template exists
+8. the planner board should optimize for scanning first; one selected cell may open a focused preset/custom editor outside the grid
+9. `BLANK` means no active row exists for that worker-date
+10. `OFF` means an intentional no-work row exists for that worker-date and must remain distinct from `BLANK`
+11. clearing a cell returns it to `BLANK`
+12. `OFF` rows remain publishable and auditable schedule rows even though they do not represent worked time
+13. shift presets may accelerate entry, but custom time entry must remain available
 
 ## Recurring Schedule Template Canonical Model
 
@@ -293,12 +351,14 @@ Recurring template rules:
 
 1. V1 templates are weekly only; advanced alternating or rotating schedules are out of scope
 2. one template may be assigned to many workers
-3. templates generate `WORK_DAY` schedule entries only
-4. dates with no generated schedule entry are treated as `REST_DAY / no duty`
-5. template edits affect future generation only
-6. existing generated schedules must remain unchanged unless a manager edits those schedule rows directly
-7. generated schedule rows remain the per-date source of truth for attendance, payroll input, and audit history
-8. template creation must start from a blank create lane; editing an existing template requires explicit manager selection and must not silently auto-open another template
+3. templates generate `WORK` schedule rows only
+4. dates with no generated row remain planner `BLANK`; they do not automatically become intentional `OFF`
+5. a manager may save an intentional `OFF` row when the no-work decision itself must stay visible or must block later template generation on that date
+6. template edits affect future generation only
+7. existing generated schedules must remain unchanged unless a manager edits those schedule rows directly
+8. generated schedule rows remain the per-date source of truth for attendance, payroll input, and audit history
+9. template creation must start from a blank create lane; editing an existing template requires explicit manager selection and must not silently auto-open another template
+10. templates are optional helper lanes and must never be mandatory before a manager can create or edit a schedule row
 
 ## Attendance / Duty Result Canonical Model
 
@@ -349,12 +409,14 @@ V1 leave scope:
 
 Key rules:
 
-1. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
-2. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
-3. `LEAVE` is separate from `ABSENT`
-4. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
-5. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
-6. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+1. `OFF` rows should default to `REST_DAY / NOT_REQUIRED` in attendance review unless a manager is recording a deliberate exception
+2. `BLANK` dates may also default to `REST_DAY / NOT_REQUIRED` because no work row exists yet
+3. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
+4. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
+5. `LEAVE` is separate from `ABSENT`
+6. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
+7. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
+8. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 
 ## Suspension Record Canonical Model
 

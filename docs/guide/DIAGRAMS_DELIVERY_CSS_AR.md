@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-25
+Last Reviewed: 2026-03-26
 Diagram Version: v3.2
 
 ## Purpose
@@ -202,6 +202,8 @@ Authority note:
 | `store.payroll.tsx` | manager payroll-run review, government-deduction visibility, charge deduction posting, and payroll-run status freeze |
 | `creation.workforce.pay-profiles.tsx` | admin employee payroll setup: daily salary history and employee-specific deduction setup |
 | `creation.workforce.payroll-policy.tsx` | admin payroll defaults, incentive rules, and government-deduction inclusion switches |
+| `store.workforce.schedule-planner.tsx` | manager planner board for direct week-first schedule entry, explicit `BLANK / OFF / WORK` cell states, editable saved work presets with fixed `OFF / Day off`, compact cell scanning, single-panel preset/custom editing, range publish, and optional template generation |
+| `store.workforce.schedule-templates.tsx` | optional helper page for repeated weekly patterns and worker-template assignment links |
 | `ar._index.tsx` | customer AR list authority |
 | `ar.customers.$id.tsx` | customer AR ledger/payments |
 
