@@ -52,6 +52,15 @@ type LoadoutSnapshotRow = {
   qty: number;
 };
 
+type DispatchUnitKind = "PACK" | "RETAIL";
+
+type LinkedParentOrderItemRow = {
+  productId: number;
+  name: string;
+  qty: number;
+  unitKind: DispatchUnitKind;
+};
+
 type LinkedParentOrderRow = {
   orderId: number;
   orderCode: string;
@@ -60,6 +69,13 @@ type LinkedParentOrderRow = {
   fulfillmentStatus: FulfillmentStatus | null;
   itemCount: number;
   totalQty: number;
+  items: LinkedParentOrderItemRow[];
+};
+
+type DispatchAvailabilityRow = {
+  pack: number;
+  retail: number;
+  allowPackSale: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -105,6 +121,7 @@ type LoaderData = {
   kgById: Record<number, number>;
   // product.id → current PACK stock
   stockById: Record<number, number>;
+  dispatchAvailabilityById: Record<number, DispatchAvailabilityRow>;
 
   vehicles: VehicleDTO[];
   categories?: string[];
@@ -125,6 +142,26 @@ type LoaderData = {
   }>;
   linkedParentOrders: LinkedParentOrderRow[];
 };
+
+function resolveDispatchUnitKind(input: {
+  storedKind: unknown;
+  qty: number;
+  allowPackSale: boolean;
+}): DispatchUnitKind {
+  if (input.storedKind === "RETAIL" || input.storedKind === "PACK") {
+    return input.storedKind;
+  }
+
+  if (input.allowPackSale && !Number.isInteger(input.qty)) {
+    return "RETAIL";
+  }
+
+  return "PACK";
+}
+
+function makeDispatchDemandKey(productId: number, unitKind: DispatchUnitKind) {
+  return `${productId}:${unitKind}`;
+}
 
 // Aggregate loadout rows by productId (sum qty). Keeps a stable canonical shape.
 function aggregateLoadoutSnapshot(
@@ -313,6 +350,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             select: {
               productId: true,
               qty: true,
+              unitKind: true,
               product: { select: { name: true } },
             },
           },
@@ -362,6 +400,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 8);
 
+  const dispatchAvailabilityById: Record<number, DispatchAvailabilityRow> = {};
+  const dispatchProducts =
+    uniqueIds.size > 0
+      ? await db.product.findMany({
+          where: { id: { in: Array.from(uniqueIds) } },
+          select: {
+            id: true,
+            allowPackSale: true,
+            stock: true,
+            packingStock: true,
+          },
+        })
+      : [];
+  const dispatchProductById = new Map(dispatchProducts.map((p) => [p.id, p]));
+  for (const product of dispatchProducts) {
+    dispatchAvailabilityById[product.id] = {
+      pack: Number(product.stock ?? 0),
+      retail: Number(product.packingStock ?? 0),
+      allowPackSale: Boolean(product.allowPackSale),
+    };
+  }
+
   const linkedParentOrders: LinkedParentOrderRow[] = [];
   for (const link of links) {
     const order = link.order;
@@ -387,6 +447,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       fulfillmentStatus: order.fulfillmentStatus ?? null,
       itemCount: order.items.length,
       totalQty,
+      items: order.items.map((item) => {
+        const dispatchProduct = dispatchProductById.get(item.productId);
+        const qty = Math.max(0, Number(item.qty) || 0);
+        return {
+          productId: item.productId,
+          name: item.product?.name ?? `#${item.productId}`,
+          qty,
+          unitKind: resolveDispatchUnitKind({
+            storedKind: item.unitKind,
+            qty,
+            allowPackSale: Boolean(dispatchProduct?.allowPackSale),
+          }),
+        };
+      }),
     });
   }
   linkedParentOrders.sort((a, b) => a.orderId - b.orderId);
@@ -418,6 +492,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     productOptions,
     kgById,
     stockById,
+    dispatchAvailabilityById,
     vehicles,
     categories: categoryRows.map((c) => c.name).filter(Boolean),
     readOnly,
@@ -1075,32 +1150,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
           // ✅ Prefer stored unitKind ALWAYS.
           // If missing (legacy), do NOT infer by comparing to *live* product prices
           // because product price can change after order creation.
-          const storedKind = it.unitKind as
-            | "RETAIL"
-            | "PACK"
-            | null
-            | undefined;
-
-          let inferred: "RETAIL" | "PACK" | null =
-            storedKind === "RETAIL" || storedKind === "PACK"
-              ? storedKind
-              : null;
-
-          if (!inferred) {
-            // Legacy heuristic:
-            // - If retail sale allowed AND qty is fractional (ex: 0.25/0.5/0.75), it's RETAIL
-            // - Otherwise default PACK (sa LPG/common packs, safe default)
-            if (p.allowPackSale && !Number.isInteger(qty)) inferred = "RETAIL";
-            else inferred = "PACK";
-          }
-
-          if (!inferred) {
-            errors.push({
-              productId: it.productId,
-              reason: "Missing unitKind and cannot infer",
-            });
-            continue;
-          }
+          const inferred = resolveDispatchUnitKind({
+            storedKind: it.unitKind,
+            qty,
+            allowPackSale: Boolean(p.allowPackSale),
+          });
 
           const c = deltas.get(p.id) ?? { pack: 0, retail: 0 };
           if (inferred === "RETAIL") c.retail += qty;
@@ -1285,6 +1339,7 @@ export default function RunDispatchPage() {
     categories,
     kgById,
     stockById,
+    dispatchAvailabilityById,
     vehicles,
     readOnly,
     parentOrdersSummary,
@@ -1373,6 +1428,21 @@ export default function RunDispatchPage() {
     [stockById]
   );
 
+  const dispatchAvailabilityMap = React.useMemo(
+    () =>
+      new Map<number, DispatchAvailabilityRow>(
+        Object.entries(dispatchAvailabilityById).map(([k, v]) => [
+          Number(k),
+          {
+            pack: Number(v.pack ?? 0),
+            retail: Number(v.retail ?? 0),
+            allowPackSale: Boolean(v.allowPackSale),
+          },
+        ])
+      ),
+    [dispatchAvailabilityById]
+  );
+
   const usedCapacityKg = React.useMemo(() => {
     return aggregatedLoadout.reduce((sum, L) => {
       if (!L.productId) return sum;
@@ -1427,6 +1497,60 @@ export default function RunDispatchPage() {
     });
   }, [aggregatedLoadout, stockMap]);
 
+  const runDraftShortageByKey = React.useMemo(() => {
+    const demandByKey = new Map<string, number>();
+
+    for (const order of linkedParentOrders) {
+      for (const item of order.items) {
+        const demandKey = makeDispatchDemandKey(item.productId, item.unitKind);
+        demandByKey.set(demandKey, (demandByKey.get(demandKey) ?? 0) + item.qty);
+      }
+    }
+
+    for (const row of aggregatedLoadout) {
+      if (!row.productId) continue;
+      const demandKey = makeDispatchDemandKey(row.productId, "PACK");
+      demandByKey.set(
+        demandKey,
+        (demandByKey.get(demandKey) ?? 0) + qtyNum(row.qty)
+      );
+    }
+
+    const shortages = new Map<
+      string,
+      {
+        unitKind: DispatchUnitKind;
+        available: number;
+        required: number;
+        shortage: number;
+      }
+    >();
+
+    for (const [demandKey, required] of demandByKey.entries()) {
+      const [productIdRaw, unitKindRaw] = demandKey.split(":");
+      const productId = Number(productIdRaw);
+      const unitKind = unitKindRaw === "RETAIL" ? "RETAIL" : "PACK";
+      const availability = dispatchAvailabilityMap.get(productId);
+      const available =
+        unitKind === "RETAIL"
+          ? Number(availability?.retail ?? 0)
+          : Number(availability?.pack ?? 0);
+
+      if (required > available) {
+        shortages.set(demandKey, {
+          unitKind,
+          available,
+          required,
+          shortage: required - available,
+        });
+      }
+    }
+
+    return shortages;
+  }, [aggregatedLoadout, dispatchAvailabilityMap, linkedParentOrders]);
+
+  const hasRunDraftShortage = runDraftShortageByKey.size > 0;
+
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
@@ -1479,48 +1603,120 @@ export default function RunDispatchPage() {
                 ))}
               </div>
             )}
+            {!readOnly && hasRunDraftShortage ? (
+              <SoTAlert tone="warning" className="mt-3 text-sm">
+                Current run draft exceeds live stock on the tagged item rows
+                below. Release the affected order or rebalance the loadout
+                before dispatch.
+              </SoTAlert>
+            ) : null}
             {linkedParentOrders.length > 0 && (
               <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
-                {linkedParentOrders.map((order) => (
-                  <div
-                    key={order.orderId}
-                    className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-slate-800">
-                        {order.orderCode}
+                {linkedParentOrders.map((order) => {
+                  const orderHasShortage = order.items.some((item) =>
+                    runDraftShortageByKey.has(
+                      makeDispatchDemandKey(item.productId, item.unitKind)
+                    )
+                  );
+
+                  return (
+                    <div
+                      key={order.orderId}
+                      className={`rounded-xl border px-3 py-3 ${
+                        orderHasShortage
+                          ? "border-rose-200 bg-rose-50/70"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-medium text-slate-800">
+                              {order.orderCode}
+                            </div>
+                            {orderHasShortage ? (
+                              <SoTStatusBadge tone="danger">
+                                Contains insufficient item
+                              </SoTStatusBadge>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-600">
+                            {order.customerLabel ?? "Walk-in / unnamed delivery"}{" "}
+                            · {order.itemCount} item(s) · {order.totalQty} total
+                            qty
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Order: {order.status} · Fulfillment:{" "}
+                            {order.fulfillmentStatus ?? "—"}
+                          </div>
+                        </div>
+
+                        {!readOnly ? (
+                          <Form method="post" replace className="shrink-0">
+                            <input
+                              type="hidden"
+                              name="releaseOrderId"
+                              value={order.orderId}
+                            />
+                            <SoTButton
+                              name="intent"
+                              value="release-order"
+                              type="submit"
+                              variant="secondary"
+                              disabled={busy}
+                              className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                            >
+                              Release to Dispatch Queue
+                            </SoTButton>
+                          </Form>
+                        ) : null}
                       </div>
-                      <div className="mt-1 text-xs text-slate-600">
-                        {order.customerLabel ?? "Walk-in / unnamed delivery"} ·{" "}
-                        {order.itemCount} item(s) · {order.totalQty} total qty
-                      </div>
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        Order: {order.status} · Fulfillment:{" "}
-                        {order.fulfillmentStatus ?? "—"}
+
+                      <div className="mt-3 grid gap-2">
+                        {order.items.map((item) => {
+                          const shortage = runDraftShortageByKey.get(
+                            makeDispatchDemandKey(item.productId, item.unitKind)
+                          );
+
+                          return (
+                            <div
+                              key={`${order.orderId}-${item.productId}-${item.unitKind}`}
+                              className={`rounded-lg border px-3 py-2 ${
+                                shortage
+                                  ? "border-rose-200 bg-white"
+                                  : "border-slate-200 bg-white/80"
+                              }`}
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm text-slate-800">
+                                  #{item.productId} {item.name}
+                                </span>
+                                <SoTStatusBadge tone="neutral">
+                                  {item.unitKind}
+                                </SoTStatusBadge>
+                                {shortage ? (
+                                  <SoTStatusBadge tone="danger">
+                                    Insufficient stock
+                                  </SoTStatusBadge>
+                                ) : null}
+                              </div>
+                              <div
+                                className={`mt-1 text-[11px] ${
+                                  shortage ? "text-rose-700" : "text-slate-500"
+                                }`}
+                              >
+                                Qty: {item.qty}
+                                {shortage
+                                  ? ` · Current run draft needs ${shortage.required} ${shortage.unitKind.toLowerCase()} and only has ${shortage.available} available (short ${shortage.shortage}).`
+                                  : ""}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-
-                    {!readOnly ? (
-                      <Form method="post" replace className="shrink-0">
-                        <input
-                          type="hidden"
-                          name="releaseOrderId"
-                          value={order.orderId}
-                        />
-                        <SoTButton
-                          name="intent"
-                          value="release-order"
-                          type="submit"
-                          variant="secondary"
-                          disabled={busy}
-                          className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                        >
-                          Release to Dispatch Queue
-                        </SoTButton>
-                      </Form>
-                    ) : null}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </SoTCard>
@@ -1880,7 +2076,11 @@ export default function RunDispatchPage() {
                   value="dispatch"
                   type="submit"
                   disabled={
-                    !hasRider || overCapacity || overStock || !canDispatchByQty
+                    !hasRider ||
+                    overCapacity ||
+                    overStock ||
+                    hasRunDraftShortage ||
+                    !canDispatchByQty
                   }
                   title={
                     !hasRider
@@ -1889,6 +2089,8 @@ export default function RunDispatchPage() {
                       ? "Capacity exceeded (kg)"
                       : overStock
                       ? "One or more lines exceed available stock"
+                      : hasRunDraftShortage
+                      ? "Linked order items exceed available stock for the current run draft"
                       : !canDispatchByQty
                       ? "Add extra loadout or link parent orders (PAD)"
                       : "Ready to dispatch"
