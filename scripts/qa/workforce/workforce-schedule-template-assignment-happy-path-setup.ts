@@ -6,7 +6,6 @@ import {
   EmployeeRole,
   UserAuthState,
   UserRole,
-  WorkerScheduleAssignmentStatus,
   WorkerScheduleRole,
   WorkerScheduleTemplateDayOfWeek,
   WorkerScheduleTemplateStatus,

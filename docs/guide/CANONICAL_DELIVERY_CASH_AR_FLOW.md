@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-14
+Last Reviewed: 2026-03-27
 Supersedes: `DELIVERY_RUN_CANONICAL_FLOW.md` (behavioral overlap)
 Archived: `docs/archive/guide/DELIVERY_RUN_CANONICAL_FLOW.md`
 
@@ -105,7 +105,7 @@ This map is the primary route-level reference for canonical target behavior.
 | Order Pad | Cashier/Manager/Employee | `app/routes/pad-order._index.tsx` | Build cart, capture customer/channel, submit order create request | Client preflight only, no pricing authority |
 | Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority + creator audit (`createdById`, `createdByRole`) |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders, review failed-delivery returns, and create/assign run | Order eligibility plus failed-delivery redispatch/cancel authority; no AR authority |
-| Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
+| Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout, release linked parent orders before dispatch, and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
 | Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage plus failed-delivery trace | `runReceipt`, `deliveryRunOrder.attemptOutcome`, `clearanceCase/decision`, recap services |
 | Rider check-in | Rider | `app/routes/runs.$id.rider-checkin.tsx` | Encode receipt cash, report failed parent deliveries, and send clearance requests | `runReceipt`, `deliveryRunOrder.attemptOutcome` rider report, `clearanceCase(status=NEEDS_CLEARANCE)` |
 | Clearance inbox | Manager | `app/routes/store.clearance.tsx` | View pending clearance workload | `clearanceCase` pending list |
@@ -196,6 +196,9 @@ This retirement does not change AR authority: `customerAr` remains decision-back
 ### T1 Dispatch (`PLANNED -> DISPATCHED`)
 
 - Assign rider, vehicle, loadout.
+- While the run is still `PLANNED`, manager may release a linked parent order back to the dispatch queue.
+- Pre-dispatch release clears only the active `deliveryRunOrder` link for that order.
+- Pre-dispatch release must not mutate inventory, cashier remit, or rider check-in artifacts.
 - Physical run load is the sum of:
   - linked parent-order quantities
   - extra run load captured in `deliveryRun.loadoutSnapshot`

@@ -2,8 +2,8 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-26
-Diagram Version: v3.2
+Last Reviewed: 2026-03-27
+Diagram Version: v3.3
 
 ## Purpose
 
@@ -24,7 +24,10 @@ flowchart TD
     A0["Order Pad (/pad-order)"] --> A1["Order Create (/orders/new)"]
     A1 --> A2["Apply policy discounts (customer rules if present)"]
     A2 --> A3["Freeze OrderItem + Order pricing snapshots"]
-    A3 --> A["Dispatch (PLANNED -> DISPATCHED)"]
+    A3 --> A4["Run staging (PLANNED)"]
+    A4 --> A5{"Release linked order before dispatch?"}
+    A5 -- "Yes" --> A6["Return order to dispatch queue (no stock mutation)"]
+    A5 -- "No" --> A["Dispatch (PLANNED -> DISPATCHED)"]
     A --> B["Rider Check-in (receipts + cash)"]
     B --> B1{"Failed delivery reported?"}
     B1 -- "Yes" --> B2["Flag failed delivery + required rider reason"]
@@ -70,6 +73,7 @@ Dispatch assignment invariant:
 1. A delivery order may have many historical run attempts over time.
 2. Only one active run link is valid at a time.
 3. Active means `PLANNED`, `DISPATCHED`, or `CHECKED_IN`.
+4. Releasing a linked order from a `PLANNED` run clears only the active run link and returns the order to the dispatch queue.
 
 ## 2) Clearance Decision Tree
 

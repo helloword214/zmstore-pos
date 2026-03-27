@@ -8,7 +8,7 @@ import {
   useSearchParams,
 } from "@remix-run/react";
 import * as React from "react";
-import { FulfillmentStatus, Prisma } from "@prisma/client";
+import { FulfillmentStatus, OrderStatus, Prisma } from "@prisma/client";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { SelectInput } from "~/components/ui/SelectInput";
@@ -50,6 +50,16 @@ type LoadoutSnapshotRow = {
   productId: number | null;
   name: string;
   qty: number;
+};
+
+type LinkedParentOrderRow = {
+  orderId: number;
+  orderCode: string;
+  customerLabel: string | null;
+  status: OrderStatus;
+  fulfillmentStatus: FulfillmentStatus | null;
+  itemCount: number;
+  totalQty: number;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -113,6 +123,7 @@ type LoaderData = {
     name: string;
     qty: number;
   }>;
+  linkedParentOrders: LinkedParentOrderRow[];
 };
 
 // Aggregate loadout rows by productId (sum qty). Keeps a stable canonical shape.
@@ -288,6 +299,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       order: {
         select: {
           id: true,
+          orderCode: true,
+          status: true,
+          fulfillmentStatus: true,
+          customer: {
+            select: {
+              alias: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
           items: {
             select: {
               productId: true,
@@ -341,6 +362,35 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 8);
 
+  const linkedParentOrders: LinkedParentOrderRow[] = [];
+  for (const link of links) {
+    const order = link.order;
+    if (!order) continue;
+
+    const totalQty = (order.items || []).reduce(
+      (sum, item) => sum + Math.max(0, Number(item.qty) || 0),
+      0
+    );
+    const customerLabel =
+      order.customer?.alias?.trim() ||
+      [order.customer?.firstName, order.customer?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      null;
+
+    linkedParentOrders.push({
+      orderId: order.id,
+      orderCode: order.orderCode,
+      customerLabel,
+      status: order.status,
+      fulfillmentStatus: order.fulfillmentStatus ?? null,
+      itemCount: order.items.length,
+      totalQty,
+    });
+  }
+  linkedParentOrders.sort((a, b) => a.orderId - b.orderId);
+
   // Categories with at least 1 active, pack-eligible product (for picker filter)
   const categoryRows = await db.category.findMany({
     where: {
@@ -373,6 +423,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     readOnly,
     parentOrdersSummary,
     parentOrderTopItems,
+    linkedParentOrders,
   };
 
   return json(data);
@@ -417,6 +468,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+  const releaseOrderId = Number(form.get("releaseOrderId") || NaN);
 
   const riderName = (String(form.get("riderName") ?? "").trim() || null) as
     | string
@@ -503,6 +555,72 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (intent === "cancel") {
     return redirect("/runs");
+  }
+
+  if (intent === "release-order") {
+    if (run.status !== "PLANNED") {
+      return json<ActionData>(
+        {
+          ok: false,
+          error: "Only PLANNED runs can release linked orders back to dispatch.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!Number.isFinite(releaseOrderId) || releaseOrderId <= 0) {
+      return json<ActionData>(
+        { ok: false, error: "Select a valid linked order to release." },
+        { status: 400 }
+      );
+    }
+
+    const linkedOrder = await db.deliveryRunOrder.findUnique({
+      where: {
+        runId_orderId: {
+          runId: id,
+          orderId: releaseOrderId,
+        },
+      },
+      select: {
+        orderId: true,
+        order: {
+          select: {
+            id: true,
+            dispatchedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!linkedOrder) {
+      return json<ActionData>(
+        { ok: false, error: "Linked order not found on this run." },
+        { status: 404 }
+      );
+    }
+
+    if (linkedOrder.order?.dispatchedAt) {
+      return json<ActionData>(
+        {
+          ok: false,
+          error:
+            "This order was already dispatched and can no longer be released here.",
+        },
+        { status: 400 }
+      );
+    }
+
+    await db.deliveryRunOrder.delete({
+      where: {
+        runId_orderId: {
+          runId: id,
+          orderId: releaseOrderId,
+        },
+      },
+    });
+
+    return redirect(`/runs/${id}/dispatch?releasedOrderId=${releaseOrderId}`);
   }
 
   // Load all active riders, and map label → employeeId
@@ -1171,11 +1289,13 @@ export default function RunDispatchPage() {
     readOnly,
     parentOrdersSummary,
     parentOrderTopItems,
+    linkedParentOrders,
   } = useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
   const [sp] = useSearchParams();
   const savedFlag = sp.get("saved") === "1";
+  const releasedOrderId = Number(sp.get("releasedOrderId") || NaN);
   const busy = nav.state !== "idle";
 
   const [riderName, setRiderName] = React.useState<string>(
@@ -1359,12 +1479,63 @@ export default function RunDispatchPage() {
                 ))}
               </div>
             )}
+            {linkedParentOrders.length > 0 && (
+              <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                {linkedParentOrders.map((order) => (
+                  <div
+                    key={order.orderId}
+                    className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-800">
+                        {order.orderCode}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        {order.customerLabel ?? "Walk-in / unnamed delivery"} ·{" "}
+                        {order.itemCount} item(s) · {order.totalQty} total qty
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Order: {order.status} · Fulfillment:{" "}
+                        {order.fulfillmentStatus ?? "—"}
+                      </div>
+                    </div>
+
+                    {!readOnly ? (
+                      <Form method="post" replace className="shrink-0">
+                        <input
+                          type="hidden"
+                          name="releaseOrderId"
+                          value={order.orderId}
+                        />
+                        <SoTButton
+                          name="intent"
+                          value="release-order"
+                          type="submit"
+                          variant="secondary"
+                          disabled={busy}
+                          className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                        >
+                          Release to Dispatch Queue
+                        </SoTButton>
+                      </Form>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </SoTCard>
         )}
 
         {savedFlag ? (
           <SoTAlert tone="success" className="mb-3 text-sm">
             Staging saved.
+          </SoTAlert>
+        ) : null}
+
+        {Number.isFinite(releasedOrderId) && releasedOrderId > 0 ? (
+          <SoTAlert tone="success" className="mb-3 text-sm">
+            Linked order #{releasedOrderId} was released back to the dispatch
+            queue.
           </SoTAlert>
         ) : null}
 
