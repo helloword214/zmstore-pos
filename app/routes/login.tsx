@@ -7,9 +7,17 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
-import { getPendingLogin, getUser, homePathFor, setPendingLogin } from "~/utils/auth.server";
+import {
+  createUserSession,
+  getPendingLogin,
+  getUser,
+  homePathFor,
+  isTrustedLoginDevice,
+  setPendingLogin,
+} from "~/utils/auth.server";
 import {
   checkLoginThrottle,
+  clearAuthFailureState,
   issueLoginOtpChallenge,
   LOGIN_OTP_EXPIRES_MINUTES,
   normalizeEmail,
@@ -73,6 +81,7 @@ export async function action({ request }: ActionFunctionArgs) {
       authState: true,
       role: true,
       passwordHash: true,
+      authVersion: true,
     },
   });
 
@@ -117,6 +126,17 @@ export async function action({ request }: ActionFunctionArgs) {
     return json<ActionError>({ form: "Invalid credentials." }, { status: 400 });
   }
 
+  const trustedDevice = await isTrustedLoginDevice(request, {
+    userId: user.id,
+    authVersion: user.authVersion,
+  });
+
+  if (trustedDevice) {
+    await clearAuthFailureState({ email, ip });
+    const { headers, user: sessionUser } = await createUserSession(request, user.id);
+    return redirect(homePathFor(sessionUser.role), { headers });
+  }
+
   try {
     const challenge = await issueLoginOtpChallenge({
       userId: user.id,
@@ -159,7 +179,7 @@ export default function LoginPage() {
         <SoTCard className="w-full p-6">
           <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Use your email, password, and one-time verification code.
+            Use your email and password. New or untrusted devices will ask for a one-time verification code.
           </p>
 
           {actionData?.form ? (

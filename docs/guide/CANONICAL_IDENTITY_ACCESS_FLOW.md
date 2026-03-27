@@ -241,20 +241,23 @@ Replacement authority:
 
 ## Login Verification + Brute-Force Guard (Binding)
 
-1. Interactive sign-in is two-step for all active roles:
-   - step 1: `email/password` on `login`
-   - step 2: `email OTP` verification on `login/otp`
-2. OTP contract:
+1. Interactive sign-in starts with `email/password` on `login` for all active roles.
+2. `login/otp` is required only when the current browser/device is not yet trusted for that user and current `authVersion`.
+3. OTP contract:
    - 6-digit numeric code
    - single-use challenge
    - 5-minute expiry per issued/resend code
    - max 5 verification attempts per challenge
    - max 3 sends per challenge with 60-second resend cooldown
-3. Brute-force guard contract:
+4. Trusted-device contract:
+   - successful login OTP verification marks the current browser/device as trusted for that user
+   - trusted-device skip has no routine day-window expiry
+   - trusted-device trust becomes invalid when browser cookies are cleared or account security changes bump `authVersion`
+5. Brute-force guard contract:
    - enforce rate-limit state per account email and per source IP
    - temporary lock for repeated failures (15-minute lock over 15-minute failure window)
    - invalid credential responses remain generic
-4. Full authenticated session is issued only after OTP verification succeeds.
+6. Full authenticated session is issued after password verification on a trusted device, or after OTP verification succeeds on a new/untrusted device.
 
 ## Password Recovery (Binding)
 
@@ -367,8 +370,8 @@ Implemented in `app/routes/creation.employees.tsx` (`intent = switch-role`):
 
 Implemented in auth routes:
 
-1. `app/routes/login.tsx` now validates `email/password`, enforces login rate-limit checks, and issues OTP challenge for all roles.
-2. `app/routes/login.otp.tsx` verifies/resends email OTP before creating authenticated session.
+1. `app/routes/login.tsx` now validates `email/password`, enforces login rate-limit checks, and skips or issues OTP based on the trusted-device marker for all roles.
+2. `app/routes/login.otp.tsx` verifies/resends email OTP for untrusted-device sign-in, then marks that browser/device as trusted before creating the authenticated session.
 3. `app/routes/account.security.tsx` provides authenticated self-service password update, reset-link send, and manager/cashier PIN update controls.
 4. `app/routes/forgot-password.tsx` and `app/routes/reset-password.$token.tsx` provide self-service reset.
 5. `app/routes/creation.employees_.new.tsx` handles invite-based setup (no admin-known default password) and initial onboarding payload.

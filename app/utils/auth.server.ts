@@ -22,6 +22,18 @@ export const authStorage = createCookieSessionStorage({
   },
 });
 
+const trustedLoginStorage = createCookieSessionStorage({
+  cookie: {
+    name: "pos_trusted_login",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 365 * 5, // persistent trusted-device marker
+    secrets: [sessionSecret],
+  },
+});
+
 export type Role = "ADMIN" | "STORE_MANAGER" | "CASHIER" | "EMPLOYEE";
 
 export type SessionUser = {
@@ -36,6 +48,10 @@ export type PendingLoginState = {
   challengeId: number;
   email: string;
 };
+
+function trustedLoginKey(userId: number) {
+  return `trustedLoginUser:${userId}`;
+}
 
 function safeNext(raw: string | null | undefined, fallback = "/cashier") {
   if (!raw) return fallback;
@@ -56,6 +72,11 @@ export function homePathFor(role: Role): string {
 export async function getAuthSession(request: Request) {
   const cookie = request.headers.get("Cookie");
   return authStorage.getSession(cookie);
+}
+
+async function getTrustedLoginSession(request: Request) {
+  const cookie = request.headers.get("Cookie");
+  return trustedLoginStorage.getSession(cookie);
 }
 
 function parsePositiveInt(raw: unknown): number | null {
@@ -115,6 +136,28 @@ export async function getUser(request: Request): Promise<SessionUser | null> {
   return { userId, role, branchIds, shiftId };
 }
 
+export async function isTrustedLoginDevice(
+  request: Request,
+  input: { userId: number; authVersion: number },
+) {
+  const session = await getTrustedLoginSession(request);
+  const trustedAuthVersion = parsePositiveInt(session.get(trustedLoginKey(input.userId)));
+  return trustedAuthVersion === input.authVersion;
+}
+
+export async function trustLoginDevice(
+  request: Request,
+  input: { userId: number; authVersion: number },
+) {
+  const session = await getTrustedLoginSession(request);
+  session.set(trustedLoginKey(input.userId), input.authVersion);
+  const setCookie = await trustedLoginStorage.commitSession(session);
+  return {
+    headers: { "Set-Cookie": setCookie },
+    setCookie,
+  };
+}
+
 export async function createUserSession(request: Request, userId: number) {
   const user = await db.user.findUnique({
     where: { id: userId },
@@ -138,14 +181,17 @@ export async function createUserSession(request: Request, userId: number) {
     (user.branches ?? []).map((b) => b.branchId),
   );
   // shiftId is set/cleared by cashier open/close shift flows
+  const setCookie = await authStorage.commitSession(session);
   return {
-    headers: { "Set-Cookie": await authStorage.commitSession(session) },
+    headers: { "Set-Cookie": setCookie },
+    setCookie,
     user: {
       userId: user.id,
       role: user.role as Role,
       branchIds: (user.branches ?? []).map((b) => b.branchId),
       shiftId: null,
-    } as SessionUser,
+      authVersion: user.authVersion,
+    },
   };
 }
 
