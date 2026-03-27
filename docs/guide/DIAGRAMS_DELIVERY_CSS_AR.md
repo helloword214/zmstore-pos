@@ -24,7 +24,7 @@ flowchart TD
     A0["Order Pad (/pad-order)"] --> A1["Order Create (/orders/new)"]
     A1 --> A2["Apply policy discounts (customer rules if present)"]
     A2 --> A3["Freeze OrderItem + Order pricing snapshots"]
-    A3 --> A4["Run staging (PLANNED)"]
+    A3 --> A4["Run staging (PLANNED + shortage cues)"]
     A4 --> A5{"Release linked order before dispatch?"}
     A5 -- "Yes" --> A6["Return order to dispatch queue (no stock mutation)"]
     A5 -- "No" --> A["Dispatch (PLANNED -> DISPATCHED)"]
