@@ -6,6 +6,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import {
   createUserSession,
@@ -170,6 +171,8 @@ export default function LoginPage() {
   const outlet = useOutlet();
   const actionData = useActionData<ActionError>();
   const nav = useNavigation();
+  const submitting = nav.state === "submitting";
+  const loading = nav.state === "loading";
   const busy = nav.state !== "idle";
   if (outlet) return outlet;
 
@@ -189,35 +192,45 @@ export default function LoginPage() {
           ) : null}
 
           <Form method="post" className="mt-4 space-y-3" replace>
-            <SoTFormField label="Email" error={actionData?.field?.email}>
-              <SoTSearchInput
-                name="email"
-                type="email"
-                placeholder="admin@local"
-                required
-              />
-            </SoTFormField>
-            <SoTFormField label="Password" error={actionData?.field?.password}>
-              <SoTSearchInput
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                required
-              />
-            </SoTFormField>
+            <fieldset disabled={busy} className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70">
+              <SoTFormField label="Email" error={actionData?.field?.email}>
+                <SoTSearchInput
+                  name="email"
+                  type="email"
+                  placeholder="admin@local"
+                  required
+                />
+              </SoTFormField>
+              <SoTFormField label="Password" error={actionData?.field?.password}>
+                <SoTSearchInput
+                  name="password"
+                  type="password"
+                  placeholder="••••••••"
+                  required
+                />
+              </SoTFormField>
 
-            <div className="flex items-center justify-between text-xs">
-              <a
-                href="/forgot-password"
-                className="font-medium text-indigo-700 hover:text-indigo-600"
-              >
-                Forgot password?
-              </a>
-            </div>
+              <div className="flex items-center justify-between text-xs">
+                <a
+                  href="/forgot-password"
+                  className="font-medium text-indigo-700 hover:text-indigo-600"
+                >
+                  Forgot password?
+                </a>
+              </div>
 
-            <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
-              {busy ? "Checking credentials…" : "Continue"}
-            </SoTButton>
+              {submitting ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Checking your sign-in"
+                  hint="Verifying credentials and device."
+                />
+              ) : null}
+
+              <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
+                {submitting ? "Checking credentials…" : loading ? "Continuing…" : "Continue"}
+              </SoTButton>
+            </fieldset>
           </Form>
 
           <div className="mt-4 space-y-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

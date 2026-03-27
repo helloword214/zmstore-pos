@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-02-28
+Last Reviewed: 2026-03-27
 
 ## 1. Purpose
 
@@ -40,6 +40,7 @@ SoT reusable components (catalog + minimum baseline):
 16. `app/components/ui/SoTNotificationBell.tsx`
 17. `app/components/ui/SoTStatusBadge.tsx`
 18. `app/components/ui/SoTBrandFooter.tsx`
+19. `app/components/ui/SoTLoadingState.tsx`
 
 Rule:
 
@@ -55,6 +56,8 @@ Operational usage baseline:
 5. Individual route titles/actions should prefer `SoTPageHeader` and avoid custom per-route header shells.
 6. Manager dashboard should be action-inbox-first: top cards must be pending decisions (clearance, remit/close review, variances) before monitor-only stats.
 7. Global endorsement/footer line should use `SoTBrandFooter` and remain subtle/non-blocking.
+8. App-shell route transitions should prefer `SoTLoadingState` with the `overlay` variant.
+9. Form, card, or table saving states should prefer `SoTLoadingState` with the `panel` or `inline` variant instead of route-local spinners or opacity-only pending cues.
 
 Component gap rule:
 
@@ -79,6 +82,14 @@ Component gap rule:
 4. Control height: `h-9` for inputs/selects/buttons in dense operational rows
 5. Input/select/button corner radius: `rounded-xl`
 6. Primary card corner radius: `rounded-2xl`
+
+## 3.3 Loading State Contract (Mandatory)
+
+1. `overlay` variant is the shell-level loading pattern for route transitions, redirects, and next-page handoff.
+2. `panel` variant is for card, form, or table blocks that are actively saving within the current page.
+3. `inline` variant is for compact busy feedback near buttons, filters, or row actions.
+4. Prefer `SoTLoadingState` over route-local animated dots, ad hoc loading chips, or opacity-only pending presentation.
+5. Loading labels must say what the app is doing in plain language, for example `Creating delivery run` or `Checking your sign-in`.
 
 ## 4. Patch-First Rule
 

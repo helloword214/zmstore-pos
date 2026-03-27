@@ -13,6 +13,7 @@ import type { LinksFunction } from "@remix-run/node";
 import type { ReactNode } from "react";
 import { SoTBrandFooter } from "~/components/ui/SoTBrandFooter";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 
 import "./tailwind.css";
 
@@ -29,37 +30,13 @@ export const links: LinksFunction = () => [
   },
 ];
 
-function AppShellPendingLayer({ label }: { label: string }) {
-  return (
-    <>
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1 bg-slate-200/80">
-        <div className="h-full w-1/3 rounded-r-full bg-gradient-to-r from-amber-400 via-sky-500 to-indigo-500 animate-pulse" />
-      </div>
-      <div className="pointer-events-none fixed inset-0 z-[90] bg-white/35 backdrop-blur-[1px]" />
-      <div
-        aria-live="polite"
-        aria-atomic="true"
-        className="pointer-events-none fixed bottom-4 right-4 z-[100] flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg ring-1 ring-slate-900/5 print:hidden"
-      >
-        <span className="relative flex h-3 w-3">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-sky-500" />
-        </span>
-        <div className="space-y-0.5">
-          <p className="text-sm font-semibold text-slate-900">{label}</p>
-          <p className="text-xs text-slate-500">Please wait a moment.</p>
-        </div>
-      </div>
-    </>
-  );
-}
-
 export function Layout({ children }: { children: ReactNode }) {
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
+  const loading = navigation.state === "loading";
   const pendingLabel =
     navigation.formData || navigation.state === "submitting"
-      ? "Saving changes..."
+      ? "Opening next page..."
       : "Loading page...";
 
   return (
@@ -71,7 +48,13 @@ export function Layout({ children }: { children: ReactNode }) {
         <Links />
       </head>
       <body className="bg-[#f7f7fb] text-slate-900" aria-busy={busy}>
-        {busy ? <AppShellPendingLayer label={pendingLabel} /> : null}
+        {loading ? (
+          <SoTLoadingState
+            variant="overlay"
+            label={pendingLabel}
+            hint="Please wait a moment."
+          />
+        ) : null}
         {children}
         <SoTBrandFooter ownerName="John Michael Benito" />
         <ScrollRestoration />

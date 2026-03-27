@@ -5,6 +5,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import {
   clearPendingLogin,
   createUserSession,
@@ -206,7 +207,12 @@ export default function LoginOtpPage() {
   const loaderData = useLoaderData<LoaderData>();
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
+  const submitting = nav.state === "submitting";
+  const loading = nav.state === "loading";
   const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("intent") ?? "");
+  const verifyBusy = pendingIntent === "verify" && busy;
+  const resendBusy = pendingIntent === "resend" && busy;
 
   const expiresLabel = new Date(loaderData.expiresAtIso).toLocaleTimeString();
   const sendsRemaining = Math.max(0, loaderData.maxSendCount - loaderData.sendCount);
@@ -237,30 +243,56 @@ export default function LoginOtpPage() {
           ) : null}
 
           <Form method="post" className="mt-4 space-y-3" replace>
-            <input type="hidden" name="intent" value="verify" />
-            <SoTFormField label="Verification code" error={actionData?.field?.code}>
-              <input
-                name="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                required
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm tracking-[0.3em] outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                placeholder="123456"
-              />
-            </SoTFormField>
+            <fieldset disabled={busy} className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70">
+              <input type="hidden" name="intent" value="verify" />
+              <SoTFormField label="Verification code" error={actionData?.field?.code}>
+                <input
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm tracking-[0.3em] outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  placeholder="123456"
+                />
+              </SoTFormField>
 
-            <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
-              {busy ? "Verifying…" : "Verify and sign in"}
-            </SoTButton>
+              {verifyBusy ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Verifying your code"
+                  hint="Checking the one-time password and trusted device."
+                />
+              ) : null}
+
+              <SoTButton type="submit" variant="primary" className="w-full" disabled={busy}>
+                {submitting && verifyBusy
+                  ? "Verifying…"
+                  : loading && pendingIntent === "verify"
+                    ? "Signing you in…"
+                    : "Verify and sign in"}
+              </SoTButton>
+            </fieldset>
           </Form>
 
           <div className="mt-4 space-y-2 text-xs text-slate-600">
             <Form method="post" replace>
-              <input type="hidden" name="intent" value="resend" />
-              <SoTButton type="submit" variant="secondary" disabled={busy || sendsRemaining <= 0}>
-                {busy ? "Sending…" : "Resend code"}
-              </SoTButton>
+              <fieldset
+                disabled={busy || sendsRemaining <= 0}
+                className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <input type="hidden" name="intent" value="resend" />
+                {resendBusy ? (
+                  <SoTLoadingState
+                    variant="inline"
+                    label="Sending a new code"
+                    hint="Preparing another verification email."
+                  />
+                ) : null}
+                <SoTButton type="submit" variant="secondary" disabled={busy || sendsRemaining <= 0}>
+                  {resendBusy ? "Sending…" : "Resend code"}
+                </SoTButton>
+              </fieldset>
             </Form>
 
             <div>
