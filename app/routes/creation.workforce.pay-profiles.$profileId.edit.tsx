@@ -732,7 +732,7 @@ export default function PayProfilesEditRoute() {
                 Deduction history
               </h2>
               <p className="text-xs text-slate-500">
-                This panel helps you review the employee's deduction history
+                This panel helps you review the employee&apos;s deduction history
                 while editing salary data.
               </p>
             </div>

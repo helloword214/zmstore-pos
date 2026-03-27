@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { createUserSession } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import {

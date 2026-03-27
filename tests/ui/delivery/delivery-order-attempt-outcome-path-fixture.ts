@@ -505,16 +505,16 @@ export function expectDeliveryOrderAttemptOutcomePathInitialDbState(
   expect(state.runLink?.attemptFinalizedAt).toBeNull();
   expect(state.runLink?.attemptFinalizedById).toBeNull();
 
-	  expect(state.parentReceipt).toBeNull();
-	  expect(state.clearances).toHaveLength(0);
-	  expect(state.activeRunLinks).toHaveLength(1);
-	  expect(state.activeRunLinks[0]).toEqual({
-	    runId: scenario.activeRun.id,
-	    run: { status: "DISPATCHED" },
-	  });
-	  expect(state.dispatchEligibleOrderCount).toBe(0);
-	  expect(state.riderVariance).toBeNull();
-	  expect(state.riderCharge).toBeNull();
+  expect(state.parentReceipt).toBeNull();
+  expect(state.clearances).toHaveLength(0);
+  expect(state.activeRunLinks).toHaveLength(1);
+  expect(state.activeRunLinks[0]).toEqual({
+    runId: scenario.activeRun.id,
+    run: { status: "DISPATCHED" },
+  });
+  expect(state.dispatchEligibleOrderCount).toBe(0);
+  expect(state.riderVariance).toBeNull();
+  expect(state.riderCharge).toBeNull();
 
   expect(state.taggedShift?.status).toBe(CashierShiftStatus.OPEN);
   expect(state.taggedShift?.closedAt).toBeNull();
