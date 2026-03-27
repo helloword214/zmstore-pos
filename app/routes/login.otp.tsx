@@ -11,6 +11,7 @@ import {
   getPendingLogin,
   getUser,
   homePathFor,
+  trustLoginDevice,
 } from "~/utils/auth.server";
 import {
   checkLoginThrottle,
@@ -190,8 +191,15 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   await clearAuthFailureState({ email: pending.email, ip });
-  const { headers, user } = await createUserSession(request, verified.userId);
-  return redirect(homePathFor(user.role), { headers });
+  const session = await createUserSession(request, verified.userId);
+  const trustedDevice = await trustLoginDevice(request, {
+    userId: verified.userId,
+    authVersion: session.user.authVersion,
+  });
+  const headers = new Headers();
+  headers.append("Set-Cookie", session.setCookie);
+  headers.append("Set-Cookie", trustedDevice.setCookie);
+  return redirect(homePathFor(session.user.role), { headers });
 }
 
 export default function LoginOtpPage() {
@@ -212,6 +220,9 @@ export default function LoginOtpPage() {
             Enter the 6-digit code sent to <span className="font-medium">{loaderData.maskedEmail}</span>.
           </p>
           <p className="mt-1 text-xs text-slate-500">Code expires at {expiresLabel}.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            After verification, this browser will stay trusted unless its cookies are cleared or account security changes.
+          </p>
 
           {actionData?.form ? (
             <SoTAlert tone="danger" className="mt-3 text-sm">
