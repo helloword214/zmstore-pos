@@ -11,6 +11,7 @@ import {
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import {
@@ -1488,6 +1489,11 @@ export default function RunRemitPage() {
     useLoaderData<LoaderData>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
+  const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("_intent") ?? "");
+  const postRemitBusy = pendingIntent === "post-remit" && busy;
+  const chargeRemitBusy = pendingIntent === "charge-remit" && busy;
+  const actionBusy = postRemitBusy || chargeRemitBusy;
   const posted =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("posted") === "1"
@@ -1594,7 +1600,7 @@ export default function RunRemitPage() {
     missingRowsPreview.length === 0;
   const canChargeMissing =
     run.status === "CHECKED_IN" &&
-    nav.state === "idle" &&
+    !busy &&
     missingRowsPreview.length > 0 &&
     !hasUnpricedMissing;
 
@@ -1696,6 +1702,22 @@ export default function RunRemitPage() {
             </SoTAlert>
           ) : null}
 
+          {actionBusy ? (
+            <SoTLoadingState
+              variant="panel"
+              label={
+                chargeRemitBusy
+                  ? "Charging missing stocks"
+                  : "Posting manager remit review"
+              }
+              hint={
+                chargeRemitBusy
+                  ? "Closing the run and recording the rider charge."
+                  : "Closing the run with the current stock verification."
+              }
+            />
+          ) : null}
+
           {/* Stock recap card */}
           <SoTCard className="overflow-hidden p-0">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
@@ -1767,6 +1789,7 @@ export default function RunRemitPage() {
                                   name={`verify_ui_${r.productId}`}
                                   className="h-4 w-4 border-slate-300 text-indigo-600 focus-visible:ring-indigo-200"
                                   checked={decision === "present"}
+                                  disabled={busy}
                                   onChange={() =>
                                     setStockDecision((prev) => ({
                                       ...prev,
@@ -1782,6 +1805,7 @@ export default function RunRemitPage() {
                                   name={`verify_ui_${r.productId}`}
                                   className="h-4 w-4 border-slate-300 text-rose-600 focus-visible:ring-rose-200"
                                   checked={decision === "missing"}
+                                  disabled={busy}
                                   onChange={() =>
                                     setStockDecision((prev) => ({
                                       ...prev,
@@ -2188,7 +2212,7 @@ export default function RunRemitPage() {
               value="charge-remit"
               variant="danger"
               className="w-full"
-              disabled={!canChargeMissing}
+              disabled={busy || !canChargeMissing}
               onClick={(e) => {
                 if (
                   !window.confirm(
@@ -2201,8 +2225,8 @@ export default function RunRemitPage() {
             >
               {hasUnpricedMissing
                 ? "Cannot charge: missing value source for some items"
-                : nav.state !== "idle"
-                  ? "Posting…"
+                : chargeRemitBusy
+                  ? "Posting rider charge…"
                   : "Charge Rider (Missing Stocks) & Close Run"}
             </SoTButton>
             <SoTButton
@@ -2211,12 +2235,12 @@ export default function RunRemitPage() {
               value="post-remit"
               variant="primary"
               className="w-full"
-              disabled={!canApproveNormal}
+              disabled={busy || !canApproveNormal}
             >
               {run.status === "CLOSED"
                 ? "Run already closed"
-                : nav.state !== "idle"
-                  ? "Posting…"
+                : postRemitBusy
+                  ? "Approving remit…"
                   : missingRowsPreview.length > 0
                     ? "Use charge action for missing stocks"
                     : "Approve Remit & Close Run"}

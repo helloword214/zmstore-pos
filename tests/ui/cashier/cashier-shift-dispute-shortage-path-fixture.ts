@@ -111,9 +111,10 @@ export async function confirmCashierShiftDisputeShortagePathAction(
   action: () => Promise<void>,
 ) {
   const dialogPromise = page.waitForEvent("dialog");
-  await action();
+  const actionPromise = action();
   const dialog = await dialogPromise;
   await dialog.accept();
+  await actionPromise;
 }
 
 export async function resolveCashierShiftDisputeShortagePathOutcome(shiftId: number) {
@@ -219,7 +220,5 @@ export function findCashierShiftDisputeShortagePathOpenForm(page: Page) {
 }
 
 export function findCashierShiftDisputeShortagePathCloseForm(shiftRow: Locator) {
-  return shiftRow
-    .locator("form")
-    .filter({ has: shiftRow.getByRole("button", { name: /^Final close shift$/i }) });
+  return shiftRow;
 }

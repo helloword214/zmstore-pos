@@ -10,6 +10,7 @@ import { getRiderCashForDeliveryOrder } from "~/services/riderCash.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
 import { allocateReceiptNo } from "~/utils/receipt";
 import { CurrencyInput } from "~/components/ui/CurrencyInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { requireOpenShift } from "~/utils/auth.server";
 
@@ -583,7 +584,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return Number.isFinite(qn) ? qn : null;
   })();
 
-  const cashGiven = Number(fd.get("cashGiven") || 0);
+  const cashGiven = parseMoney(String(fd.get("cashGiven") ?? ""));
   const printReceipt = fd.get("printReceipt") === "1";
 
   // Optional: resolve the delivery run for this order (for redirect after remit)
@@ -1050,6 +1051,9 @@ export default function RemitOrderPage() {
   } = useLoaderData<typeof loader>();
 
   const nav = useNavigation();
+  const submitting = nav.state === "submitting";
+  const loading = nav.state === "loading";
+  const busy = nav.state !== "idle";
 
   const alreadyPaid = sumCashPayments(order.payments ?? []);
 
@@ -1062,6 +1066,13 @@ export default function RemitOrderPage() {
   const [cashGivenStr, setCashGivenStr] = React.useState<string>(() =>
     Number.isFinite(suggested) ? suggested.toFixed(2) : "0.00",
   );
+  const latestCashGivenRef = React.useRef<string>(
+    Number.isFinite(suggested) ? suggested.toFixed(2) : "0.00",
+  );
+
+  React.useEffect(() => {
+    latestCashGivenRef.current = cashGivenStr;
+  }, [cashGivenStr]);
 
   const rows = (discountView.rows ?? []) as DiscountRow[];
 
@@ -1282,11 +1293,12 @@ export default function RemitOrderPage() {
               method="post"
               className="space-y-4"
               onSubmit={(e) => {
-                if (!willCreateVariance) return;
-                const ok = window.confirm(
-                  "Payment is not exact vs rider collection (cash on hand). This will create a variance for Manager/Rider review. Continue?",
+                const cashGivenInput = e.currentTarget.querySelector<HTMLInputElement>(
+                  'input[name="cashGiven"]',
                 );
-                if (!ok) e.preventDefault();
+                if (cashGivenInput) {
+                  cashGivenInput.value = latestCashGivenRef.current;
+                }
               }}
             >
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1409,42 +1421,64 @@ export default function RemitOrderPage() {
                     />
                   ) : null}
 
-                  {/* FIX for your error: CurrencyInput Props requires `name` */}
-                  <CurrencyInput
-                    name="cashGiven_display"
-                    label="Cash collected"
-                    value={cashGivenStr}
-                    onChange={(e) => setCashGivenStr(e.target.value)}
-                    placeholder="0.00"
-                  />
-
-                  <input
-                    type="hidden"
-                    name="cashGiven"
-                    value={parseMoney(cashGivenStr).toFixed(2)}
-                  />
-
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      name="printReceipt"
-                      value="1"
-                      className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                      defaultChecked
+                  {busy ? (
+                    <SoTLoadingState
+                      variant="panel"
+                      label="Posting cashier remit"
+                      hint="Recording cash received and preparing the receipt summary."
                     />
-                    <span>Go to summary & print after posting</span>
-                  </label>
+                  ) : null}
 
-                  <button
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                    disabled={
-                      nav.state !== "idle" ||
-                      !hasFrozenTotal ||
-                      missingLineTotals
-                    }
+                  {willCreateVariance ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Cash collected is below rider cash on hand. Posting this remit
+                      will create a rider shortage variance for manager review.
+                    </div>
+                  ) : null}
+
+                  <fieldset
+                    disabled={busy || !hasFrozenTotal || missingLineTotals}
+                    className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {nav.state !== "idle" ? "Posting…" : "Post Remit"}
-                  </button>
+                    <CurrencyInput
+                      name="cashGiven"
+                      label="Cash collected"
+                      value={cashGivenStr}
+                      onChange={(e) => {
+                        latestCashGivenRef.current = e.target.value;
+                        setCashGivenStr(e.target.value);
+                      }}
+                      placeholder="0.00"
+                    />
+
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        name="printReceipt"
+                        value="1"
+                        className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                        defaultChecked
+                      />
+                      <span>Go to summary & print after posting</span>
+                    </label>
+
+                    <button
+                      className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                      disabled={
+                        busy ||
+                        !hasFrozenTotal ||
+                        missingLineTotals
+                      }
+                    >
+                      {submitting
+                        ? "Posting remit…"
+                        : loading
+                          ? "Opening summary…"
+                          : willCreateVariance
+                            ? "Post Remit & Flag Variance"
+                            : "Post Remit"}
+                    </button>
+                  </fieldset>
 
                   {!hasFrozenTotal || missingLineTotals ? (
                     <div className="text-xs text-amber-700">

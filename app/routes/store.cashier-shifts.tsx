@@ -9,6 +9,7 @@ import {
   useSearchParams,
 } from "@remix-run/react";
 import * as React from "react";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SelectInput } from "~/components/ui/SelectInput";
 
@@ -653,6 +654,12 @@ export default function StoreCashierShiftsPage() {
   const actionData = useActionData<ActionData>();
   const [searchParams] = useSearchParams();
   const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const pendingAction = String(nav.formData?.get("_action") ?? "");
+  const pendingShiftId = Number(nav.formData?.get("shiftId") || 0);
+  const openBusy = pendingAction === "open" && busy;
+  const resendBusy = pendingAction === "resend" && busy;
+  const closeBusy = pendingAction === "close" && busy;
   const openResultRaw = String(searchParams.get("openResult") || "");
   const openResult: OpenActionResult | null =
     openResultRaw === "created" || openResultRaw === "exists"
@@ -898,57 +905,72 @@ export default function StoreCashierShiftsPage() {
           </div>
           <div className="px-4 py-4">
             <Form method="post" className="grid gap-3 sm:grid-cols-3">
-              <input type="hidden" name="_action" value="open" />
+              <fieldset
+                disabled={openBusy}
+                className="grid gap-3 sm:col-span-3 sm:grid-cols-3 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <input type="hidden" name="_action" value="open" />
 
-              <div className="block text-sm sm:col-span-1">
-                <SelectInput
-                  name="cashierId"
-                  label="Cashier"
-                  defaultValue=""
-                  options={[
-                    { label: "Select cashier…", value: "" },
-                    ...cashiers.map((c) => ({ label: c.label, value: c.id })),
-                  ]}
-                />
-              </div>
+                {openBusy ? (
+                  <div className="sm:col-span-3">
+                    <SoTLoadingState
+                      variant="panel"
+                      label="Opening cashier shift"
+                      hint="Creating the shift and sending it to cashier verification."
+                    />
+                  </div>
+                ) : null}
 
-              <label className="block text-sm sm:col-span-1">
-                <span className="text-slate-700">Opening float</span>
-                <input
-                  name="openingFloat"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue="0"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                />
-              </label>
-
-              <label className="block text-sm sm:col-span-1">
-                <span className="text-slate-700">Device ID (optional)</span>
-                <input
-                  name="deviceId"
-                  type="text"
-                  placeholder="e.g. CASHIER-01"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                />
-              </label>
-
-              {openActionError ? (
-                <div className="sm:col-span-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {openActionError}
+                <div className="block text-sm sm:col-span-1">
+                  <SelectInput
+                    name="cashierId"
+                    label="Cashier"
+                    defaultValue=""
+                    options={[
+                      { label: "Select cashier…", value: "" },
+                      ...cashiers.map((c) => ({ label: c.label, value: c.id })),
+                    ]}
+                  />
                 </div>
-              ) : null}
 
-              <div className="sm:col-span-3">
-                <button
-                  type="submit"
-                  className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                  disabled={nav.state !== "idle"}
-                >
-                  {nav.state !== "idle" ? "Opening…" : "Open Shift"}
-                </button>
-              </div>
+                <label className="block text-sm sm:col-span-1">
+                  <span className="text-slate-700">Opening float</span>
+                  <input
+                    name="openingFloat"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue="0"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  />
+                </label>
+
+                <label className="block text-sm sm:col-span-1">
+                  <span className="text-slate-700">Device ID (optional)</span>
+                  <input
+                    name="deviceId"
+                    type="text"
+                    placeholder="e.g. CASHIER-01"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  />
+                </label>
+
+                {openActionError ? (
+                  <div className="sm:col-span-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {openActionError}
+                  </div>
+                ) : null}
+
+                <div className="sm:col-span-3">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                    disabled={openBusy}
+                  >
+                    {openBusy ? "Opening…" : "Open Shift"}
+                  </button>
+                </div>
+              </fieldset>
             </Form>
           </div>
         </div>
@@ -983,6 +1005,13 @@ export default function StoreCashierShiftsPage() {
                     const isShortDraft = varianceNum < -EPS;
                     const isSelectedShift =
                       selectedShiftId != null && s.id === selectedShiftId;
+                    const rowResendBusy = resendBusy && pendingShiftId === s.id;
+                    const rowCloseBusy = closeBusy && pendingShiftId === s.id;
+                    const canResend = String(s.status) === "OPENING_DISPUTED";
+                    const canFinalClose = String(s.status) === "SUBMITTED";
+                    const managerCountedInputId = `shift-${s.id}-manager-counted`;
+                    const paperRefInputId = `shift-${s.id}-paper-ref`;
+                    const managerNoteInputId = `shift-${s.id}-manager-note`;
                     return (
                   <div
                     key={s.id}
@@ -1099,177 +1128,201 @@ export default function StoreCashierShiftsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="mt-2 space-y-2">
                       <div className="text-xs text-slate-500">
                         Cashier resume: <code>/cashier/shift</code>
                       </div>
-                      {/* Manager resend when opening is disputed */}
-                      {String(s.status) === "OPENING_DISPUTED" ? (
+                      {canResend ? (
                         <Form
                           method="post"
+                          aria-label={`Resend opening verification for shift ${s.id}`}
                           className="flex items-center gap-2"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                "Resend opening verification to cashier?",
-                              )
-                            ) {
-                              e.preventDefault();
-                            }
-                          }}
                         >
-                          <input type="hidden" name="_action" value="resend" />
-                          <input type="hidden" name="shiftId" value={s.id} />
-                          {/* Optional: allow manager to edit opening float inline */}
-                          <input
-                            name="openingFloat"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            defaultValue={String(s.openingFloat ?? 0)}
-                            className="w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                            title="Optional: adjust opening float before resend"
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={nav.state !== "idle"}
-                            title="Set status back to PENDING_ACCEPT so cashier can verify again"
+                          <fieldset
+                            disabled={rowResendBusy}
+                            className="flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
                           >
-                            {nav.state !== "idle" ? "Sending…" : "Resend"}
-                          </button>
+                            <input type="hidden" name="_action" value="resend" />
+                            <input type="hidden" name="shiftId" value={s.id} />
+                            {/* Optional: allow manager to edit opening float inline */}
+                            <input
+                              name="openingFloat"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              defaultValue={String(s.openingFloat ?? 0)}
+                              className="w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              title="Optional: adjust opening float before resend"
+                            />
+                            {rowResendBusy ? (
+                              <SoTLoadingState
+                                variant="inline"
+                                label="Resending opening verification"
+                                hint="Returning this shift to cashier acceptance."
+                              />
+                            ) : null}
+                            <button
+                              type="submit"
+                              className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                              disabled={rowResendBusy}
+                              title="Set status back to PENDING_ACCEPT so cashier can verify again"
+                            >
+                              {rowResendBusy ? "Sending…" : "Resend"}
+                            </button>
+                          </fieldset>
                         </Form>
                       ) : null}
 
-                      <Form
-                        method="post"
-                        className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 sm:max-w-3xl sm:grid-cols-2"
-                        onSubmit={(e) => {
-                          if (String(s.status) !== "SUBMITTED") return;
-                          if (isShortDraft && !closeForm.resolution) {
-                            e.preventDefault();
-                            window.alert(
-                              "Shortage detected: please select a decision before final close.",
-                            );
-                            return;
-                          }
-                          if (
-                            isShortDraft &&
-                            !String(closeForm.paperRefNo || "").trim()
-                          ) {
-                            e.preventDefault();
-                            window.alert(
-                              "Shortage detected: paper reference number is required before final close.",
-                            );
-                            return;
-                          }
-                          if (!confirm("Manager close this shift now?"))
-                            e.preventDefault();
-                        }}
-                      >
-                        <input type="hidden" name="_action" value="close" />
-                        <input type="hidden" name="shiftId" value={s.id} />
-                        <label className="block">
-                          <span className="text-[11px] text-slate-600">
-                            Manager recount total
-                          </span>
-                          <input
-                            name="managerCounted"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={closeForm.managerCounted}
-                            onChange={(e) =>
-                              setCloseField(s.id, "managerCounted", e.target.value)
+                      {canFinalClose ? (
+                        <Form
+                          key={`${s.id}:${s.status}`}
+                          method="post"
+                          aria-label={`Final close cashier shift ${s.id}`}
+                          className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 sm:max-w-3xl sm:grid-cols-2"
+                          onSubmit={(e) => {
+                            if (isShortDraft && !closeForm.resolution) {
+                              e.preventDefault();
+                              window.alert(
+                                "Shortage detected: please select a decision before final close.",
+                              );
+                              return;
                             }
-                            required
-                            disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
-                            title="Required: manager physical recount total"
-                          />
-                        </label>
-                        <div className="block">
-                          <SelectInput
-                            name="resolution"
-                            label="Decision (required if short)"
-                            value={closeForm.resolution}
-                            onChange={(value) =>
-                              setCloseField(s.id, "resolution", String(value))
+                            if (
+                              isShortDraft &&
+                              !String(closeForm.paperRefNo || "").trim()
+                            ) {
+                              e.preventDefault();
+                              window.alert(
+                                "Shortage detected: paper reference number is required before final close.",
+                              );
+                              return;
                             }
-                            disabled={String(s.status) !== "SUBMITTED"}
-                            options={[
-                              { label: "No decision", value: "" },
-                              { label: "Charge cashier", value: "CHARGE_CASHIER" },
-                              { label: "Info only", value: "INFO_ONLY" },
-                              { label: "Waive", value: "WAIVE" },
-                            ]}
-                          />
+                          }}
+                        >
+                          <fieldset
+                            disabled={rowCloseBusy}
+                            className="grid gap-2 sm:col-span-2 sm:grid-cols-2 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            <input type="hidden" name="_action" value="close" />
+                            <input type="hidden" name="shiftId" value={s.id} />
+                            {rowCloseBusy ? (
+                              <div className="sm:col-span-2">
+                                <SoTLoadingState
+                                  variant="panel"
+                                  label="Final-closing cashier shift"
+                                  hint="Recording the manager recount, variance decision, and final close."
+                                />
+                              </div>
+                            ) : null}
+                            <label className="block" htmlFor={managerCountedInputId}>
+                              <span className="text-[11px] text-slate-600">
+                                Manager recount total
+                              </span>
+                              <input
+                                id={managerCountedInputId}
+                                name="managerCounted"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                value={closeForm.managerCounted}
+                                onChange={(e) =>
+                                  setCloseField(s.id, "managerCounted", e.target.value)
+                                }
+                                required
+                                disabled={rowCloseBusy}
+                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
+                                title="Required: manager physical recount total"
+                              />
+                            </label>
+                            <div className="block">
+                              <SelectInput
+                                name="resolution"
+                                label="Decision (required if short)"
+                                value={closeForm.resolution}
+                                onChange={(value) =>
+                                  setCloseField(s.id, "resolution", String(value))
+                                }
+                                disabled={rowCloseBusy}
+                                options={[
+                                  { label: "No decision", value: "" },
+                                  { label: "Charge cashier", value: "CHARGE_CASHIER" },
+                                  { label: "Info only", value: "INFO_ONLY" },
+                                  { label: "Waive", value: "WAIVE" },
+                                ]}
+                              />
+                            </div>
+                            <label className="block sm:col-span-2" htmlFor={paperRefInputId}>
+                              <span className="text-[11px] text-slate-600">
+                                Paper reference no. (required if short)
+                              </span>
+                              <input
+                                id={paperRefInputId}
+                                name="paperRefNo"
+                                type="text"
+                                placeholder="e.g. CS-2026-00125"
+                                autoComplete="off"
+                                value={closeForm.paperRefNo}
+                                onChange={(e) =>
+                                  setCloseField(s.id, "paperRefNo", e.target.value)
+                                }
+                                disabled={rowCloseBusy}
+                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
+                              />
+                            </label>
+                            <label className="block sm:col-span-2" htmlFor={managerNoteInputId}>
+                              <span className="text-[11px] text-slate-600">
+                                Manager note
+                              </span>
+                              <input
+                                id={managerNoteInputId}
+                                name="managerNote"
+                                type="text"
+                                placeholder="Optional decision/recount note"
+                                autoComplete="off"
+                                value={closeForm.managerNote}
+                                onChange={(e) =>
+                                  setCloseField(s.id, "managerNote", e.target.value)
+                                }
+                                disabled={rowCloseBusy}
+                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
+                              />
+                            </label>
+                            {isShortDraft ? (
+                              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
+                                Shortage detected. Select decision and paper
+                                reference before final close.
+                              </div>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50 sm:col-span-2"
+                              disabled={rowCloseBusy}
+                              onClick={() => printVarianceForm(s)}
+                              title="Print A4 variance recount form and auto-fill reference number"
+                            >
+                              Print variance form (A4)
+                            </button>
+                            <button
+                              type="submit"
+                              className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50 sm:col-span-2"
+                              disabled={rowCloseBusy}
+                              title="Final close shift (requires manager recount; shortage also requires decision + paper ref)"
+                            >
+                              {rowCloseBusy
+                                ? "Closing…"
+                                : "Final close shift"}
+                            </button>
+                          </fieldset>
+                        </Form>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          {canResend
+                            ? "Waiting for manager resend so cashier can verify the corrected opening float."
+                            : "Final close becomes available after the cashier submits the counted cash."}
                         </div>
-                        <label className="block sm:col-span-2">
-                          <span className="text-[11px] text-slate-600">
-                            Paper reference no. (required if short)
-                          </span>
-                          <input
-                            name="paperRefNo"
-                            type="text"
-                            placeholder="e.g. CS-2026-00125"
-                            value={closeForm.paperRefNo}
-                            onChange={(e) =>
-                              setCloseField(s.id, "paperRefNo", e.target.value)
-                            }
-                            disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
-                          />
-                        </label>
-                        <label className="block sm:col-span-2">
-                          <span className="text-[11px] text-slate-600">
-                            Manager note
-                          </span>
-                          <input
-                            name="managerNote"
-                            type="text"
-                            placeholder="Optional decision/recount note"
-                            value={closeForm.managerNote}
-                            onChange={(e) =>
-                              setCloseField(s.id, "managerNote", e.target.value)
-                            }
-                            disabled={String(s.status) !== "SUBMITTED"}
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:bg-slate-100"
-                          />
-                        </label>
-                        {isShortDraft ? (
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
-                            Shortage detected. Select decision and paper
-                            reference before final close.
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50 sm:col-span-2"
-                          disabled={String(s.status) !== "SUBMITTED"}
-                          onClick={() => printVarianceForm(s)}
-                          title="Print A4 variance recount form and auto-fill reference number"
-                        >
-                          Print variance form (A4)
-                        </button>
-                        <button
-                          type="submit"
-                          className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50 sm:col-span-2"
-                          disabled={
-                            nav.state !== "idle" ||
-                            String(s.status) !== "SUBMITTED"
-                          }
-                          title={
-                            String(s.status) !== "SUBMITTED"
-                              ? "Disabled: cashier has not submitted count (status must be SUBMITTED)"
-                              : "Final close shift (requires manager recount; shortage also requires decision + paper ref)"
-                          }
-                        >
-                          {nav.state !== "idle"
-                            ? "Closing…"
-                            : "Final close shift"}
-                        </button>
-                      </Form>
+                      )}
                     </div>
                   </div>
                     );

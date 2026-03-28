@@ -48,7 +48,7 @@ test.describe("delivery final settlement info-only/waive path", () => {
       await openDeliveryFinalSettlementInfoOnlyWaivePathRunHubPage(page);
 
       await expect(
-        page.getByText(scenario.closedRun.runCode, { exact: false }),
+        page.getByText(scenario.closedRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(page.getByText(/MANAGER_APPROVED/i)).toBeVisible();
       await expect(
@@ -130,7 +130,7 @@ test.describe("delivery final settlement info-only/waive path", () => {
       await openDeliveryFinalSettlementInfoOnlyWaivePathRunHubPage(page);
 
       await expect(
-        page.getByText(scenario.closedRun.runCode, { exact: false }),
+        page.getByText(scenario.closedRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(page.getByText(/WAIVED/i)).toBeVisible();
       await expect(

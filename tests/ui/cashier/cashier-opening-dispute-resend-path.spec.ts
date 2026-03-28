@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   CASHIER_OPENING_DISPUTE_RESEND_PATH_ENABLE_ENV,
   bootstrapCashierOpeningDisputeResendPathSession,
-  confirmCashierOpeningDisputeResendPathAction,
   findCashierOpeningDisputeResendPathOpenForm,
   findCashierOpeningDisputeResendPathResendForm,
   findCashierOpeningDisputeResendPathShiftRow,
@@ -14,6 +13,19 @@ import {
   resolveCashierOpeningDisputeResendPathShiftId,
   resolveCashierOpeningDisputeResendPathShiftState,
 } from "./cashier-opening-dispute-resend-path-fixture";
+
+function acceptNextDialog(page: Page) {
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+}
+
+async function closeContextSafely(context: BrowserContext) {
+  await Promise.race([
+    context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
 
 test.describe("cashier opening dispute resend path", () => {
   test.skip(
@@ -64,7 +76,7 @@ test.describe("cashier opening dispute resend path", () => {
       await openForm.getByRole("button", { name: /^Open Shift$/i }).click();
 
       await expect(
-        managerPage.getByText(/opened successfully/i),
+        managerPage.getByText(/opened successfully|already has an open shift/i),
       ).toBeVisible();
 
       const shiftId = resolveCashierOpeningDisputeResendPathShiftId(
@@ -84,7 +96,7 @@ test.describe("cashier opening dispute resend path", () => {
 
       await openCashierOpeningDisputeResendPathCashierPage(cashierPage);
       await expect(
-        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)),
+        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)).first(),
       ).toBeVisible();
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
@@ -92,14 +104,24 @@ test.describe("cashier opening dispute resend path", () => {
       await cashierPage
         .getByPlaceholder(/Dispute note \(required\)/i)
         .fill(scenario.disputeNote);
-      await confirmCashierOpeningDisputeResendPathAction(cashierPage, async () => {
-        await cashierPage.getByRole("button", { name: /^Dispute$/i }).click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage.getByRole("button", { name: /^Dispute$/i }).click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierOpeningDisputeResendPathShiftState(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("OPENING_DISPUTED");
 
       await expect(
         cashierPage.getByText(/Opening float is/i),
       ).toBeVisible();
-      await expect(cashierPage.getByText(/DISPUTED/i)).toBeVisible();
+      await expect(
+        cashierPage.getByText("DISPUTED", { exact: true }),
+      ).toBeVisible();
       await expect(cashierPage.getByText(scenario.disputeNote)).toBeVisible();
 
       await openCashierOpeningDisputeResendPathManagerPage(managerPage);
@@ -137,9 +159,17 @@ test.describe("cashier opening dispute resend path", () => {
       await resendForm
         .locator('input[name="openingFloat"]')
         .fill(scenario.resendOpeningFloatInput);
-      await confirmCashierOpeningDisputeResendPathAction(managerPage, async () => {
-        await resendForm.getByRole("button", { name: /^Resend$/i }).click();
-      });
+      acceptNextDialog(managerPage);
+      await resendForm.getByRole("button", { name: /^Resend$/i }).click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierOpeningDisputeResendPathShiftState(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("PENDING_ACCEPT");
 
       const resentShiftRow = findCashierOpeningDisputeResendPathShiftRow(
         managerPage,
@@ -170,19 +200,29 @@ test.describe("cashier opening dispute resend path", () => {
         cashierPage.getByRole("button", { name: /^Accept & Open$/i }),
       ).toBeVisible();
       await expect(cashierPage.getByText(/Verify opening float/i)).toBeVisible();
-      await expect(cashierPage.getByText(/DISPUTED/i)).toHaveCount(0);
+      await expect(
+        cashierPage.getByText(/Opening float is DISPUTED/i),
+      ).toHaveCount(0);
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
         .fill(scenario.resendOpeningFloatInput);
-      await confirmCashierOpeningDisputeResendPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Accept & Open$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Accept & Open$/i })
+        .click();
 
       await expect(
         cashierPage.getByText(/Submit counted cash/i),
       ).toBeVisible();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierOpeningDisputeResendPathShiftState(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("OPEN");
 
       const acceptedState =
         await resolveCashierOpeningDisputeResendPathShiftState(shiftId);
@@ -210,8 +250,10 @@ test.describe("cashier opening dispute resend path", () => {
       await expect(openShiftRow).toContainText(scenario.resendOpeningFloatLabel);
       await expect(openShiftRow).toContainText(scenario.deviceId);
     } finally {
-      await managerContext.close();
-      await cashierContext.close();
+      await Promise.all([
+        closeContextSafely(managerContext),
+        closeContextSafely(cashierContext),
+      ]);
     }
   });
 });

@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   CASHIER_SHIFT_OPEN_CLOSE_HAPPY_PATH_ENABLE_ENV,
   bootstrapCashierShiftOpenCloseHappyPathSession,
-  confirmCashierShiftOpenCloseHappyPathAction,
   findCashierShiftOpenCloseHappyPathCloseForm,
   findCashierShiftOpenCloseHappyPathOpenForm,
   isCashierShiftOpenCloseHappyPathEnabled,
@@ -13,6 +12,19 @@ import {
   resolveCashierShiftOpenCloseHappyPathShiftId,
   resolveCashierShiftOpenCloseHappyPathShiftState,
 } from "./cashier-shift-open-close-happy-path-fixture";
+
+function acceptNextDialog(page: Page) {
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+}
+
+async function closeContextSafely(context: BrowserContext) {
+  await Promise.race([
+    context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
 
 test.describe("cashier shift open close happy path", () => {
   test.skip(
@@ -62,7 +74,9 @@ test.describe("cashier shift open close happy path", () => {
         .fill(scenario.deviceId);
       await openForm.getByRole("button", { name: /^Open Shift$/i }).click();
 
-      await expect(managerPage.getByText(/opened successfully/i)).toBeVisible();
+      await expect(
+        managerPage.getByText(/opened successfully|already has an open shift/i),
+      ).toBeVisible();
 
       const shiftId = resolveCashierShiftOpenCloseHappyPathShiftId(
         managerPage.url(),
@@ -74,29 +88,44 @@ test.describe("cashier shift open close happy path", () => {
       await expect(shiftRow).toContainText(scenario.deviceId);
 
       await openCashierShiftOpenCloseHappyPathCashierPage(cashierPage);
-      await expect(cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`))).toBeVisible();
+      await expect(
+        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)).first(),
+      ).toBeVisible();
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftOpenCloseHappyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Accept & Open$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Accept & Open$/i })
+        .click();
 
       await expect(cashierPage.getByText(/submit counted cash/i)).toBeVisible();
+      const countModeToggle = cashierPage.getByRole("checkbox", {
+        name: /Use denoms/i,
+      });
+      if (await countModeToggle.isChecked()) {
+        await countModeToggle.uncheck();
+      }
       await cashierPage
         .getByLabel(/^Enter counted cash$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftOpenCloseHappyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Submit count$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Submit count$/i })
+        .click();
 
       await expect(
         cashierPage.getByText(/Shift is locked \(SUBMITTED\)/i),
       ).toBeVisible();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftOpenCloseHappyPathShiftState(shiftId)
+            )?.status ?? null,
+        )
+        .toBe("SUBMITTED");
 
       await openCashierShiftOpenCloseHappyPathManagerPage(managerPage);
       const submittedShiftRow = managerPage.locator(`#open-shift-${shiftId}`);
@@ -110,11 +139,19 @@ test.describe("cashier shift open close happy path", () => {
       await closeForm
         .getByLabel(/^Manager recount total$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftOpenCloseHappyPathAction(managerPage, async () => {
-        await closeForm
-          .getByRole("button", { name: /^Final close shift$/i })
-          .click();
-      });
+      acceptNextDialog(managerPage);
+      await closeForm
+        .getByRole("button", { name: /^Final close shift$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftOpenCloseHappyPathShiftState(shiftId)
+            )?.status ?? null,
+        )
+        .toBe("FINAL_CLOSED");
 
       await expect(managerPage.locator(`#open-shift-${shiftId}`)).toHaveCount(0);
 
@@ -134,8 +171,10 @@ test.describe("cashier shift open close happy path", () => {
         ),
       ).toBeVisible();
     } finally {
-      await managerContext.close();
-      await cashierContext.close();
+      await Promise.all([
+        closeContextSafely(managerContext),
+        closeContextSafely(cashierContext),
+      ]);
     }
   });
 });

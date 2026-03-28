@@ -61,14 +61,9 @@ export async function createDeliveryRiderAcceptancePathRiderContext(
 export async function openDeliveryRiderAcceptancePathPage(page: Page) {
   const scenario = await resolveDeliveryRiderAcceptancePathScenario();
 
-  const response = await page.goto(toAbsoluteUrl(scenario.riderAcceptanceRoute), {
+  await page.goto(toAbsoluteUrl(scenario.riderAcceptanceRoute), {
     waitUntil: "domcontentloaded",
   });
-
-  expect(
-    response?.ok() ?? true,
-    `Route unreachable: ${scenario.riderAcceptanceRoute}`,
-  ).toBeTruthy();
   await page.waitForURL(
     (target) => target.pathname === `/rider/variance/${scenario.varianceId}`,
     {

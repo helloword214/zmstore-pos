@@ -1,7 +1,13 @@
 /* app/routes/store.rider-variances.tsx */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import {
+  Form,
+  Link,
+  useLoaderData,
+  useNavigation,
+  useSearchParams,
+} from "@remix-run/react";
 
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
@@ -15,6 +21,7 @@ import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
@@ -337,6 +344,10 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function StoreRiderVariancesPage() {
   const { rows, tab, counts } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
+  const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("_intent") || "");
+  const pendingVarianceId = Number(nav.formData?.get("id") || 0);
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -455,129 +466,153 @@ export default function StoreRiderVariancesPage() {
                 />
               ) : (
                 rows.map((v) => (
-                  <SoTTableRow key={v.id}>
-                    <SoTTd>
-                      <div className="font-mono text-slate-800">{v.run.runCode}</div>
-                      <div className="text-[11px] text-slate-500">ref #{v.id}</div>
-                      {v.receipt ? (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          <SoTStatusBadge tone="info">
-                            AUTO · {v.receipt.kind} · {v.receipt.receiptKey}
+                  (() => {
+                    const rowBusy =
+                      busy &&
+                      pendingIntent === "manager-decide" &&
+                      pendingVarianceId === v.id;
+
+                    return (
+                      <SoTTableRow key={v.id}>
+                        <SoTTd>
+                          <div className="font-mono text-slate-800">{v.run.runCode}</div>
+                          <div className="text-[11px] text-slate-500">ref #{v.id}</div>
+                          {v.receipt ? (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              <SoTStatusBadge tone="info">
+                                AUTO · {v.receipt.kind} · {v.receipt.receiptKey}
+                              </SoTStatusBadge>
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              no receipt link
+                            </div>
+                          )}
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {new Date(v.createdAt).toLocaleString()}
+                          </div>
+                        </SoTTd>
+                        <SoTTd>{v.rider.name}</SoTTd>
+                        <SoTTd>
+                          <SoTStatusBadge tone={statusTone(v.status)}>
+                            {v.status}
                           </SoTStatusBadge>
-                        </div>
-                      ) : (
-                        <div className="mt-1 text-[11px] text-slate-400">
-                          no receipt link
-                        </div>
-                      )}
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        {new Date(v.createdAt).toLocaleString()}
-                      </div>
-                    </SoTTd>
-                    <SoTTd>{v.rider.name}</SoTTd>
-                    <SoTTd>
-                      <SoTStatusBadge tone={statusTone(v.status)}>
-                        {v.status}
-                      </SoTStatusBadge>
-                      {v.resolution ? (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          resolution: <span className="font-medium">{v.resolution}</span>
-                        </div>
-                      ) : null}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums">
-                      {peso(v.expected)}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums">
-                      {peso(v.actual)}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums">
-                      <span
-                        className={
-                          v.variance < 0 ? "text-rose-700" : "text-emerald-700"
-                        }
-                      >
-                        {peso(v.variance)}
-                      </span>
-                    </SoTTd>
-                    <SoTTd>
-                      {isHistory ? (
-                        <div className="space-y-1 text-[11px] text-slate-600">
-                          <div>
-                            Note: <span className="font-medium">{v.note ?? "—"}</span>
-                          </div>
-                          <div>
-                            Manager approved:{" "}
-                            <span className="font-medium">
-                              {v.managerApprovedAt
-                                ? new Date(v.managerApprovedAt).toLocaleString()
-                                : "—"}
-                            </span>
-                          </div>
-                          <div>
-                            Rider accepted:{" "}
-                            <span className="font-medium">
-                              {v.riderAcceptedAt
-                                ? new Date(v.riderAcceptedAt).toLocaleString()
-                                : "—"}
-                            </span>
-                          </div>
-                        </div>
-                      ) : tab === "awaiting" ? (
-                        <div className="space-y-2">
-                          <SoTStatusBadge tone="warning">
-                            Waiting rider acceptance
-                          </SoTStatusBadge>
-                          <Link
-                            className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-1"
-                            to={`/rider/variance/${v.id}`}
+                          {v.resolution ? (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              resolution: <span className="font-medium">{v.resolution}</span>
+                            </div>
+                          ) : null}
+                        </SoTTd>
+                        <SoTTd align="right" className="tabular-nums">
+                          {peso(v.expected)}
+                        </SoTTd>
+                        <SoTTd align="right" className="tabular-nums">
+                          {peso(v.actual)}
+                        </SoTTd>
+                        <SoTTd align="right" className="tabular-nums">
+                          <span
+                            className={
+                              v.variance < 0 ? "text-rose-700" : "text-emerald-700"
+                            }
                           >
-                            View rider page →
-                          </Link>
-                          <div className="text-[11px] text-slate-500">
-                            Note: {v.note ?? "—"}
-                          </div>
-                        </div>
-                      ) : (
-                        <Form method="post" className="flex flex-col gap-2">
-                          <input type="hidden" name="id" value={v.id} />
-                          <SelectInput
-                            name="resolution"
-                            defaultValue={v.resolution ?? ""}
-                            options={[
-                              {
-                                label: "Select decision…",
-                                value: "",
-                              },
-                              {
-                                label: "Charge rider (needs rider accept)",
-                                value: "CHARGE_RIDER",
-                              },
-                              {
-                                label: "Info only (no rider accept)",
-                                value: "INFO_ONLY",
-                              },
-                              { label: "Waive", value: "WAIVE" },
-                            ]}
-                          />
-                          <input
-                            name="note"
-                            placeholder="Optional note"
-                            defaultValue={v.note ?? ""}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                          />
-                          <SoTButton
-                            type="submit"
-                            name="_intent"
-                            value="manager-decide"
-                            variant="primary"
-                          >
-                            Save decision
-                          </SoTButton>
-                        </Form>
-                      )}
-                    </SoTTd>
-                  </SoTTableRow>
+                            {peso(v.variance)}
+                          </span>
+                        </SoTTd>
+                        <SoTTd>
+                          {isHistory ? (
+                            <div className="space-y-1 text-[11px] text-slate-600">
+                              <div>
+                                Note: <span className="font-medium">{v.note ?? "—"}</span>
+                              </div>
+                              <div>
+                                Manager approved:{" "}
+                                <span className="font-medium">
+                                  {v.managerApprovedAt
+                                    ? new Date(v.managerApprovedAt).toLocaleString()
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div>
+                                Rider accepted:{" "}
+                                <span className="font-medium">
+                                  {v.riderAcceptedAt
+                                    ? new Date(v.riderAcceptedAt).toLocaleString()
+                                    : "—"}
+                                </span>
+                              </div>
+                            </div>
+                          ) : tab === "awaiting" ? (
+                            <div className="space-y-2">
+                              <SoTStatusBadge tone="warning">
+                                Waiting rider acceptance
+                              </SoTStatusBadge>
+                              <Link
+                                className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-1"
+                                to={`/rider/variance/${v.id}`}
+                              >
+                                View rider page →
+                              </Link>
+                              <div className="text-[11px] text-slate-500">
+                                Note: {v.note ?? "—"}
+                              </div>
+                            </div>
+                          ) : (
+                            <Form method="post" className="flex flex-col gap-2">
+                              <fieldset
+                                disabled={rowBusy}
+                                className="flex flex-col gap-2 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                <input type="hidden" name="id" value={v.id} />
+                                <SelectInput
+                                  name="resolution"
+                                  label="Decision"
+                                  defaultValue={v.resolution ?? ""}
+                                  disabled={rowBusy}
+                                  options={[
+                                    {
+                                      label: "Select decision…",
+                                      value: "",
+                                    },
+                                    {
+                                      label: "Charge rider (needs rider accept)",
+                                      value: "CHARGE_RIDER",
+                                    },
+                                    {
+                                      label: "Info only (no rider accept)",
+                                      value: "INFO_ONLY",
+                                    },
+                                    { label: "Waive", value: "WAIVE" },
+                                  ]}
+                                />
+                                <input
+                                  name="note"
+                                  placeholder="Optional note"
+                                  defaultValue={v.note ?? ""}
+                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                />
+                                {rowBusy ? (
+                                  <SoTLoadingState
+                                    variant="inline"
+                                    label="Saving variance decision"
+                                    hint="Refreshing the review queue."
+                                  />
+                                ) : null}
+                                <SoTButton
+                                  type="submit"
+                                  name="_intent"
+                                  value="manager-decide"
+                                  variant="primary"
+                                  disabled={rowBusy}
+                                >
+                                  {rowBusy ? "Saving…" : "Save decision"}
+                                </SoTButton>
+                              </fieldset>
+                            </Form>
+                          )}
+                        </SoTTd>
+                      </SoTTableRow>
+                    );
+                  })()
                 ))
               )}
             </tbody>

@@ -7,6 +7,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { db } from "~/utils/db.server";
 import { getUser, homePathFor } from "~/utils/auth.server";
 
@@ -149,6 +150,8 @@ export default function ResetPasswordPage() {
   const { valid } = useLoaderData<LoaderData>();
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
+  const submitting = navigation.state === "submitting";
+  const loading = navigation.state === "loading";
   const busy = navigation.state !== "idle";
 
   if (!valid) {
@@ -196,31 +199,41 @@ export default function ResetPasswordPage() {
             </div>
           ) : (
             <Form method="post" className="mt-4 space-y-3">
-              <SoTFormField label="New password">
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  placeholder="At least 8 characters"
-                />
-              </SoTFormField>
+              <fieldset disabled={busy} className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70">
+                <SoTFormField label="New password">
+                  <input
+                    name="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    placeholder="At least 8 characters"
+                  />
+                </SoTFormField>
 
-              <SoTFormField label="Confirm new password">
-                <input
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  minLength={8}
-                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  placeholder="Re-type password"
-                />
-              </SoTFormField>
+                <SoTFormField label="Confirm new password">
+                  <input
+                    name="confirmPassword"
+                    type="password"
+                    required
+                    minLength={8}
+                    className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    placeholder="Re-type password"
+                  />
+                </SoTFormField>
 
-              <SoTButton type="submit" variant="primary" disabled={busy}>
-                {busy ? "Saving..." : "Update password"}
-              </SoTButton>
+                {submitting ? (
+                  <SoTLoadingState
+                    variant="inline"
+                    label="Updating your password"
+                    hint="Saving the new password and invalidating old access."
+                  />
+                ) : null}
+
+                <SoTButton type="submit" variant="primary" disabled={busy}>
+                  {submitting ? "Saving…" : loading ? "Finishing…" : "Update password"}
+                </SoTButton>
+              </fieldset>
             </Form>
           )}
         </SoTCard>

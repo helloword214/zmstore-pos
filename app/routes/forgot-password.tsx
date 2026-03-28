@@ -7,6 +7,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { db } from "~/utils/db.server";
 import { getUser, homePathFor } from "~/utils/auth.server";
 import {
@@ -110,6 +111,8 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function ForgotPasswordPage() {
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
+  const submitting = navigation.state === "submitting";
+  const loading = navigation.state === "loading";
   const busy = navigation.state !== "idle";
 
   return (
@@ -128,19 +131,29 @@ export default function ForgotPasswordPage() {
           ) : null}
 
           <Form method="post" className="mt-4 space-y-3">
-            <SoTFormField label="Email">
-              <input
-                name="email"
-                type="email"
-                required
-                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                placeholder="you@company.com"
-              />
-            </SoTFormField>
+            <fieldset disabled={busy} className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70">
+              <SoTFormField label="Email">
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  placeholder="you@company.com"
+                />
+              </SoTFormField>
 
-            <SoTButton type="submit" variant="primary" disabled={busy}>
-              {busy ? "Sending..." : "Send reset link"}
-            </SoTButton>
+              {submitting ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Sending reset link"
+                  hint="Checking the account and preparing the email."
+                />
+              ) : null}
+
+              <SoTButton type="submit" variant="primary" disabled={busy}>
+                {submitting ? "Sending…" : loading ? "Finishing…" : "Send reset link"}
+              </SoTButton>
+            </fieldset>
           </Form>
 
           <div className="mt-4 text-xs text-slate-600">

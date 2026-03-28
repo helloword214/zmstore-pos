@@ -212,9 +212,12 @@ export async function expectEmployeeAccountManagementHappyPathDirectoryRowState(
   row: Locator,
   expectedStatus: "ACTIVE" | "INACTIVE",
 ) {
-  await expect(row).toContainText(/\bCASHIER\b/);
-  await expect(row).toContainText(new RegExp(`\\b${expectedStatus}\\b`));
-  await expect(row).toContainText(/\bPASSWORD_MISSING\b/);
+  const laneCell = row.getByRole("cell").nth(1);
+  const statusCell = row.getByRole("cell").nth(3);
+
+  await expect(laneCell).toContainText(/^CASHIER$/);
+  await expect(statusCell.getByText(new RegExp(`^${expectedStatus}$`))).toBeVisible();
+  await expect(statusCell.getByText(/^PASSWORD_MISSING$/)).toBeVisible();
 }
 
 export function expectEmployeeAccountManagementHappyPathDbState(accountState: Awaited<

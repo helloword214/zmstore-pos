@@ -46,7 +46,7 @@ test.describe("delivery manager remit posting happy path", () => {
       await openDeliveryManagerRemitPostingHappyPathManagerRemitPage(page);
 
       await expect(
-        page.getByText(scenario.checkedInRun.runCode, { exact: false }),
+        page.getByText(scenario.checkedInRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: /^Approve Remit & Close Run$/i }),
@@ -77,7 +77,7 @@ test.describe("delivery manager remit posting happy path", () => {
         page.getByRole("heading", { name: /run summary report/i }),
       ).toBeVisible();
       await expect(
-        page.getByText(scenario.checkedInRun.runCode, { exact: false }),
+        page.getByText(scenario.checkedInRun.runCode, { exact: false }).first(),
       ).toBeVisible();
 
       const postedState =

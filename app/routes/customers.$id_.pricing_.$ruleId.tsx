@@ -14,6 +14,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTLinkButton } from "~/components/ui/SoTLinkButton";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTSearchInput } from "~/components/ui/SoTSearchInput";
 import { SelectInput } from "~/components/ui/SelectInput";
@@ -216,6 +217,11 @@ export default function EditCustomerRule() {
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
+  const loading = nav.state === "loading";
+  const busy = nav.state !== "idle";
+  const pendingAction = String(nav.formData?.get("_action") ?? "");
+  const saveBusy = pendingAction === "save" && busy;
+  const deleteBusy = pendingAction === "delete" && busy;
   const ctxSuffix = "?ctx=admin";
   const fieldErrors =
     actionData && "fieldErrors" in actionData ? actionData.fieldErrors : undefined;
@@ -235,131 +241,149 @@ export default function EditCustomerRule() {
       <div className="mx-auto max-w-3xl px-5 py-6">
         <SoTCard interaction="form">
           <Form method="post" className="space-y-3">
-            {formError ? <SoTAlert tone="danger">{formError}</SoTAlert> : null}
+            <fieldset
+              disabled={busy}
+              className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {busy ? (
+                <SoTLoadingState
+                  variant="panel"
+                  label={deleteBusy ? "Deleting pricing rule" : "Saving pricing rule"}
+                  hint={
+                    deleteBusy
+                      ? "Removing the customer-specific pricing override."
+                      : "Updating the pricing rule for this customer."
+                  }
+                />
+              ) : null}
 
-            <SoTFormField label="Product" error={fieldErrors?.productId}>
-              <SelectInput
-                name="productId"
-                defaultValue={String(rule.productId)}
-                options={products.map((p) => ({
-                  label: p.name,
-                  value: String(p.id),
-                }))}
-              />
-            </SoTFormField>
+              {formError ? <SoTAlert tone="danger">{formError}</SoTAlert> : null}
 
-            <SoTFormField label="Unit Kind" error={fieldErrors?.unitKind}>
-              <div className="mt-1 flex gap-3">
-                {(["RETAIL", "PACK"] as const).map((k) => (
-                  <label key={k} className="inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="unitKind"
-                      value={k}
-                      defaultChecked={rule.unitKind === k}
-                      className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                    />
-                    <span>{k}</span>
-                  </label>
-                ))}
+              <SoTFormField label="Product" error={fieldErrors?.productId}>
+                <SelectInput
+                  name="productId"
+                  defaultValue={String(rule.productId)}
+                  options={products.map((p) => ({
+                    label: p.name,
+                    value: String(p.id),
+                  }))}
+                />
+              </SoTFormField>
+
+              <SoTFormField label="Unit Kind" error={fieldErrors?.unitKind}>
+                <div className="mt-1 flex gap-3">
+                  {(["RETAIL", "PACK"] as const).map((k) => (
+                    <label key={k} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="unitKind"
+                        value={k}
+                        defaultChecked={rule.unitKind === k}
+                        className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                      />
+                      <span>{k}</span>
+                    </label>
+                  ))}
+                </div>
+              </SoTFormField>
+
+              <SoTFormField label="Mode" error={fieldErrors?.mode}>
+                <SelectInput
+                  name="mode"
+                  defaultValue={rule.mode}
+                  options={[
+                    {
+                      label: "FIXED_PRICE (set new price)",
+                      value: "FIXED_PRICE",
+                    },
+                    {
+                      label: "FIXED_DISCOUNT (minus PHP)",
+                      value: "FIXED_DISCOUNT",
+                    },
+                    {
+                      label: "PERCENT_DISCOUNT (minus %)",
+                      value: "PERCENT_DISCOUNT",
+                    },
+                  ]}
+                />
+              </SoTFormField>
+
+              <SoTFormField label="Value" error={fieldErrors?.value}>
+                <SoTSearchInput
+                  name="value"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={rule.value}
+                />
+              </SoTFormField>
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  name="active"
+                  type="checkbox"
+                  className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  defaultChecked={rule.active}
+                />
+                <span>Active</span>
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <SoTFormField label="Starts At (optional)" error={fieldErrors?.startsAt}>
+                  <SoTSearchInput
+                    name="startsAt"
+                    type="date"
+                    defaultValue={rule.startsAt ?? ""}
+                  />
+                </SoTFormField>
+                <SoTFormField label="Ends At (optional)" error={fieldErrors?.endsAt}>
+                  <SoTSearchInput
+                    name="endsAt"
+                    type="date"
+                    defaultValue={rule.endsAt ?? ""}
+                  />
+                </SoTFormField>
               </div>
-            </SoTFormField>
 
-            <SoTFormField label="Mode" error={fieldErrors?.mode}>
-              <SelectInput
-                name="mode"
-                defaultValue={rule.mode}
-                options={[
-                  {
-                    label: "FIXED_PRICE (set new price)",
-                    value: "FIXED_PRICE",
-                  },
-                  {
-                    label: "FIXED_DISCOUNT (minus PHP)",
-                    value: "FIXED_DISCOUNT",
-                  },
-                  {
-                    label: "PERCENT_DISCOUNT (minus %)",
-                    value: "PERCENT_DISCOUNT",
-                  },
-                ]}
+              <SoTActionBar
+                className="mb-0"
+                right={
+                  <>
+                    <SoTButton
+                      type="submit"
+                      name="_action"
+                      value="save"
+                      variant="primary"
+                      disabled={busy}
+                    >
+                      {saveBusy ? "Saving rule…" : loading ? "Finishing…" : "Save"}
+                    </SoTButton>
+
+                    <SoTButton
+                      type="submit"
+                      name="_action"
+                      value="delete"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={(e) => {
+                        if (!confirm("Delete this rule? This cannot be undone.")) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      {deleteBusy ? "Deleting…" : "Delete"}
+                    </SoTButton>
+
+                    <SoTLinkButton
+                      to={`/customers/${customerId}/pricing${ctxSuffix}`}
+                      variant="secondary"
+                    >
+                      Cancel
+                    </SoTLinkButton>
+                  </>
+                }
               />
-            </SoTFormField>
-
-            <SoTFormField label="Value" error={fieldErrors?.value}>
-              <SoTSearchInput
-                name="value"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={rule.value}
-              />
-            </SoTFormField>
-
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-              <input
-                name="active"
-                type="checkbox"
-                className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                defaultChecked={rule.active}
-              />
-              <span>Active</span>
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
-              <SoTFormField label="Starts At (optional)" error={fieldErrors?.startsAt}>
-                <SoTSearchInput
-                  name="startsAt"
-                  type="date"
-                  defaultValue={rule.startsAt ?? ""}
-                />
-              </SoTFormField>
-              <SoTFormField label="Ends At (optional)" error={fieldErrors?.endsAt}>
-                <SoTSearchInput
-                  name="endsAt"
-                  type="date"
-                  defaultValue={rule.endsAt ?? ""}
-                />
-              </SoTFormField>
-            </div>
-
-            <SoTActionBar
-              className="mb-0"
-              right={
-                <>
-                  <SoTButton
-                    type="submit"
-                    name="_action"
-                    value="save"
-                    variant="primary"
-                    disabled={nav.state !== "idle"}
-                  >
-                    {nav.state !== "idle" ? "Saving..." : "Save"}
-                  </SoTButton>
-
-                  <SoTButton
-                    type="submit"
-                    name="_action"
-                    value="delete"
-                    variant="danger"
-                    onClick={(e) => {
-                      if (!confirm("Delete this rule? This cannot be undone.")) {
-                        e.preventDefault();
-                      }
-                    }}
-                  >
-                    Delete
-                  </SoTButton>
-
-                  <SoTLinkButton
-                    to={`/customers/${customerId}/pricing${ctxSuffix}`}
-                    variant="secondary"
-                  >
-                    Cancel
-                  </SoTLinkButton>
-                </>
-              }
-            />
+            </fieldset>
           </Form>
         </SoTCard>
       </div>

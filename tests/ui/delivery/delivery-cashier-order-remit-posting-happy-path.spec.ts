@@ -49,10 +49,10 @@ test.describe("delivery cashier order remit posting happy path", () => {
       await openDeliveryCashierOrderRemitPostingHappyPathOrderRemitPage(page);
 
       await expect(
-        page.getByText(scenario.remitOrder.orderCode, { exact: false }),
+        page.getByText(scenario.remitOrder.orderCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
-        page.getByText(scenario.cashGivenLabel, { exact: false }),
+        page.getByLabel(/^Cash collected$/i),
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: /^Post Remit$/i }),

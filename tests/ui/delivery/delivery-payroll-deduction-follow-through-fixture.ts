@@ -186,9 +186,9 @@ export function expectDeliveryPayrollDeductionFollowThroughInitialDbState(
     "PLAN:PAYROLL_DEDUCTION",
   );
   expect(state.variance?.id).toBe(scenario.varianceId);
-  expect(state.variance?.status).toBe("CLOSED");
+  expect(state.variance?.status).toBe("RIDER_ACCEPTED");
   expect(state.variance?.resolution).toBe("CHARGE_RIDER");
-  expect(state.variance?.resolvedAt).not.toBeNull();
+  expect(state.variance?.resolvedAt).toBeNull();
 }
 
 export function expectDeliveryPayrollDeductionFollowThroughPostedDbState(

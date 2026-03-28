@@ -17,11 +17,6 @@ import {
   SoTTd,
 } from "~/components/ui/SoTTable";
 import { SelectInput } from "~/components/ui/SelectInput";
-import {
-  applyWorkerSuspensionRecordAndOverlay,
-  liftWorkerSuspensionRecord,
-  listWorkerSuspensionRecords,
-} from "~/services/worker-suspension-record.server";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 
@@ -164,6 +159,9 @@ function dateFallsWithinRange(
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER"]);
+  const { listWorkerSuspensionRecords } = await import(
+    "~/services/worker-suspension-record.server"
+  );
   const url = new URL(request.url);
   const selectedWorkerId = parseOptionalInt(url.searchParams.get("workerId"));
   const saved = url.searchParams.get("saved");
@@ -231,6 +229,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER"]);
+  const {
+    applyWorkerSuspensionRecordAndOverlay,
+    liftWorkerSuspensionRecord,
+  } = await import("~/services/worker-suspension-record.server");
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
 

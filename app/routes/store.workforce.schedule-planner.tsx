@@ -11,21 +11,6 @@ import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
-import {
-  generateWorkerSchedulesFromTemplateAssignments,
-  publishWorkerSchedules,
-  setWorkerScheduleBoardCell,
-} from "~/services/worker-schedule-publication.server";
-import {
-  createWorkerScheduleShiftPreset,
-  deleteWorkerScheduleShiftPreset,
-  listWorkerScheduleShiftPresets,
-  updateWorkerScheduleShiftPreset,
-} from "~/services/worker-schedule-shift-preset.server";
-import {
-  appendWorkerScheduleEvent,
-  listWorkerScheduleEventsForSchedules,
-} from "~/services/worker-schedule-event.server";
 
 type ActionData = {
   ok: false;
@@ -489,6 +474,13 @@ function actorLabel(actor: {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER"]);
+  const [
+    { listWorkerScheduleShiftPresets },
+    { listWorkerScheduleEventsForSchedules },
+  ] = await Promise.all([
+    import("~/services/worker-schedule-shift-preset.server"),
+    import("~/services/worker-schedule-event.server"),
+  ]);
   const url = new URL(request.url);
   const { rangeStart, rangeEnd, preset } = resolvePlannerRange(url);
   const saved = url.searchParams.get("saved");
@@ -609,6 +601,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER"]);
+  const [
+    {
+      generateWorkerSchedulesFromTemplateAssignments,
+      publishWorkerSchedules,
+      setWorkerScheduleBoardCell,
+    },
+    {
+      createWorkerScheduleShiftPreset,
+      deleteWorkerScheduleShiftPreset,
+      updateWorkerScheduleShiftPreset,
+    },
+    { appendWorkerScheduleEvent },
+  ] = await Promise.all([
+    import("~/services/worker-schedule-publication.server"),
+    import("~/services/worker-schedule-shift-preset.server"),
+    import("~/services/worker-schedule-event.server"),
+  ]);
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
   const rangeStart = String(fd.get("rangeStart") || "");

@@ -9,10 +9,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
-import {
-  getWorkerDashboardSummary,
-  type WorkerDashboardSummary,
-} from "~/services/worker-dashboard-summary.server";
+import type { WorkerDashboardSummary } from "~/services/worker-dashboard-summary.server";
 
 type LoaderData = {
   user: {
@@ -27,6 +24,9 @@ type LoaderData = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  const { getWorkerDashboardSummary } = await import(
+    "~/services/worker-dashboard-summary.server"
+  );
   // Only EMPLOYEE users can reach here, but we ALSO enforce Employee.role === RIDER below.
   const me = await requireRole(request, ["EMPLOYEE"]);
 

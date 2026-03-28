@@ -13,6 +13,7 @@ import {
 } from "@remix-run/react";
 import * as React from "react";
 import { Prisma } from "@prisma/client";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 
 import { db } from "~/utils/db.server";
@@ -479,6 +480,9 @@ export default function StoreClearanceCasePage() {
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  const pendingDecision = String(nav.formData?.get("decisionKind") ?? "");
+  const approveBusy = pendingDecision === "APPROVE" && busy;
+  const rejectBusy = pendingDecision === "REJECT" && busy;
   const canDecide = c.status === "NEEDS_CLEARANCE" && !c.latestDecision;
   const defaultApprovedDiscountInput = React.useMemo(
     () => (c.latestClaimType === "PRICE_BARGAIN" ? c.balance.toFixed(2) : "0.00"),
@@ -684,113 +688,130 @@ export default function StoreClearanceCasePage() {
             </div>
           ) : canDecide ? (
             <Form method="post" className="space-y-3">
-              <input type="hidden" name="intent" value="decide" />
+              <fieldset
+                disabled={busy}
+                className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <input type="hidden" name="intent" value="decide" />
 
-              <div>
-                <label
-                  htmlFor="decision-note"
-                  className="block text-xs text-slate-600 mb-1"
-                >
-                  Decision note (required)
-                </label>
-                <textarea
-                  id="decision-note"
-                  name="note"
-                  rows={3}
-                  required
-                  maxLength={500}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  placeholder="Explain decision context..."
-                />
-              </div>
+                {busy ? (
+                  <SoTLoadingState
+                    variant="panel"
+                    label={approveBusy ? "Approving clearance case" : "Rejecting clearance case"}
+                    hint={
+                      approveBusy
+                        ? "Saving the decision and creating any required A/R."
+                        : "Saving the rejection and closing the clearance case."
+                    }
+                  />
+                ) : null}
 
-              <div>
-                <label
-                  htmlFor="approved-discount"
-                  className="block text-xs text-slate-600 mb-1"
-                >
-                  Approved discount (auto-classify)
-                </label>
-                <input
-                  id="approved-discount"
-                  type="text"
-                  name="approvedDiscount"
-                  inputMode="decimal"
-                  value={approvedDiscountInput}
-                  onChange={(e) => setApprovedDiscountInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  placeholder="0.00"
-                />
-              </div>
+                <div>
+                  <label
+                    htmlFor="decision-note"
+                    className="block text-xs text-slate-600 mb-1"
+                  >
+                    Decision note (required)
+                  </label>
+                  <textarea
+                    id="decision-note"
+                    name="note"
+                    rows={3}
+                    required
+                    maxLength={500}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    placeholder="Explain decision context..."
+                  />
+                </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>
-                    Decision: <span className="font-mono">{decisionPreview}</span>
-                  </span>
-                  <span>
-                    Discount:{" "}
-                    <span className="font-mono">
-                      {peso(approvedDiscountPreview)}
+                <div>
+                  <label
+                    htmlFor="approved-discount"
+                    className="block text-xs text-slate-600 mb-1"
+                  >
+                    Approved discount (auto-classify)
+                  </label>
+                  <input
+                    id="approved-discount"
+                    type="text"
+                    name="approvedDiscount"
+                    inputMode="decimal"
+                    value={approvedDiscountInput}
+                    onChange={(e) => setApprovedDiscountInput(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>
+                      Decision: <span className="font-mono">{decisionPreview}</span>
                     </span>
-                  </span>
-                  <span>
-                    A/R: <span className="font-mono">{peso(arPreview)}</span>
-                  </span>
+                    <span>
+                      Discount:{" "}
+                      <span className="font-mono">
+                        {peso(approvedDiscountPreview)}
+                      </span>
+                    </span>
+                    <span>
+                      A/R: <span className="font-mono">{peso(arPreview)}</span>
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label
-                  htmlFor="due-date"
-                  className="block text-xs text-slate-600 mb-1"
-                >
-                  A/R due date (optional, used when A/R &gt; 0)
-                </label>
-                <input
-                  id="due-date"
-                  type="date"
-                  name="dueDate"
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                />
-              </div>
-
-              {actionData && !actionData.ok ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-                  {actionData.error}
+                <div>
+                  <label
+                    htmlFor="due-date"
+                    className="block text-xs text-slate-600 mb-1"
+                  >
+                    A/R due date (optional, used when A/R &gt; 0)
+                  </label>
+                  <input
+                    id="due-date"
+                    type="date"
+                    name="dueDate"
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  />
                 </div>
-              ) : null}
-              {discountOutOfRange ? (
-                <p className="text-xs text-amber-700">
-                  Approved discount must be between 0 and {peso(c.balance)}.
-                </p>
-              ) : null}
-              {approveNeedsCustomer ? (
-                <p className="text-xs text-amber-700">
-                  This approval creates A/R, so customer record is required.
-                </p>
-              ) : null}
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="submit"
-                  name="decisionKind"
-                  value="APPROVE"
-                  disabled={approveDisabled}
-                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                >
-                  Approve (auto-classify)
-                </button>
-                <button
-                  type="submit"
-                  name="decisionKind"
-                  value="REJECT"
-                  disabled={busy}
-                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                >
-                  Reject
-                </button>
-              </div>
+                {actionData && !actionData.ok ? (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                    {actionData.error}
+                  </div>
+                ) : null}
+                {discountOutOfRange ? (
+                  <p className="text-xs text-amber-700">
+                    Approved discount must be between 0 and {peso(c.balance)}.
+                  </p>
+                ) : null}
+                {approveNeedsCustomer ? (
+                  <p className="text-xs text-amber-700">
+                    This approval creates A/R, so customer record is required.
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="submit"
+                    name="decisionKind"
+                    value="APPROVE"
+                    disabled={approveDisabled}
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                  >
+                    {approveBusy ? "Approving…" : "Approve (auto-classify)"}
+                  </button>
+                  <button
+                    type="submit"
+                    name="decisionKind"
+                    value="REJECT"
+                    disabled={busy}
+                    className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                  >
+                    {rejectBusy ? "Rejecting…" : "Reject"}
+                  </button>
+                </div>
+              </fieldset>
             </Form>
           ) : (
             <div className="text-xs text-slate-500">Case is not pending.</div>

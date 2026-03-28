@@ -411,11 +411,18 @@ export async function expectEmployeeProfileEditHappyPathDirectoryRowState(
   row: Locator,
   scenario: EmployeeProfileEditHappyPathScenario,
 ) {
-  await expect(row).toContainText(scenario.updated.fullName);
-  await expect(row).toContainText(scenario.updated.alias);
-  await expect(row).toContainText(scenario.updated.phone);
-  await expect(row).toContainText(scenario.updated.line1);
-  await expect(row).toContainText(new RegExp(`\\b${scenario.updated.email}\\b`, "i"));
-  await expect(row).toContainText(/\bRIDER\b/);
-  await expect(row).toContainText(/\bACTIVE\b/);
+  const profileCell = row.getByRole("cell").first();
+  const laneCell = row.getByRole("cell").nth(1);
+  const loginCell = row.getByRole("cell").nth(2);
+  const statusCell = row.getByRole("cell").nth(3);
+
+  await expect(profileCell).toContainText(scenario.updated.firstName);
+  await expect(profileCell).toContainText(scenario.updated.middleName);
+  await expect(profileCell).toContainText(scenario.updated.lastName);
+  await expect(profileCell).toContainText(scenario.updated.alias);
+  await expect(profileCell).toContainText(scenario.updated.phone);
+  await expect(profileCell).toContainText(scenario.updated.line1);
+  await expect(loginCell).toContainText(scenario.updated.email);
+  await expect(laneCell).toContainText(/^RIDER$/);
+  await expect(statusCell.getByText(/^ACTIVE$/)).toBeVisible();
 }

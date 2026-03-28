@@ -13,6 +13,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { SelectInput } from "~/components/ui/SelectInput";
@@ -111,6 +112,8 @@ export default function NewRunPage() {
   const { riders, vehicles } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const actionData = useActionData<ActionData>();
+  const submitting = nav.state === "submitting";
+  const loading = nav.state === "loading";
   const busy = nav.state !== "idle";
 
   const [riderId, setRiderId] = React.useState<string>("");
@@ -135,72 +138,79 @@ export default function NewRunPage() {
           </SoTAlert>
         )}
 
-        <SoTCard>
-          <Form
-            method="post"
-            className={`grid gap-3 ${busy ? "opacity-60 pointer-events-none" : ""}`}
-          >
-            <SoTFormField
-              label={
-                <>
-                  Rider <span className="text-rose-600">*</span>
-                </>
-              }
-            >
-              <SelectInput
-                options={[
-                  { value: "", label: "— Select rider —" },
-                  ...riders.map((r) => ({ value: String(r.id), label: r.label })),
-                ]}
-                value={riderId}
-                onChange={(v) => setRiderId(String(v))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-              <input type="hidden" name="riderId" value={riderId} />
-            </SoTFormField>
+        <SoTCard className="space-y-3">
+          {submitting ? (
+            <SoTLoadingState
+              variant="panel"
+              label="Creating delivery run"
+              hint="We’re saving the run and preparing the dispatch step."
+            />
+          ) : null}
 
-            <SoTFormField
-              label={
-                <>
-                  Vehicle <span className="text-slate-400">(optional)</span>
-                </>
-              }
-            >
-              <SelectInput
-                options={[
-                  { value: "", label: "— Select vehicle —" },
-                  ...vehicles.map((v) => ({
-                    value: String(v.id),
-                    label: v.name,
-                  })),
-                ]}
-                value={vehicleId}
-                onChange={(v) => setVehicleId(String(v))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-              <input type="hidden" name="vehicleId" value={vehicleId} />
-            </SoTFormField>
+          <Form method="post" className="grid gap-3">
+            <fieldset disabled={busy} className="grid gap-3 disabled:cursor-not-allowed disabled:opacity-70">
+              <SoTFormField
+                label={
+                  <>
+                    Rider <span className="text-rose-600">*</span>
+                  </>
+                }
+              >
+                <SelectInput
+                  options={[
+                    { value: "", label: "— Select rider —" },
+                    ...riders.map((r) => ({ value: String(r.id), label: r.label })),
+                  ]}
+                  value={riderId}
+                  onChange={(v) => setRiderId(String(v))}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                />
+                <input type="hidden" name="riderId" value={riderId} />
+              </SoTFormField>
 
-            <SoTFormField
-              label={
-                <>
-                  Notes <span className="text-slate-400">(optional)</span>
-                </>
-              }
-            >
-              <textarea
-                id="notes"
-                name="notes"
-                rows={3}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-              />
-            </SoTFormField>
+              <SoTFormField
+                label={
+                  <>
+                    Vehicle <span className="text-slate-400">(optional)</span>
+                  </>
+                }
+              >
+                <SelectInput
+                  options={[
+                    { value: "", label: "— Select vehicle —" },
+                    ...vehicles.map((v) => ({
+                      value: String(v.id),
+                      label: v.name,
+                    })),
+                  ]}
+                  value={vehicleId}
+                  onChange={(v) => setVehicleId(String(v))}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                />
+                <input type="hidden" name="vehicleId" value={vehicleId} />
+              </SoTFormField>
 
-            <div className="pt-2">
-              <SoTButton variant="primary" disabled={busy}>
-                {busy ? "Creating…" : "Create & Continue"}
-              </SoTButton>
-            </div>
+              <SoTFormField
+                label={
+                  <>
+                    Notes <span className="text-slate-400">(optional)</span>
+                  </>
+                }
+              >
+                <textarea
+                  id="notes"
+                  name="notes"
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                />
+              </SoTFormField>
+
+              <div className="pt-2">
+                <SoTButton variant="primary" disabled={busy}>
+                  {submitting ? "Creating…" : loading ? "Opening dispatch…" : "Create & Continue"}
+                </SoTButton>
+              </div>
+            </fieldset>
           </Form>
         </SoTCard>
       </div>

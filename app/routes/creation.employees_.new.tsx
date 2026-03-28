@@ -17,6 +17,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SelectInput } from "~/components/ui/SelectInput";
 import {
@@ -582,6 +583,8 @@ export default function EmployeeCreatePage() {
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
+  const submitting = navigation.state === "submitting";
+  const loading = navigation.state === "loading";
   const busy = navigation.state !== "idle";
   const [lane, setLane] = React.useState<Lane>("RIDER");
 
@@ -678,14 +681,22 @@ export default function EmployeeCreatePage() {
         ) : null}
 
         <SoTCard>
-          <Form
-            method="post"
-            encType="multipart/form-data"
-            className={busy ? "pointer-events-none opacity-70" : ""}
-          >
-            <input type="hidden" name="intent" value="create" />
+          <Form method="post" encType="multipart/form-data" className="space-y-4">
+            <fieldset
+              disabled={busy}
+              className="space-y-4 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <input type="hidden" name="intent" value="create" />
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {submitting ? (
+                <SoTLoadingState
+                  variant="panel"
+                  label="Creating employee account"
+                  hint="Saving profile details, address data, uploads, and setup access."
+                />
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <section className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-slate-900">Identity and Role</h3>
@@ -826,9 +837,9 @@ export default function EmployeeCreatePage() {
                   </SoTFormField>
                 </div>
               </section>
-            </div>
+              </div>
 
-            <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold text-slate-900">Compliance Documents</h3>
                 <p className="text-xs text-slate-500">
@@ -911,16 +922,21 @@ export default function EmployeeCreatePage() {
                   />
                 </SoTFormField>
               </div>
-            </section>
+              </section>
 
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-500">
-                Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}. Password setup link will be sent to employee email.
-              </p>
-              <SoTButton variant="primary" type="submit" disabled={busy}>
-                {busy ? "Saving..." : "Create Employee Account"}
-              </SoTButton>
-            </div>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                  Default branch assignment: {defaultBranch ? defaultBranch.name : "None configured"}. Password setup link will be sent to employee email.
+                </p>
+                <SoTButton variant="primary" type="submit" disabled={busy}>
+                  {submitting
+                    ? "Creating employee…"
+                    : loading
+                      ? "Finishing setup…"
+                      : "Create Employee Account"}
+                </SoTButton>
+              </div>
+            </fieldset>
           </Form>
         </SoTCard>
       </div>

@@ -80,7 +80,7 @@ test.describe("employee role switch happy path", () => {
         page,
         scenario.email,
       );
-      await expect(row).toContainText(scenario.fullName);
+      await expect(row.getByRole("cell").first()).toContainText(scenario.fullName);
       await expectEmployeeRoleSwitchHappyPathDirectoryRowState(row, "CASHIER");
       await expect(
         row.getByRole("button", { name: /switch to rider/i }),

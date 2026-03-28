@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { db } from "~/utils/db.server";
 import { requireRole, setShiftId, type SessionUser } from "~/utils/auth.server";
@@ -606,20 +607,35 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!me.shiftId) return redirectNeedShift(next); // nothing to close
     const notesIn = String(fd.get("notes") || "").trim() || null;
     const countedCashIn = Number(fd.get("countedCash") || NaN);
+    const countMode = String(fd.get("countMode") || "").trim();
     const denomsJsonRaw = String(fd.get("denomsJson") || "").trim();
 
     // If denomsJson is provided, it becomes the source for counted cash + closingDenoms.
     let cashCount: CashCount | null = null;
     let countedCash = countedCashIn;
-    if (denomsJsonRaw) {
+    let shouldUseDenoms =
+      countMode === "denoms" || (countMode === "" && denomsJsonRaw.length > 0);
+    if (shouldUseDenoms && denomsJsonRaw) {
       try {
         const parsed: unknown = JSON.parse(denomsJsonRaw);
         if (isRecord(parsed)) {
           const normalized: CashCount = {};
           for (const d of DENOMS)
             normalized[d.key] = safeQty(parsed[d.key]);
-          cashCount = normalized;
-          countedCash = computeCashCountTotal(normalized);
+          const denomsCountedCash = computeCashCountTotal(normalized);
+
+          // Race-safe fallback: if the cashier typed a manual value but React
+          // has not yet flushed countMode/denoms hidden inputs, trust the
+          // visible numeric field over the stale denomination draft.
+          if (
+            Number.isFinite(countedCashIn) &&
+            Math.abs(countedCashIn - denomsCountedCash) > 0.005
+          ) {
+            shouldUseDenoms = false;
+          } else {
+            cashCount = normalized;
+            countedCash = denomsCountedCash;
+          }
         }
       } catch {
         return json(
@@ -706,6 +722,14 @@ export default function ShiftConsole() {
   const { activeShift, totals, drawer, paymentsRecent, next } =
     useLoaderData<LoaderData>();
   const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const pendingAction = String(nav.formData?.get("_action") ?? "");
+  const depositBusy = pendingAction === "drawer:deposit" && busy;
+  const withdrawBusy = pendingAction === "drawer:withdraw" && busy;
+  const openingAcceptBusy = pendingAction === "opening:accept" && busy;
+  const openingDisputeBusy = pendingAction === "opening:dispute" && busy;
+  const openingBusy = openingAcceptBusy || openingDisputeBusy;
+  const closeBusy = pendingAction === "close" && busy;
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -725,6 +749,9 @@ export default function ShiftConsole() {
   // Display-safe expected (never show negative as "expected cash" — it's a ledger error)
   const expectedNow = Math.max(0, expectedRaw);
   const [countedCash, setCountedCash] = React.useState<string>(() =>
+    expectedNow ? expectedNow.toFixed(2) : "0.00",
+  );
+  const latestCountedCashRef = React.useRef<string>(
     expectedNow ? expectedNow.toFixed(2) : "0.00",
   );
 
@@ -757,7 +784,9 @@ export default function ShiftConsole() {
   // keep countedCash synced when using denoms
   React.useEffect(() => {
     if (!useDenoms) return;
-    setCountedCash(denomsTotal.toFixed(2));
+    const nextCountedCash = denomsTotal.toFixed(2);
+    latestCountedCashRef.current = nextCountedCash;
+    setCountedCash(nextCountedCash);
   }, [useDenoms, denomsTotal]);
 
   React.useEffect(() => {
@@ -765,13 +794,26 @@ export default function ShiftConsole() {
     setCountedCash((prev) => {
       const v = Number(prev);
       if (Number.isFinite(v) && Math.abs(v) > 0.0001) return prev;
-      return expectedNow.toFixed(2);
+      const seeded = expectedNow.toFixed(2);
+      latestCountedCashRef.current = seeded;
+      return seeded;
     });
   }, [expectedNow]);
+
+  React.useEffect(() => {
+    latestCountedCashRef.current = countedCash;
+  }, [countedCash]);
 
   const countedNum = Number(countedCash || 0);
   const diff = countedNum - expectedNow;
   const diffIsZero = Math.abs(diff) < 0.005;
+  const handleCountedCashChange = (value: string) => {
+    if (useDenoms) {
+      setUseDenoms(false);
+    }
+    latestCountedCashRef.current = value;
+    setCountedCash(value);
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -952,98 +994,122 @@ export default function ShiftConsole() {
                             method="post"
                             className="rounded-2xl border border-slate-200 p-3"
                           >
-                            <input
-                              type="hidden"
-                              name="_action"
-                              value="drawer:deposit"
-                            />
-                            <input
-                              type="hidden"
-                              name="next"
-                              value={next ?? "/cashier"}
-                            />
-                            <div className="mb-2 text-sm font-medium">
-                              Deposit
-                            </div>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <fieldset
+                              disabled={busy || drawerLocked}
+                              className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
                               <input
-                                name="amount"
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                required
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
-                                placeholder="0.00"
+                                type="hidden"
+                                name="_action"
+                                value="drawer:deposit"
                               />
                               <input
-                                name="note"
-                                type="text"
-                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                placeholder="Note (optional)"
+                                type="hidden"
+                                name="next"
+                                value={next ?? "/cashier"}
                               />
-                              <button
-                                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                                disabled={nav.state !== "idle" || drawerLocked}
-                                title={
-                                  drawerLocked
-                                    ? "Locked after count submitted"
-                                    : undefined
-                                }
-                              >
-                                Add
-                              </button>
-                            </div>
+                              <div className="mb-2 text-sm font-medium">
+                                Deposit
+                              </div>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <input
+                                  name="amount"
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  required
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
+                                  placeholder="0.00"
+                                />
+                                <input
+                                  name="note"
+                                  type="text"
+                                  className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  placeholder="Note (optional)"
+                                />
+                                <button
+                                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                                  disabled={busy || drawerLocked}
+                                  title={
+                                    drawerLocked
+                                      ? "Locked after count submitted"
+                                      : undefined
+                                  }
+                                >
+                                  {depositBusy ? "Adding…" : "Add"}
+                                </button>
+                              </div>
+                              {depositBusy ? (
+                                <SoTLoadingState
+                                  variant="inline"
+                                  label="Posting deposit"
+                                  hint="Updating the live drawer balance."
+                                />
+                              ) : null}
+                            </fieldset>
                           </Form>
 
                           <Form
                             method="post"
                             className="rounded-2xl border border-slate-200 p-3"
                           >
-                            <input
-                              type="hidden"
-                              name="_action"
-                              value="drawer:withdraw"
-                            />
-                            <input
-                              type="hidden"
-                              name="next"
-                              value={next ?? "/cashier"}
-                            />
-                            <div className="mb-2 text-sm font-medium">
-                              Withdraw
-                            </div>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <fieldset
+                              disabled={busy || drawerLocked}
+                              className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
                               <input
-                                name="amount"
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                required
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
-                                placeholder="0.00"
+                                type="hidden"
+                                name="_action"
+                                value="drawer:withdraw"
                               />
                               <input
-                                name="note"
-                                type="text"
-                                className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                placeholder="Note (optional)"
+                                type="hidden"
+                                name="next"
+                                value={next ?? "/cashier"}
                               />
-                              <button
-                                className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                                disabled={nav.state !== "idle" || drawerLocked}
-                                title={
-                                  drawerLocked
-                                    ? "Locked after count submitted"
-                                    : undefined
-                                }
-                              >
-                                Take
-                              </button>
-                            </div>
-                            <div className="mt-2 text-xs text-slate-500">
-                              Withdraw is limited to expected drawer cash.
-                              Over/short is handled at shift close.
-                            </div>
+                              <div className="mb-2 text-sm font-medium">
+                                Withdraw
+                              </div>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <input
+                                  name="amount"
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  required
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 sm:w-36"
+                                  placeholder="0.00"
+                                />
+                                <input
+                                  name="note"
+                                  type="text"
+                                  className="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  placeholder="Note (optional)"
+                                />
+                                <button
+                                  className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                                  disabled={busy || drawerLocked}
+                                  title={
+                                    drawerLocked
+                                      ? "Locked after count submitted"
+                                      : undefined
+                                  }
+                                >
+                                  {withdrawBusy ? "Taking…" : "Take"}
+                                </button>
+                              </div>
+                              {withdrawBusy ? (
+                                <SoTLoadingState
+                                  variant="inline"
+                                  label="Posting withdrawal"
+                                  hint="Recomputing the drawer cash limit."
+                                />
+                              ) : null}
+                              <div className="mt-2 text-xs text-slate-500">
+                                Withdraw is limited to expected drawer cash.
+                                Over/short is handled at shift close.
+                              </div>
+                            </fieldset>
                           </Form>
                         </div>
                         {drawerLocked ? (
@@ -1125,6 +1191,23 @@ export default function ShiftConsole() {
                         </div>
                       </div>
 
+                      {openingBusy ? (
+                        <SoTLoadingState
+                          variant="panel"
+                          className="mt-3"
+                          label={
+                            openingAcceptBusy
+                              ? "Accepting opening float"
+                              : "Sending opening dispute"
+                          }
+                          hint={
+                            openingAcceptBusy
+                              ? "Starting the shift and unlocking cashier actions."
+                              : "Locking the shift while the manager reviews the recount."
+                          }
+                        />
+                      ) : null}
+
                       <label className="mt-3 block text-sm">
                         <span className="block text-slate-700 mb-1">
                           Enter counted opening float
@@ -1136,6 +1219,7 @@ export default function ShiftConsole() {
                           step="0.01"
                           min="0"
                           required
+                          disabled={busy}
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         />
                       </label>
@@ -1143,14 +1227,6 @@ export default function ShiftConsole() {
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <Form
                           method="post"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                "Accept opening float and start cashiering?",
-                              )
-                            )
-                              e.preventDefault();
-                          }}
                         >
                           <input
                             type="hidden"
@@ -1170,22 +1246,14 @@ export default function ShiftConsole() {
                           <button
                             type="submit"
                             className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={nav.state !== "idle"}
+                            disabled={busy}
                           >
-                            {nav.state !== "idle" ? "Saving…" : "Accept & Open"}
+                            {openingAcceptBusy ? "Saving…" : "Accept & Open"}
                           </button>
                         </Form>
 
                         <Form
                           method="post"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                "Dispute the opening float and notify manager?",
-                              )
-                            )
-                              e.preventDefault();
-                          }}
                         >
                           <input
                             type="hidden"
@@ -1208,14 +1276,15 @@ export default function ShiftConsole() {
                             placeholder="Dispute note (required)"
                             className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                             required
+                            disabled={busy}
                           />
 
                           <button
                             type="submit"
                             className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={nav.state !== "idle"}
+                            disabled={busy}
                           >
-                            {nav.state !== "idle" ? "Sending…" : "Dispute"}
+                            {openingDisputeBusy ? "Sending…" : "Dispute"}
                           </button>
                         </Form>
                       </div>
@@ -1273,135 +1342,159 @@ export default function ShiftConsole() {
                         </div>
                       ) : null}
 
+                      {closeBusy ? (
+                        <SoTLoadingState
+                          variant="panel"
+                          className="mt-3"
+                          label="Submitting counted cash"
+                          hint="Locking the cashier count and handing it off for manager audit."
+                        />
+                      ) : null}
+
                       <Form
                         method="post"
                         className="mt-3 space-y-2"
                         onSubmit={(e) => {
-                          if (!confirm("Submit counted cash now?"))
-                            e.preventDefault();
+                          const countedCashInput = e.currentTarget.querySelector<
+                            HTMLInputElement
+                          >('input[name="countedCash"]');
+                          if (countedCashInput) {
+                            countedCashInput.value = latestCountedCashRef.current;
+                          }
                         }}
                       >
-                        <input type="hidden" name="_action" value="close" />
-                        <input
-                          type="hidden"
-                          name="next"
-                          value={next ?? "/cashier"}
-                        />
-                        <input
-                          type="hidden"
-                          name="countedCash"
-                          value={countedCash}
-                        />
-                        <input
-                          type="hidden"
-                          name="denomsJson"
-                          value={useDenoms ? denomsJson : ""}
-                        />
-
-                        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <div className="text-sm">
-                            <div className="font-medium text-slate-800">
-                              Cash count mode
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Use denominations for faster, audit-safe count.
-                            </div>
-                          </div>
-                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={useDenoms}
-                              onChange={(e) => setUseDenoms(e.target.checked)}
-                              disabled={drawerLocked}
-                            />
-                            Use denoms
-                          </label>
-                        </div>
-
-                        {useDenoms ? (
-                          <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                            <div className="mb-2 text-sm font-medium text-slate-800">
-                              Denomination count
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {DENOMS.map((d) => (
-                                <label
-                                  key={d.key}
-                                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                                >
-                                  <span className="text-slate-700">
-                                    {d.label}
-                                  </span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={cashCount[d.key] ?? 0}
-                                    onChange={(e) =>
-                                      setCashCount((prev) => ({
-                                        ...prev,
-                                        [d.key]: safeQty(e.target.value),
-                                      }))
-                                    }
-                                    className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                    aria-label={`Qty for ${d.label}`}
-                                    disabled={drawerLocked}
-                                  />
-                                </label>
-                              ))}
-                            </div>
-                            <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                              <div className="text-sm text-slate-700">
-                                Computed total
-                              </div>
-                              <div className="text-sm font-semibold tabular-nums text-slate-900">
-                                {peso(denomsTotal)}
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <label className="block text-sm">
-                          <span className="block text-slate-700 mb-1">
-                            Enter counted cash
-                          </span>
-                          <input
-                            value={countedCash}
-                            onChange={(e) => setCountedCash(e.target.value)}
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            required
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                            readOnly={useDenoms}
-                            disabled={drawerLocked}
-                          />
-                        </label>
-
-                        <input
-                          name="notes"
-                          placeholder="Notes (optional)"
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                          disabled={drawerLocked}
-                        />
-
-                        <button
-                          type="submit"
-                          className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                          disabled={
-                            nav.state !== "idle" || activeShift.status !== "OPEN"
-                          }
+                        <fieldset
+                          disabled={busy || drawerLocked}
+                          className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
                         >
-                          {nav.state !== "idle"
-                            ? "Submitting…"
-                            : "Submit count"}
-                        </button>
+                          <input type="hidden" name="_action" value="close" />
+                          <input
+                            type="hidden"
+                            name="next"
+                            value={next ?? "/cashier"}
+                          />
+                          <input
+                            type="hidden"
+                            name="denomsJson"
+                            value={useDenoms ? denomsJson : ""}
+                          />
+                          <input
+                            type="hidden"
+                            name="countMode"
+                            value={useDenoms ? "denoms" : "manual"}
+                          />
 
-                        <div className="text-xs text-slate-500">
-                          Expected is system cash; counted is physical cash.
-                          Cashier submits once; manager recounts and final-closes
-                          in <code>/store/cashier-shifts</code>.
-                        </div>
+                          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <div className="text-sm">
+                              <div className="font-medium text-slate-800">
+                                Cash count mode
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                Use denominations for faster, audit-safe count.
+                              </div>
+                            </div>
+                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={useDenoms}
+                                onChange={(e) => setUseDenoms(e.target.checked)}
+                                disabled={busy || drawerLocked}
+                              />
+                              Use denoms
+                            </label>
+                          </div>
+
+                          {useDenoms ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                              <div className="mb-2 text-sm font-medium text-slate-800">
+                                Denomination count
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {DENOMS.map((d) => (
+                                  <label
+                                    key={d.key}
+                                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                  >
+                                    <span className="text-slate-700">
+                                      {d.label}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={cashCount[d.key] ?? 0}
+                                      onChange={(e) =>
+                                        setCashCount((prev) => ({
+                                          ...prev,
+                                          [d.key]: safeQty(e.target.value),
+                                        }))
+                                      }
+                                      className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                      aria-label={`Qty for ${d.label}`}
+                                      disabled={busy || drawerLocked}
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+                                <div className="text-sm text-slate-700">
+                                  Computed total
+                                </div>
+                                <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                  {peso(denomsTotal)}
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <label className="block text-sm">
+                            <span className="block text-slate-700 mb-1">
+                              Enter counted cash
+                            </span>
+                            <input
+                              name="countedCash"
+                              value={countedCash}
+                              onChange={(e) =>
+                                handleCountedCashChange(e.target.value)
+                              }
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              required
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              disabled={busy || drawerLocked}
+                            />
+                          </label>
+
+                          <input
+                            name="notes"
+                            placeholder="Notes (optional)"
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                            disabled={busy || drawerLocked}
+                          />
+
+                          <button
+                            type="submit"
+                            className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                            disabled={
+                              busy || drawerLocked || activeShift.status !== "OPEN"
+                            }
+                          >
+                            {closeBusy ? "Submitting…" : "Submit count"}
+                          </button>
+
+                          <div className="text-xs text-slate-500">
+                            Expected is system cash; counted is physical cash.
+                            Cashier submits once; manager recounts and final-closes
+                            in <code>/store/cashier-shifts</code>.
+                          </div>
+                          {useDenoms ? (
+                            <div className="text-xs text-slate-500">
+                              Typing counted cash switches this form to manual
+                              mode and stops using the denomination breakdown.
+                            </div>
+                          ) : null}
+                        </fieldset>
                       </Form>
                     </div>
                   )}

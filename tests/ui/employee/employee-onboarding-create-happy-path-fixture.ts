@@ -263,10 +263,10 @@ export async function expectEmployeeOnboardingCreateHappyPathSuccessAlert(page: 
 export async function expectEmployeeOnboardingCreateHappyPathDirectoryRowState(
   row: Locator,
 ) {
-  await expect(row).toContainText(/\bCASHIER\b/);
-  await expect(row).toContainText(/\bACTIVE\b/);
-  await expect(row).toContainText(/\bPASSWORD_MISSING\b/);
-  await expect(row).toContainText(/Resend Invite/);
+  await expect(row.getByText(/^CASHIER$/)).toBeVisible();
+  await expect(row.getByText(/^ACTIVE$/)).toBeVisible();
+  await expect(row.getByText(/^PASSWORD_MISSING$/)).toBeVisible();
+  await expect(row.getByRole("button", { name: /resend invite/i })).toBeVisible();
 }
 
 export function expectEmployeeOnboardingCreateHappyPathDbState(accountState: Awaited<

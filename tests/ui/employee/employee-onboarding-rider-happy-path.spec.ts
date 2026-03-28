@@ -120,12 +120,12 @@ test.describe("employee onboarding rider happy path", () => {
         page,
         scenario.email,
       );
-      await expect(row).toContainText(scenario.fullName);
-      await expect(row).toContainText(scenario.line1);
+      const profileCell = row.getByRole("cell").first();
+      await expect(profileCell).toContainText(scenario.fullName);
+      await expect(profileCell).toContainText(scenario.line1);
       await expectEmployeeOnboardingRiderHappyPathDirectoryRowState(row);
     } finally {
       await context.close();
     }
   });
 });
-

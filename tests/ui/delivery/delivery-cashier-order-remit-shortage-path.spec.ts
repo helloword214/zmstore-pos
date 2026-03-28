@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext } from "@playwright/test";
 import {
+  describeDeliveryCashierOrderRemitShortagePathPage,
   DELIVERY_CASHIER_ORDER_REMIT_SHORTAGE_PATH_ENABLE_ENV,
   cleanupDeliveryCashierOrderRemitShortagePathQaState,
   createDeliveryCashierOrderRemitShortagePathCashierContext,
@@ -11,6 +12,13 @@ import {
   resolveDeliveryCashierOrderRemitShortagePathDbState,
   resolveDeliveryCashierOrderRemitShortagePathScenario,
 } from "./delivery-cashier-order-remit-shortage-path-fixture";
+
+async function closeContextSafely(context: BrowserContext) {
+  await Promise.race([
+    context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
 
 test.describe("delivery cashier order remit shortage path", () => {
   test.skip(
@@ -46,13 +54,12 @@ test.describe("delivery cashier order remit shortage path", () => {
       await openDeliveryCashierOrderRemitShortagePathOrderRemitPage(page);
 
       await expect(
-        page.getByText(scenario.remitOrder.orderCode, { exact: false }),
+        page.getByText(scenario.remitOrder.orderCode, { exact: false }).first(),
       ).toBeVisible();
+      const cashCollectedInput = page.getByLabel(/^Cash collected$/i);
+      await expect(cashCollectedInput).toBeVisible();
       await expect(
-        page.getByText(scenario.exactCashLabel, { exact: false }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /^Post Remit$/i }),
+        page.getByRole("button", { name: /^Post Remit(?: & Flag Variance)?$/i }),
       ).toBeEnabled();
 
       const printCheckbox = page.getByRole("checkbox", {
@@ -60,18 +67,38 @@ test.describe("delivery cashier order remit shortage path", () => {
       });
       await printCheckbox.uncheck();
 
-      await page.getByLabel(/^Cash collected$/i).fill(
-        scenario.shortageCashInput,
-      );
-      await page.getByRole("button", { name: /^Post Remit$/i }).click();
+      await cashCollectedInput.click();
+      await cashCollectedInput.press("Meta+A");
+      await cashCollectedInput.fill(scenario.shortageCashInput);
+      await expect(cashCollectedInput).toHaveValue(scenario.shortageCashInput);
+      await page
+        .getByRole("button", { name: /^Post Remit(?: & Flag Variance)?$/i })
+        .click();
 
-      await page.waitForURL(
-        (target) =>
-          target.pathname === `/cashier/delivery/${scenario.closedRun.id}`,
-        {
-          timeout: 10_000,
-        },
-      );
+      const redirectedToRunHub = await page
+        .waitForURL(
+          (target) =>
+            target.pathname === `/cashier/delivery/${scenario.closedRun.id}`,
+          {
+            timeout: 10_000,
+          },
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      if (!redirectedToRunHub) {
+        const pageState =
+          await describeDeliveryCashierOrderRemitShortagePathPage(page);
+        throw new Error(
+          [
+            "Post Remit did not redirect to the cashier run hub.",
+            `Landed URL: ${pageState.url}`,
+            `Pathname: ${pageState.pathname}`,
+            `Heading: ${pageState.heading ?? "—"}`,
+            `Body: ${pageState.bodySnippet || "—"}`,
+          ].join("\n"),
+        );
+      }
 
       await expect(
         page.getByRole("heading", { name: /delivery run remit/i }),
@@ -87,7 +114,7 @@ test.describe("delivery cashier order remit shortage path", () => {
         scenario,
       );
     } finally {
-      await cashierContext.close();
+      await closeContextSafely(cashierContext);
     }
   });
 });

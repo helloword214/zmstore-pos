@@ -111,9 +111,10 @@ export async function confirmCashierShiftWaiveInfoOnlyPathAction(
   action: () => Promise<void>,
 ) {
   const dialogPromise = page.waitForEvent("dialog");
-  await action();
+  const actionPromise = action();
   const dialog = await dialogPromise;
   await dialog.accept();
+  await actionPromise;
 }
 
 export async function resolveCashierShiftWaiveInfoOnlyPathOutcome(shiftId: number) {
@@ -223,7 +224,5 @@ export function findCashierShiftWaiveInfoOnlyPathOpenForm(page: Page) {
 }
 
 export function findCashierShiftWaiveInfoOnlyPathCloseForm(shiftRow: Locator) {
-  return shiftRow
-    .locator("form")
-    .filter({ has: shiftRow.getByRole("button", { name: /^Final close shift$/i }) });
+  return shiftRow;
 }

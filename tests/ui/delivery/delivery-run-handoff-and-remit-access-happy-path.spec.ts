@@ -52,7 +52,9 @@ test.describe("delivery run handoff and remit access happy path", () => {
         managerPage,
       );
       await expect(
-        managerPage.getByText(scenario.checkedInRun.runCode, { exact: false }),
+        managerPage
+          .getByText(scenario.checkedInRun.runCode, { exact: false })
+          .first(),
       ).toBeVisible();
 
       await expectDeliveryRunHandoffAndRemitAccessHappyPathManagerRedirectAwayFromRiderCheckin(
@@ -74,7 +76,7 @@ test.describe("delivery run handoff and remit access happy path", () => {
         riderPage,
       );
       await expect(
-        riderPage.getByText(scenario.checkedInRun.runCode, { exact: false }),
+        riderPage.getByText(scenario.checkedInRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
         riderPage.getByRole("button", { name: /submit check-in/i }),
@@ -95,7 +97,7 @@ test.describe("delivery run handoff and remit access happy path", () => {
         cashierPage,
       );
       await expect(
-        cashierPage.getByText(scenario.closedRun.runCode, { exact: false }),
+        cashierPage.getByText(scenario.closedRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
         cashierPage.getByText(/delivery order\(s\) to remit|all delivery orders for this run are settled\./i),
