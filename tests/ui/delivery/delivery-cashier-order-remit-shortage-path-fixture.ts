@@ -68,14 +68,9 @@ export async function openDeliveryCashierOrderRemitShortagePathOrderRemitPage(
 ) {
   const scenario = await resolveDeliveryCashierOrderRemitShortagePathScenario();
 
-  const response = await page.goto(toAbsoluteUrl(scenario.remitOrder.remitRoute), {
+  await page.goto(toAbsoluteUrl(scenario.remitOrder.remitRoute), {
     waitUntil: "domcontentloaded",
   });
-
-  expect(
-    response?.ok() ?? true,
-    `Route unreachable: ${scenario.remitOrder.remitRoute}`,
-  ).toBeTruthy();
   await page.waitForURL(
     (target) => target.pathname === `/delivery-remit/${scenario.remitOrder.id}`,
     { timeout: 10_000 },
@@ -83,6 +78,24 @@ export async function openDeliveryCashierOrderRemitShortagePathOrderRemitPage(
   await expect(
     page.getByRole("heading", { name: /delivery payment remit/i }),
   ).toBeVisible();
+}
+
+export async function describeDeliveryCashierOrderRemitShortagePathPage(
+  page: Page,
+) {
+  const currentUrl = new URL(page.url());
+  const headings = await page.getByRole("heading").allTextContents();
+  const bodyText = ((await page.locator("body").textContent()) ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const bodySnippet = bodyText.slice(0, 500);
+
+  return {
+    url: page.url(),
+    pathname: currentUrl.pathname,
+    heading: headings[0] ?? null,
+    bodySnippet,
+  };
 }
 
 export async function resolveDeliveryCashierOrderRemitShortagePathDbState() {

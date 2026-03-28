@@ -274,10 +274,10 @@ export async function expectEmployeeOnboardingRiderHappyPathSuccessAlert(page: P
 export async function expectEmployeeOnboardingRiderHappyPathDirectoryRowState(
   row: Locator,
 ) {
-  await expect(row).toContainText(/\bRIDER\b/);
-  await expect(row).toContainText(/\bACTIVE\b/);
-  await expect(row).toContainText(/\bPASSWORD_MISSING\b/);
-  await expect(row).toContainText(/Resend Invite/);
+  await expect(row.getByText(/^RIDER$/)).toBeVisible();
+  await expect(row.getByText(/^ACTIVE$/)).toBeVisible();
+  await expect(row.getByText(/^PASSWORD_MISSING$/)).toBeVisible();
+  await expect(row.getByRole("button", { name: /resend invite/i })).toBeVisible();
 }
 
 export function expectEmployeeOnboardingRiderHappyPathDbState(accountState: Awaited<
@@ -301,4 +301,3 @@ export function expectEmployeeOnboardingRiderHappyPathDbState(accountState: Awai
   expect(accountState?.passwordResetTokenCount).toBe(1);
   expect(accountState?.passwordResetTokenUsedAt).toBeNull();
 }
-

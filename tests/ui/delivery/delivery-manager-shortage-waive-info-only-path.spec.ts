@@ -52,7 +52,12 @@ test.describe("delivery manager shortage waive/info-only path", () => {
 
       await expect(row).toBeVisible();
       await expect(row.getByText(`ref #${scenario.varianceId}`)).toBeVisible();
-      await row.locator('select[name="resolution"]').selectOption("INFO_ONLY");
+      await row.getByLabel(/^Decision$/i).click();
+      await page
+        .getByRole("option", {
+          name: /^Info only \(no rider accept\)$/i,
+        })
+        .click();
       await row.locator('input[name="note"]').fill(scenario.infoOnlyDecisionNote);
       await row
         .getByRole("button", { name: /^Save decision$/i })
@@ -140,7 +145,12 @@ test.describe("delivery manager shortage waive/info-only path", () => {
 
       await expect(row).toBeVisible();
       await expect(row.getByText(`ref #${scenario.varianceId}`)).toBeVisible();
-      await row.locator('select[name="resolution"]').selectOption("WAIVE");
+      await row.getByLabel(/^Decision$/i).click();
+      await page
+        .getByRole("option", {
+          name: /^Waive$/i,
+        })
+        .click();
       await row.locator('input[name="note"]').fill(scenario.waiveDecisionNote);
       await row
         .getByRole("button", { name: /^Save decision$/i })

@@ -607,20 +607,35 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!me.shiftId) return redirectNeedShift(next); // nothing to close
     const notesIn = String(fd.get("notes") || "").trim() || null;
     const countedCashIn = Number(fd.get("countedCash") || NaN);
+    const countMode = String(fd.get("countMode") || "").trim();
     const denomsJsonRaw = String(fd.get("denomsJson") || "").trim();
 
     // If denomsJson is provided, it becomes the source for counted cash + closingDenoms.
     let cashCount: CashCount | null = null;
     let countedCash = countedCashIn;
-    if (denomsJsonRaw) {
+    let shouldUseDenoms =
+      countMode === "denoms" || (countMode === "" && denomsJsonRaw.length > 0);
+    if (shouldUseDenoms && denomsJsonRaw) {
       try {
         const parsed: unknown = JSON.parse(denomsJsonRaw);
         if (isRecord(parsed)) {
           const normalized: CashCount = {};
           for (const d of DENOMS)
             normalized[d.key] = safeQty(parsed[d.key]);
-          cashCount = normalized;
-          countedCash = computeCashCountTotal(normalized);
+          const denomsCountedCash = computeCashCountTotal(normalized);
+
+          // Race-safe fallback: if the cashier typed a manual value but React
+          // has not yet flushed countMode/denoms hidden inputs, trust the
+          // visible numeric field over the stale denomination draft.
+          if (
+            Number.isFinite(countedCashIn) &&
+            Math.abs(countedCashIn - denomsCountedCash) > 0.005
+          ) {
+            shouldUseDenoms = false;
+          } else {
+            cashCount = normalized;
+            countedCash = denomsCountedCash;
+          }
         }
       } catch {
         return json(
@@ -736,6 +751,9 @@ export default function ShiftConsole() {
   const [countedCash, setCountedCash] = React.useState<string>(() =>
     expectedNow ? expectedNow.toFixed(2) : "0.00",
   );
+  const latestCountedCashRef = React.useRef<string>(
+    expectedNow ? expectedNow.toFixed(2) : "0.00",
+  );
 
   // Opening acceptance counted (default to manager float)
   const [openingCounted, setOpeningCounted] = React.useState<string>(() => {
@@ -766,7 +784,9 @@ export default function ShiftConsole() {
   // keep countedCash synced when using denoms
   React.useEffect(() => {
     if (!useDenoms) return;
-    setCountedCash(denomsTotal.toFixed(2));
+    const nextCountedCash = denomsTotal.toFixed(2);
+    latestCountedCashRef.current = nextCountedCash;
+    setCountedCash(nextCountedCash);
   }, [useDenoms, denomsTotal]);
 
   React.useEffect(() => {
@@ -774,13 +794,26 @@ export default function ShiftConsole() {
     setCountedCash((prev) => {
       const v = Number(prev);
       if (Number.isFinite(v) && Math.abs(v) > 0.0001) return prev;
-      return expectedNow.toFixed(2);
+      const seeded = expectedNow.toFixed(2);
+      latestCountedCashRef.current = seeded;
+      return seeded;
     });
   }, [expectedNow]);
+
+  React.useEffect(() => {
+    latestCountedCashRef.current = countedCash;
+  }, [countedCash]);
 
   const countedNum = Number(countedCash || 0);
   const diff = countedNum - expectedNow;
   const diffIsZero = Math.abs(diff) < 0.005;
+  const handleCountedCashChange = (value: string) => {
+    if (useDenoms) {
+      setUseDenoms(false);
+    }
+    latestCountedCashRef.current = value;
+    setCountedCash(value);
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -1194,14 +1227,6 @@ export default function ShiftConsole() {
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <Form
                           method="post"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                "Accept opening float and start cashiering?",
-                              )
-                            )
-                              e.preventDefault();
-                          }}
                         >
                           <input
                             type="hidden"
@@ -1229,14 +1254,6 @@ export default function ShiftConsole() {
 
                         <Form
                           method="post"
-                          onSubmit={(e) => {
-                            if (
-                              !confirm(
-                                "Dispute the opening float and notify manager?",
-                              )
-                            )
-                              e.preventDefault();
-                          }}
                         >
                           <input
                             type="hidden"
@@ -1338,8 +1355,12 @@ export default function ShiftConsole() {
                         method="post"
                         className="mt-3 space-y-2"
                         onSubmit={(e) => {
-                          if (!confirm("Submit counted cash now?"))
-                            e.preventDefault();
+                          const countedCashInput = e.currentTarget.querySelector<
+                            HTMLInputElement
+                          >('input[name="countedCash"]');
+                          if (countedCashInput) {
+                            countedCashInput.value = latestCountedCashRef.current;
+                          }
                         }}
                       >
                         <fieldset
@@ -1354,13 +1375,13 @@ export default function ShiftConsole() {
                           />
                           <input
                             type="hidden"
-                            name="countedCash"
-                            value={countedCash}
+                            name="denomsJson"
+                            value={useDenoms ? denomsJson : ""}
                           />
                           <input
                             type="hidden"
-                            name="denomsJson"
-                            value={useDenoms ? denomsJson : ""}
+                            name="countMode"
+                            value={useDenoms ? "denoms" : "manual"}
                           />
 
                           <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -1431,14 +1452,16 @@ export default function ShiftConsole() {
                               Enter counted cash
                             </span>
                             <input
+                              name="countedCash"
                               value={countedCash}
-                              onChange={(e) => setCountedCash(e.target.value)}
+                              onChange={(e) =>
+                                handleCountedCashChange(e.target.value)
+                              }
                               type="number"
                               step="0.01"
                               min="0"
                               required
                               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                              readOnly={useDenoms}
                               disabled={busy || drawerLocked}
                             />
                           </label>
@@ -1465,6 +1488,12 @@ export default function ShiftConsole() {
                             Cashier submits once; manager recounts and final-closes
                             in <code>/store/cashier-shifts</code>.
                           </div>
+                          {useDenoms ? (
+                            <div className="text-xs text-slate-500">
+                              Typing counted cash switches this form to manual
+                              mode and stops using the denomination breakdown.
+                            </div>
+                          ) : null}
                         </fieldset>
                       </Form>
                     </div>

@@ -19,6 +19,18 @@ export function CurrencyInput({
 }: Props) {
   const [isFocused, setIsFocused] = useState(false);
 
+  const normalizeCurrencyDraft = (raw: string) => {
+    const cleaned = raw.replace(/[^0-9.]/g, "");
+    const firstDotIndex = cleaned.indexOf(".");
+
+    if (firstDotIndex < 0) return cleaned;
+
+    return [
+      cleaned.slice(0, firstDotIndex + 1),
+      cleaned.slice(firstDotIndex + 1).replace(/\./g, ""),
+    ].join("");
+  };
+
   const formatValue = (val: string) => {
     const num = parseFloat(val.replace(/,/g, ""));
     if (isNaN(num)) return "";
@@ -29,7 +41,7 @@ export function CurrencyInput({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+    const cleaned = normalizeCurrencyDraft(e.target.value);
     e.target.value = cleaned;
     onChange(e);
   };
@@ -63,7 +75,12 @@ export function CurrencyInput({
             ? `₱${formatValue(value)}`
             : ""
         }
-        onFocus={() => setIsFocused(true)}
+        onFocus={(e) => {
+          setIsFocused(true);
+          requestAnimationFrame(() => {
+            e.currentTarget.select();
+          });
+        }}
         onBlur={() => setIsFocused(false)}
         onChange={handleChange}
         inputMode="decimal"

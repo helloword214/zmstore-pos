@@ -42,7 +42,7 @@ test.describe("delivery final settlement gating", () => {
       await openDeliveryFinalSettlementGatingRunHubPage(page);
 
       await expect(
-        page.getByText(scenario.closedRun.runCode, { exact: false }),
+        page.getByText(scenario.closedRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
         page.getByText(/rider_accepted/i),

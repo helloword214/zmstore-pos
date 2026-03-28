@@ -204,6 +204,73 @@ async function createRiderStorageState(userId: number, stateFilePath: string) {
   writeFileSync(stateFilePath, JSON.stringify(storageState, null, 2));
 }
 
+async function seedManagerApprovedChargeRiderState(
+  scenario: DeliveryManagerShortageReviewChargePathScenario,
+) {
+  const variance = await db.riderRunVariance.findUnique({
+    where: { id: scenario.varianceId },
+    select: {
+      id: true,
+      runId: true,
+      riderId: true,
+      variance: true,
+    },
+  });
+
+  if (!variance?.riderId) {
+    throw new Error(
+      `Delivery rider-acceptance setup could not resolve a rider-owned variance for #${scenario.varianceId}.`,
+    );
+  }
+
+  const amount = Math.abs(Number(variance.variance ?? 0));
+
+  if (!(amount > 0)) {
+    throw new Error(
+      `Delivery rider-acceptance setup requires a positive shortage amount for variance #${scenario.varianceId}.`,
+    );
+  }
+
+  const now = new Date();
+  const amountValue = Number(amount.toFixed(2));
+
+  await db.$transaction(async (tx) => {
+    await tx.riderRunVariance.update({
+      where: { id: variance.id },
+      data: {
+        status: "MANAGER_APPROVED",
+        resolution: "CHARGE_RIDER",
+        note: scenario.decisionNote,
+        managerApprovedAt: now,
+        managerApprovedById: scenario.manager.id,
+        riderAcceptedAt: null,
+        riderAcceptedById: null,
+        resolvedAt: null,
+      },
+    });
+
+    await tx.riderCharge.upsert({
+      where: { varianceId: variance.id },
+      create: {
+        varianceId: variance.id,
+        runId: variance.runId,
+        riderId: variance.riderId,
+        amount: amountValue,
+        status: "OPEN",
+        note: scenario.decisionNote,
+        createdById: scenario.manager.id,
+      },
+      update: {
+        runId: variance.runId,
+        riderId: variance.riderId,
+        amount: amountValue,
+        status: "OPEN",
+        note: scenario.decisionNote,
+      },
+    });
+  });
+}
+
 export async function deleteDeliveryRiderAcceptancePathArtifacts(): Promise<DeleteSummary> {
   const deleted = await deleteDeliveryManagerShortageReviewChargePathArtifacts();
 
@@ -224,6 +291,8 @@ export async function resetDeliveryRiderAcceptancePathState() {
   const rider = await resolveScenarioRiderByVariance(
     managerReviewScenario.varianceId,
   );
+
+  await seedManagerApprovedChargeRiderState(managerReviewScenario);
 
   await createRiderStorageState(
     rider.id,

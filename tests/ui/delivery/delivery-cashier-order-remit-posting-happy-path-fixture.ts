@@ -219,7 +219,7 @@ export function expectDeliveryCashierOrderRemitPostingHappyPathPostedDbState(
   scenario: DeliveryCashierOrderRemitPostingHappyPathScenario,
 ) {
   expect(state.closedRun?.id).toBe(scenario.closedRun.id);
-  expect(state.closedRun?.status).toBe("CLOSED");
+  expect(state.closedRun?.status).toBe("SETTLED");
   expect(state.order?.id).toBe(scenario.remitOrder.id);
   expect(state.order?.status).toBe("PAID");
   expect(state.order?.paidAt).not.toBeNull();

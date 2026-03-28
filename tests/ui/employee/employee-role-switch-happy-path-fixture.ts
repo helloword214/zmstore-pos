@@ -299,9 +299,12 @@ export async function expectEmployeeRoleSwitchHappyPathDirectoryRowState(
   row: Locator,
   expectedLane: "CASHIER" | "RIDER",
 ) {
-  await expect(row).toContainText(new RegExp(`\\b${expectedLane}\\b`));
-  await expect(row).toContainText(/\bACTIVE\b/);
-  await expect(row).toContainText(/\bPASSWORD_READY\b/);
+  const laneCell = row.getByRole("cell").nth(1);
+  const statusCell = row.getByRole("cell").nth(3);
+
+  await expect(laneCell).toContainText(new RegExp(`^${expectedLane}$`));
+  await expect(statusCell.getByText(/^ACTIVE$/)).toBeVisible();
+  await expect(statusCell.getByText(/^PASSWORD_READY$/)).toBeVisible();
 }
 
 export async function expectEmployeeRoleSwitchHappyPathHomeLane(

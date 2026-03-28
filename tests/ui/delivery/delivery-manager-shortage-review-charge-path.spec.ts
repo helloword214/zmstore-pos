@@ -51,7 +51,12 @@ test.describe("delivery manager shortage review charge path", () => {
 
       await expect(row).toBeVisible();
       await expect(row.getByText(`ref #${scenario.varianceId}`)).toBeVisible();
-      await row.locator('select[name="resolution"]').selectOption("CHARGE_RIDER");
+      await row.getByLabel(/^Decision$/i).click();
+      await page
+        .getByRole("option", {
+          name: /^Charge rider \(needs rider accept\)$/i,
+        })
+        .click();
       await row.locator('input[name="note"]').fill(scenario.decisionNote);
       await row
         .getByRole("button", { name: /^Save decision$/i })

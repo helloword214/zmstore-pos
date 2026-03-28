@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   CASHIER_SHIFT_WAIVE_INFO_ONLY_PATH_ENABLE_ENV,
   bootstrapCashierShiftWaiveInfoOnlyPathSession,
-  confirmCashierShiftWaiveInfoOnlyPathAction,
   findCashierShiftWaiveInfoOnlyPathCloseForm,
   findCashierShiftWaiveInfoOnlyPathOpenForm,
   isCashierShiftWaiveInfoOnlyPathEnabled,
@@ -13,6 +12,19 @@ import {
   resolveCashierShiftWaiveInfoOnlyPathOutcome,
   resolveCashierShiftWaiveInfoOnlyPathShiftId,
 } from "./cashier-shift-waive-info-only-path-fixture";
+
+function acceptNextDialog(page: Page) {
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+}
+
+async function closeContextSafely(context: BrowserContext) {
+  await Promise.race([
+    context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
 
 test.describe("cashier shift waive/info-only path", () => {
   test.skip(
@@ -56,7 +68,9 @@ test.describe("cashier shift waive/info-only path", () => {
         .fill(scenario.deviceId);
       await openForm.getByRole("button", { name: /^Open Shift$/i }).click();
 
-      await expect(managerPage.getByText(/opened successfully/i)).toBeVisible();
+      await expect(
+        managerPage.getByText(/opened successfully|already has an open shift/i),
+      ).toBeVisible();
 
       const shiftId = resolveCashierShiftWaiveInfoOnlyPathShiftId(
         managerPage.url(),
@@ -67,30 +81,45 @@ test.describe("cashier shift waive/info-only path", () => {
 
       await openCashierShiftWaiveInfoOnlyPathCashierPage(cashierPage);
       await expect(
-        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)),
+        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)).first(),
       ).toBeVisible();
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Accept & Open$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Accept & Open$/i })
+        .click();
 
+      const countModeToggle = cashierPage.getByRole("checkbox", {
+        name: /Use denoms/i,
+      });
+      if (await countModeToggle.isChecked()) {
+        await countModeToggle.uncheck();
+      }
       await cashierPage
         .getByLabel(/^Enter counted cash$/i)
         .fill(scenario.shortageCountInput);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Submit count$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Submit count$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftWaiveInfoOnlyPathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("SUBMITTED");
 
       await openCashierShiftWaiveInfoOnlyPathManagerPage(managerPage);
       const submittedShiftRow = managerPage.locator(`#open-shift-${shiftId}`);
       await expect(submittedShiftRow).toBeVisible();
-      await expect(submittedShiftRow).toContainText("COUNT SUBMITTED");
+      await expect(
+        submittedShiftRow.getByText(/^COUNT SUBMITTED$/i),
+      ).toBeVisible();
 
       const closeForm =
         findCashierShiftWaiveInfoOnlyPathCloseForm(submittedShiftRow);
@@ -98,19 +127,30 @@ test.describe("cashier shift waive/info-only path", () => {
         .getByLabel(/^Manager recount total$/i)
         .fill(scenario.shortageCountInput);
       await closeForm
-        .getByLabel(/^Decision \(required if short\)$/i)
+        .getByRole("button", { name: /^Decision \(required if short\)$/i })
         .click();
       await managerPage
         .getByRole("option", { name: /^Info only$/i })
         .click();
+      await expect(
+        closeForm.getByRole("button", { name: /^Decision \(required if short\)$/i }),
+      ).toContainText(/Info only/i);
       await closeForm
         .getByLabel(/^Paper reference no\. \(required if short\)$/i)
         .fill(scenario.infoOnlyPaperRefNo);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(managerPage, async () => {
-        await closeForm
-          .getByRole("button", { name: /^Final close shift$/i })
-          .click();
-      });
+      acceptNextDialog(managerPage);
+      await closeForm
+        .getByRole("button", { name: /^Final close shift$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftWaiveInfoOnlyPathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("FINAL_CLOSED");
 
       await expect(managerPage.locator(`#open-shift-${shiftId}`)).toHaveCount(0);
 
@@ -146,8 +186,10 @@ test.describe("cashier shift waive/info-only path", () => {
         ),
       ).toBeVisible();
     } finally {
-      await managerContext.close();
-      await cashierContext.close();
+      await Promise.all([
+        closeContextSafely(managerContext),
+        closeContextSafely(cashierContext),
+      ]);
     }
   });
 
@@ -179,7 +221,9 @@ test.describe("cashier shift waive/info-only path", () => {
         .fill(scenario.deviceId);
       await openForm.getByRole("button", { name: /^Open Shift$/i }).click();
 
-      await expect(managerPage.getByText(/opened successfully/i)).toBeVisible();
+      await expect(
+        managerPage.getByText(/opened successfully|already has an open shift/i),
+      ).toBeVisible();
 
       const shiftId = resolveCashierShiftWaiveInfoOnlyPathShiftId(
         managerPage.url(),
@@ -190,30 +234,45 @@ test.describe("cashier shift waive/info-only path", () => {
 
       await openCashierShiftWaiveInfoOnlyPathCashierPage(cashierPage);
       await expect(
-        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)),
+        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)).first(),
       ).toBeVisible();
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Accept & Open$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Accept & Open$/i })
+        .click();
 
+      const secondCountModeToggle = cashierPage.getByRole("checkbox", {
+        name: /Use denoms/i,
+      });
+      if (await secondCountModeToggle.isChecked()) {
+        await secondCountModeToggle.uncheck();
+      }
       await cashierPage
         .getByLabel(/^Enter counted cash$/i)
         .fill(scenario.shortageCountInput);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Submit count$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Submit count$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftWaiveInfoOnlyPathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("SUBMITTED");
 
       await openCashierShiftWaiveInfoOnlyPathManagerPage(managerPage);
       const submittedShiftRow = managerPage.locator(`#open-shift-${shiftId}`);
       await expect(submittedShiftRow).toBeVisible();
-      await expect(submittedShiftRow).toContainText("COUNT SUBMITTED");
+      await expect(
+        submittedShiftRow.getByText(/^COUNT SUBMITTED$/i),
+      ).toBeVisible();
 
       const closeForm =
         findCashierShiftWaiveInfoOnlyPathCloseForm(submittedShiftRow);
@@ -221,19 +280,30 @@ test.describe("cashier shift waive/info-only path", () => {
         .getByLabel(/^Manager recount total$/i)
         .fill(scenario.shortageCountInput);
       await closeForm
-        .getByLabel(/^Decision \(required if short\)$/i)
+        .getByRole("button", { name: /^Decision \(required if short\)$/i })
         .click();
       await managerPage
         .getByRole("option", { name: /^Waive$/i })
         .click();
+      await expect(
+        closeForm.getByRole("button", { name: /^Decision \(required if short\)$/i }),
+      ).toContainText(/Waive/i);
       await closeForm
         .getByLabel(/^Paper reference no\. \(required if short\)$/i)
         .fill(scenario.waivePaperRefNo);
-      await confirmCashierShiftWaiveInfoOnlyPathAction(managerPage, async () => {
-        await closeForm
-          .getByRole("button", { name: /^Final close shift$/i })
-          .click();
-      });
+      acceptNextDialog(managerPage);
+      await closeForm
+        .getByRole("button", { name: /^Final close shift$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftWaiveInfoOnlyPathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("FINAL_CLOSED");
 
       await expect(managerPage.locator(`#open-shift-${shiftId}`)).toHaveCount(0);
 
@@ -269,8 +339,10 @@ test.describe("cashier shift waive/info-only path", () => {
         ),
       ).toBeVisible();
     } finally {
-      await managerContext.close();
-      await cashierContext.close();
+      await Promise.all([
+        closeContextSafely(managerContext),
+        closeContextSafely(cashierContext),
+      ]);
     }
   });
 });

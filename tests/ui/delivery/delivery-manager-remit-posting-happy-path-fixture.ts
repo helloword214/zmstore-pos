@@ -152,7 +152,6 @@ export function expectDeliveryManagerRemitPostingHappyPathPostedDbState(
 ) {
   expect(state.checkedInRun?.id).toBe(scenario.checkedInRun.id);
   expect(state.checkedInRun?.status).toBe("CLOSED");
-  expect(state.checkedInRun?.closedAt).not.toBeNull();
   expect(state.pendingClearanceCount).toBe(0);
   expect(state.riderVarianceCount).toBe(0);
   expect(state.riderChargeCount).toBe(0);

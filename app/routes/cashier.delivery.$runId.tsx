@@ -1212,7 +1212,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   let totalPaidRun = 0;
-  let totalRemainingRun = 0;
+  let unsettledCustomerRemitCount = 0;
 
   for (const o of mappedOrders) {
     const isRoadside = !!o.orderCode && o.orderCode.startsWith("RS-");
@@ -1273,7 +1273,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     totalPaidRun += paidForRun;
 
     const remaining = Math.max(0, riderCash - paidForRun);
-    totalRemainingRun += remaining;
+    if (
+      remaining > 0.009 &&
+      riderCash > 0.009 &&
+      (o.status === "UNPAID" || o.status === "PARTIALLY_PAID")
+    ) {
+      unsettledCustomerRemitCount += 1;
+    }
   }
 
   const cashShort = r2(expectedCash - totalPaidRun);
@@ -1291,8 +1297,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // ────────────────────────────────────────────────
   // INTENT: finalize settlement (cashier)
   // ────────────────────────────────────────────────
-  // Must have all per-order remits done (run-scope)
-  if (totalRemainingRun > 0.009) {
+  // Must have all customer remits done.
+  // Rider shortage can remain here and still be finalized once cleared.
+  if (unsettledCustomerRemitCount > 0) {
     throw new Response("There are still unsettled order remits on this run.", {
       status: 400,
     });
@@ -1362,7 +1369,6 @@ export default function CashierDeliveryRunRemitPage() {
   const canFinalize =
     !isSettled &&
     summary.unsettledCount === 0 &&
-    summary.totalRemaining <= 0.009 &&
     (balanced || varianceCleared);
 
   const hasShort = summary.cashShort > 0.009;

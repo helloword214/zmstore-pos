@@ -42,10 +42,10 @@ test.describe("delivery rider acceptance path", () => {
       await openDeliveryRiderAcceptancePathPage(page);
 
       await expect(
-        page.getByText(scenario.closedRun.runCode, { exact: false }),
+        page.getByText(scenario.closedRun.runCode, { exact: false }).first(),
       ).toBeVisible();
       await expect(
-        page.getByText(/charge rider/i),
+        page.getByText("charge rider", { exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: /^Accept variance$/i }),
@@ -63,8 +63,14 @@ test.describe("delivery rider acceptance path", () => {
       );
 
       await expect(
-        page.getByText(/accepted/i, { exact: false }),
+        page.getByRole("heading", { name: /pending variances/i }),
       ).toBeVisible();
+      await expect(
+        page.getByText(/no pending acceptances\./i),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /^Accept variance$/i }),
+      ).toHaveCount(0);
 
       const postedState = await resolveDeliveryRiderAcceptancePathDbState();
       expectDeliveryRiderAcceptancePathPostedDbState(postedState, scenario);

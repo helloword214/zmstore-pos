@@ -12,6 +12,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import {
   SoTTable,
@@ -355,6 +356,7 @@ export default function StoreClearanceOpeningBatchesPage() {
   const { batches, selectedBatchRef, selectedRows, flash } = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  const processingBusy = String(nav.formData?.get("intent") ?? "") === "approveValidRows" && busy;
   const [sp] = useSearchParams();
   const batchRefFromUrl = String(sp.get("batchRef") || "").trim();
   const activeBatchRef = selectedBatchRef || batchRefFromUrl || null;
@@ -439,91 +441,105 @@ export default function StoreClearanceOpeningBatchesPage() {
             </div>
 
             <Form method="post" className="space-y-3 p-4">
-              <input type="hidden" name="intent" value="approveValidRows" />
-              <input type="hidden" name="batchRef" value={activeBatchRef} />
+              <fieldset
+                disabled={busy}
+                className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <input type="hidden" name="intent" value="approveValidRows" />
+                <input type="hidden" name="batchRef" value={activeBatchRef} />
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <SoTFormField label="Approval note">
-                  <SoTInput
-                    name="approveNote"
-                    defaultValue="Opening balance batch approved."
-                    maxLength={500}
+                {processingBusy ? (
+                  <SoTLoadingState
+                    variant="panel"
+                    label="Processing opening balance batch"
+                    hint="Approving valid rows and rejecting the selected or invalid exceptions."
                   />
-                </SoTFormField>
-                <SoTFormField label="Manual reject note (optional)">
-                  <SoTInput
-                    name="rejectNote"
-                    placeholder="Reason for manually rejected rows"
-                    maxLength={500}
-                  />
-                </SoTFormField>
-              </div>
+                ) : null}
 
-              <SoTTable>
-                <SoTTableHead>
-                  <SoTTableRow>
-                    <SoTTh>Reject</SoTTh>
-                    <SoTTh>Case</SoTTh>
-                    <SoTTh>Customer</SoTTh>
-                    <SoTTh align="right">Balance</SoTTh>
-                    <SoTTh>Due/Ref</SoTTh>
-                    <SoTTh>Auto Rule</SoTTh>
-                  </SoTTableRow>
-                </SoTTableHead>
-                <tbody>
-                  {selectedRows.length === 0 ? (
-                    <SoTTableEmptyRow colSpan={6} message="No rows in selected batch." />
-                  ) : (
-                    selectedRows.map((row) => (
-                      <SoTTableRow key={row.caseId}>
-                        <SoTTd>
-                          {row.autoRejectReason ? (
-                            <span className="text-xs text-rose-700">auto</span>
-                          ) : (
-                            <input
-                              type="checkbox"
-                              name="rejectCaseIds"
-                              value={row.caseId}
-                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                          )}
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="font-mono text-xs">{row.receiptKey}</div>
-                          <div className="text-[11px] text-slate-500">Case #{row.caseId}</div>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="text-sm text-slate-800">{row.customerLabel}</div>
-                          <div className="text-[11px] text-slate-500">
-                            customerId: {row.customerId ?? "—"}
-                          </div>
-                        </SoTTd>
-                        <SoTTd align="right" className="tabular-nums font-semibold text-amber-700">
-                          {peso(row.balance)}
-                        </SoTTd>
-                        <SoTTd className="text-xs text-slate-600">
-                          {row.dueDate ? `due ${row.dueDate}` : "no due date"}
-                          {row.refNo ? ` • ref ${row.refNo}` : ""}
-                          {row.lineNote ? ` • ${row.lineNote}` : ""}
-                        </SoTTd>
-                        <SoTTd className="text-xs">
-                          {row.autoRejectReason ? (
-                            <span className="text-rose-700">{row.autoRejectReason}</span>
-                          ) : (
-                            <span className="text-slate-500">valid</span>
-                          )}
-                        </SoTTd>
-                      </SoTTableRow>
-                    ))
-                  )}
-                </tbody>
-              </SoTTable>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <SoTFormField label="Approval note">
+                    <SoTInput
+                      name="approveNote"
+                      defaultValue="Opening balance batch approved."
+                      maxLength={500}
+                    />
+                  </SoTFormField>
+                  <SoTFormField label="Manual reject note (optional)">
+                    <SoTInput
+                      name="rejectNote"
+                      placeholder="Reason for manually rejected rows"
+                      maxLength={500}
+                    />
+                  </SoTFormField>
+                </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <SoTButton type="submit" variant="primary" disabled={busy || !selectedRows.length}>
-                  {busy ? "Processing..." : "Approve Valid Rows"}
-                </SoTButton>
-              </div>
+                <SoTTable>
+                  <SoTTableHead>
+                    <SoTTableRow>
+                      <SoTTh>Reject</SoTTh>
+                      <SoTTh>Case</SoTTh>
+                      <SoTTh>Customer</SoTTh>
+                      <SoTTh align="right">Balance</SoTTh>
+                      <SoTTh>Due/Ref</SoTTh>
+                      <SoTTh>Auto Rule</SoTTh>
+                    </SoTTableRow>
+                  </SoTTableHead>
+                  <tbody>
+                    {selectedRows.length === 0 ? (
+                      <SoTTableEmptyRow colSpan={6} message="No rows in selected batch." />
+                    ) : (
+                      selectedRows.map((row) => (
+                        <SoTTableRow key={row.caseId}>
+                          <SoTTd>
+                            {row.autoRejectReason ? (
+                              <span className="text-xs text-rose-700">auto</span>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                name="rejectCaseIds"
+                                value={row.caseId}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                disabled={busy}
+                              />
+                            )}
+                          </SoTTd>
+                          <SoTTd>
+                            <div className="font-mono text-xs">{row.receiptKey}</div>
+                            <div className="text-[11px] text-slate-500">Case #{row.caseId}</div>
+                          </SoTTd>
+                          <SoTTd>
+                            <div className="text-sm text-slate-800">{row.customerLabel}</div>
+                            <div className="text-[11px] text-slate-500">
+                              customerId: {row.customerId ?? "—"}
+                            </div>
+                          </SoTTd>
+                          <SoTTd align="right" className="tabular-nums font-semibold text-amber-700">
+                            {peso(row.balance)}
+                          </SoTTd>
+                          <SoTTd className="text-xs text-slate-600">
+                            {row.dueDate ? `due ${row.dueDate}` : "no due date"}
+                            {row.refNo ? ` • ref ${row.refNo}` : ""}
+                            {row.lineNote ? ` • ${row.lineNote}` : ""}
+                          </SoTTd>
+                          <SoTTd className="text-xs">
+                            {row.autoRejectReason ? (
+                              <span className="text-rose-700">{row.autoRejectReason}</span>
+                            ) : (
+                              <span className="text-slate-500">valid</span>
+                            )}
+                          </SoTTd>
+                        </SoTTableRow>
+                      ))
+                    )}
+                  </tbody>
+                </SoTTable>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <SoTButton type="submit" variant="primary" disabled={busy || !selectedRows.length}>
+                    {processingBusy ? "Processing batch…" : "Approve Valid Rows"}
+                  </SoTButton>
+                </div>
+              </fieldset>
             </Form>
           </SoTCard>
         ) : null}

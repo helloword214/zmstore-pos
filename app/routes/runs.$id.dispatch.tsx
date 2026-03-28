@@ -16,6 +16,7 @@ import { ProductPickerHybridLoadout } from "~/components/ui/ProductPickerHybridL
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import { loadActiveDeliveryRunLinksByOrderIds } from "~/services/delivery-run-assignment.server";
@@ -1352,6 +1353,15 @@ export default function RunDispatchPage() {
   const savedFlag = sp.get("saved") === "1";
   const releasedOrderId = Number(sp.get("releasedOrderId") || NaN);
   const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("intent") ?? "");
+  const pendingReleaseOrderId = Number(nav.formData?.get("releaseOrderId") || NaN);
+  const releaseBusy = pendingIntent === "release-order" && busy;
+  const saveBusy = pendingIntent === "save" && busy;
+  const saveExitBusy = pendingIntent === "save-exit" && busy;
+  const dispatchBusy = pendingIntent === "dispatch" && busy;
+  const cancelBusy = pendingIntent === "cancel" && busy;
+  const revertBusy = pendingIntent === "revert-planned" && busy;
+  const actionBusy = saveBusy || saveExitBusy || dispatchBusy || cancelBusy || revertBusy;
 
   const [riderName, setRiderName] = React.useState<string>(
     riderFromServer ?? ""
@@ -1652,12 +1662,19 @@ export default function RunDispatchPage() {
                         </div>
 
                         {!readOnly ? (
-                          <Form method="post" replace className="shrink-0">
+                          <Form method="post" replace className="shrink-0 space-y-2">
                             <input
                               type="hidden"
                               name="releaseOrderId"
                               value={order.orderId}
                             />
+                            {releaseBusy && pendingReleaseOrderId === order.orderId ? (
+                              <SoTLoadingState
+                                variant="inline"
+                                label="Releasing linked order"
+                                hint="Returning this order to the dispatch queue."
+                              />
+                            ) : null}
                             <SoTButton
                               name="intent"
                               value="release-order"
@@ -1666,7 +1683,9 @@ export default function RunDispatchPage() {
                               disabled={busy}
                               className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
                             >
-                              Release to Dispatch Queue
+                              {releaseBusy && pendingReleaseOrderId === order.orderId
+                                ? "Releasing…"
+                                : "Release to Dispatch Queue"}
                             </SoTButton>
                           </Form>
                         ) : null}
@@ -2035,83 +2054,116 @@ export default function RunDispatchPage() {
           <Form
             method="post"
             replace
-            className={`mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end ${
-              busy ? "opacity-60 pointer-events-none" : ""
-            }`}
+            className="mt-3"
           >
             <input type="hidden" name="riderName" value={riderName} />
             <input type="hidden" name="vehicleId" value={vehicleId ?? ""} />
             <input type="hidden" name="loadoutJson" value={serializedLoadout} />
 
-            <SoTButton
-              name="intent"
-              value="cancel"
-              variant="secondary"
-              type="submit"
-            >
-              Cancel
-            </SoTButton>
+            {actionBusy ? (
+              <SoTLoadingState
+                variant="panel"
+                className="mb-3"
+                label={
+                  dispatchBusy
+                    ? "Dispatching run"
+                    : saveExitBusy
+                      ? "Saving and leaving staging"
+                      : saveBusy
+                        ? "Saving staging"
+                        : cancelBusy
+                          ? "Cancelling run"
+                          : "Reverting run to planned"
+                }
+                hint={
+                  dispatchBusy
+                    ? "Locking the loadout and moving the run to dispatch."
+                    : saveExitBusy
+                      ? "Saving the current staging details before returning."
+                      : saveBusy
+                        ? "Keeping the current staging details on this page."
+                        : cancelBusy
+                          ? "Closing this staging flow and returning to the run list."
+                          : "Unlocking the run so it can be staged again."
+                }
+              />
+            ) : null}
 
-            {!readOnly ? (
-              <>
-                <SoTButton
-                  name="intent"
-                  value="save"
-                  type="submit"
-                  variant="secondary"
-                  className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                >
-                  Save & Stay
-                </SoTButton>
-                <SoTButton
-                  name="intent"
-                  value="save-exit"
-                  type="submit"
-                  variant="secondary"
-                >
-                  Save & Exit
-                </SoTButton>
-                <SoTButton
-                  name="intent"
-                  value="dispatch"
-                  type="submit"
-                  disabled={
-                    !hasRider ||
-                    overCapacity ||
-                    overStock ||
-                    hasRunDraftShortage ||
-                    !canDispatchByQty
-                  }
-                  title={
-                    !hasRider
-                      ? "Choose a driver first"
-                      : overCapacity
-                      ? "Capacity exceeded (kg)"
-                      : overStock
-                      ? "One or more lines exceed available stock"
-                      : hasRunDraftShortage
-                      ? "Linked order items exceed available stock for the current run draft"
-                      : !canDispatchByQty
-                      ? "Add extra loadout or link parent orders (PAD)"
-                      : "Ready to dispatch"
-                  }
-                  variant="primary"
-                  className="disabled:cursor-not-allowed"
-                >
-                  Dispatch
-                </SoTButton>
-              </>
-            ) : (
+            <fieldset
+              disabled={busy}
+              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end disabled:cursor-not-allowed disabled:opacity-70"
+            >
               <SoTButton
                 name="intent"
-                value="revert-planned"
-                type="submit"
+                value="cancel"
                 variant="secondary"
-                className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                type="submit"
               >
-                Revert to Planned
+                {cancelBusy ? "Cancelling…" : "Cancel"}
               </SoTButton>
-            )}
+
+              {!readOnly ? (
+                <>
+                  <SoTButton
+                    name="intent"
+                    value="save"
+                    type="submit"
+                    variant="secondary"
+                    className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  >
+                    {saveBusy ? "Saving…" : "Save & Stay"}
+                  </SoTButton>
+                  <SoTButton
+                    name="intent"
+                    value="save-exit"
+                    type="submit"
+                    variant="secondary"
+                  >
+                    {saveExitBusy ? "Saving…" : "Save & Exit"}
+                  </SoTButton>
+                  <SoTButton
+                    name="intent"
+                    value="dispatch"
+                    type="submit"
+                    disabled={
+                      busy ||
+                      !hasRider ||
+                      overCapacity ||
+                      overStock ||
+                      hasRunDraftShortage ||
+                      !canDispatchByQty
+                    }
+                    title={
+                      !hasRider
+                        ? "Choose a driver first"
+                        : overCapacity
+                        ? "Capacity exceeded (kg)"
+                        : overStock
+                        ? "One or more lines exceed available stock"
+                        : hasRunDraftShortage
+                        ? "Linked order items exceed available stock for the current run draft"
+                        : !canDispatchByQty
+                        ? "Add extra loadout or link parent orders (PAD)"
+                        : "Ready to dispatch"
+                    }
+                    variant="primary"
+                    className="disabled:cursor-not-allowed"
+                  >
+                    {dispatchBusy ? "Dispatching…" : "Dispatch"}
+                  </SoTButton>
+                </>
+              ) : (
+                <SoTButton
+                  name="intent"
+                  value="revert-planned"
+                  type="submit"
+                  variant="secondary"
+                  className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                >
+                  {revertBusy ? "Reverting…" : "Revert to Planned"}
+                </SoTButton>
+              )}
+            </fieldset>
           </Form>
         </div>
       </div>

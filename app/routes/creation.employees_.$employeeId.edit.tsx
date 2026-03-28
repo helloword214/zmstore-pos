@@ -14,6 +14,7 @@ import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFileInput } from "~/components/ui/SoTFileInput";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SelectInput } from "~/components/ui/SelectInput";
 import {
@@ -565,6 +566,8 @@ export default function EmployeeEditPage() {
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
+  const submitting = navigation.state === "submitting";
+  const loading = navigation.state === "loading";
   const busy = navigation.state !== "idle";
 
   const initialProvince = employee.address?.provinceId ?? provinces[0]?.id ?? "";
@@ -687,15 +690,23 @@ export default function EmployeeEditPage() {
         </SoTCard>
 
         <SoTCard>
-          <Form
-            method="post"
-            encType="multipart/form-data"
-            className={busy ? "pointer-events-none opacity-70" : ""}
-          >
-            <input type="hidden" name="intent" value="update-profile" />
-            <input type="hidden" name="employeeId" value={employee.id} />
+          <Form method="post" encType="multipart/form-data" className="space-y-4">
+            <fieldset
+              disabled={busy}
+              className="space-y-4 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <input type="hidden" name="intent" value="update-profile" />
+              <input type="hidden" name="employeeId" value={employee.id} />
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {submitting ? (
+                <SoTLoadingState
+                  variant="panel"
+                  label="Updating employee profile"
+                  hint="Saving profile changes, address updates, and document uploads."
+                />
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <section className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-slate-900">Identity and Compliance</h3>
@@ -860,9 +871,9 @@ export default function EmployeeEditPage() {
                   </SoTFormField>
                 </div>
               </section>
-            </div>
+              </div>
 
-            <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold text-slate-900">Add Compliance Documents</h3>
                 <p className="text-xs text-slate-500">
@@ -930,13 +941,18 @@ export default function EmployeeEditPage() {
                   />
                 </SoTFormField>
               </div>
-            </section>
+              </section>
 
-            <div className="mt-4 flex justify-end">
-              <SoTButton variant="primary" type="submit" disabled={busy}>
-                {busy ? "Saving..." : "Save Employee Profile"}
-              </SoTButton>
-            </div>
+              <div className="mt-4 flex justify-end">
+                <SoTButton variant="primary" type="submit" disabled={busy}>
+                  {submitting
+                    ? "Saving employee…"
+                    : loading
+                      ? "Refreshing profile…"
+                      : "Save Employee Profile"}
+                </SoTButton>
+              </div>
+            </fieldset>
           </Form>
         </SoTCard>
 

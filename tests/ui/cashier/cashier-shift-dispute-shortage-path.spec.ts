@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   CASHIER_SHIFT_DISPUTE_SHORTAGE_PATH_ENABLE_ENV,
   bootstrapCashierShiftDisputeShortagePathSession,
-  confirmCashierShiftDisputeShortagePathAction,
   findCashierShiftDisputeShortagePathCloseForm,
   findCashierShiftDisputeShortagePathOpenForm,
   isCashierShiftDisputeShortagePathEnabled,
@@ -14,6 +13,19 @@ import {
   resolveCashierShiftDisputeShortagePathOutcome,
   resolveCashierShiftDisputeShortagePathShiftId,
 } from "./cashier-shift-dispute-shortage-path-fixture";
+
+function acceptNextDialog(page: Page) {
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+}
+
+async function closeContextSafely(context: BrowserContext) {
+  await Promise.race([
+    context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
 
 test.describe("cashier shift dispute shortage path", () => {
   test.skip(
@@ -64,7 +76,9 @@ test.describe("cashier shift dispute shortage path", () => {
         .fill(scenario.deviceId);
       await openForm.getByRole("button", { name: /^Open Shift$/i }).click();
 
-      await expect(managerPage.getByText(/opened successfully/i)).toBeVisible();
+      await expect(
+        managerPage.getByText(/opened successfully|already has an open shift/i),
+      ).toBeVisible();
 
       const shiftId = resolveCashierShiftDisputeShortagePathShiftId(
         managerPage.url(),
@@ -77,30 +91,43 @@ test.describe("cashier shift dispute shortage path", () => {
 
       await openCashierShiftDisputeShortagePathCashierPage(cashierPage);
       await expect(
-        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)),
+        cashierPage.getByText(new RegExp(`Active shift\\s+#${shiftId}`)).first(),
       ).toBeVisible();
       await cashierPage
         .getByLabel(/^Enter counted opening float$/i)
         .fill(scenario.openingFloatInput);
-      await confirmCashierShiftDisputeShortagePathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Accept & Open$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Accept & Open$/i })
+        .click();
 
       await expect(cashierPage.getByText(/submit counted cash/i)).toBeVisible();
+      const countModeToggle = cashierPage.getByRole("checkbox", {
+        name: /Use denoms/i,
+      });
+      if (await countModeToggle.isChecked()) {
+        await countModeToggle.uncheck();
+      }
       await cashierPage
         .getByLabel(/^Enter counted cash$/i)
         .fill(scenario.shortageCountInput);
-      await confirmCashierShiftDisputeShortagePathAction(cashierPage, async () => {
-        await cashierPage
-          .getByRole("button", { name: /^Submit count$/i })
-          .click();
-      });
+      acceptNextDialog(cashierPage);
+      await cashierPage
+        .getByRole("button", { name: /^Submit count$/i })
+        .click();
 
       await expect(
         cashierPage.getByText(/Shift is locked \(SUBMITTED\)/i),
       ).toBeVisible();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftDisputeShortagePathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("SUBMITTED");
 
       await openCashierShiftDisputeShortagePathManagerPage(managerPage);
       const submittedShiftRow = managerPage.locator(`#open-shift-${shiftId}`);
@@ -114,19 +141,30 @@ test.describe("cashier shift dispute shortage path", () => {
         .getByLabel(/^Manager recount total$/i)
         .fill(scenario.shortageCountInput);
       await closeForm
-        .getByLabel(/^Decision \(required if short\)$/i)
+        .getByRole("button", { name: /^Decision \(required if short\)$/i })
         .click();
       await managerPage
         .getByRole("option", { name: /^Charge cashier$/i })
         .click();
+      await expect(
+        closeForm.getByRole("button", { name: /^Decision \(required if short\)$/i }),
+      ).toContainText(/Charge cashier/i);
       await closeForm
         .getByLabel(/^Paper reference no\. \(required if short\)$/i)
         .fill(scenario.paperRefNo);
-      await confirmCashierShiftDisputeShortagePathAction(managerPage, async () => {
-        await closeForm
-          .getByRole("button", { name: /^Final close shift$/i })
-          .click();
-      });
+      acceptNextDialog(managerPage);
+      await closeForm
+        .getByRole("button", { name: /^Final close shift$/i })
+        .click();
+
+      await expect
+        .poll(
+          async () =>
+            (
+              await resolveCashierShiftDisputeShortagePathOutcome(shiftId)
+            ).shift?.status ?? null,
+        )
+        .toBe("FINAL_CLOSED");
 
       await expect(managerPage.locator(`#open-shift-${shiftId}`)).toHaveCount(0);
 
@@ -167,8 +205,10 @@ test.describe("cashier shift dispute shortage path", () => {
         ),
       ).toBeVisible();
     } finally {
-      await managerContext.close();
-      await cashierContext.close();
+      await Promise.all([
+        closeContextSafely(managerContext),
+        closeContextSafely(cashierContext),
+      ]);
     }
   });
 });

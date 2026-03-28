@@ -49,6 +49,43 @@ type ScenarioContext = {
   openingFloatLabel: string;
 };
 
+function emptyDeleteSummary(): DeleteSummary {
+  return {
+    deletedArPayments: 0,
+    deletedCashDrawerTxns: 0,
+    deletedCashierChargePayments: 0,
+    deletedCashierCharges: 0,
+    deletedPayments: 0,
+    deletedRiderChargePayments: 0,
+    deletedRiderVariances: 0,
+    deletedShiftVariances: 0,
+    deletedShifts: 0,
+  };
+}
+
+function mergeDeleteSummaries(
+  base: DeleteSummary,
+  extra: DeleteSummary,
+): DeleteSummary {
+  return {
+    deletedArPayments: base.deletedArPayments + extra.deletedArPayments,
+    deletedCashDrawerTxns:
+      base.deletedCashDrawerTxns + extra.deletedCashDrawerTxns,
+    deletedCashierChargePayments:
+      base.deletedCashierChargePayments + extra.deletedCashierChargePayments,
+    deletedCashierCharges:
+      base.deletedCashierCharges + extra.deletedCashierCharges,
+    deletedPayments: base.deletedPayments + extra.deletedPayments,
+    deletedRiderChargePayments:
+      base.deletedRiderChargePayments + extra.deletedRiderChargePayments,
+    deletedRiderVariances:
+      base.deletedRiderVariances + extra.deletedRiderVariances,
+    deletedShiftVariances:
+      base.deletedShiftVariances + extra.deletedShiftVariances,
+    deletedShifts: base.deletedShifts + extra.deletedShifts,
+  };
+}
+
 function isMainModule() {
   return Boolean(process.argv[1]) &&
     pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
@@ -146,33 +183,11 @@ async function listTaggedShiftIds() {
   return taggedShifts.map((shift) => shift.id);
 }
 
-export async function resolveCashierShiftOpenCloseHappyPathUsers() {
-  const manager = await resolveScenarioUser(
-    resolveCashierShiftOpenCloseHappyPathManagerEmail(),
-    UserRole.STORE_MANAGER,
-  );
-  const cashier = await resolveScenarioUser(
-    resolveCashierShiftOpenCloseHappyPathCashierEmail(),
-    UserRole.CASHIER,
-  );
-
-  return { manager, cashier };
-}
-
-export async function deleteCashierShiftOpenCloseHappyPathArtifacts(): Promise<DeleteSummary> {
-  const shiftIds = await listTaggedShiftIds();
+async function deleteCashierShiftOpenCloseHappyPathShiftArtifactsByIds(
+  shiftIds: number[],
+): Promise<DeleteSummary> {
   if (shiftIds.length === 0) {
-    return {
-      deletedArPayments: 0,
-      deletedCashDrawerTxns: 0,
-      deletedCashierChargePayments: 0,
-      deletedCashierCharges: 0,
-      deletedPayments: 0,
-      deletedRiderChargePayments: 0,
-      deletedRiderVariances: 0,
-      deletedShiftVariances: 0,
-      deletedShifts: 0,
-    };
+    return emptyDeleteSummary();
   }
 
   const varianceIds = (
@@ -263,14 +278,52 @@ export async function deleteCashierShiftOpenCloseHappyPathArtifacts(): Promise<D
   });
 }
 
+export async function resolveCashierShiftOpenCloseHappyPathUsers() {
+  const manager = await resolveScenarioUser(
+    resolveCashierShiftOpenCloseHappyPathManagerEmail(),
+    UserRole.STORE_MANAGER,
+  );
+  const cashier = await resolveScenarioUser(
+    resolveCashierShiftOpenCloseHappyPathCashierEmail(),
+    UserRole.CASHIER,
+  );
+
+  return { manager, cashier };
+}
+
+export async function deleteCashierShiftOpenCloseHappyPathArtifacts(): Promise<DeleteSummary> {
+  const shiftIds = await listTaggedShiftIds();
+  return deleteCashierShiftOpenCloseHappyPathShiftArtifactsByIds(shiftIds);
+}
+
 export async function resetCashierShiftOpenCloseHappyPathState() {
-  const deleted = await deleteCashierShiftOpenCloseHappyPathArtifacts();
+  let deleted = await deleteCashierShiftOpenCloseHappyPathArtifacts();
   const users = await resolveCashierShiftOpenCloseHappyPathUsers();
+  const leftoverQaShiftIds = (
+    await db.cashierShift.findMany({
+      where: {
+        cashierId: users.cashier.id,
+        closedAt: null,
+        deviceId: { startsWith: "QA-" },
+      },
+      select: { id: true },
+      orderBy: { openedAt: "desc" },
+    })
+  ).map((shift) => shift.id);
+
+  if (leftoverQaShiftIds.length > 0) {
+    const deletedLeftovers =
+      await deleteCashierShiftOpenCloseHappyPathShiftArtifactsByIds(
+        leftoverQaShiftIds,
+      );
+    deleted = mergeDeleteSummaries(deleted, deletedLeftovers);
+  }
+
   const foreignOpenShift = await db.cashierShift.findFirst({
     where: {
       cashierId: users.cashier.id,
       closedAt: null,
-      NOT: { deviceId: resolveCashierShiftOpenCloseHappyPathDeviceId() },
+      NOT: { deviceId: { startsWith: "QA-" } },
     },
     select: {
       id: true,

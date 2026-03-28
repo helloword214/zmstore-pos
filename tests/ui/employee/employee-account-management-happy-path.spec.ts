@@ -65,8 +65,9 @@ test.describe("employee account management happy path", () => {
         page,
         scenario.email,
       );
-      await expect(row).toContainText(scenario.fullName);
-      await expect(row).toContainText(scenario.line1);
+      const profileCell = row.getByRole("cell").first();
+      await expect(profileCell).toContainText(scenario.fullName);
+      await expect(profileCell).toContainText(scenario.line1);
       await expectEmployeeAccountManagementHappyPathDirectoryRowState(
         row,
         "ACTIVE",

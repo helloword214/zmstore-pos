@@ -108,9 +108,10 @@ export async function confirmCashierOpeningDisputeResendPathAction(
   action: () => Promise<void>,
 ) {
   const dialogPromise = page.waitForEvent("dialog");
-  await action();
+  const actionPromise = action();
   const dialog = await dialogPromise;
   await dialog.accept();
+  await actionPromise;
 }
 
 export async function resolveCashierOpeningDisputeResendPathShiftState(
@@ -184,7 +185,5 @@ export function findCashierOpeningDisputeResendPathShiftRow(
 }
 
 export function findCashierOpeningDisputeResendPathResendForm(shiftRow: Locator) {
-  return shiftRow
-    .locator("form")
-    .filter({ has: shiftRow.getByRole("button", { name: /^Resend$/i }) });
+  return shiftRow;
 }

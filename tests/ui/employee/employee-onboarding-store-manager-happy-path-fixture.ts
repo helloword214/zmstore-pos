@@ -281,11 +281,13 @@ export async function expectEmployeeOnboardingStoreManagerHappyPathSuccessAlert(
 export async function expectEmployeeOnboardingStoreManagerHappyPathDirectoryRowState(
   row: Locator,
 ) {
-  await expect(row).toContainText(/STORE_MANAGER \(STAFF\)/);
-  await expect(row).toContainText(/\bACTIVE\b/);
-  await expect(row).toContainText(/\bPASSWORD_MISSING\b/);
-  await expect(row).toContainText(/Resend Invite/);
-  await expect(row).toContainText(/Protected lane\. Manager switch is blocked here\./);
+  await expect(row.getByText(/^STORE_MANAGER \(STAFF\)$/)).toBeVisible();
+  await expect(row.getByText(/^ACTIVE$/)).toBeVisible();
+  await expect(row.getByText(/^PASSWORD_MISSING$/)).toBeVisible();
+  await expect(row.getByRole("button", { name: /resend invite/i })).toBeVisible();
+  await expect(
+    row.getByText(/Protected lane\. Manager switch is blocked here\./),
+  ).toBeVisible();
 }
 
 export function expectEmployeeOnboardingStoreManagerHappyPathDbState(
@@ -314,4 +316,3 @@ export function expectEmployeeOnboardingStoreManagerHappyPathDbState(
   expect(accountState?.passwordResetTokenCount).toBe(1);
   expect(accountState?.passwordResetTokenUsedAt).toBeNull();
 }
-

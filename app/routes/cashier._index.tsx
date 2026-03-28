@@ -17,10 +17,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
-import {
-  getWorkerDashboardSummary,
-  type WorkerDashboardSummary,
-} from "~/services/worker-dashboard-summary.server";
+import type { WorkerDashboardSummary } from "~/services/worker-dashboard-summary.server";
 
 type LoaderData = {
   me: SessionUser;
@@ -45,6 +42,9 @@ type LoaderData = {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireUser(request);
+  const { getWorkerDashboardSummary } = await import(
+    "~/services/worker-dashboard-summary.server"
+  );
 
   // Kung hindi cashier, wag dito — ibalik sa sariling home
   if (me.role !== "CASHIER") {
