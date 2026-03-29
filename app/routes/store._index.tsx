@@ -6,9 +6,19 @@ import { Form, Link, useLoaderData } from "@remix-run/react";
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import { r2, toNum, peso } from "~/utils/money";
+import {
+  SoTDashboardActionGrid,
+  SoTDashboardActionTile,
+  SoTDashboardPanel,
+  SoTDashboardQueueList,
+  SoTDashboardQueueRow,
+  SoTDashboardSection,
+  SoTDashboardSignal,
+  SoTDashboardSignalGrid,
+  SoTDashboardTopGrid,
+} from "~/components/ui/SoTDashboardPrimitives";
 import { SoTNotificationBell } from "~/components/ui/SoTNotificationBell";
 import { Button } from "~/components/ui/Button";
-import { sotCardClass } from "~/components/ui/SoTCard";
 import { SoTDataRow } from "~/components/ui/SoTDataRow";
 import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 
@@ -68,15 +78,6 @@ type LoaderData = {
     clearancePending: number; // SoT: pending manager inbox workload
   };
 };
-
-function MiniBadge({ n }: { n: number }) {
-  if (!n || n <= 0) return null;
-  return (
-    <span className="inline-flex min-w-[18px] items-center justify-center rounded-xl bg-slate-900 px-2 py-0.5 text-xs font-semibold leading-none text-white">
-      {n}
-    </span>
-  );
-}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireRole(request, ["STORE_MANAGER"]);
@@ -384,50 +385,27 @@ export default function StoreManagerDashboard() {
     exceptions.riderVariancesOpen + exceptions.cashierShiftVariancesOpen;
   const payrollTaggedCount =
     exceptions.payrollRiderAR + exceptions.payrollCashierAR;
-  const exceptionCount =
-    varianceDecisionCount + payrollTaggedCount + exceptions.clearancePending;
+  const priorityCount =
+    varianceDecisionCount +
+    payrollTaggedCount +
+    exceptions.clearancePending +
+    runs.needsManagerReview;
   const attendancePendingToday = Math.max(
     workforce.scheduledToday - workforce.attendanceRecordedToday,
     0,
   );
-  const workforceStatusLabel =
+  const attendanceStatusLabel =
     attendancePendingToday > 0
       ? `${attendancePendingToday} pending today`
       : workforce.scheduledToday > 0
-        ? "Attendance caught up"
-        : "Awaiting today's schedule";
-  const workforceStatusToneClass =
+        ? "Attendance up to date"
+        : "No schedule";
+  const attendanceStatusTone =
     attendancePendingToday > 0
-      ? "border-amber-300 bg-amber-100/90 text-amber-900"
+      ? "warning"
       : workforce.scheduledToday > 0
-        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-        : "border-slate-200 bg-white/90 text-slate-700";
-  const attendanceSummary =
-    workforce.scheduledToday === 0
-      ? "No schedules are loaded for today yet. You can still review attendance facts or move straight to schedule planning."
-      : attendancePendingToday > 0
-        ? `${attendancePendingToday} of ${workforce.scheduledToday} scheduled workers still need attendance review today.`
-        : `All ${workforce.scheduledToday} scheduled workers already have attendance results recorded today.`;
-  const workforcePlannerSummary =
-    workforce.draftSchedulesNext14Days > 0
-      ? `${workforce.draftSchedulesNext14Days} draft schedule ${
-          workforce.draftSchedulesNext14Days === 1 ? "row is" : "rows are"
-        } waiting across the next 14 days.`
-      : "No draft schedule rows are waiting across the next 14 days.";
-  const workforceTemplateSummary =
-    workforce.activeTemplates > 0
-      ? `${workforce.activeTemplates} active template${
-          workforce.activeTemplates === 1 ? "" : "s"
-        } support ${workforce.activeAssignments} live assignment${
-          workforce.activeAssignments === 1 ? "" : "s"
-        }.`
-      : "No active workforce templates are live yet.";
-  const workforceSuspensionSummary =
-    workforce.activeSuspensionsToday > 0
-      ? `${workforce.activeSuspensionsToday} active suspension${
-          workforce.activeSuspensionsToday === 1 ? " is" : "s are"
-        } affecting today's workforce lane.`
-      : "No active suspensions are affecting today's workforce lane.";
+        ? "success"
+        : "default";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -473,390 +451,219 @@ export default function StoreManagerDashboard() {
         }
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        <div className="grid gap-4 xl:grid-cols-12 xl:items-stretch">
-          <section className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm xl:col-span-4 xl:h-full">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Manager Decision Inbox
-              </h2>
-              <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
-                {exceptionCount} pending
-              </span>
-            </div>
+      <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
+        <SoTDashboardTopGrid>
+          <div className="xl:col-span-4">
+            <SoTDashboardPanel
+              title="Needs Attention"
+              subtitle="Queues that need manager action"
+              badge={`${priorityCount} pending`}
+              tone="info"
+            >
+              <SoTDashboardQueueList>
+                <SoTDashboardQueueRow
+                  to="/store/clearance"
+                  label="Review Clearance"
+                  value={`${exceptions.clearancePending} pending`}
+                  actionLabel="Review"
+                  tone={exceptions.clearancePending > 0 ? "warning" : "default"}
+                />
+                <SoTDashboardQueueRow
+                  to="/store/rider-variances"
+                  label="Review Variances"
+                  value={`${varianceDecisionCount} pending`}
+                  actionLabel="Review"
+                  tone={varianceDecisionCount > 0 ? "danger" : "default"}
+                />
+                <SoTDashboardQueueRow
+                  to="/runs?status=CHECKED_IN"
+                  label="Open Remit Review"
+                  value={`${runs.needsManagerReview} checked-in`}
+                  actionLabel="Open"
+                  tone={runs.needsManagerReview > 0 ? "info" : "default"}
+                />
+                <SoTDashboardQueueRow
+                  to="/store/payroll"
+                  label="Open Payroll Tags"
+                  value={`${payrollTaggedCount} tagged`}
+                  actionLabel="Open"
+                  tone={payrollTaggedCount > 0 ? "warning" : "default"}
+                />
+              </SoTDashboardQueueList>
+            </SoTDashboardPanel>
+          </div>
 
-            <div className="space-y-1.5">
-              <ManagerInboxRow
-                to="/store/clearance"
-                label="Clearance pending decisions"
-                count={exceptions.clearancePending}
-              />
-              <ManagerInboxRow
-                to="/store/rider-variances"
-                label="Variance decisions"
-                count={varianceDecisionCount}
-              />
-              <ManagerInboxRow
-                to="/store/payroll"
-                label="Payroll deduction tags"
-                count={payrollTaggedCount}
-              />
-            </div>
-          </section>
-
-          <section className="xl:col-span-8">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Operations Monitor
-              </h2>
-              <span className="text-xs text-slate-500">Live queues and control lanes.</span>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className={sotCardClass({ className: "border-sky-200 bg-sky-50/40" })}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-800">
-                      Dispatch Queue
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">
-                      Orders waiting dispatch
-                    </div>
-                  </div>
-                  <div className="text-xl font-semibold text-sky-900">
-                    {dispatch.forDispatchOrders}
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-2">
+          <div className="xl:col-span-5">
+            <SoTDashboardPanel
+              title="Dispatch"
+              subtitle="Orders waiting release"
+              badge={`${dispatch.forDispatchOrders} waiting`}
+              tone="info"
+            >
+              <div className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-2">
                   <SoTDataRow label="For dispatch" value={dispatch.forDispatchOrders} />
-                  <SoTDataRow
-                    label="Staged, not dispatched"
-                    value={dispatch.stagedOrders}
-                  />
-                </div>
-                {me.role === "STORE_MANAGER" ? (
-                  <Link
-                    to="/pad-order"
-                    className="mt-3 inline-flex items-center text-sm font-medium text-indigo-800 transition-colors duration-150 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Open order pad (SoT UI) →
-                  </Link>
-                ) : null}
-                <Link
-                  to="/store/dispatch"
-                  className="mt-3 inline-flex items-center text-sm font-medium text-sky-800 transition-colors duration-150 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Open dispatch board →
-                </Link>
-              </div>
-
-              <div className={sotCardClass({ className: "border-indigo-200 bg-indigo-50/40" })}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
-                      Runs Pipeline
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">
-                      Planned, active, checked-in
-                    </div>
-                  </div>
-                  <div className="text-xl font-semibold text-indigo-900">
-                    {runs.planned + runs.dispatched + runs.checkedIn}
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-2">
-                  <SoTDataRow label="Planned" value={runs.planned} />
-                  <SoTDataRow label="Dispatched" value={runs.dispatched} />
+                  <SoTDataRow label="Staged" value={dispatch.stagedOrders} />
+                  <SoTDataRow label="Planned runs" value={runs.planned} />
                   <SoTDataRow label="Checked-in" value={runs.checkedIn} />
                 </div>
-                <Link
-                  to="/runs"
-                  className="mt-3 inline-flex items-center text-sm font-medium text-indigo-800 transition-colors duration-150 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Open runs board →
-                </Link>
-              </div>
-
-              <div
-                className={sotCardClass({
-                  className: "border-emerald-200 bg-emerald-50/40 md:col-span-2",
-                })}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                      Cash Position
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-slate-900">
-                      Drawer totals and cash movement
-                    </div>
-                  </div>
-                  <span className="rounded-xl border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                    TODAY
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <SoTDataRow label="Open shifts" value={cash.openShifts} />
-                  <SoTDataRow
-                    label="Expected drawers"
-                    value={peso(cash.expectedDrawerTotal)}
-                  />
-                  <SoTDataRow
-                    label="Cash sales today"
-                    value={peso(cash.cashSalesToday)}
-                  />
-                  <SoTDataRow
-                    label="Drawer movements"
-                    value={peso(cash.drawerTxnsToday)}
-                  />
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Link
-                    to="/store/cashier-shifts"
-                    className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    to="/store/dispatch"
+                    className="inline-flex h-9 items-center rounded-xl bg-sky-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
-                    Cashier shifts →
+                    Open Dispatch
                   </Link>
                   <Link
-                    to="/store/cashier-variances"
-                    className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                    to="/runs"
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
-                    Shift variances <MiniBadge n={cash.openShiftVariances} />
+                    Open Runs
                   </Link>
-                </div>
-              </div>
-
-              <div
-                className={sotCardClass({
-                  className: "border-amber-200 bg-amber-50/70 md:col-span-2",
-                })}
-              >
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                        Workforce Ops
-                      </div>
-                      <div className="mt-1 text-base font-semibold text-slate-900">
-                        Coverage, attendance, and schedule readiness
-                      </div>
-                      <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                        Daily workforce controls with live signals for attendance
-                        review, planning backlog, and active suspensions.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-xs font-semibold text-amber-800 shadow-sm">
-                        Today
-                      </span>
-                      <span
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${workforceStatusToneClass}`}
-                      >
-                        {workforceStatusLabel}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <WorkforceMetricPill
-                      label="Assignments live"
-                      value={workforce.activeAssignments}
-                      caption={`${workforce.activeTemplates} active template${
-                        workforce.activeTemplates === 1 ? "" : "s"
-                      } backing current coverage`}
-                    />
-                    <WorkforceMetricPill
-                      label="Scheduled today"
-                      value={workforce.scheduledToday}
-                      caption="Workers loaded into today's attendance lane"
-                    />
-                    <WorkforceMetricPill
-                      label="Attendance pending"
-                      value={attendancePendingToday}
-                      caption={`${workforce.attendanceRecordedToday} recorded so far today`}
-                    />
-                    <WorkforceMetricPill
-                      label="Active suspensions"
-                      value={workforce.activeSuspensionsToday}
-                      caption="Suspension overlays affecting today's roster"
-                    />
-                  </div>
-
-                  <div className="grid gap-3 xl:grid-cols-5">
+                  {me.role === "STORE_MANAGER" ? (
                     <Link
-                      to="/store/workforce/attendance-review"
-                      className="group rounded-2xl border border-amber-300 bg-white/95 p-4 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 xl:col-span-3"
+                      to="/pad-order"
+                      className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                            Today&apos;s lane
-                          </div>
-                          <div className="mt-1 text-base font-semibold text-slate-900">
-                            Attendance review
-                          </div>
-                          <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">
-                            {attendanceSummary}
-                          </p>
-                        </div>
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                            attendancePendingToday > 0
-                              ? "border-amber-300 bg-amber-100 text-amber-900"
-                              : "border-emerald-300 bg-emerald-50 text-emerald-900"
-                          }`}
-                        >
-                          {attendancePendingToday > 0 ? "Needs review" : "Ready"}
-                        </span>
-                      </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <SoTDataRow
-                          label="Scheduled today"
-                          value={workforce.scheduledToday}
-                          className="border-amber-100 bg-amber-50/70"
-                        />
-                        <SoTDataRow
-                          label="Recorded today"
-                          value={workforce.attendanceRecordedToday}
-                          className="border-amber-100 bg-amber-50/70"
-                        />
-                      </div>
-                      <div className="mt-4 inline-flex items-center text-sm font-semibold text-amber-900">
-                        Open attendance review →
-                      </div>
+                      Open Order Pad
                     </Link>
-
-                    <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-1">
-                      <WorkforceActionLink
-                        to="/store/workforce/schedule-planner"
-                        eyebrow="Planning"
-                        title="Schedule planner"
-                        description={workforcePlannerSummary}
-                        accent={
-                          workforce.draftSchedulesNext14Days > 0
-                            ? `${workforce.draftSchedulesNext14Days} draft${
-                                workforce.draftSchedulesNext14Days === 1 ? "" : "s"
-                              }`
-                            : "Up to date"
-                        }
-                        cta="Open schedule planner →"
-                      />
-                      <WorkforceActionLink
-                        to="/store/workforce/schedule-templates"
-                        eyebrow="Template library"
-                        title="Schedule templates"
-                        description={workforceTemplateSummary}
-                        accent={
-                          workforce.activeTemplates > 0
-                            ? `${workforce.activeTemplates} active`
-                            : "No live templates"
-                        }
-                        cta="Open schedule templates →"
-                      />
-                      <WorkforceActionLink
-                        to="/store/workforce/suspension-records"
-                        eyebrow="Controls"
-                        title="Suspension records"
-                        description={workforceSuspensionSummary}
-                        accent={
-                          workforce.activeSuspensionsToday > 0
-                            ? `${workforce.activeSuspensionsToday} active`
-                            : "Clear today"
-                        }
-                        cta="Open suspension records →"
-                      />
-                    </div>
-                  </div>
+                  ) : null}
                 </div>
               </div>
-            </div>
-          </section>
-        </div>
+            </SoTDashboardPanel>
+          </div>
+
+          <div className="xl:col-span-3">
+            <SoTDashboardPanel
+              title="Signals"
+              subtitle="Today"
+              badge={attendanceStatusLabel}
+              tone={attendanceStatusTone}
+            >
+              <SoTDashboardSignalGrid className="xl:grid-cols-1">
+                <SoTDashboardSignal
+                  label="Runs"
+                  value={runs.dispatched + runs.checkedIn}
+                  meta={`${runs.planned} planned`}
+                  tone="info"
+                />
+                <SoTDashboardSignal
+                  label="Open Shifts"
+                  value={cash.openShifts}
+                  meta={peso(cash.expectedDrawerTotal)}
+                  tone="success"
+                />
+                <SoTDashboardSignal
+                  label="Attendance"
+                  value={attendancePendingToday}
+                  meta={
+                    workforce.scheduledToday > 0
+                      ? `${workforce.attendanceRecordedToday} recorded`
+                      : "No schedule"
+                  }
+                  tone={attendanceStatusTone}
+                />
+              </SoTDashboardSignalGrid>
+            </SoTDashboardPanel>
+          </div>
+        </SoTDashboardTopGrid>
+
+        <SoTDashboardSection
+          title="Quick Actions"
+          subtitle="Operational lanes and reviews"
+        >
+          <SoTDashboardActionGrid>
+            <SoTDashboardActionTile
+              to="/store/cashier-shifts"
+              title="Cashier Shifts"
+              detail="Shift control and close review"
+              actionLabel="Open Cashier Shifts"
+              badge={`${cash.openShifts} open`}
+              tone="success"
+            />
+            <SoTDashboardActionTile
+              to="/store/cashier-variances"
+              title="Shift Variances"
+              detail="Cashier variance decisions"
+              actionLabel="Review Shift Variances"
+              badge={`${cash.openShiftVariances} open`}
+              tone={cash.openShiftVariances > 0 ? "warning" : "default"}
+            />
+            <SoTDashboardActionTile
+              to="/store/workforce/attendance-review"
+              title="Attendance Review"
+              detail="Today's workforce lane"
+              actionLabel="Open Attendance Review"
+              badge={attendanceStatusLabel}
+              tone={attendanceStatusTone}
+            />
+            <SoTDashboardActionTile
+              to="/store/workforce/schedule-planner"
+              title="Schedule Planner"
+              detail="Drafts in the next 14 days"
+              actionLabel="Open Schedule Planner"
+              badge={
+                workforce.draftSchedulesNext14Days > 0
+                  ? `${workforce.draftSchedulesNext14Days} drafts`
+                  : "Up to date"
+              }
+              tone={workforce.draftSchedulesNext14Days > 0 ? "warning" : "default"}
+            />
+            <SoTDashboardActionTile
+              to="/store/workforce/schedule-templates"
+              title="Schedule Templates"
+              detail="Template and assignment coverage"
+              actionLabel="Open Templates"
+              badge={`${workforce.activeTemplates} active`}
+              tone="default"
+            />
+            <SoTDashboardActionTile
+              to="/store/workforce/suspension-records"
+              title="Suspension Records"
+              detail="Workforce control overlays"
+              actionLabel="Open Suspension Records"
+              badge={
+                workforce.activeSuspensionsToday > 0
+                  ? `${workforce.activeSuspensionsToday} active`
+                  : "Clear"
+              }
+              tone={workforce.activeSuspensionsToday > 0 ? "warning" : "default"}
+            />
+          </SoTDashboardActionGrid>
+        </SoTDashboardSection>
+
+        <SoTDashboardSection title="Reference" subtitle="Quieter summaries">
+          <div className="grid gap-3 md:grid-cols-2">
+            <SoTDashboardPanel
+              title="Cash Position"
+              subtitle="Drawer and sales snapshot"
+              badge="Today"
+              tone="success"
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
+                <SoTDataRow label="Open shifts" value={cash.openShifts} />
+                <SoTDataRow label="Expected drawers" value={peso(cash.expectedDrawerTotal)} />
+                <SoTDataRow label="Cash sales" value={peso(cash.cashSalesToday)} />
+                <SoTDataRow label="Drawer movements" value={peso(cash.drawerTxnsToday)} />
+              </div>
+            </SoTDashboardPanel>
+
+            <SoTDashboardPanel
+              title="Workforce"
+              subtitle="Coverage and schedule readiness"
+              badge={attendanceStatusLabel}
+              tone={attendanceStatusTone}
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
+                <SoTDataRow label="Assignments live" value={workforce.activeAssignments} />
+                <SoTDataRow label="Active templates" value={workforce.activeTemplates} />
+                <SoTDataRow label="Scheduled today" value={workforce.scheduledToday} />
+                <SoTDataRow label="Recorded today" value={workforce.attendanceRecordedToday} />
+              </div>
+            </SoTDashboardPanel>
+          </div>
+        </SoTDashboardSection>
       </div>
     </main>
-  );
-}
-
-function WorkforceMetricPill({
-  label,
-  value,
-  caption,
-}: {
-  label: string;
-  value: number;
-  caption: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-amber-200/80 bg-white/85 px-3 py-3 shadow-sm">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-semibold leading-none text-slate-900">
-        {value}
-      </div>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{caption}</p>
-    </div>
-  );
-}
-
-function WorkforceActionLink({
-  to,
-  eyebrow,
-  title,
-  description,
-  accent,
-  cta,
-}: {
-  to: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  accent: string;
-  cta: string;
-}) {
-  return (
-    <Link
-      to={to}
-      className="group rounded-2xl border border-amber-200 bg-white/90 p-3.5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-            {eyebrow}
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{title}</div>
-        </div>
-        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-          {accent}
-        </span>
-      </div>
-      <p className="mt-2 text-sm leading-5 text-slate-600">{description}</p>
-      <div className="mt-3 text-sm font-medium text-amber-900">{cta}</div>
-    </Link>
-  );
-}
-
-function ManagerInboxRow({
-  to,
-  label,
-  count,
-}: {
-  to: string;
-  label: string;
-  count: number;
-}) {
-  return (
-    <Link
-      to={to}
-      className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white px-3 py-2 transition-colors duration-150 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-    >
-      <div>
-        <div className="text-sm font-medium text-slate-800">{label}</div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <MiniBadge n={count} />
-        <span className="text-xs font-medium text-indigo-700">Open →</span>
-      </div>
-    </Link>
   );
 }

@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Reviewed: 2026-03-27
+Last Reviewed: 2026-03-29
 
 ## 1. Purpose
 
@@ -17,6 +17,9 @@ Use these routes as visual interaction anchors:
 1. `app/routes/runs.$id.rider-checkin.tsx`
 2. `app/routes/runs.$id.remit.tsx`
 3. `app/routes/store._index.tsx`
+4. `app/routes/_index.tsx`
+5. `app/routes/cashier._index.tsx`
+6. `app/routes/rider._index.tsx`
 
 ## 3. SoT Component Set
 
@@ -41,6 +44,7 @@ SoT reusable components (catalog + minimum baseline):
 17. `app/components/ui/SoTStatusBadge.tsx`
 18. `app/components/ui/SoTBrandFooter.tsx`
 19. `app/components/ui/SoTLoadingState.tsx`
+20. `app/components/ui/SoTDashboardPrimitives.tsx`
 
 Rule:
 
@@ -58,6 +62,7 @@ Operational usage baseline:
 7. Global endorsement/footer line should use `SoTBrandFooter` and remain subtle/non-blocking.
 8. App-shell route transitions should prefer `SoTLoadingState` with the `overlay` variant.
 9. Form, card, or table saving states should prefer `SoTLoadingState` with the `panel` or `inline` variant instead of route-local spinners or opacity-only pending cues.
+10. Dashboard routes should prefer `SoTDashboardPrimitives` for `Priority Strip`, `Workbench`, `Signals`, `Quick Actions`, and `Reference` structure before adding route-local dashboard layout wrappers.
 
 Component gap rule:
 
@@ -90,6 +95,96 @@ Component gap rule:
 3. `inline` variant is for compact busy feedback near buttons, filters, or row actions.
 4. Prefer `SoTLoadingState` over route-local animated dots, ad hoc loading chips, or opacity-only pending presentation.
 5. Loading labels must say what the app is doing in plain language, for example `Creating delivery run` or `Checking your sign-in`.
+
+## 3.4 Dashboard Revamp Contract (Mandatory)
+
+Owns:
+
+1. Dashboard layout hierarchy
+2. Dashboard copy budget and wording rules
+3. Dashboard naming consistency
+4. Per-role dashboard content emphasis
+
+Does Not Own:
+
+1. Destination-page workflow rules
+2. Loader/action business logic
+3. Route authorization rules
+
+Refer To:
+
+1. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` for route-by-route status
+
+### Core Principle
+
+1. Dashboards must be scan-first, action-first, and instruction-light.
+2. The first viewport must make the next action obvious without requiring paragraph reading.
+3. Dashboards are operational launchpads, not training pages.
+
+### Shared Layout Contract
+
+1. All dashboards must keep this section order:
+   `Top Bar`, `Priority Strip`, `Workbench`, `Signals`, `Quick Actions`, `Reference`
+2. `Priority Strip` is for urgent work or state that needs attention now.
+3. `Workbench` is the single dominant task area for the role.
+4. `Signals` are quiet operational metrics and must not outrank `Priority Strip` or `Workbench`.
+5. `Quick Actions` hold high-frequency shortcuts with short verb-first labels.
+6. `Reference` holds lower-priority history, summaries, and notes.
+7. Urgent rows should prefer compact list or rail presentation over equal-weight card grids.
+8. Desktop dashboards should prefer asymmetric hierarchy instead of making every card visually equal.
+9. Mobile dashboards must preserve the same priority order without placing long banners before the first action.
+
+### Copy Contract
+
+1. Clarity is more important than shortest possible wording.
+2. Use full words when abbreviation reduces understanding.
+3. Card support text is optional and must stay to one short sentence.
+4. Do not place instructional helper text under every button or link.
+5. Detailed workflow explanation belongs on the destination page, blocked state, or empty state.
+6. CTA labels must be verb-first and direct, for example `Open Dispatch`, `Review Clearance`, `Open Shift Console`, and `Open My Runs`.
+7. Avoid labels that describe process instead of action, for example `Go to`, `Open latest`, `Search and select`, and `Continue process`.
+
+### Naming Dictionary
+
+1. Use `Attendance`, not `Attend`.
+2. Use `Pending Acceptance`, not `Pending Accept`.
+3. Use `Remit Review`, not `Remit Rev`.
+4. Use `Order Pad`, not `Pad Order`.
+5. Use one canonical label per destination, queue, and action across all dashboards.
+6. Dashboard labels should match destination-page titles as closely as practical.
+
+### Card and Row Contract
+
+1. One dashboard card or row must own one concern only.
+2. A dashboard card should contain one title, one main state or value, one short support line if needed, and one primary action if applicable.
+3. If a dashboard card needs multiple paragraphs, split the concern or move the explanation out of the dashboard.
+4. Monitor data, tutorial copy, and unrelated actions must not compete inside the same card.
+
+### Per-Role Content Mapping
+
+1. `Manager Dashboard` is a control tower:
+   priority = approvals and review queues
+   workbench = dispatch
+   signals = runs, shifts, attendance
+2. `Admin Dashboard` is a launchpad:
+   priority = setup items and onboarding entry points
+   workbench = create and maintain master data
+   signals = setup health and recent admin work
+3. `Cashier Dashboard` is a focus-state console:
+   priority = shift state and charge blockers
+   workbench = shift console
+   signals = next shift, attendance, payroll snapshot
+4. `Rider Dashboard` is a task board:
+   priority = do-now work and pending acceptance
+   workbench = my runs / check-in lane
+   signals = next shift, payroll, attendance
+
+### Dashboard Failure Test
+
+1. A dashboard fails if users must read multiple paragraphs before acting.
+2. A dashboard fails if helper text repeats what the label, count, or CTA already says.
+3. A dashboard fails if multiple areas compete equally for attention in the first viewport.
+4. A dashboard fails if abbreviations or alternate names make the primary action unclear.
 
 ## 4. Patch-First Rule
 

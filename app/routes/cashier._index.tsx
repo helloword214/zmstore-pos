@@ -13,9 +13,20 @@ import {
   CashierVarianceStatus,
 } from "@prisma/client";
 import { db } from "~/utils/db.server";
+import {
+  SoTDashboardActionGrid,
+  SoTDashboardActionTile,
+  SoTDashboardPanel,
+  SoTDashboardQueueList,
+  SoTDashboardQueueRow,
+  SoTDashboardSection,
+  SoTDashboardSignal,
+  SoTDashboardSignalGrid,
+  SoTDashboardTopGrid,
+} from "~/components/ui/SoTDashboardPrimitives";
 import { SoTButton } from "~/components/ui/SoTButton";
-import { SoTCard } from "~/components/ui/SoTCard";
-import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
+import { SoTDataRow } from "~/components/ui/SoTDataRow";
+import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
 import type { WorkerDashboardSummary } from "~/services/worker-dashboard-summary.server";
 
@@ -141,33 +152,20 @@ export default function CashierDashboardPage() {
     }
     return to;
   };
-
-  const disabledCard = "opacity-70 select-none grayscale";
-  const disabledHint = "mt-2 text-xs font-medium text-amber-700";
+  const shiftTone = !hasShift ? "warning" : shiftLocked ? "warning" : "success";
+  const chargeTone =
+    alerts.openChargeItems > 0 || workforce.charges.outstandingAmount > 0
+      ? "danger"
+      : "default";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Cashier Dashboard
-            </h1>
-            <p className="text-xs text-slate-500">
-              Logged in as{" "}
-              <span className="font-medium text-slate-700">
-                {userInfo.alias
-                  ? `${userInfo.alias} (${userInfo.name})`
-                  : userInfo.name}
-              </span>
-              {" · "}
-              <span className="uppercase tracking-wide">{me.role}</span>
-              {" · "}
-              <span>{userInfo.email}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+      <SoTRoleShellHeader
+        title="Cashier Dashboard"
+        identityLine={`${userInfo.alias ? `${userInfo.alias} (${userInfo.name})` : userInfo.name} · ${me.role} · ${userInfo.email}`}
+        sticky
+        actions={
+          <>
             <SoTStatusPill
               tone={!hasShift ? "danger" : shiftLocked ? "warning" : "success"}
             >
@@ -187,13 +185,11 @@ export default function CashierDashboardPage() {
                 Logout
               </SoTButton>
             </Form>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* Body */}
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
-        {/* Callout kung locked ang shift */}
         {hasShift && shiftLocked && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -210,7 +206,7 @@ export default function CashierDashboardPage() {
                 )}`}
                 className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
               >
-                Go to Shift Console
+                Open Shift Console
               </Link>
             </div>
           </div>
@@ -226,315 +222,258 @@ export default function CashierDashboardPage() {
           </div>
         )}
 
-        <section>
-          <SoTSectionHeader title="Operations Snapshot" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SoTCard compact title="Shift State">
-              <div className="mt-1 text-sm font-medium text-slate-900">
-                {shiftStateLabel}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Writable shift required for POS, AR, and remit tasks.
-              </p>
-            </SoTCard>
-
-            <SoTCard compact title="Next Shift" tone="success">
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {workforce.nextShift.label ?? "No schedule published"}
-              </div>
-              <p className="mt-1 text-xs text-emerald-900/80">
-                {workforce.nextShift.hint}
-              </p>
-            </SoTCard>
-
-            <SoTCard
-              compact
-              title="Pending Charges"
-              tone={alerts.openChargeItems > 0 ? "danger" : "default"}
+        <SoTDashboardTopGrid>
+          <div className="xl:col-span-4">
+            <SoTDashboardPanel
+              title="Priority"
+              subtitle="Shift and charge status"
+              badge={shiftStateLabel}
+              tone={shiftTone}
             >
-              <div
-                className={
-                  "mt-1 text-sm font-semibold " +
-                  (alerts.openChargeItems > 0 ? "text-rose-700" : "text-slate-900")
-                }
-              >
-                {alerts.openChargeItems}
-              </div>
-              <p
-                className={
-                  "mt-1 text-xs " +
-                  (alerts.openChargeItems > 0 ? "text-rose-900/80" : "text-slate-500")
-                }
-              >
-                Manager-tagged acknowledgements waiting action.
-              </p>
-            </SoTCard>
-
-            <SoTCard
-              compact
-              title="Outstanding Charges"
-              tone={workforce.charges.outstandingAmount > 0 ? "danger" : "default"}
-            >
-              <div
-                className={
-                  "mt-1 text-sm font-semibold " +
-                  (workforce.charges.outstandingAmount > 0
-                    ? "text-rose-700"
-                    : "text-slate-900")
-                }
-              >
-                ₱{workforce.charges.outstandingAmount.toFixed(2)}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Total remaining balance assigned to this cashier account.
-              </p>
-            </SoTCard>
-          </div>
-        </section>
-
-        {/* Primary actions */}
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Operations
-            </h2>
-            <span className="text-xs text-slate-500">
-              Cashier lane: POS, AR, and delivery remit.
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Sales &amp; Collection
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-900">
-                POS and AR workflow
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Encode walk-in sales, collect receivables, and post rider remits in
-                one lane.
-              </p>
-
-              <div className="mt-3 grid gap-2">
-                <Link
-                  to="/pad-order"
-                  className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  <span>Open Order Pad (SoT UI)</span>
-                  <span className="text-xs font-normal text-indigo-700">
-                    verify latest pad →
-                  </span>
-                </Link>
-                <Link
-                  to={guardLink("/cashier/pos")}
-                  className={
-                    "flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 " +
-                    (!hasShift ? disabledCard : "")
-                  }
-                >
-                  <span>New Sale (POS)</span>
-                  <span className="text-xs font-normal text-emerald-700">
-                    open POS →
-                  </span>
-                </Link>
-                <Link
-                  to={guardLink("/cashier/delivery")}
-                  className={
-                    "flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 " +
-                    (!hasShift ? disabledCard : "")
-                  }
-                >
-                  <span>Rider Remittance</span>
-                  <span className="text-xs font-normal text-sky-700">
-                    open remit →
-                  </span>
-                </Link>
-                <Link
-                  to={guardLink("/ar")}
-                  className={
-                    "flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 " +
-                    (!hasShift ? disabledCard : "")
-                  }
-                >
-                  <span>Collect on AR</span>
-                  <span className="text-xs font-normal text-slate-500">
-                    open AR →
-                  </span>
-                </Link>
-              </div>
-
-              {!hasShift ? (
-                <div className={disabledHint}>
-                  Requires open shift for POS, AR, and rider remit actions.
-                </div>
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Shift Console
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-slate-900">
-                    {hasShift
-                      ? "Manage drawer and shift status"
-                      : "Waiting for manager-opened shift"}
-                  </div>
-                </div>
-                <Link
+              <SoTDashboardQueueList>
+                <SoTDashboardQueueRow
                   to="/cashier/shift?next=/cashier"
-                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Open →
-                </Link>
-              </div>
-              <p className="text-xs text-slate-500">
-                Accept opening float, record drawer movements, and submit
-                counted cash for manager final close.
-              </p>
-
-              {hasShift ? (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Active shift: #{activeShift?.id}
-                  {openedAt ? ` • Opened ${openedAt}` : ""}
-                </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  No active shift yet. Manager must open your shift before
-                  POS/AR/remit.
-                </div>
-              )}
-
-              <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <span>Shift history</span>
-                <Link
-                  to="/cashier/shift-history"
-                  className="font-medium text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  View all →
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Schedule &amp; Payroll
-            </h2>
-            <span className="text-xs text-slate-500">
-              Work schedule, attendance view, and payroll charges in one panel.
-            </span>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                Work Schedule
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-900">
-                {workforce.nextShift.label ?? "No schedule published"}
-              </div>
-              <p className="mt-1 text-xs text-indigo-900/80">{scheduleSubtitle}</p>
-
-              <div className="mt-3 grid gap-2">
-                <Link
-                  to="/cashier/shift-history"
-                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Shift history
-                </Link>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Attendance &amp; Absences
-            </h2>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">
-              {workforce.attendance.absentCountThisMonth}
-              <span className="ml-1 text-xs font-normal text-slate-500">
-                absent this month
-              </span>
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Late: {workforce.attendance.lateCountThisMonth} · Suspension:{" "}
-              {workforce.attendance.suspensionCountThisMonth}
-            </p>
-            <Link
-              to="/cashier/shift-history"
-                className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Attendance history
-              </Link>
-            </div>
-
-            <div
-              className={
-                "rounded-2xl border p-4 text-sm shadow-sm " +
-                (workforce.charges.outstandingAmount > 0
-                  ? "border-rose-200 bg-rose-50"
-                  : "border-slate-200 bg-white")
-              }
-            >
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Payroll &amp; Charges
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">Payroll policy</p>
-              <p className="text-sm font-medium text-slate-900">
-                {workforce.payroll.policyLabel ?? "Not configured"}
-              </p>
-
-              <div className="mt-3">
-                <p className="text-xs text-slate-500">Latest payroll</p>
-                <p className="text-sm font-medium text-slate-900">
-                  {workforce.payroll.latestLabel ?? "No finalized payroll yet"}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {workforce.payroll.latestNetPay == null
-                    ? "Net pay appears here after the manager finalizes a payroll run."
-                    : `Latest net pay: ₱${workforce.payroll.latestNetPay.toFixed(2)}`}
-                </p>
-              </div>
-
-              <div className="mt-3">
-                <p className="text-xs text-slate-500">Outstanding charges</p>
-                <p className="text-xl font-semibold text-slate-900">
-                  ₱{workforce.charges.outstandingAmount.toFixed(2)}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Pwedeng kasama dito ang shortage, penalties, o iba pang
-                  deductions na naka-assign sa account mo.
-                </p>
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <Link
-                  to="/cashier/shift-history"
-                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Shift history
-                </Link>
-                <Link
-                  to="/cashier/charges"
-                  className={
-                    "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
-                    (workforce.charges.outstandingAmount > 0 || alerts.openChargeItems > 0
-                      ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
+                  label="Shift Console"
+                  value={
+                    hasShift
+                      ? openedAt
+                        ? `Opened ${openedAt}`
+                        : shiftStateLabel
+                      : "Required before POS and remit"
                   }
+                  actionLabel="Open"
+                  tone={shiftTone}
+                />
+                <SoTDashboardQueueRow
+                  to="/cashier/charges"
+                  label="Pending Charges"
+                  value={`${alerts.openChargeItems} pending`}
+                  actionLabel="Open"
+                  tone={alerts.openChargeItems > 0 ? "danger" : "default"}
+                />
+                <SoTDashboardQueueRow
+                  to="/cashier/charges"
+                  label="Outstanding Charges"
+                  value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                  actionLabel="Open"
+                  tone={chargeTone}
+                />
+              </SoTDashboardQueueList>
+            </SoTDashboardPanel>
+          </div>
+
+          <div className="xl:col-span-5">
+            <SoTDashboardPanel
+              title="Shift Console"
+              subtitle={
+                !hasShift
+                  ? "Start here before sales and remit"
+                  : shiftLocked
+                  ? "Resolve the locked shift state"
+                  : "Drawer control and close workflow"
+              }
+              badge={!hasShift ? "Required" : shiftLocked ? "Locked" : "Open"}
+              tone={shiftTone}
+            >
+              <div className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SoTDataRow label="Shift state" value={shiftStateLabel} />
+                  <SoTDataRow label="Opened" value={openedAt ?? "Waiting"} />
+                  <SoTDataRow
+                    label="Next shift"
+                    value={workforce.nextShift.label ?? "No schedule"}
+                  />
+                  <SoTDataRow
+                    label="Outstanding charges"
+                    value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/cashier/shift?next=/cashier"
+                    className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Open Shift Console
+                  </Link>
+                  <Link
+                    to={guardLink("/cashier/pos")}
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    New Sale
+                  </Link>
+                  <Link
+                    to={guardLink("/cashier/delivery")}
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Open Rider Remittance
+                  </Link>
+                  <Link
+                    to={guardLink("/ar")}
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Collect AR
+                  </Link>
+                </div>
+              </div>
+            </SoTDashboardPanel>
+          </div>
+
+          <div className="xl:col-span-3">
+            <SoTDashboardPanel
+              title="Signals"
+              subtitle="Today"
+              badge={workforce.hasLinkedEmployee ? "Linked" : "Link required"}
+              tone={workforce.hasLinkedEmployee ? "default" : "warning"}
+            >
+              <SoTDashboardSignalGrid className="xl:grid-cols-1">
+                <SoTDashboardSignal
+                  label="Next Shift"
+                  value={workforce.nextShift.label ?? "No schedule"}
+                  meta={
+                    workforce.hasLinkedEmployee
+                      ? workforce.nextShift.hint
+                      : "Link an employee profile"
+                  }
+                  tone={workforce.hasLinkedEmployee ? "success" : "warning"}
+                />
+                <SoTDashboardSignal
+                  label="Attendance"
+                  value={workforce.attendance.absentCountThisMonth}
+                  meta={`${workforce.attendance.lateCountThisMonth} late · ${workforce.attendance.suspensionCountThisMonth} suspension`}
+                />
+                <SoTDashboardSignal
+                  label="Payroll"
+                  value={workforce.payroll.latestLabel ?? "No payroll yet"}
+                  meta={
+                    workforce.payroll.latestNetPay == null
+                      ? workforce.payroll.policyLabel ?? "Waiting for finalized payroll"
+                      : `Net ₱${workforce.payroll.latestNetPay.toFixed(2)}`
+                  }
+                />
+              </SoTDashboardSignalGrid>
+            </SoTDashboardPanel>
+          </div>
+        </SoTDashboardTopGrid>
+
+        <SoTDashboardSection
+          title="Quick Actions"
+          subtitle="POS, remit, and ledger access"
+        >
+          <SoTDashboardActionGrid>
+            <SoTDashboardActionTile
+              to="/pad-order"
+              title="Order Pad"
+              detail="Walk-in and order encoding"
+              actionLabel="Open Order Pad"
+              tone="info"
+            />
+            <SoTDashboardActionTile
+              to={guardLink("/cashier/pos")}
+              title="New Sale"
+              detail="Walk-in POS lane"
+              actionLabel="Open POS"
+              badge={!hasShift ? "Shift required" : undefined}
+              tone={!hasShift ? "warning" : "success"}
+            />
+            <SoTDashboardActionTile
+              to={guardLink("/cashier/delivery")}
+              title="Rider Remittance"
+              detail="Cashier remit workflow"
+              actionLabel="Open Rider Remittance"
+              badge={!hasShift ? "Shift required" : undefined}
+              tone={!hasShift ? "warning" : "info"}
+            />
+            <SoTDashboardActionTile
+              to={guardLink("/ar")}
+              title="Collect AR"
+              detail="Receivable collection lane"
+              actionLabel="Open AR"
+              badge={!hasShift ? "Shift required" : undefined}
+              tone={!hasShift ? "warning" : "default"}
+            />
+            <SoTDashboardActionTile
+              to="/cashier/shift-history"
+              title="Shift History"
+              detail="Past shifts and attendance"
+              actionLabel="Open Shift History"
+            />
+            <SoTDashboardActionTile
+              to="/cashier/charges"
+              title="Charge Ledger"
+              detail="Pending acknowledgements and deductions"
+              actionLabel="Open Charge Ledger"
+              badge={`${alerts.openChargeItems} pending`}
+              tone={chargeTone}
+            />
+          </SoTDashboardActionGrid>
+        </SoTDashboardSection>
+
+        <SoTDashboardSection
+          title="Reference"
+          subtitle="Schedule, attendance, and payroll"
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <SoTDashboardPanel
+              title="Work Schedule"
+              subtitle={workforce.nextShift.label ?? "No schedule published"}
+              badge={workforce.hasLinkedEmployee ? "Linked" : "Read only"}
+              tone={workforce.hasLinkedEmployee ? "success" : "warning"}
+            >
+              <div className="space-y-3">
+                <p className="text-sm text-slate-700">{scheduleSubtitle}</p>
+                <Link
+                  to="/cashier/shift-history"
+                  className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                 >
-                  Charge ledger
+                  Open Shift History
                 </Link>
               </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Pending acknowledgement: {alerts.openChargeItems}
-              </p>
-            </div>
+            </SoTDashboardPanel>
+
+            <SoTDashboardPanel title="Attendance" subtitle="This month">
+              <div className="grid gap-2">
+                <SoTDataRow
+                  label="Absent"
+                  value={workforce.attendance.absentCountThisMonth}
+                />
+                <SoTDataRow
+                  label="Late"
+                  value={workforce.attendance.lateCountThisMonth}
+                />
+                <SoTDataRow
+                  label="Suspension"
+                  value={workforce.attendance.suspensionCountThisMonth}
+                />
+              </div>
+            </SoTDashboardPanel>
+
+            <SoTDashboardPanel
+              title="Payroll & Charges"
+              subtitle={workforce.payroll.policyLabel ?? "Not configured"}
+              badge={`${alerts.openChargeItems} pending`}
+              tone={chargeTone}
+            >
+              <div className="grid gap-2">
+                <SoTDataRow
+                  label="Latest payroll"
+                  value={workforce.payroll.latestLabel ?? "No finalized payroll yet"}
+                />
+                <SoTDataRow
+                  label="Net pay"
+                  value={
+                    workforce.payroll.latestNetPay == null
+                      ? "Waiting"
+                      : `₱${workforce.payroll.latestNetPay.toFixed(2)}`
+                  }
+                />
+                <SoTDataRow
+                  label="Outstanding charges"
+                  value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                />
+              </div>
+            </SoTDashboardPanel>
           </div>
-        </section>
+        </SoTDashboardSection>
       </div>
     </main>
   );

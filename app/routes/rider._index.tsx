@@ -1,13 +1,24 @@
 /* app/routes/rider._index.tsx */
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Form, Link, useLoaderData } from "@remix-run/react";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import { EmployeeRole } from "@prisma/client";
+import {
+  SoTDashboardActionGrid,
+  SoTDashboardActionTile,
+  SoTDashboardPanel,
+  SoTDashboardQueueList,
+  SoTDashboardQueueRow,
+  SoTDashboardSection,
+  SoTDashboardSignal,
+  SoTDashboardSignalGrid,
+  SoTDashboardTopGrid,
+} from "~/components/ui/SoTDashboardPrimitives";
 import { SoTButton } from "~/components/ui/SoTButton";
-import { SoTCard } from "~/components/ui/SoTCard";
-import { SoTSectionHeader } from "~/components/ui/SoTSectionHeader";
+import { SoTDataRow } from "~/components/ui/SoTDataRow";
+import { SoTRoleShellHeader } from "~/components/ui/SoTRoleShellHeader";
 import { SoTStatusPill } from "~/components/ui/SoTStatusPill";
 import type { WorkerDashboardSummary } from "~/services/worker-dashboard-summary.server";
 
@@ -89,28 +100,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function RiderDashboard() {
   const { user, workforce, pendingVarianceCount } = useLoaderData<LoaderData>();
+  const identityLabel = user.alias ? `${user.alias} (${user.name})` : user.name;
+  const todayStatusTone =
+    workforce.todayStatus.tone === "success" ||
+    workforce.todayStatus.tone === "danger" ||
+    workforce.todayStatus.tone === "warning"
+      ? workforce.todayStatus.tone
+      : "default";
+  const chargeTone =
+    workforce.charges.outstandingAmount > 0 || pendingVarianceCount > 0
+      ? "danger"
+      : "default";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      {/* Top bar */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Rider &amp; Seller Console
-            </h1>
-            <p className="text-xs text-slate-500">
-              Logged in as{" "}
-              <span className="font-medium text-slate-800">
-                {user.alias ? `${user.alias} (${user.name})` : user.name}
-              </span>
-              {" · "}
-              <span className="uppercase tracking-wide">{user.role}</span>
-              {" · "}
-              <span>{user.email}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+      <SoTRoleShellHeader
+        title="Rider Console"
+        identityLine={`${identityLabel} · RIDER · ${user.email ?? "No email"}`}
+        sticky
+        actions={
+          <>
             <SoTStatusPill tone={workforce.todayStatus.tone}>
               {workforce.todayStatus.label}
             </SoTStatusPill>
@@ -119,303 +128,229 @@ export default function RiderDashboard() {
                 Account
               </SoTButton>
             </Link>
-            <form method="post" action="/logout">
+            <Form method="post" action="/logout">
               <SoTButton type="submit" variant="secondary">
                 Logout
               </SoTButton>
-            </form>
-          </div>
-        </div>
-      </header>
+            </Form>
+          </>
+        }
+      />
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-5">
-        <section>
-          <SoTSectionHeader title="Operations Snapshot" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SoTCard compact title="Pending Accept">
-              <div className="text-sm font-semibold text-slate-900">
-                {pendingVarianceCount}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Items waiting your acceptance from manager variance decisions.
-              </p>
-            </SoTCard>
-
-            <SoTCard
-              compact
-              title="Outstanding Charges"
-              tone={workforce.charges.outstandingAmount > 0 ? "danger" : "default"}
+        <SoTDashboardTopGrid>
+          <div className="xl:col-span-4">
+            <SoTDashboardPanel
+              title="Do Now"
+              subtitle="Current rider priorities"
+              badge={workforce.todayStatus.label}
+              tone={todayStatusTone}
             >
-              <div
-                className={
-                  "text-sm font-semibold " +
-                  (workforce.charges.outstandingAmount > 0
-                    ? "text-rose-700"
-                    : "text-slate-900")
-                }
-              >
-                ₱{workforce.charges.outstandingAmount.toFixed(2)}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Includes shortage or penalties currently assigned to your account.
-              </p>
-            </SoTCard>
-
-            <SoTCard compact title="Next Shift" tone="success">
-              <div className="text-sm font-medium text-slate-900">
-                {workforce.nextShift.label ?? "No schedule published"}
-              </div>
-              <p className="mt-1 text-xs text-emerald-900/80">
-                {workforce.nextShift.hint}
-              </p>
-            </SoTCard>
-
-            <SoTCard compact title="Payroll">
-              <div className="text-sm font-medium text-slate-900">
-                {workforce.payroll.latestLabel ??
-                  workforce.payroll.policyLabel ??
-                  "No payroll record yet"}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                {workforce.payroll.policyLabel
-                  ? `Policy: ${workforce.payroll.policyLabel}`
-                  : "Payroll summary appears after manager finalizes a run."}
-              </p>
-            </SoTCard>
-          </div>
-        </section>
-
-        {/* Top: Seller & Rider tools */}
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Operations
-            </h2>
-            <span className="text-xs text-slate-500">
-              Seller tasks and rider tasks are separated for faster scanning.
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-          {/* SELLER TOOLS CARD */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Seller Tools
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Pang walk-in at pad-order encoding.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-2">
-              {/* New Walk-in / Pad-Order */}
-              <Link
-                to="/pad-order"
-                className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <span>New Walk-in / Pad-order</span>
-                <span className="text-xs font-normal text-indigo-700">
-                  open pad-order board
-                </span>
-              </Link>
-
-              {/* Seller quick verify shortcut (replaces dead /orders link) */}
-              <Link
-                to="/pad-order"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <span>Order Pad (SoT UI)</span>
-                <span className="text-xs text-slate-500">
-                  open latest pad-order page
-                </span>
-              </Link>
-
-              {/* Customer search – adjust route kung iba actual path mo */}
-              <Link
-                to="/customers"
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <span>Customers</span>
-                <span className="text-xs text-slate-500">
-                  search &amp; select customer
-                </span>
-              </Link>
-            </div>
+              <SoTDashboardQueueList>
+                <SoTDashboardQueueRow
+                  to="/runs?mine=1"
+                  label="Open My Runs"
+                  value={workforce.todayStatus.label}
+                  actionLabel="Open"
+                  tone={todayStatusTone}
+                />
+                <SoTDashboardQueueRow
+                  to="/rider/variances"
+                  label="Pending Acceptance"
+                  value={`${pendingVarianceCount} pending`}
+                  actionLabel="Review"
+                  tone={pendingVarianceCount > 0 ? "danger" : "default"}
+                />
+                <SoTDashboardQueueRow
+                  to="/rider/variances"
+                  label="Outstanding Charges"
+                  value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                  actionLabel="Open"
+                  tone={chargeTone}
+                />
+              </SoTDashboardQueueList>
+            </SoTDashboardPanel>
           </div>
 
-          {/* RIDER TOOLS CARD */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Rider Tools
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Pang delivery runs, check-in at returns.
-                </p>
+          <div className="xl:col-span-5">
+            <SoTDashboardPanel
+              title="My Runs"
+              subtitle="Check-in and summary"
+              badge={workforce.todayStatus.label}
+              tone={todayStatusTone}
+            >
+              <div className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SoTDataRow label="Next shift" value={workforce.nextShift.label ?? "No schedule"} />
+                  <SoTDataRow label="Pending acceptance" value={pendingVarianceCount} />
+                  <SoTDataRow
+                    label="Outstanding charges"
+                    value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                  />
+                  <SoTDataRow
+                    label="Latest payroll"
+                    value={workforce.payroll.latestLabel ?? "No payroll yet"}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/runs?mine=1"
+                    className="inline-flex h-9 items-center rounded-xl bg-emerald-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Open My Runs
+                  </Link>
+                  <Link
+                    to="/rider/variances"
+                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Review Pending Acceptance
+                  </Link>
+                </div>
               </div>
-            </div>
+            </SoTDashboardPanel>
+          </div>
 
-            <div className="mt-3 grid gap-2">
-              {/* My Runs – filtered sa riderId (via /runs?mine=1) */}
-              <Link
-                to="/runs?mine=1"
-                className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                <span>My Delivery Runs (Check-in &amp; Summary)</span>
-                <span className="text-xs font-normal text-emerald-700">
-                  open run list, then tap <strong>Open</strong> per run
-                </span>
-              </Link>
-              {/* Pending variance accepts */}
-              <Link
-                to="/rider/variances"
-                className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm hover:bg-slate-100 ${
-                  pendingVarianceCount > 0
-                    ? "border-rose-200 bg-rose-50 font-medium text-rose-800"
-                    : "border-slate-200 bg-slate-50 text-slate-800"
-                } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1`}
-              >
-                <span>Variances (Pending Accept)</span>
-                <span
-                  className={`text-xs ${
-                    pendingVarianceCount > 0
-                      ? "text-rose-700"
-                      : "text-slate-500"
-                  }`}
-                >
-                  {pendingVarianceCount > 0
-                    ? `${pendingVarianceCount} needs action`
-                    : "no pending"}
-                </span>
-              </Link>
-              <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                Paalala: cash remit at final posting ay ginagawa ng{" "}
-                <span className="font-semibold">Store Manager / Cashier</span>.
-                Ikaw muna ang mag-check-in ng{" "}
-                <span className="font-semibold">Sold / Returned</span> per run
-                bago magpa-remit.
-              </div>
-            </div>
+          <div className="xl:col-span-3">
+            <SoTDashboardPanel
+              title="Signals"
+              subtitle="Today"
+              badge="Today"
+            >
+              <SoTDashboardSignalGrid className="xl:grid-cols-1">
+                <SoTDashboardSignal
+                  label="Next Shift"
+                  value={workforce.nextShift.label ?? "No schedule"}
+                  meta={workforce.nextShift.hint}
+                  tone="success"
+                />
+                <SoTDashboardSignal
+                  label="Payroll"
+                  value={workforce.payroll.latestLabel ?? "No payroll yet"}
+                  meta={
+                    workforce.payroll.latestNetPay == null
+                      ? workforce.payroll.policyLabel ?? "Waiting for finalized payroll"
+                      : `Net ₱${workforce.payroll.latestNetPay.toFixed(2)}`
+                  }
+                />
+                <SoTDashboardSignal
+                  label="Attendance"
+                  value={workforce.attendance.absentCountThisMonth}
+                  meta={`${workforce.attendance.lateCountThisMonth} late · ${workforce.attendance.suspensionCountThisMonth} suspension`}
+                />
+              </SoTDashboardSignalGrid>
+            </SoTDashboardPanel>
           </div>
-          </div>
-        </section>
+        </SoTDashboardTopGrid>
 
-        {/* WORK & HR PANEL */}
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Schedule &amp; Payroll
-            </h2>
-            <span className="text-xs text-slate-500">
-              Work schedule, attendance view, and payroll charges in one panel.
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-          {/* Schedule */}
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                  Work Schedule
-                </h2>
-                <p className="mt-1 text-sm font-medium text-slate-900">
-                  {workforce.nextShift.label ?? "No schedule published"}
-                </p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-indigo-900/80">
-              {workforce.nextShift.hint}
-            </p>
-            <Link
+        <SoTDashboardSection
+          title="Quick Actions"
+          subtitle="Runs, variances, and customer tools"
+        >
+          <SoTDashboardActionGrid>
+            <SoTDashboardActionTile
               to="/runs?mine=1"
-              className="mt-3 inline-flex items-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              title="My Runs"
+              detail="Assigned runs and check-in"
+              actionLabel="Open My Runs"
+              tone="success"
+            />
+            <SoTDashboardActionTile
+              to="/rider/variances"
+              title="Pending Acceptance"
+              detail="Manager-approved variance decisions"
+              actionLabel="Review Pending Acceptance"
+              badge={`${pendingVarianceCount} pending`}
+              tone={pendingVarianceCount > 0 ? "danger" : "default"}
+            />
+            <SoTDashboardActionTile
+              to="/pad-order"
+              title="Order Pad"
+              detail="Walk-in and pad-order encoding"
+              actionLabel="Open Order Pad"
+              tone="info"
+            />
+            <SoTDashboardActionTile
+              to="/customers"
+              title="Customers"
+              detail="Customer lookup"
+              actionLabel="Open Customers"
+            />
+          </SoTDashboardActionGrid>
+        </SoTDashboardSection>
+
+        <SoTDashboardSection
+          title="Reference"
+          subtitle="Schedule, attendance, payroll, and notes"
+        >
+          <div className="grid gap-3 md:grid-cols-4">
+            <SoTDashboardPanel
+              title="Work Schedule"
+              subtitle={workforce.nextShift.label ?? "No schedule published"}
+              badge={workforce.todayStatus.label}
+              tone={todayStatusTone}
             >
-              Open my runs
-            </Link>
-          </div>
+              <div className="space-y-3">
+                <p className="text-sm text-slate-700">{workforce.nextShift.hint}</p>
+                <Link
+                  to="/runs?mine=1"
+                  className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  Open My Runs
+                </Link>
+              </div>
+            </SoTDashboardPanel>
 
-          {/* Absences & attendance */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Attendance &amp; Absences
-            </h2>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">
-              {workforce.attendance.absentCountThisMonth}
-              <span className="ml-1 text-xs font-normal text-slate-500">
-                absent this month
-              </span>
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Late: {workforce.attendance.lateCountThisMonth} · Suspension:{" "}
-              {workforce.attendance.suspensionCountThisMonth}
-            </p>
-          </div>
+            <SoTDashboardPanel title="Attendance" subtitle="This month">
+              <div className="grid gap-2">
+                <SoTDataRow
+                  label="Absent"
+                  value={workforce.attendance.absentCountThisMonth}
+                />
+                <SoTDataRow
+                  label="Late"
+                  value={workforce.attendance.lateCountThisMonth}
+                />
+                <SoTDataRow
+                  label="Suspension"
+                  value={workforce.attendance.suspensionCountThisMonth}
+                />
+              </div>
+            </SoTDashboardPanel>
 
-          {/* Payday & charges */}
-          <div
-            className={
-              "rounded-2xl border p-4 text-sm shadow-sm " +
-              (workforce.charges.outstandingAmount > 0
-                ? "border-rose-200 bg-rose-50"
-                : "border-slate-200 bg-white")
-            }
-          >
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Payroll &amp; Charges
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">Payroll policy</p>
-            <p className="text-sm font-medium text-slate-900">
-              {workforce.payroll.policyLabel ?? "Not configured"}
-            </p>
+            <SoTDashboardPanel
+              title="Payroll & Charges"
+              subtitle={workforce.payroll.policyLabel ?? "Not configured"}
+              badge={`${pendingVarianceCount} pending`}
+              tone={chargeTone}
+            >
+              <div className="grid gap-2">
+                <SoTDataRow
+                  label="Latest payroll"
+                  value={workforce.payroll.latestLabel ?? "No finalized payroll yet"}
+                />
+                <SoTDataRow
+                  label="Net pay"
+                  value={
+                    workforce.payroll.latestNetPay == null
+                      ? "Waiting"
+                      : `₱${workforce.payroll.latestNetPay.toFixed(2)}`
+                  }
+                />
+                <SoTDataRow
+                  label="Outstanding charges"
+                  value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                />
+              </div>
+            </SoTDashboardPanel>
 
-            <div className="mt-3">
-              <p className="text-xs text-slate-500">Latest payroll</p>
-              <p className="text-sm font-medium text-slate-900">
-                {workforce.payroll.latestLabel ?? "No finalized payroll yet"}
+            <SoTDashboardPanel title="Process Note" subtitle="Keep this short">
+              <p className="text-sm text-slate-700">
+                Cash remit is finalized in the cashier or manager lane after rider
+                check-in is complete.
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {workforce.payroll.latestNetPay == null
-                  ? "Net pay will appear here after manager finalizes a payroll run."
-                  : `Latest net pay: ₱${workforce.payroll.latestNetPay.toFixed(2)}`}
-              </p>
-            </div>
-
-            <div className="mt-3">
-              <p className="text-xs text-slate-500">Outstanding charges</p>
-              <p className="text-xl font-semibold text-slate-900">
-                ₱{workforce.charges.outstandingAmount.toFixed(2)}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Pwedeng kasama dito ang shortage, penalties, o iba pang
-                deductions na naka-assign sa account mo.
-              </p>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <Link
-                to="/runs?mine=1"
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                My runs
-              </Link>
-              <Link
-                to="/rider/variances"
-                className={
-                  "inline-flex flex-1 items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium " +
-                  (workforce.charges.outstandingAmount > 0 || pendingVarianceCount > 0
-                    ? "border-rose-200 bg-white text-rose-700 hover:bg-rose-100/40"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
-                }
-              >
-                Pending variances
-              </Link>
-            </div>
+            </SoTDashboardPanel>
           </div>
-          </div>
-        </section>
+        </SoTDashboardSection>
       </div>
     </main>
   );
