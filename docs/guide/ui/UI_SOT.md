@@ -186,6 +186,122 @@ Refer To:
 3. A dashboard fails if multiple areas compete equally for attention in the first viewport.
 4. A dashboard fails if abbreviations or alternate names make the primary action unclear.
 
+## 3.5 Route Family Contracts (Mandatory)
+
+Owns:
+
+1. Non-dashboard route-family layout hierarchy
+2. Family-level action priority and section order
+3. Family-level noise and density expectations
+
+Does Not Own:
+
+1. Route-specific business logic
+2. Loader/action contracts
+3. Access-control rules
+
+Refer To:
+
+1. `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` for active route status and rollout focus
+
+### Shared Principle
+
+1. The app should use one visual language, but not one repeated layout for every route.
+2. Route layout must follow the user's job on that screen.
+3. Reference information must stay visually quieter than the current task.
+
+### Operational List / Inbox
+
+1. Purpose: help users review, sort, filter, and act on operational work.
+2. Section order should be:
+   `Header`, `Triage Strip`, `Filters / Action Bar`, `Primary Table or List`, `Secondary Context`
+3. The table or list is the work surface and must outrank filter chrome.
+4. Summary counts and state chips should stay compact and scan-first.
+5. Repeated helper text around filters, row actions, and list summaries is not allowed by default.
+6. Example routes:
+   `app/routes/store.dispatch.tsx`
+   `app/routes/runs._index.tsx`
+   `app/routes/ar._index.tsx`
+   `app/routes/cashier.delivery._index.tsx`
+
+### Console / Workspace
+
+1. Purpose: show current state, active work area, and exceptions for a single operator lane.
+2. Section order should be:
+   `Header`, `Current State`, `Workbench`, `Exceptions`, `History / Reference`
+3. Each console route must have one dominant task area.
+4. Current state must be visible before historical summaries or reference metrics.
+5. Alerts and blockers should stay near the workbench, not scattered across the page.
+6. Example routes:
+   `app/routes/cashier.shift.tsx`
+   `app/routes/store.cashier-shifts.tsx`
+   `app/routes/store.payroll.tsx`
+
+### Decision / Detail
+
+1. Purpose: help the user inspect evidence and complete a decision with confidence.
+2. Section order should be:
+   `Header`, `Decision Summary`, `Evidence / Records`, `Action Area`, `Audit Trail`
+3. Summary and action areas must stay above dense evidence tables when possible.
+4. Explanatory copy should be short and should support the decision, not retell the whole flow.
+5. Example routes:
+   `app/routes/runs.$id.dispatch.tsx`
+   `app/routes/store.clearance-opening-batches.tsx`
+   `app/routes/rider.variance.$id.tsx`
+
+### Admin Form / Library
+
+1. Purpose: create, edit, and maintain master data with low-noise task framing.
+2. Section order should be:
+   `Header`, `Primary Task`, `Form or Table`, `Secondary Tools`, `Reference Notes`
+3. The form or table should stay central; library notes and support tools must not compete with it.
+4. Guidance copy should be present only when the task is blocked, risky, or compliance-sensitive.
+5. Example routes:
+   `app/routes/products._index.tsx`
+   `app/routes/products.new.tsx`
+   `app/routes/creation.riders.tsx`
+   `app/routes/creation.provinces.tsx`
+
+### Public / Auth
+
+1. Purpose: help the user complete one entry task without unnecessary chrome.
+2. Public and auth routes should keep one clear task, one form focus, and minimal supporting copy.
+3. Product-level navigation, dashboard-style sections, or operational metrics do not belong here.
+4. Dev-only credential or OTP helper copy must stay scoped to local/dev environments.
+5. Example routes:
+   `app/routes/login.tsx`
+   `app/routes/login.otp.tsx`
+
+## 3.6 Cross-Cutting Route Rules (Mandatory)
+
+### Responsive Fit Rule
+
+1. No card, tile, row, or action cluster may crush text into unreadable narrow columns at common desktop widths.
+2. Badges, chips, and secondary metadata must stack, wrap, or demote before the main text becomes unreadable.
+3. Desktop layouts should preserve clear content width before adding more parallel columns.
+4. Mobile layouts must preserve task priority, not simply stack every section without hierarchy.
+
+### Noise Budget Rule
+
+1. Section subtitles and support text must stay to one short sentence.
+2. Do not repeat the same operational fact across adjacent sections unless the repeated view changes the user's decision.
+3. Helper text is allowed by default only for blocked states, empty states, destructive actions, or compliance-sensitive actions.
+4. If a workbench already shows the important state, signals and reference panels must not restate it in full.
+
+### Action Hierarchy Rule
+
+1. Every route must have one dominant task area in the first viewport.
+2. Every route should make the primary action obvious before secondary utilities.
+3. Secondary actions must move into action bars, quick actions, or reference panels instead of competing with the main work.
+4. Metrics, historical summaries, and policy notes must not visually outrank the current task.
+
+### Density Rule
+
+1. Compress metadata before adding more cards, notes, or badges.
+2. In tables, keep the columns needed for decision and action visible first; lower-value metadata should collapse or move to secondary rows.
+3. In forms, put required task inputs first and move longer guidance into compact notes, alerts, or destination help.
+4. Reference panels should prefer quieter styling and compact data rows over card-heavy repetition.
+
 ## 4. Patch-First Rule
 
 When monitor detects mismatch:
@@ -242,28 +358,54 @@ Deprecation rule (product UI only):
 1. Legacy productlist components may be marked deprecated once replacement routes pass conformance and behavior checks.
 2. Deprecated components must not be used as visual authority for new product routes.
 
-## 6. Route Priority Queue
+## 6. Route Family Rollout Waves
 
-P1 (draft-heavy, inconsistent):
+Wave 0: Dashboard baseline + SoT extension
 
-1. `app/routes/store.cashier-variances.tsx`
-2. `app/routes/cashier.charges.tsx`
-3. `app/routes/store.cashier-ar.tsx`
-4. `app/routes/store.rider-variances.tsx`
-5. `app/routes/rider.variances.tsx`
-6. `app/routes/rider.variance.$id.tsx`
-7. `app/routes/store.rider-charges.tsx`
+1. Lock dashboard family direction before broad non-dashboard rollout.
+2. Update `docs/guide/ui/UI_SOT.md` first.
+3. Align `docs/guide/ui/UI_CONFORMANCE_MATRIX.md` second.
 
-P2:
+Wave 1: Operational List / Inbox pilots
+
+1. `app/routes/store.dispatch.tsx`
+2. `app/routes/ar._index.tsx`
+3. `app/routes/runs._index.tsx`
+4. `app/routes/cashier.delivery._index.tsx`
+
+Wave 2: Console / Workspace routes
 
 1. `app/routes/cashier.shift.tsx`
-2. `app/routes/runs.$id.summary.tsx`
-3. `app/routes/ar._index.tsx`
-4. `app/routes/ar.customers.$id.tsx`
+2. `app/routes/store.cashier-shifts.tsx`
+3. `app/routes/store.payroll.tsx`
 
-P3:
+Wave 3: Heavy-noise decision and review routes
 
-1. Remaining routes in UI conformance matrix marked `PARTIAL`.
+1. `app/routes/runs.$id.dispatch.tsx`
+2. `app/routes/store.clearance-opening-batches.tsx`
+3. `app/routes/store.cashier-ar.tsx`
+4. `app/routes/store.cashier-variances.tsx`
+5. `app/routes/cashier.charges.tsx`
+6. `app/routes/store.rider-variances.tsx`
+7. `app/routes/rider.variances.tsx`
+8. `app/routes/rider.variance.$id.tsx`
+9. `app/routes/store.rider-charges.tsx`
+
+Wave 4: Admin Form / Library partials
+
+1. `app/routes/products._index.tsx`
+2. `app/routes/products.new.tsx`
+3. `app/routes/products.$productId.tsx`
+4. `app/routes/products.$productId.edit.tsx`
+5. `app/routes/creation.riders.tsx`
+6. `app/routes/creation.provinces.tsx`
+
+Wave 5: Final conformance pass
+
+1. Remaining routes in the UI conformance matrix still marked `PARTIAL`
+2. Responsive fit and mobile compression pass
+3. Copy and helper-text compression pass
+4. Matrix status refresh in the same objective whenever a covered route is touched
 
 ## 7. Done Criteria Per Route
 

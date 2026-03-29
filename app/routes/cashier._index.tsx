@@ -138,9 +138,10 @@ export default function CashierDashboardPage() {
     : shiftLocked
       ? `Locked (${String(activeShift?.status ?? "UNKNOWN")})`
       : "Shift open";
-  const scheduleSubtitle = workforce.hasLinkedEmployee
-    ? workforce.nextShift.hint
-    : "Schedule and payroll summary stay empty until this cashier account is linked to an employee profile.";
+  const nextShiftLabel = workforce.nextShift.label ?? "No schedule";
+  const [nextShiftPrimary, ...nextShiftRemainder] = nextShiftLabel.split(" - ");
+  const nextShiftSecondary =
+    nextShiftRemainder.length > 0 ? nextShiftRemainder.join(" - ") : null;
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
@@ -225,8 +226,8 @@ export default function CashierDashboardPage() {
         <SoTDashboardTopGrid>
           <div className="xl:col-span-4">
             <SoTDashboardPanel
-              title="Priority"
-              subtitle="Shift and charge status"
+              title="Do Now"
+              subtitle="Shift and charge blockers"
               badge={shiftStateLabel}
               tone={shiftTone}
             >
@@ -246,15 +247,12 @@ export default function CashierDashboardPage() {
                 />
                 <SoTDashboardQueueRow
                   to="/cashier/charges"
-                  label="Pending Charges"
-                  value={`${alerts.openChargeItems} pending`}
-                  actionLabel="Open"
-                  tone={alerts.openChargeItems > 0 ? "danger" : "default"}
-                />
-                <SoTDashboardQueueRow
-                  to="/cashier/charges"
-                  label="Outstanding Charges"
-                  value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                  label="Charge Ledger"
+                  value={
+                    alerts.openChargeItems > 0
+                      ? `${alerts.openChargeItems} pending`
+                      : `₱${workforce.charges.outstandingAmount.toFixed(2)} outstanding`
+                  }
                   actionLabel="Open"
                   tone={chargeTone}
                 />
@@ -267,51 +265,40 @@ export default function CashierDashboardPage() {
               title="Shift Console"
               subtitle={
                 !hasShift
-                  ? "Start here before sales and remit"
+                  ? "Start here"
                   : shiftLocked
-                  ? "Resolve the locked shift state"
-                  : "Drawer control and close workflow"
+                  ? "Resolve the locked shift"
+                  : "Current drawer state"
               }
               badge={!hasShift ? "Required" : shiftLocked ? "Locked" : "Open"}
               tone={shiftTone}
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <SoTDataRow label="Shift state" value={shiftStateLabel} />
-                  <SoTDataRow label="Opened" value={openedAt ?? "Waiting"} />
                   <SoTDataRow
                     label="Next shift"
-                    value={workforce.nextShift.label ?? "No schedule"}
+                    value={nextShiftPrimary}
                   />
-                  <SoTDataRow
-                    label="Outstanding charges"
-                    value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
-                  />
+                  {hasShift ? (
+                    <SoTDataRow label="Opened" value={openedAt ?? "Waiting"} />
+                  ) : null}
+                  {hasShift ? (
+                    <SoTDataRow
+                      label="Outstanding charges"
+                      value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
+                    />
+                  ) : null}
                 </div>
+                {nextShiftSecondary ? (
+                  <p className="text-xs text-slate-500">{nextShiftSecondary}</p>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   <Link
                     to="/cashier/shift?next=/cashier"
                     className="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                   >
                     Open Shift Console
-                  </Link>
-                  <Link
-                    to={guardLink("/cashier/pos")}
-                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    New Sale
-                  </Link>
-                  <Link
-                    to={guardLink("/cashier/delivery")}
-                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Open Rider Remittance
-                  </Link>
-                  <Link
-                    to={guardLink("/ar")}
-                    className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  >
-                    Collect AR
                   </Link>
                 </div>
               </div>
@@ -327,16 +314,6 @@ export default function CashierDashboardPage() {
             >
               <SoTDashboardSignalGrid className="xl:grid-cols-1">
                 <SoTDashboardSignal
-                  label="Next Shift"
-                  value={workforce.nextShift.label ?? "No schedule"}
-                  meta={
-                    workforce.hasLinkedEmployee
-                      ? workforce.nextShift.hint
-                      : "Link an employee profile"
-                  }
-                  tone={workforce.hasLinkedEmployee ? "success" : "warning"}
-                />
-                <SoTDashboardSignal
                   label="Attendance"
                   value={workforce.attendance.absentCountThisMonth}
                   meta={`${workforce.attendance.lateCountThisMonth} late · ${workforce.attendance.suspensionCountThisMonth} suspension`}
@@ -346,7 +323,7 @@ export default function CashierDashboardPage() {
                   value={workforce.payroll.latestLabel ?? "No payroll yet"}
                   meta={
                     workforce.payroll.latestNetPay == null
-                      ? workforce.payroll.policyLabel ?? "Waiting for finalized payroll"
+                      ? undefined
                       : `Net ₱${workforce.payroll.latestNetPay.toFixed(2)}`
                   }
                 />
@@ -357,20 +334,13 @@ export default function CashierDashboardPage() {
 
         <SoTDashboardSection
           title="Quick Actions"
-          subtitle="POS, remit, and ledger access"
+          subtitle="Sales, remit, and ledger"
         >
           <SoTDashboardActionGrid>
             <SoTDashboardActionTile
-              to="/pad-order"
-              title="Order Pad"
-              detail="Walk-in and order encoding"
-              actionLabel="Open Order Pad"
-              tone="info"
-            />
-            <SoTDashboardActionTile
               to={guardLink("/cashier/pos")}
               title="New Sale"
-              detail="Walk-in POS lane"
+              detail="Walk-in POS"
               actionLabel="Open POS"
               badge={!hasShift ? "Shift required" : undefined}
               tone={!hasShift ? "warning" : "success"}
@@ -378,7 +348,7 @@ export default function CashierDashboardPage() {
             <SoTDashboardActionTile
               to={guardLink("/cashier/delivery")}
               title="Rider Remittance"
-              detail="Cashier remit workflow"
+              detail="Cashier remit lane"
               actionLabel="Open Rider Remittance"
               badge={!hasShift ? "Shift required" : undefined}
               tone={!hasShift ? "warning" : "info"}
@@ -386,21 +356,28 @@ export default function CashierDashboardPage() {
             <SoTDashboardActionTile
               to={guardLink("/ar")}
               title="Collect AR"
-              detail="Receivable collection lane"
+              detail="Receivable collection"
               actionLabel="Open AR"
               badge={!hasShift ? "Shift required" : undefined}
               tone={!hasShift ? "warning" : "default"}
             />
             <SoTDashboardActionTile
+              to="/pad-order"
+              title="Order Pad"
+              detail="Order encoding"
+              actionLabel="Open Order Pad"
+              tone="info"
+            />
+            <SoTDashboardActionTile
               to="/cashier/shift-history"
               title="Shift History"
-              detail="Past shifts and attendance"
+              detail="Past shifts"
               actionLabel="Open Shift History"
             />
             <SoTDashboardActionTile
               to="/cashier/charges"
               title="Charge Ledger"
-              detail="Pending acknowledgements and deductions"
+              detail="Acknowledgements and deductions"
               actionLabel="Open Charge Ledger"
               badge={`${alerts.openChargeItems} pending`}
               tone={chargeTone}
@@ -410,26 +387,9 @@ export default function CashierDashboardPage() {
 
         <SoTDashboardSection
           title="Reference"
-          subtitle="Schedule, attendance, and payroll"
+          subtitle="Attendance and payroll"
         >
-          <div className="grid gap-3 md:grid-cols-3">
-            <SoTDashboardPanel
-              title="Work Schedule"
-              subtitle={workforce.nextShift.label ?? "No schedule published"}
-              badge={workforce.hasLinkedEmployee ? "Linked" : "Read only"}
-              tone={workforce.hasLinkedEmployee ? "success" : "warning"}
-            >
-              <div className="space-y-3">
-                <p className="text-sm text-slate-700">{scheduleSubtitle}</p>
-                <Link
-                  to="/cashier/shift-history"
-                  className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Open Shift History
-                </Link>
-              </div>
-            </SoTDashboardPanel>
-
+          <div className="grid gap-3 md:grid-cols-2">
             <SoTDashboardPanel title="Attendance" subtitle="This month">
               <div className="grid gap-2">
                 <SoTDataRow

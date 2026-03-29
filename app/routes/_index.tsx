@@ -54,7 +54,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/customers/new?ctx=admin",
     title: "Customer",
-    detail: "New credit and dispatch profile",
+    detail: "Credit and dispatch profile",
     actionLabel: "Create Customer",
     badge: "Master",
     tone: "info",
@@ -62,7 +62,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/creation/employees/new",
     title: "Employee",
-    detail: "New workforce account",
+    detail: "Workforce account",
     actionLabel: "Create Employee",
     badge: "Workforce",
     tone: "success",
@@ -70,7 +70,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/products/new",
     title: "Product",
-    detail: "New catalog item",
+    detail: "Catalog item",
     actionLabel: "Create Product",
     badge: "Catalog",
     tone: "info",
@@ -78,7 +78,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/creation/vehicles",
     title: "Vehicle",
-    detail: "New fleet unit",
+    detail: "Fleet unit",
     actionLabel: "Create Vehicle",
     badge: "Fleet",
     tone: "danger",
@@ -86,7 +86,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/creation/areas",
     title: "Area",
-    detail: "Coverage and location setup",
+    detail: "Coverage setup",
     actionLabel: "Create Area",
     badge: "Geo",
     tone: "info",
@@ -94,7 +94,7 @@ const createShortcuts: AdminShortcut[] = [
   {
     to: "/creation/opening-ar-batches",
     title: "Opening AR Batch",
-    detail: "Batch receivable onboarding",
+    detail: "Receivable onboarding",
     actionLabel: "Open Batches",
     badge: "AR",
     tone: "warning",
@@ -222,7 +222,7 @@ export default function AdminDashboardIndex() {
               badge="Primary"
               tone="info"
             >
-              <SoTDashboardActionGrid className="xl:grid-cols-2">
+              <SoTDashboardActionGrid className="xl:!grid-cols-2">
                 {createShortcuts.map((item) => (
                   <SoTDashboardActionTile
                     key={item.title}
@@ -231,6 +231,7 @@ export default function AdminDashboardIndex() {
                     detail={item.detail}
                     actionLabel={item.actionLabel}
                     badge={item.badge}
+                    badgePlacement="stacked"
                     tone={item.tone}
                   />
                 ))}

@@ -72,35 +72,76 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 | `app/routes/rider.variance.$id.tsx` | Rider variance acceptance detail | PARTIAL | CHECKIN | SoT header + card/alert/button/status primitives are applied, and rider acceptance loader/action paths now avoid route-level `any` bypass with typed rider actor mapping and enum-safe acceptance status transitions | acceptance flow is consistent, with minor content compression pending | P2 |
 | `app/routes/store.rider-charges.tsx` | Rider charge tracking/tagging | PARTIAL | REMIT | SoT header + card/table/status/button primitives are applied, and rider-charge loader/action paths now avoid route-level `any` bypass | table readability is improved; control and note density still needs simplification | P2 |
 
-## 4. Noise Hotspots (Observed)
+## 4. Noise Hotspots and Family Focus (Observed)
 
-High helper/meta-note density was observed in these routes:
+Current revamp focus is grouped by route family instead of isolated page polish:
 
-1. `app/routes/store.payroll.tsx`
-2. `app/routes/cashier.shift.tsx`
-3. `app/routes/store.cashier-ar.tsx`
-4. `app/routes/runs.$id.rider-checkin.tsx`
-5. `app/routes/runs.$id.dispatch.tsx`
+1. `Operational List / Inbox`
+   `app/routes/store.dispatch.tsx`
+   `app/routes/runs._index.tsx`
+   `app/routes/ar._index.tsx`
+   `app/routes/cashier.delivery._index.tsx`
+   Focus: reduce filter/tool-bar noise, tighten table-first hierarchy, and keep triage visible before secondary metadata.
+2. `Console / Workspace`
+   `app/routes/cashier.shift.tsx`
+   `app/routes/store.cashier-shifts.tsx`
+   `app/routes/store.payroll.tsx`
+   Focus: keep one dominant work area, compress repeated state summaries, and keep exceptions close to the active workbench.
+3. `Decision / Detail`
+   `app/routes/runs.$id.dispatch.tsx`
+   `app/routes/store.clearance-opening-batches.tsx`
+   `app/routes/rider.variance.$id.tsx`
+   Focus: put summary and action areas ahead of dense evidence, and trim repeated guidance around approval/acceptance flows.
+4. `Admin Form / Library`
+   `app/routes/products._index.tsx`
+   `app/routes/products.new.tsx`
+   `app/routes/creation.riders.tsx`
+   `app/routes/creation.provinces.tsx`
+   Focus: improve responsive fit, reduce dense helper text, and keep forms/tables more dominant than support copy.
 
-Target: reduce repeated notes and duplicate instructional text first, before adding new UI elements.
+Target: remove repeated operational facts first, then improve layout fit and density before adding more UI surfaces.
 
-## 5. Migration Batches
+## 5. Route Family Rollout Waves
 
-1. Batch A (Completed): former P1 run staging + cashier/rider variance/charge routes are now `PARTIAL`.
-2. Batch B (P2 active): dispatch summary, AR index/ledger, shift pages, payroll, and density cleanup on newly hardened variance/charge routes.
-3. Batch C (P3): final conformance polish on already aligned pages.
-4. Batch D (Completed, outside active baseline): non-active order/rider support routes (`orders.$id.credit.tsx`, `orders.$id.receipt.tsx`, `store.rider-ar.tsx`, `orders.$id.dispatch.tsx`, `ar.customers.$id_.statement.tsx`) removed route-level `any` bypass and legacy `as any` casts without behavior changes (`76c9928`).
-5. Batch E (Completed, outside active baseline): resource helper routes (`resources.creation.upsert.ts`, `resources.creation.delete.ts`) removed route-level `any` bypass and switched delete/upsert error handling to `unknown`-safe extraction without behavior changes (`d18a9de`).
+1. Wave 0 (Current): dashboard baseline + SoT extension.
+2. Wave 1: `Operational List / Inbox` pilots
+   `app/routes/store.dispatch.tsx`
+   `app/routes/ar._index.tsx`
+   `app/routes/runs._index.tsx`
+   `app/routes/cashier.delivery._index.tsx`
+3. Wave 2: `Console / Workspace`
+   `app/routes/cashier.shift.tsx`
+   `app/routes/store.cashier-shifts.tsx`
+   `app/routes/store.payroll.tsx`
+4. Wave 3: `Decision / Detail` and other heavy-noise review routes
+   `app/routes/runs.$id.dispatch.tsx`
+   `app/routes/store.clearance-opening-batches.tsx`
+   `app/routes/store.cashier-ar.tsx`
+   `app/routes/store.cashier-variances.tsx`
+   `app/routes/cashier.charges.tsx`
+   `app/routes/store.rider-variances.tsx`
+   `app/routes/rider.variances.tsx`
+   `app/routes/rider.variance.$id.tsx`
+   `app/routes/store.rider-charges.tsx`
+5. Wave 4: `Admin Form / Library` partials
+   `app/routes/products._index.tsx`
+   `app/routes/products.new.tsx`
+   `app/routes/products.$productId.tsx`
+   `app/routes/products.$productId.edit.tsx`
+   `app/routes/creation.riders.tsx`
+   `app/routes/creation.provinces.tsx`
+6. Wave 5: final responsive-fit, copy-compression, and conformance refresh pass.
 
 ## 6. UX Gap Checklist (Per Route Update)
 
 When a route is modified, verify:
 
-1. shell matches contract (`bg-[#f7f7fb]`, `px-5 py-6`, card hierarchy).
+1. shell matches the active family contract (`Dashboard`, `Operational List / Inbox`, `Console / Workspace`, `Decision / Detail`, `Admin Form / Library`, or `Public / Auth`).
 2. status is readable before explanatory copy.
 3. locked/disabled/pending states are explicit.
-4. helper text stays within noise budget.
-5. desktop and mobile layout keep primary action visible.
+4. helper text stays within noise budget and is not repeated across adjacent sections.
+5. desktop and mobile layout keep the primary action visible.
+6. badges, chips, and secondary metadata do not crush the main text at common desktop widths.
 
 Product revamp parity checks (when touched):
 

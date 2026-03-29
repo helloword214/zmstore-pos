@@ -64,6 +64,7 @@ type SoTDashboardActionTileProps = {
   actionLabel?: string;
   eyebrow?: ReactNode;
   badge?: ReactNode;
+  badgePlacement?: "inline" | "stacked";
   tone?: SoTDashboardTone;
   className?: string;
 };
@@ -206,9 +207,18 @@ export function SoTDashboardActionTile({
   actionLabel = "Open",
   eyebrow,
   badge,
+  badgePlacement = "inline",
   tone = "default",
   className = "",
 }: SoTDashboardActionTileProps) {
+  const badgeNode = badge ? (
+    <span
+      className={`inline-flex w-fit shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${dashboardBadgeClass[tone]}`}
+    >
+      {badge}
+    </span>
+  ) : null;
+
   return (
     <Link
       to={to}
@@ -218,24 +228,31 @@ export function SoTDashboardActionTile({
         className: `flex h-full flex-col justify-between gap-3 ${className}`.trim(),
       })}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      {badgePlacement === "stacked" ? (
+        <div className="space-y-2">
           {eyebrow ? (
             <div className={`text-[11px] font-semibold uppercase tracking-wide ${dashboardToneTextClass[tone]}`}>
               {eyebrow}
             </div>
           ) : null}
-          <div className="mt-1 text-sm font-semibold text-slate-900">{title}</div>
-          {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+          {badgeNode}
+          <div className="text-sm font-semibold leading-5 text-slate-900">{title}</div>
+          {detail ? <p className="text-xs leading-5 text-slate-500">{detail}</p> : null}
         </div>
-        {badge ? (
-          <span
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${dashboardBadgeClass[tone]}`}
-          >
-            {badge}
-          </span>
-        ) : null}
-      </div>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {eyebrow ? (
+              <div className={`text-[11px] font-semibold uppercase tracking-wide ${dashboardToneTextClass[tone]}`}>
+                {eyebrow}
+              </div>
+            ) : null}
+            <div className="mt-1 text-sm font-semibold leading-5 text-slate-900">{title}</div>
+            {detail ? <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p> : null}
+          </div>
+          {badgeNode}
+        </div>
+      )}
       <div className={`text-sm font-semibold ${dashboardToneTextClass[tone]}`}>{actionLabel}</div>
     </Link>
   );

@@ -111,6 +111,10 @@ export default function RiderDashboard() {
     workforce.charges.outstandingAmount > 0 || pendingVarianceCount > 0
       ? "danger"
       : "default";
+  const nextShiftLabel = workforce.nextShift.label ?? "No schedule";
+  const [nextShiftPrimary, ...nextShiftRemainder] = nextShiftLabel.split(" - ");
+  const nextShiftSecondary =
+    nextShiftRemainder.length > 0 ? nextShiftRemainder.join(" - ") : null;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -175,21 +179,15 @@ export default function RiderDashboard() {
           <div className="xl:col-span-5">
             <SoTDashboardPanel
               title="My Runs"
-              subtitle="Check-in and summary"
-              badge={workforce.todayStatus.label}
+              subtitle="Assigned runs and check-in"
               tone={todayStatusTone}
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <SoTDataRow label="Next shift" value={workforce.nextShift.label ?? "No schedule"} />
                   <SoTDataRow label="Pending acceptance" value={pendingVarianceCount} />
                   <SoTDataRow
                     label="Outstanding charges"
                     value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
-                  />
-                  <SoTDataRow
-                    label="Latest payroll"
-                    value={workforce.payroll.latestLabel ?? "No payroll yet"}
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -218,9 +216,9 @@ export default function RiderDashboard() {
             >
               <SoTDashboardSignalGrid className="xl:grid-cols-1">
                 <SoTDashboardSignal
-                  label="Next Shift"
-                  value={workforce.nextShift.label ?? "No schedule"}
-                  meta={workforce.nextShift.hint}
+                  label="Schedule"
+                  value={nextShiftPrimary}
+                  meta={nextShiftSecondary}
                   tone="success"
                 />
                 <SoTDashboardSignal
@@ -228,7 +226,7 @@ export default function RiderDashboard() {
                   value={workforce.payroll.latestLabel ?? "No payroll yet"}
                   meta={
                     workforce.payroll.latestNetPay == null
-                      ? workforce.payroll.policyLabel ?? "Waiting for finalized payroll"
+                      ? undefined
                       : `Net ₱${workforce.payroll.latestNetPay.toFixed(2)}`
                   }
                 />
@@ -244,13 +242,13 @@ export default function RiderDashboard() {
 
         <SoTDashboardSection
           title="Quick Actions"
-          subtitle="Runs, variances, and customer tools"
+          subtitle="Runs and tools"
         >
           <SoTDashboardActionGrid>
             <SoTDashboardActionTile
               to="/runs?mine=1"
               title="My Runs"
-              detail="Assigned runs and check-in"
+              detail="Assigned runs"
               actionLabel="Open My Runs"
               tone="success"
             />
@@ -280,26 +278,9 @@ export default function RiderDashboard() {
 
         <SoTDashboardSection
           title="Reference"
-          subtitle="Schedule, attendance, payroll, and notes"
+          subtitle="Attendance and payroll"
         >
-          <div className="grid gap-3 md:grid-cols-4">
-            <SoTDashboardPanel
-              title="Work Schedule"
-              subtitle={workforce.nextShift.label ?? "No schedule published"}
-              badge={workforce.todayStatus.label}
-              tone={todayStatusTone}
-            >
-              <div className="space-y-3">
-                <p className="text-sm text-slate-700">{workforce.nextShift.hint}</p>
-                <Link
-                  to="/runs?mine=1"
-                  className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                >
-                  Open My Runs
-                </Link>
-              </div>
-            </SoTDashboardPanel>
-
+          <div className="grid gap-3 md:grid-cols-2">
             <SoTDashboardPanel title="Attendance" subtitle="This month">
               <div className="grid gap-2">
                 <SoTDataRow
@@ -341,13 +322,6 @@ export default function RiderDashboard() {
                   value={`₱${workforce.charges.outstandingAmount.toFixed(2)}`}
                 />
               </div>
-            </SoTDashboardPanel>
-
-            <SoTDashboardPanel title="Process Note" subtitle="Keep this short">
-              <p className="text-sm text-slate-700">
-                Cash remit is finalized in the cashier or manager lane after rider
-                check-in is complete.
-              </p>
             </SoTDashboardPanel>
           </div>
         </SoTDashboardSection>
