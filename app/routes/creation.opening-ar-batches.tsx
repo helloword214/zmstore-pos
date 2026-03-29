@@ -9,6 +9,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import {
   SoTTable,
@@ -489,6 +490,8 @@ export default function CreationOpeningArBatchesPage() {
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("intent") ?? "");
+  const submitBatchBusy = busy && pendingIntent === "submitBatch";
   const invalidRows = actionData?.invalidRows ?? [];
 
   const [rowsText, setRowsText] = React.useState("");
@@ -968,8 +971,15 @@ export default function CreationOpeningArBatchesPage() {
             </SoTFormField>
 
             <div className="flex flex-wrap items-center gap-2">
+              {submitBatchBusy ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Submitting opening balance batch"
+                  hint="Validating rows and staging pending clearance cases."
+                />
+              ) : null}
               <SoTButton type="submit" variant="primary" disabled={busy}>
-                {busy ? "Submitting..." : "Submit Batch"}
+                {submitBatchBusy ? "Submitting..." : "Submit Batch"}
               </SoTButton>
               <SoTButton
                 type="button"

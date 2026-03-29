@@ -6,6 +6,7 @@ import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { requireUser } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
 import {
@@ -310,6 +311,10 @@ export default function AccountSecurityPage() {
   const actionData = useActionData<ActionData>();
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
+  const pendingIntent = String(navigation.formData?.get("intent") ?? "");
+  const passwordBusy = busy && pendingIntent === "change-password";
+  const resetLinkBusy = busy && pendingIntent === "send-reset-link";
+  const pinBusy = busy && pendingIntent === "update-pin";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb] p-5">
@@ -361,8 +366,15 @@ export default function AccountSecurityPage() {
                   className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
               </SoTFormField>
+              {passwordBusy ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Updating password"
+                  hint="Saving your new sign-in password."
+                />
+              ) : null}
               <SoTButton type="submit" variant="primary" disabled={busy}>
-                {busy ? "Saving..." : "Update password"}
+                {passwordBusy ? "Updating..." : "Update password"}
               </SoTButton>
             </Form>
           </SoTCard>
@@ -372,10 +384,17 @@ export default function AccountSecurityPage() {
             <p className="mt-2 text-sm text-slate-600">
               Send a reset link to your account email.
             </p>
-            <Form method="post" className="mt-3">
+            <Form method="post" className="mt-3 space-y-3">
               <input type="hidden" name="intent" value="send-reset-link" />
+              {resetLinkBusy ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Sending reset link"
+                  hint="Preparing a password reset email for this account."
+                />
+              ) : null}
               <SoTButton type="submit" variant="secondary" disabled={busy || !me.email}>
-                {busy ? "Sending..." : "Send reset link"}
+                {resetLinkBusy ? "Sending..." : "Send reset link"}
               </SoTButton>
             </Form>
             {!me.email ? (
@@ -433,9 +452,18 @@ export default function AccountSecurityPage() {
                   className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
               </SoTFormField>
+              {pinBusy ? (
+                <div className="md:col-span-2">
+                  <SoTLoadingState
+                    variant="inline"
+                    label="Updating PIN"
+                    hint="Verifying your credentials and saving the new PIN."
+                  />
+                </div>
+              ) : null}
               <div className="md:col-span-2">
                 <SoTButton type="submit" variant="secondary" disabled={busy}>
-                  {busy ? "Saving..." : "Update PIN"}
+                  {pinBusy ? "Updating..." : "Update PIN"}
                 </SoTButton>
               </div>
             </Form>

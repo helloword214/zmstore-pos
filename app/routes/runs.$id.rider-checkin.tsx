@@ -12,6 +12,7 @@ import {
 import * as React from "react";
 import { CollapsibleReceipt } from "~/components/rider-checkin/CollapsibleReceipt";
 import { StatusPill } from "~/components/rider-checkin/StatusPill";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 
 import { db } from "~/utils/db.server";
@@ -2007,6 +2008,9 @@ export default function RiderCheckinPage() {
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("intent") ?? "");
+  const saveDraftBusy = busy && pendingIntent === "save-draft";
+  const submitCheckinBusy = busy && pendingIntent === "submit-checkin";
   const submit = useSubmit();
   const [searchParams] = useSearchParams();
 
@@ -4228,6 +4232,24 @@ export default function RiderCheckinPage() {
 
           {/* ACTION BUTTONS */}
           <div className="mt-6 grid gap-2">
+            {saveDraftBusy ? (
+              <div className="flex justify-center">
+                <SoTLoadingState
+                  variant="inline"
+                  label="Saving draft"
+                  hint="Updating the receipt and return snapshot for this run."
+                />
+              </div>
+            ) : null}
+            {submitCheckinBusy ? (
+              <div className="flex justify-center">
+                <SoTLoadingState
+                  variant="inline"
+                  label="Submitting rider check-in"
+                  hint="Finalizing this run and preparing the summary for manager remit."
+                />
+              </div>
+            ) : null}
             {/* Save Draft: persist data but DO NOT change status to CHECKED_IN */}
             <button
               type="submit"
@@ -4236,7 +4258,7 @@ export default function RiderCheckinPage() {
               disabled={busy || locked}
               className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
             >
-              {busy ? "Saving…" : "Save Draft"}
+              {saveDraftBusy ? "Saving..." : "Save Draft"}
             </button>
 
             {/* Submit Check-in: FINAL for manager remit */}
@@ -4257,8 +4279,8 @@ export default function RiderCheckinPage() {
                   : "bg-indigo-600 text-white hover:bg-indigo-700"
               }`}
             >
-              {busy
-                ? "Saving…"
+              {submitCheckinBusy
+                ? "Submitting..."
                 : hasSnapshot
                 ? "Update & Submit Check-in"
                 : "Submit Check-in"}
