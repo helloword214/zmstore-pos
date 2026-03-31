@@ -10,11 +10,14 @@ import {
 import { db } from "~/utils/db.server";
 import { requireRole } from "~/utils/auth.server";
 import * as React from "react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { Button } from "~/components/ui/Button";
 import { SoTActionBar } from "~/components/ui/SoTActionBar";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { Prisma } from "@prisma/client";
 import {
@@ -70,6 +73,18 @@ function buildDispatchOrderBy(
   if (sort === "printedAt") return [{ printedAt: dir }, { id: "desc" }];
   if (sort === "stagedAt") return [{ stagedAt: dir }, { id: "desc" }];
   return [{ id: dir }];
+}
+
+function formatPeso(value: number | null | undefined) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(Number(value || 0));
+}
+
+function formatDateTime(value: string | Date | null | undefined) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
 }
 
 async function loadPendingFailedDeliveryLinks(
@@ -553,6 +568,9 @@ export default function StoreDispatchQueuePage() {
   const allIds = forDispatch.map((o) => o.id);
   const selectedCount = selected.size;
   const selectedCsv = Array.from(selected).join(",");
+  const pendingFailedReviewCount = forDispatch.filter(
+    (order) => order.pendingFailedReview,
+  ).length;
   const allChecked =
     allIds.length > 0 && allIds.every((id: number) => selected.has(id));
   const selectedFailedReviewCount = forDispatch.filter(
@@ -601,14 +619,19 @@ export default function StoreDispatchQueuePage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Delivery Dispatch Queue"
-        subtitle="Undispatched delivery orders plus failed-delivery returns waiting for manager dispatch review."
+        title="Dispatch Queue"
+        subtitle="Delivery orders waiting for run assignment or failed-delivery review."
         maxWidthClassName="max-w-5xl"
       />
 
       {/* Body */}
       <div className="mx-auto max-w-5xl px-5 py-6">
         <SoTActionBar
+          left={
+            <div className="text-sm text-slate-600">
+              Review staged delivery orders and send them to planned runs.
+            </div>
+          }
           right={
             <Link to="/runs/new">
               <Button variant="primary">+ New Run</Button>
@@ -616,14 +639,64 @@ export default function StoreDispatchQueuePage() {
           }
         />
 
+        <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SoTCard compact>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Visible Queue
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {forDispatch.length}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Showing up to {take || 50} orders
+            </div>
+          </SoTCard>
+          <SoTCard compact tone={selectedCount > 0 ? "info" : "default"}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Selected
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {selectedCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Ready for assign or create-run
+            </div>
+          </SoTCard>
+          <SoTCard compact tone={runOptions.length > 0 ? "success" : "warning"}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Planned Runs
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {runOptions.length}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Available for assignment
+            </div>
+          </SoTCard>
+          <SoTCard
+            compact
+            tone={pendingFailedReviewCount > 0 ? "warning" : "default"}
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Re-dispatch Review
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {pendingFailedReviewCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Orders needing re-dispatch or cancel
+            </div>
+          </SoTCard>
+        </div>
+
         {actionData && !actionData.ok && (
-          <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <SoTAlert tone="danger" className="mb-3">
             {actionData.error}
-          </div>
+          </SoTAlert>
         )}
 
         {/* Search + Sort */}
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <SoTCard compact className="mb-3">
           <Form
             method="get"
             className="grid gap-2 sm:grid-cols-12 sm:items-end"
@@ -677,7 +750,7 @@ export default function StoreDispatchQueuePage() {
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
-              Showing:{" "}
+              Queue:{" "}
               <span className="font-semibold">{forDispatch.length}</span> /{" "}
               {take || 50}
             </span>
@@ -701,13 +774,39 @@ export default function StoreDispatchQueuePage() {
               </Link>
             ) : null}
           </div>
-        </div>
+        </SoTCard>
 
         {/* Bulk actions */}
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-slate-700">
-              Selected: <span className="font-semibold">{selectedCount}</span>
+        <SoTCard compact className="mb-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <SoTStatusBadge tone={selectedCount > 0 ? "info" : "neutral"}>
+                {selectedCount} selected
+              </SoTStatusBadge>
+              <Button
+                type="button"
+                variant="tertiary"
+                size="sm"
+                onClick={() => {
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (allChecked) {
+                      for (const id of allIds) next.delete(id);
+                    } else {
+                      for (const id of allIds) next.add(id);
+                    }
+                    return next;
+                  });
+                }}
+                disabled={allIds.length === 0}
+              >
+                {allChecked ? "Unselect all" : "Select all"}
+              </Button>
+              {selectedFailedReviewCount > 0 ? (
+                <SoTStatusBadge tone="warning">
+                  {selectedFailedReviewCount} re-dispatch review
+                </SoTStatusBadge>
+              ) : null}
             </div>
 
             <Form
@@ -743,7 +842,7 @@ export default function StoreDispatchQueuePage() {
                       : "Assign selected orders to this run"
                   }
                 >
-                  Assign
+                  {selectedFailedReviewCount > 0 ? "Re-dispatch to Run" : "Assign"}
                 </Button>
 
                 <Button
@@ -752,58 +851,35 @@ export default function StoreDispatchQueuePage() {
                   value="create-run"
                   variant="secondary"
                   disabled={selectedCount === 0}
-                  title="Create a new run containing the selected orders"
+                  title="Create a new run from the selected orders"
                 >
-                  Create Run from Selected
+                  {selectedFailedReviewCount > 0 ? "Create Re-dispatch Run" : "Create Run"}
                 </Button>
               </div>
             </Form>
           </div>
 
           {selectedFailedReviewCount > 0 ? (
-            <div className="mt-2 text-xs text-amber-700">
-              Re-dispatch review: assigning or creating a run will finalize{" "}
-              {selectedFailedReviewCount} failed delivery
-              {selectedFailedReviewCount > 1 ? " reports" : " report"} as
-              ready for dispatch again.
-            </div>
+            <SoTAlert tone="warning" className="mt-3">
+              Assigning or creating a run will finalize{" "}
+              {selectedFailedReviewCount} failed-delivery{" "}
+              {selectedFailedReviewCount > 1 ? "reports" : "report"} as ready
+              for dispatch again.
+            </SoTAlert>
           ) : null}
 
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-            <Button
-              type="button"
-              variant="tertiary"
-              size="sm"
-              onClick={() => {
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  if (allChecked) {
-                    // uncheck all visible
-                    for (const id of allIds) next.delete(id);
-                  } else {
-                    // check all visible
-                    for (const id of allIds) next.add(id);
-                  }
-                  return next;
-                });
-              }}
-              disabled={allIds.length === 0}
-            >
-              {allChecked ? "Unselect all" : "Select all"}
-            </Button>
-            {Number.isFinite(needAssignOrderId) && needAssignOrderId > 0 && (
-              <span className="text-amber-700">
-                Tip: highlighted order came from “Open Dispatch” and needs
-                assignment to a run.
-              </span>
-            )}
-          </div>
-        </div>
+          {Number.isFinite(needAssignOrderId) && needAssignOrderId > 0 ? (
+            <SoTAlert tone="info" className="mt-3">
+              Highlighted order returned from dispatch detail and is ready for
+              run assignment.
+            </SoTAlert>
+          ) : null}
+        </SoTCard>
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-medium tracking-wide text-slate-700">
-              For Dispatch (Delivery)
+              Dispatch Inbox
             </h2>
             <span className="text-[11px] text-slate-500">
               {forDispatch.length} item(s)
@@ -827,7 +903,7 @@ export default function StoreDispatchQueuePage() {
                       : ""
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
@@ -844,76 +920,82 @@ export default function StoreDispatchQueuePage() {
                         }}
                       />
                       <div className="min-w-0">
-                        <div className="font-mono text-slate-700">
-                          {r.orderCode}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-mono text-sm text-slate-700">
+                            {r.orderCode}
+                          </div>
+                          <SoTStatusBadge tone="neutral">
+                            {r.fulfillmentStatus || "—"}
+                          </SoTStatusBadge>
+                          {r.failedAttemptCount > 0 ? (
+                            <SoTStatusBadge
+                              tone={r.pendingFailedReview ? "warning" : "neutral"}
+                            >
+                              {r.pendingFailedReview
+                                ? "Failed review"
+                                : "Failed history"}
+                            </SoTStatusBadge>
+                          ) : null}
                         </div>
-                        <div className="mt-0.5 text-xs text-slate-600">
-                          Customer:{" "}
-                          <span className="font-medium text-slate-800">
-                            {customerLabel(r.customer)}
-                          </span>
+                        <div className="mt-1 text-sm font-medium text-slate-900">
+                          {customerLabel(r.customer)}
                           {r.customer?.phone ? (
-                            <span className="text-slate-500">
+                            <span className="font-normal text-slate-500">
                               {" "}
                               • {r.customer.phone}
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-0.5 text-xs text-slate-500">
-                          Rider: {r.riderName || "—"} • Status:{" "}
-                          {r.fulfillmentStatus || "—"}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          Printed{" "}
-                          {r.printedAt
-                            ? new Date(r.printedAt).toLocaleString()
-                            : "—"}
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                          <span>Rider: {r.riderName || "—"}</span>
+                          <span>Printed {formatDateTime(r.printedAt)}</span>
+                          <span className="font-medium text-slate-700">
+                            {formatPeso(r.totalBeforeDiscount ?? r.subtotal)}
+                          </span>
                         </div>
                         {r.failedAttemptCount > 0 ? (
-                          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-                            <div className="font-medium">
-                              {r.pendingFailedReview
-                                ? "Failed delivery pending dispatch review"
-                                : "Failed delivery history"}
-                            </div>
-                            <div className="mt-1">
-                              Attempts:{" "}
-                              <span className="font-semibold">
-                                {r.failedAttemptCount}
+                          <SoTAlert
+                            tone={r.pendingFailedReview ? "warning" : "info"}
+                            className="mt-2"
+                            title={
+                              r.pendingFailedReview
+                                ? "Failed delivery review"
+                                : "Failed delivery history"
+                            }
+                          >
+                            <div className="flex flex-wrap gap-x-3 gap-y-1">
+                              <span>
+                                Attempts:{" "}
+                                <span className="font-semibold">
+                                  {r.failedAttemptCount}
+                                </span>
                               </span>
                               {r.latestFailedRunCode ? (
-                                <span className="text-amber-800">
-                                  {" "}
-                                  • Last run: {r.latestFailedRunCode}
+                                <span>Last run: {r.latestFailedRunCode}</span>
+                              ) : null}
+                              {r.latestFailedReportedAt ? (
+                                <span>
+                                  Reported {formatDateTime(r.latestFailedReportedAt)}
                                 </span>
                               ) : null}
                             </div>
-                            {r.latestFailedReportedAt ? (
-                              <div className="mt-1 text-slate-600">
-                                Reported{" "}
-                                {new Date(
-                                  r.latestFailedReportedAt,
-                                ).toLocaleString()}
-                              </div>
-                            ) : null}
                             {r.latestFailedReason ? (
-                              <div className="mt-1 text-slate-600">
+                              <div className="mt-1">
                                 Rider reason: {r.latestFailedReason}
                               </div>
                             ) : null}
                             {r.pendingFailedReview ? (
-                              <div className="mt-1 text-amber-800">
-                                Re-dispatch or cancel must be decided here in
-                                dispatch after remit closes the run.
+                              <div className="mt-1">
+                                Choose re-dispatch or cancel here.
                               </div>
                             ) : null}
-                          </div>
+                          </SoTAlert>
                         ) : null}
                       </div>
                     </div>
 
                     {r.failedAttemptCount > 0 ? (
-                      <div className="flex flex-col items-end gap-2">
+                      <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-end">
                         <Button
                           type="button"
                           variant={
@@ -924,11 +1006,11 @@ export default function StoreDispatchQueuePage() {
                           }
                         >
                           {selected.has(r.id)
-                            ? "Selected for re-dispatch"
-                            : "Select for re-dispatch"}
+                            ? "Selected for Re-dispatch"
+                            : "Select Re-dispatch"}
                         </Button>
                         {r.pendingFailedReview ? (
-                          <Form method="post" className="flex flex-col items-end gap-1">
+                          <Form method="post" className="flex flex-col items-start gap-1 lg:items-end">
                             <input type="hidden" name="orderIds" value={String(r.id)} />
                             <Button
                               type="submit"
@@ -938,7 +1020,7 @@ export default function StoreDispatchQueuePage() {
                               disabled={!r.canCancelFailedReview}
                               title={
                                 r.canCancelFailedReview
-                                  ? "Cancel this failed delivery order from the dispatch queue"
+                                  ? "Cancel this failed delivery order from the queue"
                                   : "Partially paid orders need refund/void before cancellation."
                               }
                             >
@@ -946,8 +1028,7 @@ export default function StoreDispatchQueuePage() {
                             </Button>
                             {!r.canCancelFailedReview ? (
                               <span className="text-[11px] text-slate-500">
-                                Partially paid orders need refund/void before
-                                cancel.
+                                Refund/void required first.
                               </span>
                             ) : null}
                           </Form>
@@ -956,10 +1037,10 @@ export default function StoreDispatchQueuePage() {
                     ) : (
                       <Link
                         to={`/orders/${r.id}/dispatch`}
-                        className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        title="Will redirect to run dispatch if already assigned; otherwise returns here for assignment."
+                        className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                        title="Open dispatch detail"
                       >
-                        Open dispatch →
+                        Open Dispatch
                       </Link>
                     )}
                   </div>

@@ -187,21 +187,6 @@ function aggregateLoadoutSnapshot(
   return Array.from(map.values()).sort((a, b) => a.productId - b.productId);
 }
 
-function runStatusTone(
-  status: LoaderData["run"]["status"]
-): "neutral" | "success" | "warning" | "info" {
-  if (status === "DISPATCHED" || status === "CHECKED_IN" || status === "CLOSED") {
-    return "success";
-  }
-  if (status === "CANCELLED") {
-    return "warning";
-  }
-  if (status === "PLANNED") {
-    return "info";
-  }
-  return "neutral";
-}
-
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // Store manager lane only
   await requireRole(request, ["STORE_MANAGER"]);
@@ -1369,6 +1354,10 @@ export default function RunDispatchPage() {
   const [vehicleId, setVehicleId] = React.useState<number | null>(
     vehicleIdFromServer
   );
+  const selectedVehicleName =
+    vehicleId != null
+      ? vehicles.find((vehicle) => vehicle.id === vehicleId)?.name ?? "—"
+      : "Not set";
 
   type LoadLine = {
     key: string;
@@ -1567,26 +1556,56 @@ export default function RunDispatchPage() {
         title="Dispatch Staging"
         subtitle={`Run ${run.runCode} · ${
           readOnly
-            ? "Already dispatched (read-only)."
-            : "Assign rider, vehicle, and loadout before dispatch."
+            ? "Dispatched already. Staging is read-only."
+            : "Assign rider, vehicle, and extra loadout before dispatch."
         }`}
         backTo="/runs"
         backLabel="Runs"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-6">
-        <div className="mb-3 flex justify-end text-xs">
-          <SoTStatusBadge tone={runStatusTone(run.status)}>
-            {run.status}
-          </SoTStatusBadge>
+      <div className="mx-auto max-w-6xl space-y-3 px-5 py-6">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Status{" "}
+            <span className="font-semibold text-slate-900">{run.status}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Rider{" "}
+            <span className="font-semibold text-slate-900">
+              {riderName || "Not set"}
+            </span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Vehicle{" "}
+            <span className="font-semibold text-slate-900">
+              {selectedVehicleName}
+            </span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Linked orders{" "}
+            <span className="font-semibold text-slate-900">
+              {parentOrdersSummary?.orderCount ?? 0}
+            </span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Extra loadout{" "}
+            <span className="font-semibold text-slate-900">{totalLoadUnits}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Capacity{" "}
+            <span className="font-semibold text-slate-900">
+              {Math.round(usedCapacityKg)}
+              {capacityKg != null ? ` / ${capacityKg} kg` : " kg"}
+            </span>
+          </span>
         </div>
 
         {/* Parent orders clarity box */}
         {parentOrdersSummary && (
-          <SoTCard className="mb-4">
+          <SoTCard>
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-medium text-slate-800">
-                Linked Parent Orders (PAD)
+                Linked Orders
               </div>
               <div className="text-xs text-slate-600">
                 {parentOrdersSummary.orderCount} order(s) ·{" "}
@@ -1595,11 +1614,8 @@ export default function RunDispatchPage() {
               </div>
             </div>
             <div className="mt-1 text-xs text-slate-600">
-              Note: These order items are part of dispatch stock deductions. The
-              <span className="font-semibold"> Loadout</span> below is only for
-              the
-              <span className="font-semibold"> physical/manual load</span> you
-              add.
+              Linked order items are part of dispatch stock deductions. `Loadout`
+              below is only for extra physical load you add on top.
             </div>
             {parentOrderTopItems.length > 0 && (
               <div className="mt-2 grid gap-1">
@@ -1615,9 +1631,9 @@ export default function RunDispatchPage() {
             )}
             {!readOnly && hasRunDraftShortage ? (
               <SoTAlert tone="warning" className="mt-3 text-sm">
-                Current run draft exceeds live stock on the tagged item rows
-                below. Release the affected order or rebalance the loadout
-                before dispatch.
+                Current run draft exceeds live stock on one or more linked item
+                rows. Release the affected order or rebalance the loadout before
+                dispatch.
               </SoTAlert>
             ) : null}
             {linkedParentOrders.length > 0 && (
@@ -1656,7 +1672,7 @@ export default function RunDispatchPage() {
                             qty
                           </div>
                           <div className="mt-1 text-[11px] text-slate-500">
-                            Order: {order.status} · Fulfillment:{" "}
+                            Order {order.status} · Fulfillment{" "}
                             {order.fulfillmentStatus ?? "—"}
                           </div>
                         </div>
@@ -1672,7 +1688,7 @@ export default function RunDispatchPage() {
                               <SoTLoadingState
                                 variant="inline"
                                 label="Releasing linked order"
-                                hint="Returning this order to the dispatch queue."
+                                hint="Returning this order to the queue."
                               />
                             ) : null}
                             <SoTButton
@@ -1685,7 +1701,7 @@ export default function RunDispatchPage() {
                             >
                               {releaseBusy && pendingReleaseOrderId === order.orderId
                                 ? "Releasing…"
-                                : "Release to Dispatch Queue"}
+                                : "Release Order"}
                             </SoTButton>
                           </Form>
                         ) : null}
@@ -1726,7 +1742,7 @@ export default function RunDispatchPage() {
                               >
                                 Qty: {item.qty}
                                 {shortage
-                                  ? ` · Current run draft needs ${shortage.required} ${shortage.unitKind.toLowerCase()} and only has ${shortage.available} available (short ${shortage.shortage}).`
+                                  ? ` · Needs ${shortage.required} ${shortage.unitKind.toLowerCase()}, only ${shortage.available} available (short ${shortage.shortage}).`
                                   : ""}
                               </div>
                             </div>
@@ -1765,7 +1781,7 @@ export default function RunDispatchPage() {
           <SoTCard>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-medium text-slate-800">
-                Driver <span className="text-rose-600">*</span>
+                Rider <span className="text-rose-600">*</span>
               </div>
               {!readOnly && (
                 <span
@@ -1829,7 +1845,9 @@ export default function RunDispatchPage() {
           {/* Loadout */}
           <SoTCard className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <div className="text-sm font-medium text-slate-800">Loadout</div>
+              <div className="text-sm font-medium text-slate-800">
+                Extra Loadout
+              </div>
               <div className="text-xs text-slate-600">
                 Total units:{" "}
                 <span className="font-semibold">{totalLoadUnits}</span>
@@ -1848,6 +1866,10 @@ export default function RunDispatchPage() {
               </div>
             </div>
             <div className="space-y-3 px-4 py-4">
+              <div className="text-xs text-slate-600">
+                Add only the extra manual load for this run. Linked order items are
+                already counted above.
+              </div>
               {overCapacity ? (
                 <SoTAlert tone="danger">
                   Capacity exceeded (kg). Adjust loadout or choose a different
@@ -2084,10 +2106,16 @@ export default function RunDispatchPage() {
                         ? "Keeping the current staging details on this page."
                         : cancelBusy
                           ? "Closing this staging flow and returning to the run list."
-                          : "Unlocking the run so it can be staged again."
+                        : "Unlocking the run so it can be staged again."
                 }
               />
             ) : null}
+
+            <div className="mb-3 text-xs text-slate-600">
+              {readOnly
+                ? "This run is already dispatched. Revert only if staging needs to be reopened."
+                : "Next step: save staging or dispatch once rider, stock, and capacity are ready."}
+            </div>
 
             <fieldset
               disabled={busy}
@@ -2099,7 +2127,7 @@ export default function RunDispatchPage() {
                 variant="secondary"
                 type="submit"
               >
-                {cancelBusy ? "Cancelling…" : "Cancel"}
+                {cancelBusy ? "Closing…" : "Back to Runs"}
               </SoTButton>
 
               {!readOnly ? (
@@ -2111,7 +2139,7 @@ export default function RunDispatchPage() {
                     variant="secondary"
                     className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                   >
-                    {saveBusy ? "Saving…" : "Save & Stay"}
+                    {saveBusy ? "Saving…" : "Save Staging"}
                   </SoTButton>
                   <SoTButton
                     name="intent"
@@ -2119,7 +2147,7 @@ export default function RunDispatchPage() {
                     type="submit"
                     variant="secondary"
                   >
-                    {saveExitBusy ? "Saving…" : "Save & Exit"}
+                    {saveExitBusy ? "Saving…" : "Save and Exit"}
                   </SoTButton>
                   <SoTButton
                     name="intent"
@@ -2149,7 +2177,7 @@ export default function RunDispatchPage() {
                     variant="primary"
                     className="disabled:cursor-not-allowed"
                   >
-                    {dispatchBusy ? "Dispatching…" : "Dispatch"}
+                    {dispatchBusy ? "Dispatching…" : "Dispatch Run"}
                   </SoTButton>
                 </>
               ) : (
@@ -2160,7 +2188,7 @@ export default function RunDispatchPage() {
                   variant="secondary"
                   className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
                 >
-                  {revertBusy ? "Reverting…" : "Revert to Planned"}
+                  {revertBusy ? "Reverting…" : "Reopen Staging"}
                 </SoTButton>
               )}
             </fieldset>

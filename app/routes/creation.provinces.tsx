@@ -286,7 +286,7 @@ export default function ProvincesCreationPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Creation - Provinces"
-        subtitle="Scalable province master list for address choices."
+        subtitle="Province master list for address choices."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -339,17 +339,17 @@ export default function ProvincesCreationPage() {
             }
           />
 
-          <SoTAlert tone="info">
+          <p className="text-xs text-slate-500">
             Showing {start}-{end} of {total} province entries.
-          </SoTAlert>
+          </p>
         </SoTCard>
 
         {showCreate ? (
           <SoTCard interaction="form">
             <SoTSectionHeader title="Create Province" />
-            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="create" />
-              <div className="md:col-span-7">
+              <div className="md:col-span-12 lg:col-span-7">
                 <SoTInput
                   name="name"
                   label="Name"
@@ -360,7 +360,7 @@ export default function ProvincesCreationPage() {
                   }
                 />
               </div>
-              <div className="md:col-span-3">
+              <div className="md:col-span-6 lg:col-span-3">
                 <SoTInput
                   name="code"
                   label="Code"
@@ -371,7 +371,7 @@ export default function ProvincesCreationPage() {
                   }
                 />
               </div>
-              <div className="md:col-span-2 md:flex md:items-end">
+              <div className="md:col-span-6 lg:col-span-2 md:flex md:items-end">
                 <SoTButton type="submit" variant="primary" className="w-full">
                   Save
                 </SoTButton>
@@ -383,10 +383,10 @@ export default function ProvincesCreationPage() {
         {editing ? (
           <SoTCard interaction="form">
             <SoTSectionHeader title={`Edit Province #${editing.id}`} />
-            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="update" />
               <input type="hidden" name="id" value={editing.id} />
-              <div className="md:col-span-7">
+              <div className="md:col-span-12 lg:col-span-7">
                 <SoTInput
                   name="name"
                   label="Name"
@@ -396,7 +396,7 @@ export default function ProvincesCreationPage() {
                   }
                 />
               </div>
-              <div className="md:col-span-3">
+              <div className="md:col-span-6 lg:col-span-3">
                 <SoTInput
                   name="code"
                   label="Code"
@@ -406,7 +406,7 @@ export default function ProvincesCreationPage() {
                   }
                 />
               </div>
-              <div className="md:col-span-2 flex items-end gap-2">
+              <div className="md:col-span-6 lg:col-span-2 flex flex-wrap items-end gap-2 sm:flex-nowrap">
                 <SoTButton type="submit" variant="primary" className="w-full">
                   Update
                 </SoTButton>
@@ -454,7 +454,9 @@ export default function ProvincesCreationPage() {
                       <div className="font-medium text-slate-900">{p.name}</div>
                     </SoTTd>
                     <SoTTd>
-                      <span className="font-mono text-xs text-slate-700">{p.code ?? "-"}</span>
+                      <span className="inline-block min-w-[4rem] font-mono text-xs text-slate-700">
+                        {p.code ?? "-"}
+                      </span>
                     </SoTTd>
                     <SoTTd>{p.usageCount}</SoTTd>
                     <SoTTd>
@@ -469,11 +471,12 @@ export default function ProvincesCreationPage() {
                       </span>
                     </SoTTd>
                     <SoTTd align="right">
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-1.5 sm:flex-nowrap">
                         <SoTButton
                           type="button"
                           variant="secondary"
                           size="compact"
+                          className="sm:min-w-[5.5rem] justify-center"
                           onClick={() => setEditing(p)}
                         >
                           Edit
@@ -487,6 +490,7 @@ export default function ProvincesCreationPage() {
                             type="submit"
                             variant="secondary"
                             size="compact"
+                            className="sm:min-w-[5.5rem] justify-center"
                           >
                             {p.isActive ? "Disable" : "Enable"}
                           </SoTButton>
@@ -511,6 +515,7 @@ export default function ProvincesCreationPage() {
                             variant="danger"
                             size="compact"
                             disabled={p.usageCount > 0}
+                            className="sm:min-w-[5.5rem] justify-center"
                           >
                             Delete
                           </SoTButton>
@@ -523,7 +528,7 @@ export default function ProvincesCreationPage() {
             </tbody>
           </SoTTable>
 
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
             <p className="text-xs text-slate-500">
               Page {page} of {totalPages}
             </p>

@@ -286,7 +286,7 @@ export default function RiderVarianceDetailPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title={`Variance #${v.id}`}
-        subtitle={`Run ${v.run.runCode} · Status ${v.status}`}
+        subtitle={`Run ${v.run.runCode}`}
         backTo="/rider/variances"
         backLabel="Variances"
         maxWidthClassName="max-w-3xl"
@@ -294,12 +294,24 @@ export default function RiderVarianceDetailPage() {
 
       <div className="mx-auto max-w-3xl px-5 py-6 space-y-3">
         <SoTCard>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <SoTStatusBadge tone={statusTone(v.status)}>{v.status}</SoTStatusBadge>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">
+                Variance Summary
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <SoTStatusBadge tone={statusTone(v.status)}>{v.status}</SoTStatusBadge>
+                {v.resolution ? (
+                  <SoTStatusBadge tone={resolutionTone(v.resolution)}>
+                    {v.resolution}
+                  </SoTStatusBadge>
+                ) : null}
+              </div>
+            </div>
             {v.resolution ? (
-              <SoTStatusBadge tone={resolutionTone(v.resolution)}>
-                {v.resolution}
-              </SoTStatusBadge>
+              <div className="text-xs text-slate-500">
+                Created {new Date(v.createdAt).toLocaleString()}
+              </div>
             ) : null}
           </div>
 
@@ -328,35 +340,11 @@ export default function RiderVarianceDetailPage() {
             </div>
           </div>
 
-          <div className="mt-3 text-xs text-slate-600 space-y-1">
-            <div>
-              Manager approved at:{" "}
-              <span className="font-medium">
-                {v.managerApprovedAt
-                  ? new Date(v.managerApprovedAt).toLocaleString()
-                  : "—"}
-              </span>
-            </div>
-            <div>
-              Rider accepted at:{" "}
-              <span className="font-medium">
-                {v.riderAcceptedAt
-                  ? new Date(v.riderAcceptedAt).toLocaleString()
-                  : "—"}
-              </span>
-            </div>
-            <div>
-              Note: <span className="font-medium">{v.note ?? "—"}</span>
-            </div>
-          </div>
-
           {canAccept ? (
             <SoTAlert tone="warning" className="mt-4">
               <p className="font-semibold">Action required</p>
               <p className="mt-1 text-xs">
-                Manager decided to{" "}
-                <span className="font-semibold">charge rider</span>. Please
-                accept to confirm you acknowledge this variance.
+                Please accept this rider charge to acknowledge the shortage.
               </p>
               <Form method="post" className="mt-3">
                 <SoTButton
@@ -374,6 +362,36 @@ export default function RiderVarianceDetailPage() {
               No action required.
             </SoTAlert>
           )}
+        </SoTCard>
+
+        <SoTCard className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Evidence</h2>
+            <p className="text-xs text-slate-500">
+              Review the manager decision and note before accepting.
+            </p>
+          </div>
+          <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div>
+              Manager approved:{" "}
+              <span className="font-medium">
+                {v.managerApprovedAt
+                  ? new Date(v.managerApprovedAt).toLocaleString()
+                  : "—"}
+              </span>
+            </div>
+            <div>
+              Rider accepted:{" "}
+              <span className="font-medium">
+                {v.riderAcceptedAt
+                  ? new Date(v.riderAcceptedAt).toLocaleString()
+                  : "—"}
+              </span>
+            </div>
+            <div>
+              Note: <span className="font-medium">{v.note ?? "—"}</span>
+            </div>
+          </div>
         </SoTCard>
       </div>
     </main>

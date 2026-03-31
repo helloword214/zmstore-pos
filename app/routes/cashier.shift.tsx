@@ -2,8 +2,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
+import { SoTAlert } from "~/components/ui/SoTAlert";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import { db } from "~/utils/db.server";
 import { requireRole, setShiftId, type SessionUser } from "~/utils/auth.server";
 import { CashDrawerTxnType, Prisma } from "@prisma/client";
@@ -744,6 +747,48 @@ export default function ShiftConsole() {
   const openingDisputed = Boolean(
     activeShift && activeShift.status === "OPENING_DISPUTED",
   );
+  const shiftStatusLabel = !activeShift
+    ? "No active shift"
+    : activeShift.status === "OPEN"
+      ? "Shift open"
+      : activeShift.status === "PENDING_ACCEPT"
+        ? "Opening verification"
+        : activeShift.status === "OPENING_DISPUTED"
+          ? "Opening disputed"
+          : activeShift.status === "SUBMITTED"
+            ? "Count submitted"
+            : activeShift.status === "RECOUNT_REQUIRED"
+              ? "Recount required"
+              : "Final closed";
+  const shiftStatusTone =
+    !activeShift
+      ? "warning"
+      : activeShift.status === "OPEN"
+        ? "success"
+        : activeShift.status === "SUBMITTED"
+          ? "info"
+          : activeShift.status === "OPENING_DISPUTED"
+            ? "danger"
+            : "warning";
+  const workbenchTitle = openingPending
+    ? "Verify opening float"
+    : openingDisputed
+      ? "Waiting for manager correction"
+      : activeShift?.status === "SUBMITTED"
+        ? "Count submitted"
+        : "Submit counted cash";
+  const workbenchHint = openingPending
+    ? "Recount before cashiering starts."
+    : openingDisputed
+      ? "Opening float is disputed, so the shift stays locked."
+      : activeShift?.status === "SUBMITTED"
+        ? "Waiting for manager audit and final close."
+        : "Finish the shift by entering the physical cash count.";
+  const drawerAccessLabel = !activeShift
+    ? "Waiting"
+    : drawerLocked
+      ? "Locked"
+      : "Writable";
 
   const expectedRaw = Number(drawer?.balance ?? 0);
   // Display-safe expected (never show negative as "expected cash" — it's a ledger error)
@@ -821,7 +866,7 @@ export default function ShiftConsole() {
         title="Shift Console"
         subtitle={
           activeShift
-            ? `Active shift #${activeShift.id} • ${activeShift.branchName}`
+            ? `Shift #${activeShift.id} • ${activeShift.branchName}`
             : "Waiting for manager to open your shift."
         }
         backTo="/cashier"
@@ -837,118 +882,413 @@ export default function ShiftConsole() {
           >
             Shift History
           </Link>
-          {drawer && expectedRaw < -0.005 ? (
-            <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
-              LEDGER ERROR
-            </span>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <SoTStatusBadge tone={shiftStatusTone}>{shiftStatusLabel}</SoTStatusBadge>
+            {drawer && expectedRaw < -0.005 ? (
+              <SoTStatusBadge tone="danger">Ledger error</SoTStatusBadge>
+            ) : null}
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           {!activeShift ? (
-            <div className="px-4 py-4 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                No active shift. Manager must open the cashier shift first.
+            <div className="px-4 py-4 space-y-3">
+              <SoTAlert tone="warning" title="No active shift">
+                Manager must open the cashier shift first.
+              </SoTAlert>
+              <div className="text-xs text-slate-500">
+                If it was already opened, reload this page.
               </div>
-              <span className="text-xs text-slate-500">
-                If manager already opened it, reload this page.
-              </span>
             </div>
           ) : (
             <div className="px-4 py-4 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-sm text-slate-800">
-                    <span className="font-medium">Active shift</span>{" "}
-                    <span className="font-mono">#{activeShift.id}</span>{" "}
-                    <span className="text-slate-500">•</span>{" "}
-                    <span className="font-medium">
-                      {activeShift.branchName}
-                    </span>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <SoTCard compact tone={shiftStatusTone === "warning" ? "warning" : shiftStatusTone === "danger" ? "danger" : shiftStatusTone === "info" ? "info" : "success"}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Shift
                   </div>
-                  <div className="text-xs text-slate-600">
-                    Opened: {new Date(activeShift.openedAt).toLocaleString()}
-                    {activeShift.deviceId ? (
-                      <>
-                        {" "}
-                        • Device:{" "}
-                        <span className="font-mono">
-                          {activeShift.deviceId}
-                        </span>
-                      </>
-                    ) : null}
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    #{activeShift.id} • {activeShift.branchName}
                   </div>
-                </div>
+                  <div className="mt-1 text-xs text-slate-500">{shiftStatusLabel}</div>
+                </SoTCard>
+                <SoTCard compact>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Opened
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {new Date(activeShift.openedAt).toLocaleString()}
+                  </div>
+                </SoTCard>
+                <SoTCard compact>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Device
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {activeShift.deviceId ? activeShift.deviceId : "No device"}
+                  </div>
+                </SoTCard>
+                <SoTCard compact tone={drawerLocked ? "warning" : "success"}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Drawer Access
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {drawerAccessLabel}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {drawerLocked ? "Waiting for open or manager audit" : "Cashier actions available"}
+                  </div>
+                </SoTCard>
               </div>
               {openingDisputed ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                  Opening float is{" "}
-                  <span className="font-semibold">DISPUTED</span>. Waiting for
-                  manager to correct/recount.
+                <SoTAlert tone="warning" title="Opening float disputed">
+                  Waiting for manager correction or recount.
                   {activeShift.openingDisputeNote ? (
-                    <div className="mt-1 text-xs text-amber-800">
+                    <div className="mt-1">
                       Note:{" "}
-                      <span className="font-medium">
-                        {activeShift.openingDisputeNote}
-                      </span>
+                      <span className="font-medium">{activeShift.openingDisputeNote}</span>
                     </div>
                   ) : null}
-                </div>
+                </SoTAlert>
               ) : null}
               <div className="grid gap-4 lg:grid-cols-12">
-                {/* LEFT */}
                 <div className="lg:col-span-7 space-y-4">
-                  {totals ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white">
-                      <div className="border-b border-slate-100 px-4 py-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
                         <div className="text-sm font-medium text-slate-800">
-                          Running totals
+                          {workbenchTitle}
                         </div>
+                        <div className="text-xs text-slate-500">{workbenchHint}</div>
                       </div>
-                      <div className="px-4 py-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <div className="text-xs text-slate-500">
-                            Booked revenue (all methods)
-                          </div>
-                          <div className="text-lg font-semibold">
-                            {peso(totals.grandAmount)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <div className="text-xs text-slate-500">
-                            Cash drawer in (sales + A/R)
-                          </div>
-                          <div className="text-lg font-semibold">
-                            {peso(totals.cashDrawerIn)}
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-500">
-                            Sales {peso(totals.cashSalesIn)} • A/R{" "}
-                            {peso(totals.arCashIn)}
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <div className="text-xs text-slate-500 mb-2">
-                            By method
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {totals.byMethod.map((m) => (
-                              <div
-                                key={m.method}
-                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                              >
-                                <span className="text-slate-700">
-                                  {m.method}
-                                </span>
-                                <span className="font-medium">
-                                  {peso(m.amount)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
+                      <SoTStatusBadge tone={shiftStatusTone}>{shiftStatusLabel}</SoTStatusBadge>
                     </div>
-                  ) : null}
+
+                    {openingPending ? (
+                      <>
+                        <SoTAlert tone="info">
+                          Manager opened the shift. Confirm or dispute the opening float.
+                        </SoTAlert>
+
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs text-slate-500">
+                              Manager opening float
+                            </div>
+                            <div className="text-lg font-semibold tabular-nums">
+                              {peso(Number(activeShift.openingFloat ?? 0))}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs text-slate-500">
+                              Your counted opening
+                            </div>
+                            <div className="text-lg font-semibold tabular-nums">
+                              {peso(r2(Number(openingCounted || 0)))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {openingBusy ? (
+                          <SoTLoadingState
+                            variant="panel"
+                            className="mt-3"
+                            label={
+                              openingAcceptBusy
+                                ? "Accepting opening float"
+                                : "Sending opening dispute"
+                            }
+                            hint={
+                              openingAcceptBusy
+                                ? "Starting the shift and unlocking cashier actions."
+                                : "Locking the shift while the manager reviews the recount."
+                            }
+                          />
+                        ) : null}
+
+                        <label className="mt-3 block text-sm">
+                          <span className="mb-1 block text-slate-700">
+                            Counted opening float
+                          </span>
+                          <input
+                            value={openingCounted}
+                            onChange={(e) => setOpeningCounted(e.target.value)}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            disabled={busy}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                          />
+                        </label>
+
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <Form method="post">
+                            <input
+                              type="hidden"
+                              name="_action"
+                              value="opening:accept"
+                            />
+                            <input
+                              type="hidden"
+                              name="next"
+                              value={next ?? "/cashier"}
+                            />
+                            <input
+                              type="hidden"
+                              name="openingCounted"
+                              value={openingCounted}
+                            />
+                            <button
+                              type="submit"
+                              className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                              disabled={busy}
+                            >
+                              {openingAcceptBusy ? "Saving…" : "Accept & Open"}
+                            </button>
+                          </Form>
+
+                          <Form method="post">
+                            <input
+                              type="hidden"
+                              name="_action"
+                              value="opening:dispute"
+                            />
+                            <input
+                              type="hidden"
+                              name="next"
+                              value={next ?? "/cashier"}
+                            />
+                            <input
+                              type="hidden"
+                              name="openingCounted"
+                              value={openingCounted}
+                            />
+                            <input
+                              name="openingDisputeNote"
+                              placeholder="Dispute note"
+                              className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              required
+                              disabled={busy}
+                            />
+                            <button
+                              type="submit"
+                              className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                              disabled={busy}
+                            >
+                              {openingDisputeBusy ? "Sending…" : "Dispute"}
+                            </button>
+                          </Form>
+                        </div>
+
+                        <div className="mt-2 text-xs text-slate-500">
+                          Accept opens the shift. Dispute keeps it locked for manager review.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs text-slate-500">
+                              Expected drawer
+                            </div>
+                            <div className="text-lg font-semibold tabular-nums">
+                              {peso(expectedNow)}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs text-slate-500">
+                              Counted cash
+                            </div>
+                            <div className="text-lg font-semibold tabular-nums">
+                              {peso(Number.isFinite(countedNum) ? countedNum : 0)}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs text-slate-500">Diff</div>
+                            <div
+                              className={[
+                                "text-lg font-semibold tabular-nums",
+                                diffIsZero
+                                  ? "text-slate-700"
+                                  : diff > 0
+                                    ? "text-emerald-700"
+                                    : "text-rose-700",
+                              ].join(" ")}
+                            >
+                              {diff >= 0 ? "+" : ""}
+                              {peso(diff)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {activeShift.status !== "OPEN" ? (
+                          <SoTAlert tone="warning" className="mt-3">
+                            Shift is locked ({activeShift.status}). Submit is available only while the shift is open.
+                          </SoTAlert>
+                        ) : null}
+
+                        {closeBusy ? (
+                          <SoTLoadingState
+                            variant="panel"
+                            className="mt-3"
+                            label="Submitting counted cash"
+                            hint="Locking the cashier count and handing it off for manager audit."
+                          />
+                        ) : null}
+
+                        <Form
+                          method="post"
+                          className="mt-3 space-y-2"
+                          onSubmit={(e) => {
+                            const countedCashInput = e.currentTarget.querySelector<
+                              HTMLInputElement
+                            >('input[name="countedCash"]');
+                            if (countedCashInput) {
+                              countedCashInput.value =
+                                latestCountedCashRef.current;
+                            }
+                          }}
+                        >
+                          <fieldset
+                            disabled={busy || drawerLocked}
+                            className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            <input type="hidden" name="_action" value="close" />
+                            <input
+                              type="hidden"
+                              name="next"
+                              value={next ?? "/cashier"}
+                            />
+                            <input
+                              type="hidden"
+                              name="denomsJson"
+                              value={useDenoms ? denomsJson : ""}
+                            />
+                            <input
+                              type="hidden"
+                              name="countMode"
+                              value={useDenoms ? "denoms" : "manual"}
+                            />
+
+                            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                              <div className="text-sm">
+                                <div className="font-medium text-slate-800">
+                                  Cash count mode
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  Use denominations for a faster count.
+                                </div>
+                              </div>
+                              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={useDenoms}
+                                  onChange={(e) =>
+                                    setUseDenoms(e.target.checked)
+                                  }
+                                  disabled={busy || drawerLocked}
+                                />
+                                Use denoms
+                              </label>
+                            </div>
+
+                            {useDenoms ? (
+                              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                                <div className="mb-2 text-sm font-medium text-slate-800">
+                                  Denomination count
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {DENOMS.map((d) => (
+                                    <label
+                                      key={d.key}
+                                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    >
+                                      <span className="text-slate-700">
+                                        {d.label}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={cashCount[d.key] ?? 0}
+                                        onChange={(e) =>
+                                          setCashCount((prev) => ({
+                                            ...prev,
+                                            [d.key]: safeQty(e.target.value),
+                                          }))
+                                        }
+                                        className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                        aria-label={`Qty for ${d.label}`}
+                                        disabled={busy || drawerLocked}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                                <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+                                  <div className="text-sm text-slate-700">
+                                    Computed total
+                                  </div>
+                                  <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                    {peso(denomsTotal)}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <label className="block text-sm">
+                              <span className="mb-1 block text-slate-700">
+                                Counted cash
+                              </span>
+                              <input
+                                name="countedCash"
+                                value={countedCash}
+                                onChange={(e) =>
+                                  handleCountedCashChange(e.target.value)
+                                }
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                disabled={busy || drawerLocked}
+                              />
+                            </label>
+
+                            <input
+                              name="notes"
+                              placeholder="Notes (optional)"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              disabled={busy || drawerLocked}
+                            />
+
+                            <button
+                              type="submit"
+                              className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                              disabled={
+                                busy ||
+                                drawerLocked ||
+                                activeShift.status !== "OPEN"
+                              }
+                            >
+                              {closeBusy ? "Submitting…" : "Submit count"}
+                            </button>
+
+                            <div className="text-xs text-slate-500">
+                              Manager audits and closes after this count is
+                              submitted.
+                            </div>
+                            {useDenoms ? (
+                              <div className="text-xs text-slate-500">
+                                Typing counted cash switches this form to manual
+                                mode.
+                              </div>
+                            ) : null}
+                          </fieldset>
+                        </Form>
+                      </>
+                    )}
+                  </div>
 
                   {drawer ? (
                     <div className="rounded-2xl border border-slate-200 bg-white">
@@ -969,14 +1309,13 @@ export default function ShiftConsole() {
                           </div>
                           <div className="rounded-xl bg-slate-50 p-3">
                             <div className="text-xs text-slate-500">
-                              In from sales + A/R (cash)
+                              Cash in
                             </div>
                             <div className="text-base font-semibold">
                               {peso(drawer.cashInTotal)}
                             </div>
                             <div className="mt-1 text-[11px] text-slate-500">
-                              Sales {peso(drawer.cashInFromSales)} • A/R{" "}
-                              {peso(drawer.cashInFromAr)}
+                              Sales {peso(drawer.cashInFromSales)} • A/R {peso(drawer.cashInFromAr)}
                             </div>
                           </div>
                           <div className="rounded-xl bg-slate-50 p-3">
@@ -990,27 +1329,14 @@ export default function ShiftConsole() {
                         </div>
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Form
-                            method="post"
-                            className="rounded-2xl border border-slate-200 p-3"
-                          >
+                          <Form method="post" className="rounded-2xl border border-slate-200 p-3">
                             <fieldset
                               disabled={busy || drawerLocked}
                               className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              <input
-                                type="hidden"
-                                name="_action"
-                                value="drawer:deposit"
-                              />
-                              <input
-                                type="hidden"
-                                name="next"
-                                value={next ?? "/cashier"}
-                              />
-                              <div className="mb-2 text-sm font-medium">
-                                Deposit
-                              </div>
+                              <input type="hidden" name="_action" value="drawer:deposit" />
+                              <input type="hidden" name="next" value={next ?? "/cashier"} />
+                              <div className="mb-2 text-sm font-medium">Deposit</div>
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <input
                                   name="amount"
@@ -1030,11 +1356,7 @@ export default function ShiftConsole() {
                                 <button
                                   className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                   disabled={busy || drawerLocked}
-                                  title={
-                                    drawerLocked
-                                      ? "Locked after count submitted"
-                                      : undefined
-                                  }
+                                  title={drawerLocked ? "Locked after count submitted" : undefined}
                                 >
                                   {depositBusy ? "Adding…" : "Add"}
                                 </button>
@@ -1049,27 +1371,14 @@ export default function ShiftConsole() {
                             </fieldset>
                           </Form>
 
-                          <Form
-                            method="post"
-                            className="rounded-2xl border border-slate-200 p-3"
-                          >
+                          <Form method="post" className="rounded-2xl border border-slate-200 p-3">
                             <fieldset
                               disabled={busy || drawerLocked}
                               className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              <input
-                                type="hidden"
-                                name="_action"
-                                value="drawer:withdraw"
-                              />
-                              <input
-                                type="hidden"
-                                name="next"
-                                value={next ?? "/cashier"}
-                              />
-                              <div className="mb-2 text-sm font-medium">
-                                Withdraw
-                              </div>
+                              <input type="hidden" name="_action" value="drawer:withdraw" />
+                              <input type="hidden" name="next" value={next ?? "/cashier"} />
+                              <div className="mb-2 text-sm font-medium">Withdraw</div>
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <input
                                   name="amount"
@@ -1089,11 +1398,7 @@ export default function ShiftConsole() {
                                 <button
                                   className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
                                   disabled={busy || drawerLocked}
-                                  title={
-                                    drawerLocked
-                                      ? "Locked after count submitted"
-                                      : undefined
-                                  }
+                                  title={drawerLocked ? "Locked after count submitted" : undefined}
                                 >
                                   {withdrawBusy ? "Taking…" : "Take"}
                                 </button>
@@ -1106,17 +1411,15 @@ export default function ShiftConsole() {
                                 />
                               ) : null}
                               <div className="mt-2 text-xs text-slate-500">
-                                Withdraw is limited to expected drawer cash.
-                                Over/short is handled at shift close.
+                                Limited to expected drawer cash.
                               </div>
                             </fieldset>
                           </Form>
                         </div>
                         {drawerLocked ? (
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                            Count submitted. Drawer movements are locked while
-                            waiting for manager audit/close.
-                          </div>
+                          <SoTAlert tone="warning">
+                            Drawer movements are locked while waiting for manager audit.
+                          </SoTAlert>
                         ) : null}
                         <div className="rounded-2xl border border-slate-200 p-3">
                           <div className="mb-2 text-sm font-medium text-slate-800">
@@ -1133,18 +1436,13 @@ export default function ShiftConsole() {
                                     {new Date(t.createdAt).toLocaleString()}
                                   </div>
                                   <div className="text-slate-800">
-                                    <span className="font-medium">
-                                      {t.type}
-                                    </span>
+                                    <span className="font-medium">{t.type}</span>
                                     {t.note ? (
-                                      <span className="text-slate-500">
-                                        {" "}
-                                        • {t.note}
-                                      </span>
+                                      <span className="text-slate-500"> • {t.note}</span>
                                     ) : null}
                                   </div>
                                 </div>
-                                <div className="text-right tabular-nums font-medium">
+                                <div className="text-right font-medium tabular-nums">
                                   {peso(t.amount)}
                                 </div>
                               </li>
@@ -1160,344 +1458,54 @@ export default function ShiftConsole() {
                     </div>
                   ) : null}
                 </div>
-                {/* RIGHT */}
+
                 <div className="lg:col-span-5 space-y-4">
-                  {openingPending ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="mb-2 text-sm font-medium text-slate-800">
-                        Verify opening float
+                  {totals ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white">
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <div className="text-sm font-medium text-slate-800">
+                          Running totals
+                        </div>
                       </div>
-                      <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
-                        Manager opened this shift. Please recount the opening
-                        float before cashiering.
-                      </div>
-
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                      <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
                         <div className="rounded-xl bg-slate-50 p-3">
                           <div className="text-xs text-slate-500">
-                            Manager opening float
+                            Booked revenue
                           </div>
-                          <div className="text-lg font-semibold tabular-nums">
-                            {peso(Number(activeShift.openingFloat ?? 0))}
+                          <div className="text-lg font-semibold">
+                            {peso(totals.grandAmount)}
                           </div>
                         </div>
                         <div className="rounded-xl bg-slate-50 p-3">
                           <div className="text-xs text-slate-500">
-                            Your counted opening
+                            Cash drawer in
                           </div>
-                          <div className="text-lg font-semibold tabular-nums">
-                            {peso(r2(Number(openingCounted || 0)))}
+                          <div className="text-lg font-semibold">
+                            {peso(totals.cashDrawerIn)}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Sales {peso(totals.cashSalesIn)} • A/R {peso(totals.arCashIn)}
                           </div>
                         </div>
-                      </div>
-
-                      {openingBusy ? (
-                        <SoTLoadingState
-                          variant="panel"
-                          className="mt-3"
-                          label={
-                            openingAcceptBusy
-                              ? "Accepting opening float"
-                              : "Sending opening dispute"
-                          }
-                          hint={
-                            openingAcceptBusy
-                              ? "Starting the shift and unlocking cashier actions."
-                              : "Locking the shift while the manager reviews the recount."
-                          }
-                        />
-                      ) : null}
-
-                      <label className="mt-3 block text-sm">
-                        <span className="block text-slate-700 mb-1">
-                          Enter counted opening float
-                        </span>
-                        <input
-                          value={openingCounted}
-                          onChange={(e) => setOpeningCounted(e.target.value)}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          disabled={busy}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        />
-                      </label>
-
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <Form
-                          method="post"
-                        >
-                          <input
-                            type="hidden"
-                            name="_action"
-                            value="opening:accept"
-                          />
-                          <input
-                            type="hidden"
-                            name="next"
-                            value={next ?? "/cashier"}
-                          />
-                          <input
-                            type="hidden"
-                            name="openingCounted"
-                            value={openingCounted}
-                          />
-                          <button
-                            type="submit"
-                            className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={busy}
-                          >
-                            {openingAcceptBusy ? "Saving…" : "Accept & Open"}
-                          </button>
-                        </Form>
-
-                        <Form
-                          method="post"
-                        >
-                          <input
-                            type="hidden"
-                            name="_action"
-                            value="opening:dispute"
-                          />
-                          <input
-                            type="hidden"
-                            name="next"
-                            value={next ?? "/cashier"}
-                          />
-                          <input
-                            type="hidden"
-                            name="openingCounted"
-                            value={openingCounted}
-                          />
-
-                          <input
-                            name="openingDisputeNote"
-                            placeholder="Dispute note (required)"
-                            className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                            required
-                            disabled={busy}
-                          />
-
-                          <button
-                            type="submit"
-                            className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={busy}
-                          >
-                            {openingDisputeBusy ? "Sending…" : "Dispute"}
-                          </button>
-                        </Form>
-                      </div>
-
-                      <div className="mt-2 text-xs text-slate-500">
-                        Accept = shift becomes OPEN (money routes writable).
-                        Dispute = shift becomes OPENING_DISPUTED (locked;
-                        manager must resolve).
+                        <div className="sm:col-span-2">
+                          <div className="mb-2 text-xs text-slate-500">
+                            By method
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {totals.byMethod.map((m) => (
+                              <div
+                                key={m.method}
+                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                              >
+                                <span className="text-slate-700">{m.method}</span>
+                                <span className="font-medium">{peso(m.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="mb-2 text-sm font-medium text-slate-800">
-                        Submit counted cash
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <div className="text-xs text-slate-500">
-                            Expected drawer
-                          </div>
-                          <div className="text-lg font-semibold tabular-nums">
-                            {peso(expectedNow)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <div className="text-xs text-slate-500">
-                            Counted cash
-                          </div>
-                          <div className="text-lg font-semibold tabular-nums">
-                            {peso(Number.isFinite(countedNum) ? countedNum : 0)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <div className="text-xs text-slate-500">Diff</div>
-                          <div
-                            className={[
-                              "text-lg font-semibold tabular-nums",
-                              diffIsZero
-                                ? "text-slate-700"
-                                : diff > 0
-                                ? "text-emerald-700"
-                                : "text-rose-700",
-                            ].join(" ")}
-                          >
-                            {diff >= 0 ? "+" : ""}
-                            {peso(diff)}
-                          </div>
-                        </div>
-                      </div>
-
-                      {activeShift.status !== "OPEN" ? (
-                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                          Shift is locked ({activeShift.status}). You can’t
-                          submit the closing count until it’s OPEN.
-                        </div>
-                      ) : null}
-
-                      {closeBusy ? (
-                        <SoTLoadingState
-                          variant="panel"
-                          className="mt-3"
-                          label="Submitting counted cash"
-                          hint="Locking the cashier count and handing it off for manager audit."
-                        />
-                      ) : null}
-
-                      <Form
-                        method="post"
-                        className="mt-3 space-y-2"
-                        onSubmit={(e) => {
-                          const countedCashInput = e.currentTarget.querySelector<
-                            HTMLInputElement
-                          >('input[name="countedCash"]');
-                          if (countedCashInput) {
-                            countedCashInput.value = latestCountedCashRef.current;
-                          }
-                        }}
-                      >
-                        <fieldset
-                          disabled={busy || drawerLocked}
-                          className="space-y-2 disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          <input type="hidden" name="_action" value="close" />
-                          <input
-                            type="hidden"
-                            name="next"
-                            value={next ?? "/cashier"}
-                          />
-                          <input
-                            type="hidden"
-                            name="denomsJson"
-                            value={useDenoms ? denomsJson : ""}
-                          />
-                          <input
-                            type="hidden"
-                            name="countMode"
-                            value={useDenoms ? "denoms" : "manual"}
-                          />
-
-                          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            <div className="text-sm">
-                              <div className="font-medium text-slate-800">
-                                Cash count mode
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                Use denominations for faster, audit-safe count.
-                              </div>
-                            </div>
-                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={useDenoms}
-                                onChange={(e) => setUseDenoms(e.target.checked)}
-                                disabled={busy || drawerLocked}
-                              />
-                              Use denoms
-                            </label>
-                          </div>
-
-                          {useDenoms ? (
-                            <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                              <div className="mb-2 text-sm font-medium text-slate-800">
-                                Denomination count
-                              </div>
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                {DENOMS.map((d) => (
-                                  <label
-                                    key={d.key}
-                                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                                  >
-                                    <span className="text-slate-700">
-                                      {d.label}
-                                    </span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      value={cashCount[d.key] ?? 0}
-                                      onChange={(e) =>
-                                        setCashCount((prev) => ({
-                                          ...prev,
-                                          [d.key]: safeQty(e.target.value),
-                                        }))
-                                      }
-                                      className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                      aria-label={`Qty for ${d.label}`}
-                                      disabled={busy || drawerLocked}
-                                    />
-                                  </label>
-                                ))}
-                              </div>
-                              <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                                <div className="text-sm text-slate-700">
-                                  Computed total
-                                </div>
-                                <div className="text-sm font-semibold tabular-nums text-slate-900">
-                                  {peso(denomsTotal)}
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          <label className="block text-sm">
-                            <span className="block text-slate-700 mb-1">
-                              Enter counted cash
-                            </span>
-                            <input
-                              name="countedCash"
-                              value={countedCash}
-                              onChange={(e) =>
-                                handleCountedCashChange(e.target.value)
-                              }
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              required
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                              disabled={busy || drawerLocked}
-                            />
-                          </label>
-
-                          <input
-                            name="notes"
-                            placeholder="Notes (optional)"
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                            disabled={busy || drawerLocked}
-                          />
-
-                          <button
-                            type="submit"
-                            className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50"
-                            disabled={
-                              busy || drawerLocked || activeShift.status !== "OPEN"
-                            }
-                          >
-                            {closeBusy ? "Submitting…" : "Submit count"}
-                          </button>
-
-                          <div className="text-xs text-slate-500">
-                            Expected is system cash; counted is physical cash.
-                            Cashier submits once; manager recounts and final-closes
-                            in <code>/store/cashier-shifts</code>.
-                          </div>
-                          {useDenoms ? (
-                            <div className="text-xs text-slate-500">
-                              Typing counted cash switches this form to manual
-                              mode and stops using the denomination breakdown.
-                            </div>
-                          ) : null}
-                        </fieldset>
-                      </Form>
-                    </div>
-                  )}
+                  ) : null}
 
                   {paymentsRecent && paymentsRecent.length > 0 ? (
                     <div className="rounded-2xl border border-slate-200 bg-white">

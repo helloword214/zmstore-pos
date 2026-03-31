@@ -277,19 +277,28 @@ export default function StoreClearanceInbox() {
           Manager decision layer only; no remit posting is allowed on this page.
         </SoTAlert>
         {counts.openingBalanceTotal > 0 ? (
-          <SoTAlert tone="warning">
-            There are {counts.openingBalanceTotal} pending opening balance case(s) across {counts.openingBatchTotal} batch(es).
-            {" "}
-            Process them in
-            {" "}
-            <Link
-              to="/store/clearance-opening-batches"
-              className="font-medium text-amber-900 underline"
-            >
-              Opening Balance Clearance Batches
-            </Link>
-            .
-          </SoTAlert>
+          <SoTCard className="border border-amber-200 bg-amber-50/60 px-4 py-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">
+                  Linked Lane
+                </p>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Opening Balance Batches
+                </h2>
+                <p className="text-sm text-slate-700">
+                  {counts.openingBalanceTotal} pending case(s) across{" "}
+                  {counts.openingBatchTotal} batch(es).
+                </p>
+              </div>
+              <Link
+                to="/store/clearance-opening-batches"
+                className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 shadow-sm transition hover:bg-amber-100"
+              >
+                Open Batch Lane
+              </Link>
+            </div>
+          </SoTCard>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">

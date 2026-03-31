@@ -364,16 +364,16 @@ export default function StoreRiderVariancesPage() {
   const isHistory = tab === "history";
   const pageTitle =
     tab === "open"
-      ? "Open (needs decision)"
+      ? "Open Variances"
       : tab === "awaiting"
-      ? "Waiting rider acceptance"
-      : "History (cleared)";
+      ? "Awaiting Rider Acceptance"
+      : "Variance History";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Rider Variances"
-        subtitle="Review shortages/overages before cashier can finalize settlement."
+        subtitle="Review rider shortages and overages before settlement closes."
         backTo="/store"
         backLabel="Dashboard"
       />
@@ -436,7 +436,11 @@ export default function StoreRiderVariancesPage() {
                     </Link>
                   </div>
                 }
-                right={<div className="text-xs text-slate-500">{rows.length} item(s)</div>}
+                right={
+                  <div className="text-xs text-slate-500">
+                    Showing {rows.length} item(s)
+                  </div>
+                }
               />
             </div>
           </div>
@@ -450,20 +454,20 @@ export default function StoreRiderVariancesPage() {
                 <SoTTh align="right">Expected</SoTTh>
                 <SoTTh align="right">Actual</SoTTh>
                 <SoTTh align="right">Variance</SoTTh>
-                <SoTTh>{isHistory ? "Details" : "Decision"}</SoTTh>
+                <SoTTh>{isHistory ? "Evidence" : "Review"}</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow
-                  colSpan={7}
-                  message={
-                    <SoTEmptyState
-                      title="No variances to review."
-                      hint="New rider variance items will appear here."
+                    <SoTTableEmptyRow
+                      colSpan={7}
+                      message={
+                        <SoTEmptyState
+                          title="No variances to review."
+                          hint="New rider variance records will appear here."
+                        />
+                      }
                     />
-                  }
-                />
               ) : (
                 rows.map((v) => (
                   (() => {
@@ -476,16 +480,16 @@ export default function StoreRiderVariancesPage() {
                       <SoTTableRow key={v.id}>
                         <SoTTd>
                           <div className="font-mono text-slate-800">{v.run.runCode}</div>
-                          <div className="text-[11px] text-slate-500">ref #{v.id}</div>
+                          <div className="text-[11px] text-slate-500">
+                            Variance #{v.id}
+                          </div>
                           {v.receipt ? (
                             <div className="mt-1 text-[11px] text-slate-500">
-                              <SoTStatusBadge tone="info">
-                                AUTO · {v.receipt.kind} · {v.receipt.receiptKey}
-                              </SoTStatusBadge>
+                              Auto receipt · {v.receipt.kind} · {v.receipt.receiptKey}
                             </div>
                           ) : (
                             <div className="mt-1 text-[11px] text-slate-400">
-                              no receipt link
+                              No receipt link
                             </div>
                           )}
                           <div className="mt-1 text-[11px] text-slate-500">
@@ -499,9 +503,17 @@ export default function StoreRiderVariancesPage() {
                           </SoTStatusBadge>
                           {v.resolution ? (
                             <div className="mt-1 text-[11px] text-slate-500">
-                              resolution: <span className="font-medium">{v.resolution}</span>
+                              {v.resolution}
                             </div>
                           ) : null}
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Manager review{" "}
+                            <span className="font-medium">
+                              {v.managerApprovedAt
+                                ? new Date(v.managerApprovedAt).toLocaleString()
+                                : "Pending"}
+                            </span>
+                          </div>
                         </SoTTd>
                         <SoTTd align="right" className="tabular-nums">
                           {peso(v.expected)}
@@ -522,9 +534,6 @@ export default function StoreRiderVariancesPage() {
                           {isHistory ? (
                             <div className="space-y-1 text-[11px] text-slate-600">
                               <div>
-                                Note: <span className="font-medium">{v.note ?? "—"}</span>
-                              </div>
-                              <div>
                                 Manager approved:{" "}
                                 <span className="font-medium">
                                   {v.managerApprovedAt
@@ -540,6 +549,11 @@ export default function StoreRiderVariancesPage() {
                                     : "—"}
                                 </span>
                               </div>
+                              {v.note ? (
+                                <div>
+                                  Note: <span className="font-medium">{v.note}</span>
+                                </div>
+                              ) : null}
                             </div>
                           ) : tab === "awaiting" ? (
                             <div className="space-y-2">
@@ -550,11 +564,13 @@ export default function StoreRiderVariancesPage() {
                                 className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-1"
                                 to={`/rider/variance/${v.id}`}
                               >
-                                View rider page →
+                                Open Rider Review
                               </Link>
-                              <div className="text-[11px] text-slate-500">
-                                Note: {v.note ?? "—"}
-                              </div>
+                              {v.note ? (
+                                <div className="text-[11px] text-slate-500">
+                                  Note: {v.note}
+                                </div>
+                              ) : null}
                             </div>
                           ) : (
                             <Form method="post" className="flex flex-col gap-2">
@@ -574,11 +590,11 @@ export default function StoreRiderVariancesPage() {
                                       value: "",
                                     },
                                     {
-                                      label: "Charge rider (needs rider accept)",
+                                      label: "Charge rider",
                                       value: "CHARGE_RIDER",
                                     },
                                     {
-                                      label: "Info only (no rider accept)",
+                                      label: "Info only",
                                       value: "INFO_ONLY",
                                     },
                                     { label: "Waive", value: "WAIVE" },
@@ -586,7 +602,7 @@ export default function StoreRiderVariancesPage() {
                                 />
                                 <input
                                   name="note"
-                                  placeholder="Optional note"
+                                  placeholder="Decision note"
                                   defaultValue={v.note ?? ""}
                                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                                 />
@@ -594,7 +610,7 @@ export default function StoreRiderVariancesPage() {
                                   <SoTLoadingState
                                     variant="inline"
                                     label="Saving variance decision"
-                                    hint="Refreshing the review queue."
+                                    hint="Refreshing the queue."
                                   />
                                 ) : null}
                                 <SoTButton
@@ -604,7 +620,7 @@ export default function StoreRiderVariancesPage() {
                                   variant="primary"
                                   disabled={rowBusy}
                                 >
-                                  {rowBusy ? "Saving…" : "Save decision"}
+                                  {rowBusy ? "Saving…" : "Save Review"}
                                 </SoTButton>
                               </fieldset>
                             </Form>

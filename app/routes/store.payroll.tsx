@@ -681,6 +681,10 @@ export default function StorePayrollPage() {
   const finalizeBlockedByAttendance = hasAttendanceBackedLineGap;
   const finalizeBlocked =
     finalizeBlockedByAttendance || unresolvedCashierCharges.length > 0;
+  const unresolvedChargeTotal = unresolvedCashierCharges.reduce(
+    (sum, charge) => sum + charge.remaining,
+    0,
+  );
   const payrollAttendanceGuardMessage = selectedRun
     ? selectedRun.attendanceBackedLineCount === 0
       ? selectedRun.status === PAYROLL_RUN_STATUS.DRAFT
@@ -695,7 +699,7 @@ export default function StorePayrollPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Payroll Runs"
-        subtitle="Review attendance-backed daily pay, include employee statutory deductions when policy enables them, apply tagged charge deductions, and freeze payroll snapshots per cutoff."
+        subtitle="Build attendance-backed payroll drafts, review deductions, and finalize cutoff snapshots."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
@@ -717,17 +721,23 @@ export default function StorePayrollPage() {
 
         {unresolvedCashierCharges.length > 0 ? (
           <SoTCard tone="warning" className="space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Cashier identity blocker
-              </h2>
-              <p className="text-xs text-slate-600">
-                Payroll finalization is blocked while payroll-tagged cashier charges
-                still point to users without linked employee records.
-              </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Cashier identity blocker
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Link these payroll-tagged cashier charges to employee records
+                  before finalizing payroll.
+                </p>
+              </div>
+              <div className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-medium text-amber-900">
+                {unresolvedCashierCharges.length} item(s) •{" "}
+                {peso(unresolvedChargeTotal)}
+              </div>
             </div>
             <div className="grid gap-2">
-              {unresolvedCashierCharges.slice(0, 4).map((charge) => (
+              {unresolvedCashierCharges.slice(0, 3).map((charge) => (
                 <div
                   key={charge.chargeId}
                   className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700"
@@ -745,7 +755,7 @@ export default function StorePayrollPage() {
           <SoTCard tone="warning" className="space-y-2">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
-                Attendance-backed payroll guard
+                Attendance guard
               </h2>
               <p className="text-xs text-slate-600">{payrollAttendanceGuardMessage}</p>
             </div>
@@ -759,7 +769,7 @@ export default function StorePayrollPage() {
                 Create payroll draft
               </h2>
               <p className="text-xs text-slate-500">
-                Suggested range follows the current company payroll policy.
+                Suggested dates follow the active company payroll policy.
                 {suggestedDraft.payFrequency
                   ? ` Current pay frequency: ${suggestedDraft.payFrequency}.`
                   : ""}
@@ -819,7 +829,7 @@ export default function StorePayrollPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Payroll run library</h2>
             <p className="text-xs text-slate-500">
-              Open a draft to rebuild lines, review payroll, apply deductions, and finalize.
+              Open a run to rebuild lines, review deductions, and finalize.
             </p>
           </div>
 
@@ -898,7 +908,7 @@ export default function StorePayrollPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    Selected payroll run
+                    Run workbench
                   </h2>
                   <p className="text-xs text-slate-500">
                     {formatDateLabel(selectedRun.periodStart)} to{" "}
@@ -976,15 +986,13 @@ export default function StorePayrollPage() {
               </div>
               {selectedRun.status === PAYROLL_RUN_STATUS.DRAFT && finalizeBlocked ? (
                 <p className="text-xs text-amber-700">
-                  Finalization stays disabled until this run has attendance-backed
-                  payroll lines only.
+                  Finalize stays disabled until every payroll line is attendance-backed.
                 </p>
               ) : null}
               {selectedRun.status === PAYROLL_RUN_STATUS.FINALIZED &&
               finalizeBlockedByAttendance ? (
                 <p className="text-xs text-amber-700">
-                  Paid-state updates stay disabled until the run is corrected into an
-                  attendance-backed payroll snapshot.
+                  Mark paid stays disabled until this run is attendance-backed only.
                 </p>
               ) : null}
 
@@ -1006,7 +1014,7 @@ export default function StorePayrollPage() {
                       Payroll lines
                     </h2>
                     <p className="text-xs text-slate-500">
-                      Review base pay, additions, deductions, and final net pay per employee.
+                      Review base pay, additions, deductions, and net pay per employee.
                     </p>
                   </div>
 
@@ -1086,7 +1094,7 @@ export default function StorePayrollPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h2 className="text-sm font-semibold text-slate-900">
-                            Selected employee
+                            Employee detail
                           </h2>
                           <p className="text-xs text-slate-500">
                             {selectedLine.employeeLabel} · {selectedLine.employeeRole}
@@ -1123,8 +1131,8 @@ export default function StorePayrollPage() {
                             Manager override
                           </h2>
                           <p className="text-xs text-slate-500">
-                            Override sick-leave treatment, premiums, or attendance
-                            incentive for this employee before finalization.
+                            Adjust leave treatment, premiums, or attendance incentive
+                            before finalization.
                           </p>
                         </div>
 
@@ -1240,15 +1248,31 @@ export default function StorePayrollPage() {
                           Deduction review
                         </h2>
                         <p className="text-xs text-slate-500">
-                          Policy-driven government deductions:{" "}
-                          {peso(selectedLine.statutoryDeductionAmount)}.{" "}
-                          Current open payroll-tagged charges:{" "}
-                          {peso(selectedChargeSummary.totalRemaining)} across{" "}
-                          {selectedChargeSummary.itemCount} item(s).
+                          Review statutory totals and open payroll-tagged charges
+                          for this employee.
                         </p>
                       </div>
 
-                      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                      <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 md:grid-cols-2">
+                        <div>
+                          Government deductions:{" "}
+                          {peso(selectedLine.statutoryDeductionAmount)}
+                        </div>
+                        <div>
+                          Open tagged charges:{" "}
+                          {peso(selectedChargeSummary.totalRemaining)} across{" "}
+                          {selectedChargeSummary.itemCount} item(s)
+                        </div>
+                        <div>
+                          Charge deductions in run:{" "}
+                          {peso(selectedLine.chargeDeductionAmount)}
+                        </div>
+                        <div>
+                          Last deduction update:{" "}
+                          {formatDateTimeLabel(
+                            selectedLine.deductionSnapshot.lastAppliedAt,
+                          )}
+                        </div>
                         <div>
                           SSS:{" "}
                           {peso(selectedLine.statutoryDeductionSnapshot.sssAmount)}
@@ -1262,16 +1286,6 @@ export default function StorePayrollPage() {
                         <div>
                           Pag-IBIG:{" "}
                           {peso(selectedLine.statutoryDeductionSnapshot.pagIbigAmount)}
-                        </div>
-                        <div>
-                          Charge deductions applied in this run:{" "}
-                          {peso(selectedLine.chargeDeductionAmount)}
-                        </div>
-                        <div>
-                          Last charge deduction at:{" "}
-                          {formatDateTimeLabel(
-                            selectedLine.deductionSnapshot.lastAppliedAt,
-                          )}
                         </div>
                       </div>
 
@@ -1413,7 +1427,7 @@ export default function StorePayrollPage() {
                           Attendance facts used in this run
                         </h2>
                         <p className="text-xs text-slate-500">
-                          These are the frozen attendance inputs payroll computed from.
+                          Frozen attendance inputs used to compute this run.
                         </p>
                       </div>
 
@@ -1506,11 +1520,11 @@ function MetricCard({
         : "border-sky-200 bg-sky-50/40";
 
   return (
-    <div className={`rounded-2xl border p-3 shadow-sm ${toneClass}`}>
+    <div className={`rounded-xl border bg-white p-3 ${toneClass}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
         {label}
       </div>
-      <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
+      <div className="mt-1 text-base font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

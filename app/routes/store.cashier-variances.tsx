@@ -296,13 +296,13 @@ export default function StoreCashierVariancesPage() {
   };
 
   const isHistory = tab === "history";
-  const pageTitle = isHistory ? "History (resolved)" : "Open (read-only queue)";
+  const pageTitle = isHistory ? "Variance History" : "Open Variances";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier Shift Variances"
-        subtitle="Manager audit for shift close counts (cash drawer only)."
+        subtitle="Review close-count mismatches from cashier shifts."
         backTo="/store"
         backLabel="Dashboard"
       />
@@ -315,8 +315,7 @@ export default function StoreCashierVariancesPage() {
                 {pageTitle}
               </div>
               <div className="text-xs text-slate-500">
-                Manager decision is captured during final close in{" "}
-                <code>/store/cashier-shifts</code>.
+                Final close still happens in Shift Manager.
               </div>
               <SoTActionBar
                 className="mb-0"
@@ -354,7 +353,11 @@ export default function StoreCashierVariancesPage() {
                     </Link>
                   </div>
                 }
-                right={<div className="text-xs text-slate-500">{rows.length} item(s)</div>}
+                right={
+                  <div className="text-xs text-slate-500">
+                    Showing {rows.length} item(s)
+                  </div>
+                }
               />
             </div>
           </div>
@@ -368,20 +371,20 @@ export default function StoreCashierVariancesPage() {
                 <SoTTh align="right">Expected</SoTTh>
                 <SoTTh align="right">Counted</SoTTh>
                 <SoTTh align="right">Diff</SoTTh>
-                <SoTTh>Details</SoTTh>
+                <SoTTh>Evidence</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow
-                  colSpan={7}
-                  message={
-                    <SoTEmptyState
-                      title="No cashier shift variances."
-                      hint="Open or resolved variance records will appear here."
+                    <SoTTableEmptyRow
+                      colSpan={7}
+                      message={
+                        <SoTEmptyState
+                          title="No cashier shift variances."
+                          hint="Open and resolved close-count records will appear here."
+                        />
+                      }
                     />
-                  }
-                />
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
@@ -403,8 +406,8 @@ export default function StoreCashierVariancesPage() {
                           {new Date(v.shift.openedAt).toLocaleString()}
                         </div>
                         <div className="text-[11px] text-slate-500">
-                          shift <span className="font-mono">#{v.shift.id}</span>{" "}
-                          • var <span className="font-mono">#{v.id}</span>
+                          Shift <span className="font-mono">#{v.shift.id}</span>{" "}
+                          • Variance <span className="font-mono">#{v.id}</span>
                           {v.shift.deviceId ? (
                             <>
                               {" "}
@@ -415,11 +418,11 @@ export default function StoreCashierVariancesPage() {
                         </div>
                         {v.shift.closedAt ? (
                           <div className="mt-1 text-[11px] text-slate-500">
-                            closed: {new Date(v.shift.closedAt).toLocaleString()}
+                            Closed {new Date(v.shift.closedAt).toLocaleString()}
                           </div>
                         ) : (
                           <div className="mt-1 text-[11px] text-amber-700">
-                            shift not closed? (check data)
+                            Shift record still open
                           </div>
                         )}
                       </SoTTd>
@@ -437,10 +440,17 @@ export default function StoreCashierVariancesPage() {
                         </SoTStatusBadge>
                         {v.resolution ? (
                           <div className="mt-1 text-[11px] text-slate-500">
-                            resolution:{" "}
-                            <span className="font-medium">{v.resolution}</span>
+                            {v.resolution}
                           </div>
                         ) : null}
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          Manager review{" "}
+                          <span className="font-medium">
+                            {v.managerApprovedAt
+                              ? new Date(v.managerApprovedAt).toLocaleString()
+                              : "Pending"}
+                          </span>
+                        </div>
                       </SoTTd>
 
                       <SoTTd align="right" className="tabular-nums">
@@ -464,24 +474,23 @@ export default function StoreCashierVariancesPage() {
                       <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                            View denoms / notes
+                            Open evidence
                           </summary>
-                          <div className="mt-3 space-y-3">
+                          <div className="mt-3 space-y-3 text-[11px] text-slate-600">
                             <DenomsTable denoms={v.shift.closingDenoms} />
-
-                            <div className="text-[11px] text-slate-600">
-                              Cashier note:{" "}
-                              <span className="font-medium">{v.note ?? "—"}</span>
-                            </div>
-                            <div className="space-y-1 text-[11px] text-slate-600">
+                            {v.note ? (
                               <div>
-                                Manager approved:{" "}
-                                <span className="font-medium">
-                                  {v.managerApprovedAt
-                                    ? new Date(v.managerApprovedAt).toLocaleString()
-                                    : "—"}
-                                </span>
+                                Cashier note:{" "}
+                                <span className="font-medium">{v.note}</span>
                               </div>
+                            ) : null}
+                            <div>
+                              Manager review:{" "}
+                              <span className="font-medium">
+                                {v.managerApprovedAt
+                                  ? new Date(v.managerApprovedAt).toLocaleString()
+                                  : "Pending"}
+                              </span>
                             </div>
                           </div>
                         </details>

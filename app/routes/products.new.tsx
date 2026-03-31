@@ -20,7 +20,7 @@ export default function ProductCreateRoute() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="New Product"
-        subtitle="Dedicated create route with parity-safe product encode behavior."
+        subtitle="Create a catalog product."
         backTo="/products"
         backLabel="Product List"
         maxWidthClassName="max-w-5xl"

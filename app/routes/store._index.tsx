@@ -26,10 +26,6 @@ const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 const CLEARANCE_CASE_STATUS = {
   NEEDS_CLEARANCE: "NEEDS_CLEARANCE",
 } as const;
-const WORKER_SCHEDULE_ENTRY_TYPE = {
-  WORK: "WORK",
-} as const;
-
 type LoaderData = {
   me: {
     id: number;
@@ -203,7 +199,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     db.workerSchedule.count({
       where: {
-        entryType: WORKER_SCHEDULE_ENTRY_TYPE.WORK,
         scheduleDate: todayStart,
         status: { not: "CANCELLED" },
       },
@@ -215,7 +210,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     db.workerSchedule.count({
       where: {
-        entryType: WORKER_SCHEDULE_ENTRY_TYPE.WORK,
         scheduleDate: {
           gte: todayStart,
           lte: planningWindowEnd,

@@ -1,9 +1,11 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useLoaderData } from "@remix-run/react";
+import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
 import {
   SoTTable,
   SoTTableEmptyRow,
@@ -125,19 +127,72 @@ const peso = (n: number) =>
 
 export default function ARIndexPage() {
   const { q, rows } = useLoaderData<typeof loader>();
+  const totalOpenBalance = rows.reduce((sum, row) => sum + row.balance, 0);
+  const overdueCount = rows.filter((row) => {
+    if (!row.nextDue) return false;
+    return new Date(row.nextDue).getTime() < Date.now();
+  }).length;
+  const searchActive = q.trim().length > 0;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Accounts Receivable"
-        subtitle="SoT: customerAr open balances only"
+        subtitle="Customers with open receivable balance ready for review."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-5xl"
       />
 
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SoTCard compact>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Customers
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {rows.length}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Accounts with open balance
+            </div>
+          </SoTCard>
+          <SoTCard compact tone={totalOpenBalance > 0 ? "info" : "default"}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Open Balance
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {peso(totalOpenBalance)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Visible receivable total
+            </div>
+          </SoTCard>
+          <SoTCard compact tone={overdueCount > 0 ? "warning" : "default"}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Past Due
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {overdueCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Customers with overdue balance
+            </div>
+          </SoTCard>
+          <SoTCard compact tone={searchActive ? "success" : "default"}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Search
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {searchActive ? "Filtered" : "All"}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              {searchActive ? q : "No active query"}
+            </div>
+          </SoTCard>
+        </div>
+
+        <SoTCard compact className="mb-3">
           <Form method="get" className="flex flex-wrap items-center gap-2">
             <SoTFormField label="Search" className="min-w-[260px] flex-1">
               <input
@@ -153,25 +208,34 @@ export default function ARIndexPage() {
               </SoTButton>
             </div>
           </Form>
-        </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <SoTStatusBadge tone="neutral">{rows.length} visible</SoTStatusBadge>
+            {searchActive ? (
+              <Link to="/ar" className="text-indigo-700 hover:text-indigo-800">
+                Clear search
+              </Link>
+            ) : null}
+          </div>
+        </SoTCard>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Customers with Open Approved Balance
+            AR Inbox
           </div>
 
           <SoTTable>
             <SoTTableHead>
               <tr>
                 <SoTTh>Customer</SoTTh>
-                <SoTTh>Meta</SoTTh>
+                <SoTTh>Open Entries</SoTTh>
+                <SoTTh>Next Due</SoTTh>
                 <SoTTh align="right">Balance</SoTTh>
                 <SoTTh align="right"></SoTTh>
               </tr>
             </SoTTableHead>
             <tbody>
               {rows.length === 0 ? (
-                <SoTTableEmptyRow colSpan={4} message="No open balances." />
+                <SoTTableEmptyRow colSpan={5} message="No open balances." />
               ) : (
                 rows.map((r) => (
                   <SoTTableRow key={r.customerId}>
@@ -180,13 +244,23 @@ export default function ARIndexPage() {
                         {r.name}
                         {r.alias ? <span className="text-slate-500"> ({r.alias})</span> : null}
                       </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {r.phone ?? "No phone"}
+                      </div>
                     </SoTTd>
-                    <SoTTd className="text-xs text-slate-500">
-                      {r.phone ?? "—"} • {r.openEntries} open A/R entr
-                      {r.openEntries === 1 ? "y" : "ies"}
+                    <SoTTd className="text-sm text-slate-700">
+                      {r.openEntries} open entr{r.openEntries === 1 ? "y" : "ies"}
+                    </SoTTd>
+                    <SoTTd className="text-sm text-slate-700">
                       {r.nextDue
-                        ? ` • due ${new Date(r.nextDue).toLocaleDateString()}`
-                        : ""}
+                        ? new Date(r.nextDue).toLocaleDateString()
+                        : "No due date"}
+                      {r.nextDue &&
+                      new Date(r.nextDue).getTime() < Date.now() ? (
+                        <div className="mt-1">
+                          <SoTStatusBadge tone="warning">Past due</SoTStatusBadge>
+                        </div>
+                      ) : null}
                     </SoTTd>
                     <SoTTd align="right" className="font-semibold tabular-nums text-slate-900">
                       {peso(r.balance)}

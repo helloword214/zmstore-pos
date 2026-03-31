@@ -381,6 +381,11 @@ function peso(n: number) {
 export default function ShiftHistory() {
   const { role, shifts, filters, cashiers } = useLoaderData<LoaderData>();
   const [params] = useSearchParams();
+  const openCount = shifts.filter((shift) => shift.status !== "FINAL_CLOSED").length;
+  const countedCount = shifts.filter((shift) => shift.closingTotal != null).length;
+  const disputedCount = shifts.filter(
+    (shift) => shift.status === "OPENING_DISPUTED",
+  ).length;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -392,8 +397,8 @@ export default function ShiftHistory() {
             </h1>
             <p className="text-sm text-slate-600">
               {role === "ADMIN"
-                ? "Audit cashier shifts and drawer balances."
-                : "Review your shifts and drawer balances."}
+                ? "Review cashier shifts and drawer summaries."
+                : "Review your shift and drawer summaries."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -411,10 +416,26 @@ export default function ShiftHistory() {
             </Link>
           </div>
         </div>
+        <div className="mb-4 flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Results <span className="font-semibold text-slate-900">{shifts.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Open <span className="font-semibold text-slate-900">{openCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Counted{" "}
+            <span className="font-semibold text-slate-900">{countedCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Opening dispute{" "}
+            <span className="font-semibold text-slate-900">{disputedCount}</span>
+          </span>
+        </div>
         {/* Filters */}
         <Form
           method="get"
-          className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-5"
+          className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-5"
         >
           <div className="text-sm">
             <SelectInput
@@ -462,7 +483,7 @@ export default function ShiftHistory() {
           ) : (
             <div className="hidden md:block" />
           )}
-          <div className="md:col-span-5">
+          <div className="flex flex-wrap items-center gap-3 md:col-span-5">
             <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
               Apply Filters
             </button>
@@ -485,11 +506,10 @@ export default function ShiftHistory() {
                 <th className="px-4 py-3">Shift</th>
                 <th className="px-4 py-3">Cashier</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Cash In (Sales + A/R)</th>
-                <th className="px-4 py-3 text-right">Bridge</th>
-                <th className="px-4 py-3 text-right">Moves</th>
+                <th className="px-4 py-3 text-right">Cash In</th>
+                <th className="px-4 py-3 text-right">Drawer Activity</th>
                 <th className="px-4 py-3 text-right">Expected Drawer</th>
-                <th className="px-4 py-3 text-right">Counted / Diff</th>
+                <th className="px-4 py-3 text-right">Counted</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -527,7 +547,7 @@ export default function ShiftHistory() {
                               PENDING ACCEPT
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Waiting cashier opening verification
+                              Waiting opening check
                             </div>
                           </div>
                         );
@@ -539,7 +559,7 @@ export default function ShiftHistory() {
                               OPENING DISPUTED
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Opening float dispute; manager action required
+                              Opening mismatch
                             </div>
                           </div>
                         );
@@ -551,7 +571,7 @@ export default function ShiftHistory() {
                               SUBMITTED
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Waiting for manager close
+                              Waiting manager close
                             </div>
                           </div>
                         );
@@ -563,7 +583,7 @@ export default function ShiftHistory() {
                               LEGACY RECOUNT
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Legacy status from old flow
+                              Legacy status
                             </div>
                           </div>
                         );
@@ -590,23 +610,19 @@ export default function ShiftHistory() {
                     </div>
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
-                    {s.varianceBridgeAmount > 0 ? (
-                      <div className="inline-flex items-center gap-2">
-                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 ring-1 ring-amber-200">
-                          BRIDGE
-                        </span>
-                        <span>{peso(s.varianceBridgeAmount)}</span>
-                      </div>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                    <div className="text-xs text-slate-500">
+                      Bridge{" "}
+                      <span className="font-medium text-slate-700">
+                        {s.varianceBridgeAmount > 0
+                          ? peso(s.varianceBridgeAmount)
+                          : "—"}
+                      </span>
+                    </div>
                     <div className="text-slate-900">
-                      +{peso(s.drawerDeposits)}
+                      In {peso(s.drawerDeposits)}
                     </div>
                     <div className="text-xs text-slate-500">
-                      −{peso(s.drawerOut + s.drawerDrops)}
+                      Out {peso(s.drawerOut + s.drawerDrops)}
                     </div>
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
@@ -672,7 +688,7 @@ export default function ShiftHistory() {
               {shifts.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-4 py-6 text-center text-slate-500"
                   >
                     No shifts found.

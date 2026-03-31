@@ -65,6 +65,13 @@ const upsertPlanTag = (
   return parts.filter(Boolean).join(" · ").replace(/\s+/g, " ").trim();
 };
 
+const planNoteDetail = (note: string | null | undefined) =>
+  String(note ?? "")
+    .split("·")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== PLAN_TAG)
+    .join(" · ");
+
 function statusTone(status: string): "neutral" | "warning" | "success" | "info" {
   if (status === "OPEN") return "warning";
   if (status === "PARTIALLY_SETTLED") return "info";
@@ -206,6 +213,8 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function StoreCashierARPage() {
   const { rows } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
+  const taggedCount = rows.filter((row) => hasPlanTag(row.note)).length;
+  const totalRemaining = rows.reduce((sum, row) => sum + row.remaining, 0);
 
   const showDone =
     String(sp.get("plan") || "") === "payroll" ||
@@ -215,13 +224,30 @@ export default function StoreCashierARPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier AR (Payroll Plan)"
-        subtitle="AR list only. Tag items for payroll deduction. Actual salary deduction happens in payroll."
+        subtitle="Tag cashier charges for payroll deduction. Deduction happens in payroll."
         backTo="/store"
         backLabel="Dashboard"
       />
 
       <div className="mx-auto max-w-6xl px-5 py-6 space-y-3">
         <SoTActionBar
+          left={
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                Open <span className="font-semibold text-slate-900">{rows.length}</span>
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                Tagged{" "}
+                <span className="font-semibold text-slate-900">{taggedCount}</span>
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                Remaining{" "}
+                <span className="font-semibold text-slate-900">
+                  {peso(totalRemaining)}
+                </span>
+              </span>
+            </div>
+          }
           right={
             <Link
               to="/store/cashier-variances"
@@ -274,11 +300,11 @@ export default function StoreCashierARPage() {
                     <SoTTd>
                       <div className="text-slate-800">{c.cashier.name}</div>
                       <div className="text-[11px] text-slate-500">
-                        {c.cashier.email ?? "—"} · charge ref #{c.id}
+                        {c.cashier.email ?? "—"} · Charge #{c.id}
                       </div>
                       {c.variance ? (
                         <div className="mt-1 text-[11px] text-slate-500">
-                          variance ref #{c.variance.id} ·{" "}
+                          Variance #{c.variance.id} ·{" "}
                           <span className="font-medium">
                             {peso(Math.abs(c.variance.variance))}
                           </span>
@@ -306,12 +332,6 @@ export default function StoreCashierARPage() {
                           Payroll deduction plan
                         </SoTStatusBadge>
                       ) : null}
-
-                      {c.note ? (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          Note: {c.note}
-                        </div>
-                      ) : null}
                     </SoTTd>
 
                     <SoTTd align="right" className="tabular-nums">
@@ -327,9 +347,14 @@ export default function StoreCashierARPage() {
                     <SoTTd>
                       <Form method="post" className="grid gap-2">
                         <input type="hidden" name="chargeId" value={c.id} />
+                        {planNoteDetail(c.note) ? (
+                          <div className="text-[11px] text-slate-500">
+                            Plan note: {planNoteDetail(c.note)}
+                          </div>
+                        ) : null}
                         <input
                           name="note"
-                          placeholder="Note (optional) e.g., cutoff/date/remark"
+                          placeholder="Cutoff or remark"
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         />
                         <input
@@ -346,13 +371,9 @@ export default function StoreCashierARPage() {
                           disabled={hasPlanTag(c.note)}
                         >
                           {hasPlanTag(c.note)
-                            ? "Already tagged for payroll"
-                            : "Tag for payroll deduction (AR)"}
+                            ? "Tagged for Payroll"
+                            : "Tag for Payroll"}
                         </SoTButton>
-                        <div className="text-[11px] text-slate-500">
-                          Remaining:{" "}
-                          <span className="font-medium">{peso(c.remaining)}</span>
-                        </div>
                       </Form>
                     </SoTTd>
                   </SoTTableRow>
