@@ -75,22 +75,23 @@ These visualize flow and route ownership but do not replace canonical owner docs
 
 1. `ui/README.md`
 2. `ui/UI_SOT.md`
-3. `ui/UI_AUTOMATION_GUIDE.md`
-4. `ui/UI_CONFORMANCE_MATRIX.md`
-5. `ui/UI_REPAIR_AUTOMATION_RUNBOOK.md`
-6. `ui/Clearance CSS Alignment Rules.md`
-7. `ui/Remit_Cleanup_Checklist.md`
-8. `ui/ROUTE_CLEANUP_CHECKLIST.md`
-9. `../automation/runbooks/README.md`
-10. `../automation/runbooks/INTENT_ROUTER.md`
-11. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
-12. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
-13. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
-14. `DATABASE_SCHEMA_DUPLICATION_AUDIT.md`
-15. `PRODUCTLIST_REFACTOR_DIRECTION.md`
-16. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
-17. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
-18. `WORKER_SCHEDULE_PAYROLL_IMPLEMENTATION_PHASES.md`
+3. `ui/UI_REVAMP_ROADMAP.md`
+4. `ui/UI_AUTOMATION_GUIDE.md`
+5. `ui/UI_CONFORMANCE_MATRIX.md`
+6. `ui/UI_REPAIR_AUTOMATION_RUNBOOK.md`
+7. `ui/Clearance CSS Alignment Rules.md`
+8. `ui/Remit_Cleanup_Checklist.md`
+9. `ui/ROUTE_CLEANUP_CHECKLIST.md`
+10. `../automation/runbooks/README.md`
+11. `../automation/runbooks/INTENT_ROUTER.md`
+12. `../automation/runbooks/UI_CYCLE_RUNBOOK.md`
+13. `../automation/runbooks/BUSINESS_FLOW_SMOKE_RUNBOOK.md`
+14. `../automation/templates/UI_AUTOMATION_PROMPT_TEMPLATE.md`
+15. `DATABASE_SCHEMA_DUPLICATION_AUDIT.md`
+16. `PRODUCTLIST_REFACTOR_DIRECTION.md`
+17. `PRODUCTLIST_REFACTOR_DECISION_LOG.md`
+18. `PRODUCTLIST_REFACTOR_ROADMAP_CHECKLIST.md`
+19. `WORKER_SCHEDULE_PAYROLL_IMPLEMENTATION_PHASES.md`
 
 These help implementation but must not override Canonical docs.
 

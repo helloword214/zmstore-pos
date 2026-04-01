@@ -11,6 +11,12 @@ Source: Active route scan + canonical flow mapping + golden reference comparison
 2. `PARTIAL`: mostly aligned but has visible token or density drift.
 3. `NEEDS_HARDENING`: clear deviation from baseline contract; prioritize migration.
 
+## 1.1 Roadmap Boundary
+
+1. This matrix owns route-level baseline status and concise gap notes.
+2. Monthly rollout sequencing, active wave tracking, and completion rollups belong to `UI_REVAMP_ROADMAP.md`.
+3. When a route is finished for the current revamp campaign, keep the lasting route note here and move the active-tracker summary to the roadmap log.
+
 ## 2. Golden Reference Anchors
 
 1. `app/routes/runs.$id.rider-checkin.tsx`: canonical interaction for status-first receipt workflow and lock/pending behavior.
