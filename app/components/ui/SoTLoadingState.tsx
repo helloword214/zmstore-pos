@@ -6,7 +6,6 @@ type SoTLoadingStateProps = HTMLAttributes<HTMLDivElement> & {
   label: ReactNode;
   hint?: ReactNode;
   variant?: SoTLoadingStateVariant;
-  preview?: ReactNode;
 };
 
 function LoadingPulse({ compact = false }: { compact?: boolean }) {
@@ -24,7 +23,6 @@ export function SoTLoadingState({
   label,
   hint,
   variant = "panel",
-  preview,
   className = "",
   ...props
 }: SoTLoadingStateProps) {
@@ -37,47 +35,19 @@ export function SoTLoadingState({
         className="pointer-events-none fixed inset-0 z-[100]"
         {...props}
       >
-        <div className="absolute inset-x-0 top-0 h-1 bg-indigo-100/90">
+        <div className="absolute inset-x-0 top-0 h-1 bg-slate-200/40">
           <div className="h-full w-2/5 rounded-r-full bg-gradient-to-r from-indigo-300 via-indigo-500 to-indigo-600 animate-pulse" />
         </div>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(224,231,255,0.78),_rgba(255,255,255,0.88)_42%,_rgba(248,250,252,0.96)_100%)] backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(224,231,255,0.54),_rgba(255,255,255,0.82)_38%,_rgba(248,250,252,0.94)_100%)] backdrop-blur-[1.5px]" />
         <div className="relative flex min-h-full items-center justify-center px-5 py-8">
           <div
-            className={`w-full max-w-5xl rounded-[28px] border border-slate-200/90 bg-white/92 p-5 shadow-2xl shadow-indigo-100/60 ring-1 ring-slate-900/5 print:hidden ${className}`.trim()}
+            className={`w-full max-w-md rounded-[24px] border border-slate-200/95 bg-white/94 px-5 py-5 shadow-xl shadow-slate-200/70 ring-1 ring-slate-900/5 print:hidden ${className}`.trim()}
           >
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:items-start">
-              <div className="space-y-3">
-                <span className="inline-flex w-fit rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                  Loading Workspace
-                </span>
-                <div className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/80 px-4 py-4 shadow-sm shadow-indigo-100/40">
-                  <LoadingPulse />
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-900">{label}</p>
-                    {hint ? <p className="text-xs text-slate-600">{hint}</p> : null}
-                  </div>
-                </div>
-              </div>
-              <div className="min-w-0 overflow-hidden rounded-[24px] border border-indigo-100/70 bg-white/90 p-4">
-                {preview ? (
-                  preview
-                ) : (
-                  <div className="space-y-3" aria-hidden="true">
-                    <div className="h-3 w-28 animate-pulse rounded-full bg-indigo-100/90" />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="h-3 w-24 animate-pulse rounded-full bg-indigo-100/90" />
-                        <div className="h-3 w-36 animate-pulse rounded-full bg-slate-200/90" />
-                        <div className="h-20 animate-pulse rounded-2xl bg-slate-100" />
-                      </div>
-                      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="h-3 w-20 animate-pulse rounded-full bg-indigo-100/90" />
-                        <div className="h-3 w-32 animate-pulse rounded-full bg-slate-200/90" />
-                        <div className="h-20 animate-pulse rounded-2xl bg-slate-100" />
-                      </div>
-                    </div>
-                  </div>
-                )}
+            <div className="flex items-start gap-3">
+              <LoadingPulse />
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold text-slate-900">{label}</p>
+                {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
               </div>
             </div>
           </div>

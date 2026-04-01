@@ -132,7 +132,7 @@ These are shared revamp items that affect many routes and should be handled befo
 
 | Shared item | Status | Notes |
 | --- | --- | --- |
-| App-shell transition loading | ACTIVE | route-family loading behavior is part of the revamp baseline and should stay aligned with `UI_SOT.md` before deeper route polish continues |
+| App-shell transition loading | ACTIVE | shell-level route handoff loading remains part of the revamp baseline; current direction is a simpler app-shell loading bar plus route-aware label/hint instead of route-transition skeleton previews |
 | Empty-state clarity | QUEUE | standardize empty-state guidance before final wave closeout |
 | Locked and pending-state language | QUEUE | keep state wording consistent across manager, cashier, rider, and admin lanes |
 | Route-family density audit | QUEUE | final month pass should remove remaining generic-feel repetition and over-dense helper text |
@@ -165,7 +165,7 @@ Goal:
 | --- | --- | --- | --- |
 | `app/routes/customers._index.tsx` | Operational List / Inbox | QUEUE | customer directory scan rhythm and toolbar clarity |
 | `app/routes/store.dispatch.tsx` | Operational List / Inbox | QUEUE | triage strip priority and dense exception fit |
-| `app/routes/runs._index.tsx` | Operational List / Inbox | ACTIVE | actionable inbox default, optional terminal history mode, low-noise load-more scaling, and mobile action-card parity with the desktop table |
+| `app/routes/runs._index.tsx` | Operational List / Inbox | ACTIVE | actionable inbox default, optional terminal history mode, low-noise load-more scaling, mobile action-card parity with the desktop table, and no duplicate create entry outside dispatch |
 | `app/routes/store.clearance.tsx` | Operational List / Inbox | QUEUE | inbox triage clarity and tab/filter density |
 | `app/routes/cashier.delivery._index.tsx` | Operational List / Inbox | QUEUE | remit queue scan rhythm and state summary clarity |
 | `app/routes/ar._index.tsx` | Operational List / Inbox | QUEUE | receivable triage and compact severity cues |
@@ -195,8 +195,8 @@ Goal:
 | --- | --- | --- | --- |
 | `app/routes/runs.new.tsx` | Decision / Detail | QUEUE | creation framing and submit-state clarity |
 | `app/routes/runs.$id.dispatch.tsx` | Decision / Detail | QUEUE | staging summary before dense loadout evidence |
-| `app/routes/runs.$id.summary.tsx` | Decision / Detail | QUEUE | quiet reference hierarchy and recap clarity |
-| `app/routes/runs.$id.rider-checkin.tsx` | Decision / Detail | QUEUE | dense receipt flow clarity and action-state consistency |
+| `app/routes/runs.$id.summary.tsx` | Decision / Detail | QUEUE | quiet reference hierarchy, recap clarity, and route-aware shell-level handoff loading |
+| `app/routes/runs.$id.rider-checkin.tsx` | Decision / Detail | QUEUE | dense receipt flow clarity, action-state consistency, and route-aware shell-level handoff loading |
 | `app/routes/store.clearance_.$caseId.tsx` | Decision / Detail | QUEUE | decision framing and evidence/action ordering |
 | `app/routes/store.clearance-opening-batches.tsx` | Decision / Detail | QUEUE | batch summary-first review flow |
 | `app/routes/runs.$id.remit.tsx` | Decision / Detail | QUEUE | remit action hierarchy and dense evidence compression |

@@ -325,13 +325,6 @@ export default function RunsIndexPage() {
               </Link>
             </div>
           }
-          right={
-            !mine && role !== "EMPLOYEE" ? (
-              <Link to="/runs/new">
-                <SoTButton variant="primary">+ New Run</SoTButton>
-              </Link>
-            ) : null
-          }
         />
 
         <div className="relative min-h-[24rem] lg:min-h-[30rem]">

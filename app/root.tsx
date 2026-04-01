@@ -15,10 +15,6 @@ import type { ReactNode } from "react";
 import { SoTBrandFooter } from "~/components/ui/SoTBrandFooter";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
-import {
-  SoTRouteLoadingPreview,
-  type SoTRouteLoadingPreviewKind,
-} from "~/components/ui/SoTRouteLoadingPreview";
 
 import "./tailwind.css";
 
@@ -36,7 +32,6 @@ export const links: LinksFunction = () => [
 ];
 
 type LoadingPreviewTarget = {
-  kind: SoTRouteLoadingPreviewKind;
   label: string;
   hint: string;
 };
@@ -44,7 +39,6 @@ type LoadingPreviewTarget = {
 function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTarget {
   if (!pathname) {
     return {
-      kind: "generic",
       label: "Loading page",
       hint: "Preparing the next workspace and the latest UI state.",
     };
@@ -52,7 +46,6 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/") {
     return {
-      kind: "dashboard",
       label: "Opening admin dashboard",
       hint: "Preparing your launchpad, shortcuts, and setup signals.",
     };
@@ -60,7 +53,6 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/store") {
     return {
-      kind: "dashboard",
       label: "Opening manager dashboard",
       hint: "Loading queues, dispatch counts, and today's signals.",
     };
@@ -68,7 +60,6 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/cashier") {
     return {
-      kind: "dashboard",
       label: "Opening cashier dashboard",
       hint: "Preparing your shift workspace and priority lanes.",
     };
@@ -76,7 +67,6 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/rider") {
     return {
-      kind: "dashboard",
       label: "Opening rider dashboard",
       hint: "Loading your runs, acceptance items, and daily signals.",
     };
@@ -84,15 +74,27 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/runs") {
     return {
-      kind: "operational-list",
       label: "Loading runs list",
       hint: "Refreshing run statuses and the next-step work surface.",
     };
   }
 
+  if (/^\/runs\/[^/]+\/summary$/.test(pathname)) {
+    return {
+      label: "Loading run summary",
+      hint: "Preparing recap totals, stock notes, and closeout details.",
+    };
+  }
+
+  if (/^\/runs\/[^/]+\/rider-checkin$/.test(pathname)) {
+    return {
+      label: "Loading rider check-in",
+      hint: "Preparing receipts, blockers, and check-in actions.",
+    };
+  }
+
   if (pathname === "/store/dispatch") {
     return {
-      kind: "operational-list",
       label: "Loading dispatch queue",
       hint: "Preparing triage counts, filters, and order rows.",
     };
@@ -100,7 +102,6 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/ar" || pathname.startsWith("/ar/")) {
     return {
-      kind: "operational-list",
       label: "Loading receivables list",
       hint: "Refreshing customer balances and review rows.",
     };
@@ -108,14 +109,12 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/cashier/delivery" || pathname.startsWith("/cashier/delivery/")) {
     return {
-      kind: "operational-list",
       label: "Loading cashier remit queue",
       hint: "Preparing remit rows and the next cashier actions.",
     };
   }
 
   return {
-    kind: "generic",
     label: "Loading page",
     hint: "Preparing the next workspace and the latest UI state.",
   };
@@ -147,7 +146,6 @@ export function Layout({ children }: { children: ReactNode }) {
             variant="overlay"
             label={pendingLabel}
             hint={loadingTarget.hint}
-            preview={<SoTRouteLoadingPreview kind={loadingTarget.kind} />}
           />
         ) : null}
         {children}

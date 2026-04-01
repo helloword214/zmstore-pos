@@ -95,9 +95,11 @@ Component gap rule:
 3. `inline` variant is for compact busy feedback near buttons, filters, or row actions.
 4. Prefer `SoTLoadingState` over route-local animated dots, ad hoc loading chips, or opacity-only pending presentation.
 5. Loading labels must say what the app is doing in plain language, for example `Creating delivery run` or `Checking your sign-in`.
-6. App-shell route transitions should prefer a route-family skeleton preview when the target path maps cleanly to a known family.
-7. The initial SoT loading preview set is `dashboard`, `operational-list`, and `generic` fallback.
-8. If 2 or more routes share the same transition skeleton structure, keep that preview in a shared SoT component instead of duplicating route-local loading markup.
+6. App-shell route transitions should use a quiet shell-level handoff with a top loading bar and a plain-language label.
+7. Route transitions should prefer route-aware labels and short hints rather than dense preview markup.
+8. Overlay loading should read as a route handoff layer, not a blocking modal; avoid oversized framing and long explanation copy for short transitions.
+9. If a route needs richer loading feedback than the shell-level handoff, prefer route-local `panel` or `inline` loading inside the destination page.
+10. If 2 or more routes share the same richer in-page loading structure, keep that loading pattern in a shared SoT component instead of duplicating route-local markup.
 
 ## 3.4 Dashboard Revamp Contract (Mandatory)
 
