@@ -106,6 +106,7 @@ This map is the primary route-level reference for canonical target behavior.
 | Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority + creator audit (`createdById`, `createdByRole`) |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders, review failed-delivery returns, and create/assign run | Order eligibility plus failed-delivery redispatch/cancel authority; no AR authority |
 | Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout, inspect item-level stock blockers, release linked parent orders before dispatch, and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
+| Runs inbox | Manager/Rider | `app/routes/runs._index.tsx` | Open actionable runs by default and switch to optional terminal history when recap/audit is needed | Operational run-state visibility only; cashier turnover for closed runs stays in `cashier.delivery._index.tsx` |
 | Run summary | Manager/Rider | `app/routes/runs.$id.summary.tsx` | Read-only recap per run stage plus failed-delivery trace | `runReceipt`, `deliveryRunOrder.attemptOutcome`, `clearanceCase/decision`, recap services |
 | Rider check-in | Rider | `app/routes/runs.$id.rider-checkin.tsx` | Encode receipt cash, report failed parent deliveries, and send clearance requests | `runReceipt`, `deliveryRunOrder.attemptOutcome` rider report, `clearanceCase(status=NEEDS_CLEARANCE)` |
 | Clearance inbox | Manager | `app/routes/store.clearance.tsx` | View pending clearance workload | `clearanceCase` pending list |
@@ -124,6 +125,14 @@ This map is the primary route-level reference for canonical target behavior.
 | Payroll settlement | Manager | `app/routes/store.payroll.tsx` | Record payroll deductions against charge ledgers | Charge payment posting and variance status sync; full payroll computation belongs to `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md` |
 | AR customer list | Cashier | `app/routes/ar._index.tsx` | List customers with open approved balances | `customerAr` authority (target behavior) |
 | AR customer ledger | Cashier | `app/routes/ar.customers.$id.tsx` | Post and review customer AR payments, show post-submit feedback, print receipt proof | `customerAr` ledger/payment application |
+
+Runs inbox visibility rule:
+
+1. `app/routes/runs._index.tsx` defaults to actionable run states only.
+2. Manager inbox shows `PLANNED`, `DISPATCHED`, and `CHECKED_IN`.
+3. Rider inbox shows assigned `DISPATCHED` and `CHECKED_IN` runs only.
+4. Terminal run history (`CLOSED`, `CANCELLED`) is optional and must not crowd the default inbox.
+5. Cashier closed-run turnover remains in `app/routes/cashier.delivery._index.tsx`.
 
 Role label interpretation rule:
 

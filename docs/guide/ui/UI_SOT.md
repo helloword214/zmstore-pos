@@ -221,7 +221,9 @@ Refer To:
 3. The table or list is the work surface and must outrank filter chrome.
 4. Summary counts and state chips should stay compact and scan-first.
 5. Repeated helper text around filters, row actions, and list summaries is not allowed by default.
-6. Example routes:
+6. When terminal history exists, actionable rows must stay in the default inbox and history must move to an explicit secondary mode or section.
+7. Long operational lists should progressively reveal older rows with low-noise pagination or load-more controls instead of dumping every row at once.
+8. Example routes:
    `app/routes/store.dispatch.tsx`
    `app/routes/runs._index.tsx`
    `app/routes/ar._index.tsx`

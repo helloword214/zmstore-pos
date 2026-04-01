@@ -5,6 +5,7 @@ import {
   Meta,
   Outlet,
   Scripts,
+  useLocation,
   ScrollRestoration,
   useNavigation,
   useRouteError,
@@ -121,9 +122,14 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 }
 
 export function Layout({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
   const loading = navigation.state === "loading";
+  const pathnameChanged =
+    navigation.location?.pathname != null &&
+    navigation.location.pathname !== location.pathname;
+  const showOverlay = loading && pathnameChanged;
   const loadingTarget = resolveLoadingPreviewTarget(navigation.location?.pathname);
   const pendingLabel = loadingTarget.label;
 
@@ -136,7 +142,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <Links />
       </head>
       <body className="bg-[#f7f7fb] text-slate-900" aria-busy={busy}>
-        {loading ? (
+        {showOverlay ? (
           <SoTLoadingState
             variant="overlay"
             label={pendingLabel}

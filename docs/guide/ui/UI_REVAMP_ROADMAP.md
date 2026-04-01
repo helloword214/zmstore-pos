@@ -165,7 +165,7 @@ Goal:
 | --- | --- | --- | --- |
 | `app/routes/customers._index.tsx` | Operational List / Inbox | QUEUE | customer directory scan rhythm and toolbar clarity |
 | `app/routes/store.dispatch.tsx` | Operational List / Inbox | QUEUE | triage strip priority and dense exception fit |
-| `app/routes/runs._index.tsx` | Operational List / Inbox | QUEUE | next-step visibility and loading/list parity |
+| `app/routes/runs._index.tsx` | Operational List / Inbox | ACTIVE | actionable inbox default, optional terminal history mode, low-noise load-more scaling, and mobile action-card parity with the desktop table |
 | `app/routes/store.clearance.tsx` | Operational List / Inbox | QUEUE | inbox triage clarity and tab/filter density |
 | `app/routes/cashier.delivery._index.tsx` | Operational List / Inbox | QUEUE | remit queue scan rhythm and state summary clarity |
 | `app/routes/ar._index.tsx` | Operational List / Inbox | QUEUE | receivable triage and compact severity cues |
