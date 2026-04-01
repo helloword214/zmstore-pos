@@ -716,8 +716,8 @@ export default function RunSummaryPage() {
   const { run, rows, totals, counts, amounts, attempts, role, ui } = useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
   const justPosted = sp.get("posted") === "1";
-  const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
-  const backLabel = "Dashboard";
+  const backHref = role === "EMPLOYEE" ? "/runs?mine=1" : "/runs";
+  const backLabel = "Runs";
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
       style: "currency",

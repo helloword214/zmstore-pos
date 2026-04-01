@@ -133,6 +133,7 @@ Runs inbox visibility rule:
 3. Rider inbox shows assigned `DISPATCHED` and `CHECKED_IN` runs only.
 4. Terminal run history (`CLOSED`, `CANCELLED`) is optional and must not crowd the default inbox.
 5. Cashier closed-run turnover remains in `app/routes/cashier.delivery._index.tsx`.
+6. `app/routes/runs.$id.summary.tsx` returns to the runs inbox (`/runs` for manager, `/runs?mine=1` for rider) instead of the dashboard.
 
 Role label interpretation rule:
 
