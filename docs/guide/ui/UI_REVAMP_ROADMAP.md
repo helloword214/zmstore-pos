@@ -194,7 +194,7 @@ Goal:
 | Route | Family | Status | Current focus |
 | --- | --- | --- | --- |
 | `app/routes/runs.new.tsx` | Decision / Detail | QUEUE | creation framing and submit-state clarity |
-| `app/routes/runs.$id.dispatch.tsx` | Decision / Detail | QUEUE | staging summary before dense loadout evidence |
+| `app/routes/runs.$id.dispatch.tsx` | Decision / Detail | ACTIVE | assignment first, one shared load-plan workbench for linked orders plus extra loadout, and a dispatch-only editable action lane |
 | `app/routes/runs.$id.summary.tsx` | Decision / Detail | QUEUE | quiet reference hierarchy, recap clarity, and route-aware shell-level handoff loading |
 | `app/routes/runs.$id.rider-checkin.tsx` | Decision / Detail | QUEUE | dense receipt flow clarity, action-state consistency, and route-aware shell-level handoff loading |
 | `app/routes/store.clearance_.$caseId.tsx` | Decision / Detail | QUEUE | decision framing and evidence/action ordering |
