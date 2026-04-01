@@ -121,7 +121,7 @@ export default function RiderVariancesListPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Pending Variances"
-        subtitle="Review rider charges waiting for your acceptance."
+        subtitle="Review shortages waiting for your acceptance."
         backTo="/rider"
         backLabel="Dashboard"
       />
@@ -172,7 +172,7 @@ export default function RiderVariancesListPage() {
                       message={
                         <SoTEmptyState
                           title="No pending acceptances."
-                          hint="New rider charge requests will appear here."
+                          hint="New rider requests will appear here."
                         />
                       }
                     />
@@ -201,7 +201,7 @@ export default function RiderVariancesListPage() {
                     <SoTTd align="right">
                       <Link to={`/rider/variance/${v.id}`}>
                         <SoTButton variant="primary" className="text-sm">
-                          Review
+                          Open Review
                         </SoTButton>
                       </Link>
                     </SoTTd>

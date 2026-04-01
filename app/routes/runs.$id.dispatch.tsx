@@ -1556,8 +1556,8 @@ export default function RunDispatchPage() {
         title="Dispatch Staging"
         subtitle={`Run ${run.runCode} · ${
           readOnly
-            ? "Dispatched already. Staging is read-only."
-            : "Assign rider, vehicle, and extra loadout before dispatch."
+            ? "Dispatched already. Review only."
+            : "Set rider, vehicle, and extra loadout."
         }`}
         backTo="/runs"
         backLabel="Runs"
@@ -1614,8 +1614,8 @@ export default function RunDispatchPage() {
               </div>
             </div>
             <div className="mt-1 text-xs text-slate-600">
-              Linked order items are part of dispatch stock deductions. `Loadout`
-              below is only for extra physical load you add on top.
+              Linked order items are already part of the stock deduction. `Extra loadout`
+              below is only for added physical stock.
             </div>
             {parentOrderTopItems.length > 0 && (
               <div className="mt-2 grid gap-1">
@@ -1631,9 +1631,8 @@ export default function RunDispatchPage() {
             )}
             {!readOnly && hasRunDraftShortage ? (
               <SoTAlert tone="warning" className="mt-3 text-sm">
-                Current run draft exceeds live stock on one or more linked item
-                rows. Release the affected order or rebalance the loadout before
-                dispatch.
+                The current draft exceeds live stock on one or more linked items.
+                Release the affected order or rebalance before dispatch.
               </SoTAlert>
             ) : null}
             {linkedParentOrders.length > 0 && (
@@ -1867,7 +1866,7 @@ export default function RunDispatchPage() {
             </div>
             <div className="space-y-3 px-4 py-4">
               <div className="text-xs text-slate-600">
-                Add only the extra manual load for this run. Linked order items are
+                Add only the manual extra load for this run. Linked order items are
                 already counted above.
               </div>
               {overCapacity ? (
@@ -2106,15 +2105,15 @@ export default function RunDispatchPage() {
                         ? "Keeping the current staging details on this page."
                         : cancelBusy
                           ? "Closing this staging flow and returning to the run list."
-                        : "Unlocking the run so it can be staged again."
+                          : "Unlocking the run so it can be staged again."
                 }
               />
             ) : null}
 
             <div className="mb-3 text-xs text-slate-600">
               {readOnly
-                ? "This run is already dispatched. Revert only if staging needs to be reopened."
-                : "Next step: save staging or dispatch once rider, stock, and capacity are ready."}
+                ? "This run is already dispatched. Reopen staging only if you need to adjust it."
+                : "Save staging or dispatch when rider, stock, and capacity are ready."}
             </div>
 
             <fieldset

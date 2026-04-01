@@ -507,7 +507,7 @@ export default function StoreRiderVariancesPage() {
                             </div>
                           ) : null}
                           <div className="mt-1 text-[11px] text-slate-500">
-                            Manager review{" "}
+                            Reviewed{" "}
                             <span className="font-medium">
                               {v.managerApprovedAt
                                 ? new Date(v.managerApprovedAt).toLocaleString()
@@ -564,7 +564,7 @@ export default function StoreRiderVariancesPage() {
                                 className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-1"
                                 to={`/rider/variance/${v.id}`}
                               >
-                                Open Rider Review
+                                Open Review
                               </Link>
                               {v.note ? (
                                 <div className="text-[11px] text-slate-500">
@@ -610,7 +610,7 @@ export default function StoreRiderVariancesPage() {
                                   <SoTLoadingState
                                     variant="inline"
                                     label="Saving variance decision"
-                                    hint="Refreshing the queue."
+                                    hint="Refreshing the list."
                                   />
                                 ) : null}
                                 <SoTButton
@@ -620,7 +620,7 @@ export default function StoreRiderVariancesPage() {
                                   variant="primary"
                                   disabled={rowBusy}
                                 >
-                                  {rowBusy ? "Saving…" : "Save Review"}
+                                  {rowBusy ? "Saving…" : "Save Decision"}
                                 </SoTButton>
                               </fieldset>
                             </Form>

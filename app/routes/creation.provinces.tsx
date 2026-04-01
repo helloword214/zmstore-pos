@@ -285,7 +285,7 @@ export default function ProvincesCreationPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Creation - Provinces"
+        title="Provinces"
         subtitle="Province master list for address choices."
         backTo="/"
         backLabel="Dashboard"
@@ -334,7 +334,7 @@ export default function ProvincesCreationPage() {
                 variant="primary"
                 onClick={() => setShowCreate((v) => !v)}
               >
-                {showCreate ? "Hide Add Form" : "Add Province"}
+                {showCreate ? "Hide Form" : "New Province"}
               </SoTButton>
             }
           />
@@ -346,7 +346,7 @@ export default function ProvincesCreationPage() {
 
         {showCreate ? (
           <SoTCard interaction="form">
-            <SoTSectionHeader title="Create Province" />
+            <SoTSectionHeader title="New Province" />
             <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="create" />
               <div className="md:col-span-12 lg:col-span-7">

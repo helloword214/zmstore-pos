@@ -277,7 +277,7 @@ export default function RidersPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Creation - Riders"
+        title="Riders"
         subtitle="Rider directory for assignment and dispatch."
         backTo="/"
         backLabel="Dashboard"
@@ -329,7 +329,7 @@ export default function RidersPage() {
                 variant="primary"
                 onClick={() => setShowCreate((v) => !v)}
               >
-                {showCreate ? "Hide Add Form" : "Add Rider"}
+                {showCreate ? "Hide Form" : "New Rider"}
               </SoTButton>
             }
           />
@@ -341,7 +341,7 @@ export default function RidersPage() {
 
         {showCreate ? (
           <SoTCard interaction="form">
-            <SoTSectionHeader title="Create Rider" />
+            <SoTSectionHeader title="New Rider" />
             <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="create" />
 
@@ -555,7 +555,7 @@ export default function RidersPage() {
                       <div className="font-medium text-slate-900">
                         {r.lastName}, {r.firstName}
                       </div>
-                      {r.alias ? <p className="text-xs text-slate-500">Alias: {r.alias}</p> : null}
+                      {r.alias ? <p className="text-xs text-slate-500">{r.alias}</p> : null}
                     </SoTTd>
                     <SoTTd>
                       <p>{r.phone ?? "-"}</p>

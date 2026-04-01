@@ -1401,7 +1401,7 @@ export default function CashierOrder() {
                     Items
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Freeze-first view: base → frozen unit → line totals.
+                    Frozen pricing only: base → final unit → line total.
                   </p>
                 </div>
                 <div className="text-right text-xs text-slate-600">
@@ -1538,7 +1538,7 @@ export default function CashierOrder() {
                   Payment
                 </h3>
                 <span className="text-xs text-slate-500">
-                  Use clearance for utang/kulang requests.
+                  Use clearance for shortages or balance.
                 </span>
               </div>
 
@@ -1605,7 +1605,7 @@ export default function CashierOrder() {
                       name="sendCashGiven"
                       value={Number.isFinite(entered) ? entered.toFixed(2) : "0.00"}
                     />
-                    <div className="text-slate-700">Send to manager for clearance</div>
+                    <div className="text-slate-700">Send clearance request</div>
                     <div className="grid grid-cols-1 gap-2">
                       <SelectInput
                         name="clearanceIntent"
@@ -1698,9 +1698,7 @@ export default function CashierOrder() {
                   </div>
                   {projectedNeedsCustomerForAr && !hasCustomer ? (
                     <div className="mt-1 text-xs text-amber-800">
-                      Approved open-balance flow requires a customer, but this
-                      order has none. Attach a customer in the order/PAD flow
-                      first.
+                      Approved open-balance flow requires a customer. Attach one before submitting.
                     </div>
                   ) : null}{" "}
                 </div>
@@ -1773,7 +1771,7 @@ export default function CashierOrder() {
                 {/* Advanced options */}
                 <details className="rounded-xl border border-slate-200 bg-white">
                   <summary className="cursor-pointer select-none list-none px-3 py-2 text-sm text-slate-800">
-                    Advanced options
+                    Release with balance
                   </summary>
                   <div className="px-3 pb-3 space-y-3">
                     <label className="inline-flex items-center gap-2 text-sm text-slate-700">

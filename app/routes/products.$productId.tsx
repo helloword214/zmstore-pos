@@ -198,7 +198,7 @@ export default function ProductDetailRoute() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Product Detail"
-        subtitle="Catalog detail"
+        subtitle="Pricing, stock, and assignments."
         backTo="/products"
         backLabel="Product List"
         maxWidthClassName="max-w-5xl"
@@ -221,7 +221,7 @@ export default function ProductDetailRoute() {
               to={`/products/${product.id}/edit`}
               className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
-              Edit Product
+              Edit
             </Link>
           }
         />

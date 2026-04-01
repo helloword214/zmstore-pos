@@ -372,7 +372,7 @@ export default function StoreClearanceOpeningBatchesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Opening Balance Clearance Batches"
-        subtitle="Review opening balance batches and reject only the exceptions."
+        subtitle="Approve valid rows and reject only exceptions."
         backTo="/store/clearance"
         backLabel="Clearance Inbox"
         maxWidthClassName="max-w-6xl"
@@ -459,7 +459,7 @@ export default function StoreClearanceOpeningBatchesPage() {
                         )}`}
                         className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       >
-                        Open Batch
+                        Review Batch
                       </Link>
                     </SoTTd>
                   </SoTTableRow>
@@ -488,13 +488,12 @@ export default function StoreClearanceOpeningBatchesPage() {
                   <SoTLoadingState
                     variant="panel"
                     label="Processing opening balance batch"
-                    hint="Approving valid rows and rejecting the selected or invalid exceptions."
+                    hint="Approving valid rows and rejecting the selected exceptions."
                   />
                 ) : null}
 
                 <div className="text-xs text-slate-600">
-                  Review the rows below. Auto-reject rows are already marked by rule
-                  and do not need manual selection.
+                  Auto-reject rows are already marked and do not need manual selection.
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -559,10 +558,12 @@ export default function StoreClearanceOpeningBatchesPage() {
                           <SoTTd align="right" className="tabular-nums font-semibold text-amber-700">
                             {peso(row.balance)}
                           </SoTTd>
-                          <SoTTd className="text-xs text-slate-600">
-                            {row.dueDate ? `Due ${row.dueDate}` : "No due date"}
-                            {row.refNo ? ` • ref ${row.refNo}` : ""}
-                            {row.lineNote ? ` • ${row.lineNote}` : ""}
+                          <SoTTd className="space-y-1 text-xs text-slate-600">
+                            <div>
+                              {row.dueDate ? `Due ${row.dueDate}` : "No due date"}
+                              {row.refNo ? ` • Ref ${row.refNo}` : ""}
+                            </div>
+                            {row.lineNote ? <div>{row.lineNote}</div> : null}
                           </SoTTd>
                           <SoTTd className="text-xs">
                             {row.autoRejectReason ? (

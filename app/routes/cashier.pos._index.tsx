@@ -245,7 +245,7 @@ export default function CashierQueue() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier Queue"
-        subtitle="Walk-in / PICKUP tickets only."
+        subtitle="Pickup tickets only."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-4xl"
@@ -255,7 +255,7 @@ export default function CashierQueue() {
         <SoTActionBar
           right={
             <Link to="/pad-order">
-              <SoTButton variant="primary">Add to cart (Order Pad)</SoTButton>
+              <SoTButton variant="primary">Open Order Pad</SoTButton>
             </Link>
           }
         />
@@ -263,10 +263,10 @@ export default function CashierQueue() {
         {/* Open by code (PICKUP only) */}
         <Form method="post" className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
           <div className="flex flex-wrap items-end gap-2">
-            <SoTFormField label="Order Code (PICKUP only)" className="min-w-[260px] flex-1">
+            <SoTFormField label="Pickup Code" className="min-w-[260px] flex-1">
               <input
                 name="code"
-                placeholder="Scan or type Order Code (PICKUP)"
+                placeholder="Scan or type pickup code"
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
               />
             </SoTFormField>
@@ -286,7 +286,7 @@ export default function CashierQueue() {
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-medium tracking-wide text-slate-700">
-              Pickup tickets
+              Pickup queue
             </h2>
             <span className="text-[11px] text-slate-500">
               {pickups.length} item(s)

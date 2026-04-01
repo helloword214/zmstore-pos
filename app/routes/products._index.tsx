@@ -1141,7 +1141,7 @@ export default function ProductsPage() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Product List"
-        subtitle="Catalog directory with compact filters and product actions."
+        subtitle="Catalog filters, stock, and product actions."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -1151,7 +1151,7 @@ export default function ProductsPage() {
         <SoTActionBar
           left={
             <p className="text-xs text-slate-500">
-              Showing {paginatedProducts.length} · {sortedProducts.length} matching
+              Page {paginatedProducts.length} of {sortedProducts.length} matching
             </p>
           }
           right={
@@ -1309,10 +1309,10 @@ export default function ProductsPage() {
 
           <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <details className="group rounded-xl border border-slate-200 bg-white">
-              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
+              <summary className="flex min-h-10 list-none cursor-pointer flex-col items-start gap-1 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-row sm:items-center sm:justify-between">
                 <span>Target</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-normal text-slate-500">
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                  <span className="max-w-full truncate text-xs font-normal text-slate-500 sm:max-w-[12rem]">
                     {targetFilterSummary}
                   </span>
                   <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
@@ -1349,10 +1349,10 @@ export default function ProductsPage() {
             </details>
 
             <details className="group rounded-xl border border-slate-200 bg-white">
-              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
+              <summary className="flex min-h-10 list-none cursor-pointer flex-col items-start gap-1 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-row sm:items-center sm:justify-between">
                 <span>Indications</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-normal text-slate-500">
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                  <span className="max-w-full truncate text-xs font-normal text-slate-500 sm:max-w-[12rem]">
                     {indicationFilterSummary}
                   </span>
                   <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">

@@ -699,7 +699,7 @@ export default function StorePayrollPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Payroll Runs"
-        subtitle="Build attendance-backed payroll drafts, review deductions, and finalize cutoff snapshots."
+        subtitle="Build payroll drafts, review deductions, and finalize cutoff runs."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
@@ -727,8 +727,7 @@ export default function StorePayrollPage() {
                   Cashier identity blocker
                 </h2>
                 <p className="text-xs text-slate-600">
-                  Link these payroll-tagged cashier charges to employee records
-                  before finalizing payroll.
+                  Link these tagged cashier charges to employee records before finalizing payroll.
                 </p>
               </div>
               <div className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-medium text-amber-900">
@@ -769,7 +768,7 @@ export default function StorePayrollPage() {
                 Create payroll draft
               </h2>
               <p className="text-xs text-slate-500">
-                Suggested dates follow the active company payroll policy.
+                Suggested dates follow the active payroll policy.
                 {suggestedDraft.payFrequency
                   ? ` Current pay frequency: ${suggestedDraft.payFrequency}.`
                   : ""}
@@ -783,7 +782,7 @@ export default function StorePayrollPage() {
             </Link>
           </div>
 
-          <Form method="post" className="grid gap-3 md:grid-cols-4">
+          <Form method="post" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <input type="hidden" name="_intent" value="create-run" />
             <SoTFormField label="Period start">
               <SoTInput
@@ -921,7 +920,7 @@ export default function StorePayrollPage() {
                 </SoTStatusBadge>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard
                   label="Employees"
                   value={String(selectedRun.lines.length)}

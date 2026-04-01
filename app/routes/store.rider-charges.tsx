@@ -195,7 +195,7 @@ export default function StoreRiderChargesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Rider Charges"
-        subtitle="Tag rider shortages for payroll deduction. Payments are not recorded here."
+        subtitle="Plan payroll deduction for rider shortages."
         backTo="/store"
         backLabel="Dashboard"
       />
@@ -224,14 +224,14 @@ export default function StoreRiderChargesPage() {
               to="/store/rider-variances"
               className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
-              Variances →
+              Open Variances
             </Link>
           }
         />
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-slate-800">
-              Open / Partially settled
+              Open charges
             </div>
             <div className="text-xs text-slate-500">Showing {rows.length} item(s)</div>
           </div>
@@ -313,7 +313,7 @@ export default function StoreRiderChargesPage() {
 
                         <input
                           name="note"
-                          placeholder="Cutoff or remark"
+                          placeholder="Cutoff or payroll note"
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         />
                         <input

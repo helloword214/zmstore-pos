@@ -346,7 +346,7 @@ export default function CashierChargesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier Charges"
-        subtitle="Review shift-close charges assigned to you."
+        subtitle="Review manager-approved shift-close charges."
         backTo="/cashier"
         backLabel="Dashboard"
       />
@@ -423,13 +423,13 @@ export default function CashierChargesPage() {
               {rows.length === 0 ? (
                 <SoTTableEmptyRow
                   colSpan={7}
-                  message={
-                    <SoTEmptyState
-                      title="No cashier charges."
-                      hint="New manager-approved charge items will appear here."
+                      message={
+                        <SoTEmptyState
+                          title="No cashier charges."
+                          hint="New manager-approved charges will appear here."
+                        />
+                      }
                     />
-                  }
-                />
               ) : (
                 rows.map((v) => {
                   const isZero = Math.abs(v.variance) < 0.005;
@@ -514,69 +514,71 @@ export default function CashierChargesPage() {
                       <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                            Review charge
+                            Details
                           </summary>
                           <div className="mt-3 space-y-3">
                             <DenomsTable denoms={v.shift.closingDenoms} />
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                              <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                                Cashier note
-                              </div>
-                              <Form method="post" className="grid gap-2">
-                                <input type="hidden" name="id" value={v.id} />
-                                <input type="hidden" name="tab" value={tab} />
-                                <input
-                                  type="hidden"
-                                  name="all"
-                                  value={showAll ? "1" : ""}
-                                />
-                                <input
-                                  name="note"
-                                  placeholder="Add or update note"
-                                  defaultValue={v.note ?? ""}
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                />
-                                <SoTButton
-                                  type="submit"
-                                  name="_intent"
-                                  value="cashier-note"
-                                  variant="secondary"
-                                >
-                                  Save note
-                                </SoTButton>
-                              </Form>
-                            </div>
-
-                            {!isHistory ? (
-                              <Form
-                                method="post"
-                                className="grid gap-2 rounded-xl border border-rose-200 bg-rose-50/50 p-3"
-                                onSubmit={(e) => {
-                                  if (!confirm("Acknowledge and close this charge?"))
-                                    e.preventDefault();
-                                }}
-                              >
-                                <div className="text-[11px] font-medium uppercase tracking-wide text-rose-700">
-                                  Close charge
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                  Cashier note
                                 </div>
-                                <input type="hidden" name="id" value={v.id} />
-                                <input type="hidden" name="tab" value={tab} />
-                                <input type="hidden" name="all" value={showAll ? "1" : ""} />
-                                <input
-                                  name="ackNote"
-                                  placeholder="Optional acknowledgement note"
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                                />
-                                <SoTButton
-                                  type="submit"
-                                  name="_intent"
-                                  value="cashier-ack"
-                                  variant="danger"
+                                <Form method="post" className="grid gap-2">
+                                  <input type="hidden" name="id" value={v.id} />
+                                  <input type="hidden" name="tab" value={tab} />
+                                  <input
+                                    type="hidden"
+                                    name="all"
+                                    value={showAll ? "1" : ""}
+                                  />
+                                  <input
+                                    name="note"
+                                    placeholder="Add or update note"
+                                    defaultValue={v.note ?? ""}
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  />
+                                  <SoTButton
+                                    type="submit"
+                                    name="_intent"
+                                    value="cashier-note"
+                                    variant="secondary"
+                                  >
+                                    Save note
+                                  </SoTButton>
+                                </Form>
+                              </div>
+
+                              {!isHistory ? (
+                                <Form
+                                  method="post"
+                                  className="grid gap-2 rounded-xl border border-rose-200 bg-rose-50/50 p-3"
+                                  onSubmit={(e) => {
+                                    if (!confirm("Acknowledge and close this charge?"))
+                                      e.preventDefault();
+                                  }}
                                 >
-                                  Acknowledge and Close
-                                </SoTButton>
-                              </Form>
-                            ) : null}
+                                  <div className="text-[11px] font-medium uppercase tracking-wide text-rose-700">
+                                    Acknowledge
+                                  </div>
+                                  <input type="hidden" name="id" value={v.id} />
+                                  <input type="hidden" name="tab" value={tab} />
+                                  <input type="hidden" name="all" value={showAll ? "1" : ""} />
+                                  <input
+                                    name="ackNote"
+                                    placeholder="Optional acknowledgement note"
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                  />
+                                  <SoTButton
+                                    type="submit"
+                                    name="_intent"
+                                    value="cashier-ack"
+                                    variant="danger"
+                                  >
+                                    Acknowledge & Close
+                                  </SoTButton>
+                                </Form>
+                              ) : null}
+                            </div>
                           </div>
                         </details>
                       </SoTTd>

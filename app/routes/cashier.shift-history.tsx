@@ -428,14 +428,14 @@ export default function ShiftHistory() {
             <span className="font-semibold text-slate-900">{countedCount}</span>
           </span>
           <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Opening dispute{" "}
+            Disputed{" "}
             <span className="font-semibold text-slate-900">{disputedCount}</span>
           </span>
         </div>
         {/* Filters */}
         <Form
           method="get"
-          className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-5"
+          className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5"
         >
           <div className="text-sm">
             <SelectInput
@@ -485,7 +485,7 @@ export default function ShiftHistory() {
           )}
           <div className="flex flex-wrap items-center gap-3 md:col-span-5">
             <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
-              Apply Filters
+              Apply
             </button>
             {params.toString() && (
               <Link
@@ -507,8 +507,8 @@ export default function ShiftHistory() {
                 <th className="px-4 py-3">Cashier</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Cash In</th>
-                <th className="px-4 py-3 text-right">Drawer Activity</th>
-                <th className="px-4 py-3 text-right">Expected Drawer</th>
+                <th className="px-4 py-3 text-right">Drawer</th>
+                <th className="px-4 py-3 text-right">Expected</th>
                 <th className="px-4 py-3 text-right">Counted</th>
               </tr>
             </thead>
@@ -547,7 +547,7 @@ export default function ShiftHistory() {
                               PENDING ACCEPT
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Waiting opening check
+                              Waiting opening
                             </div>
                           </div>
                         );
@@ -571,7 +571,7 @@ export default function ShiftHistory() {
                               SUBMITTED
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Waiting manager close
+                              Waiting close
                             </div>
                           </div>
                         );
@@ -583,7 +583,7 @@ export default function ShiftHistory() {
                               LEGACY RECOUNT
                             </span>
                             <div className="mt-1 text-xs text-slate-500">
-                              Legacy status
+                              Legacy
                             </div>
                           </div>
                         );

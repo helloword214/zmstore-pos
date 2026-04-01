@@ -133,6 +133,15 @@ export default function RunsIndexPage() {
     if (status === "CANCELLED") return "danger";
     return "neutral";
   };
+  const nextStepLabel = (r: Row) => {
+    if (mine && role === "EMPLOYEE") {
+      return r.status === "DISPATCHED" ? "Check-in next" : "Summary";
+    }
+    if (r.status === "PLANNED") return "Dispatch staging";
+    if (r.status === "DISPATCHED") return "Awaiting check-in";
+    if (r.status === "CHECKED_IN") return "Manager remit";
+    return "Summary";
+  };
 
   const nextHref = (r: Row) => {
     // Rider view: /runs?mine=1 and role = EMPLOYEE
@@ -159,7 +168,7 @@ export default function RunsIndexPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title={pageTitle}
-        subtitle="Track run status and open the next run step."
+        subtitle="Open the next step for each run."
         backTo={backHref}
         backLabel={backLabel}
         maxWidthClassName="max-w-5xl"
@@ -181,7 +190,7 @@ export default function RunsIndexPage() {
           </span>
         </div>
         <SoTActionBar
-          left={<h2 className="text-sm font-medium text-slate-800">{pageTitle}</h2>}
+          left={<p className="text-xs text-slate-500">Choose the next step from each row.</p>}
           right={
             !mine && role !== "EMPLOYEE" ? (
               <Link to="/runs/new">
@@ -199,7 +208,7 @@ export default function RunsIndexPage() {
                 <SoTTh>Rider</SoTTh>
                 <SoTTh>Status</SoTTh>
                 <SoTTh>Created</SoTTh>
-                <SoTTh>Dispatched</SoTTh>
+                <SoTTh>Next Step</SoTTh>
                 <SoTTh align="right"></SoTTh>
               </tr>
             </SoTTableHead>
@@ -228,7 +237,7 @@ export default function RunsIndexPage() {
                       {new Date(r.createdAt).toLocaleString()}
                     </SoTTd>
                     <SoTTd className="text-slate-500">
-                      {r.dispatchedAt ? "Ready" : "Waiting dispatch"}
+                      {nextStepLabel(r)}
                     </SoTTd>
                     <SoTTd align="right">
                       <Link

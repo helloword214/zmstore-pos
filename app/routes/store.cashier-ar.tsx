@@ -224,7 +224,7 @@ export default function StoreCashierARPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier AR (Payroll Plan)"
-        subtitle="Tag cashier charges for payroll deduction. Deduction happens in payroll."
+        subtitle="Plan payroll deduction for cashier charges."
         backTo="/store"
         backLabel="Dashboard"
       />
@@ -253,7 +253,7 @@ export default function StoreCashierARPage() {
               to="/store/cashier-variances"
               className="inline-flex items-center text-sm font-medium text-indigo-700 transition-colors duration-150 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
-              Cashier variances →
+              Open Variances
             </Link>
           }
         />
@@ -266,7 +266,7 @@ export default function StoreCashierARPage() {
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-slate-800">
-              Open / Partially settled
+              Open charges
             </div>
             <div className="text-xs text-slate-500">{rows.length} item(s)</div>
           </div>
@@ -354,7 +354,7 @@ export default function StoreCashierARPage() {
                         ) : null}
                         <input
                           name="note"
-                          placeholder="Cutoff or remark"
+                          placeholder="Cutoff or payroll note"
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors duration-150 focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         />
                         <input

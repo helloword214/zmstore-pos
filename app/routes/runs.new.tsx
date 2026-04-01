@@ -125,7 +125,7 @@ export default function NewRunPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="New Delivery Run"
-        subtitle="Create a free delivery run (no parent order)."
+        subtitle="Create a delivery run without a parent order."
         backTo="/runs"
         backLabel="Runs"
         maxWidthClassName="max-w-xl"
@@ -143,7 +143,7 @@ export default function NewRunPage() {
             <SoTLoadingState
               variant="panel"
               label="Creating delivery run"
-              hint="We’re saving the run and preparing the dispatch step."
+              hint="Saving the run and opening staging."
             />
           ) : null}
 
@@ -163,7 +163,7 @@ export default function NewRunPage() {
                   ]}
                   value={riderId}
                   onChange={(v) => setRiderId(String(v))}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
                 <input type="hidden" name="riderId" value={riderId} />
               </SoTFormField>
@@ -185,7 +185,7 @@ export default function NewRunPage() {
                   ]}
                   value={vehicleId}
                   onChange={(v) => setVehicleId(String(v))}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                 />
                 <input type="hidden" name="vehicleId" value={vehicleId} />
               </SoTFormField>

@@ -38,7 +38,7 @@ export default function ProductEditRoute() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Edit Product"
-        subtitle="Update the catalog record."
+        subtitle="Update pricing, stock, and assignments."
         backTo={`/products/${initialProduct.id}`}
         backLabel="Product Detail"
         maxWidthClassName="max-w-5xl"
@@ -51,7 +51,7 @@ export default function ProductEditRoute() {
                 {initialProduct.name}
               </h2>
               <p className="text-xs text-slate-500">
-                Product #{initialProduct.id}
+                Catalog ID #{initialProduct.id}
               </p>
             </div>
           }
@@ -60,7 +60,7 @@ export default function ProductEditRoute() {
               to={`/products/${initialProduct.id}`}
               className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
             >
-              View Detail
+              View
             </Link>
           }
         />

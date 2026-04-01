@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useNavigation, useOutlet } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation, useOutlet } from "@remix-run/react";
 import { compare } from "bcryptjs";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
@@ -41,7 +41,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     throw redirect("/login/otp");
   }
 
-  return json({ ok: true });
+  return json({
+    ok: true,
+    showDevCreds: process.env.NODE_ENV !== "production",
+  });
 }
 
 type ActionError = {
@@ -168,6 +171,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function LoginPage() {
+  const { showDevCreds } = useLoaderData<typeof loader>();
   const outlet = useOutlet();
   const actionData = useActionData<ActionError>();
   const nav = useNavigation();
@@ -182,7 +186,7 @@ export default function LoginPage() {
         <SoTCard className="w-full p-6">
           <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Use your email and password. New or untrusted devices will ask for a one-time verification code.
+            Use your email and password. New or untrusted devices will ask for a one-time code.
           </p>
 
           {actionData?.form ? (
@@ -233,25 +237,31 @@ export default function LoginPage() {
             </fieldset>
           </Form>
 
-          <div className="mt-4 space-y-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            <div className="font-semibold text-slate-700">Dev creds (from seed):</div>
-            <div>
-              Admin: <code>admin@local</code> / <code>admin123</code>
-            </div>
-            <div>
-              Managers: <code>manager1@local</code> / <code>manager1123</code>,{" "}
-              <code>manager2@local</code> / <code>manager2123</code>
-            </div>
-            <div>
-              Employees (riders): <code>rider1@local</code> / <code>rider1123</code>,{" "}
-              <code>rider2@local</code> / <code>rider2123</code>, <code>rider3@local</code> /{" "}
-              <code>rider3123</code>
-            </div>
-            <div>
-              Cashiers: <code>cashier1@local</code> / <code>cashier1123</code>,{" "}
-              <code>cashier2@local</code> / <code>cashier2123</code>
-            </div>
-          </div>
+          {showDevCreds ? (
+            <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <summary className="cursor-pointer font-semibold text-slate-700">
+                Local seed credentials
+              </summary>
+              <div className="mt-2 space-y-1">
+                <div>
+                  Admin: <code>admin@local</code> / <code>admin123</code>
+                </div>
+                <div>
+                  Managers: <code>manager1@local</code> / <code>manager1123</code>,{" "}
+                  <code>manager2@local</code> / <code>manager2123</code>
+                </div>
+                <div>
+                  Employees (riders): <code>rider1@local</code> / <code>rider1123</code>,{" "}
+                  <code>rider2@local</code> / <code>rider2123</code>,{" "}
+                  <code>rider3@local</code> / <code>rider3123</code>
+                </div>
+                <div>
+                  Cashiers: <code>cashier1@local</code> / <code>cashier1123</code>,{" "}
+                  <code>cashier2@local</code> / <code>cashier2123</code>
+                </div>
+              </div>
+            </details>
+          ) : null}
         </SoTCard>
       </div>
     </main>

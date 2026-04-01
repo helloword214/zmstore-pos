@@ -344,7 +344,7 @@ export default function RiderVarianceDetailPage() {
             <SoTAlert tone="warning" className="mt-4">
               <p className="font-semibold">Action required</p>
               <p className="mt-1 text-xs">
-                Please accept this rider charge to acknowledge the shortage.
+                Accept this rider charge to acknowledge the shortage.
               </p>
               <Form method="post" className="mt-3">
                 <SoTButton
@@ -353,13 +353,13 @@ export default function RiderVarianceDetailPage() {
                   value="accept"
                   variant="primary"
                 >
-                  Accept variance
+                  Accept charge
                 </SoTButton>
               </Form>
             </SoTAlert>
           ) : (
             <SoTAlert tone="info" className="mt-4">
-              No action required.
+              No rider action needed.
             </SoTAlert>
           )}
         </SoTCard>
@@ -368,7 +368,7 @@ export default function RiderVarianceDetailPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Evidence</h2>
             <p className="text-xs text-slate-500">
-              Review the manager decision and note before accepting.
+              Review the manager decision and note below.
             </p>
           </div>
           <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

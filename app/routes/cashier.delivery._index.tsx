@@ -324,7 +324,7 @@ export default function CashierDeliveryIndexPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Delivery Remit — Closed Runs"
-        subtitle="Open a closed run to continue cashier remit."
+        subtitle="Open a closed run for remit."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-5xl"
@@ -388,8 +388,8 @@ export default function CashierDeliveryIndexPage() {
                           {r.lockedByOther
                             ? "Waiting on another cashier"
                             : r.lockedByMe
-                              ? "Resume your remit"
-                              : "Ready to open"}
+                              ? "Resume remit"
+                              : "Ready"}
                         </div>
                       </SoTTd>
                       <SoTTd align="right">

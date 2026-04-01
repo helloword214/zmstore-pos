@@ -302,7 +302,7 @@ export default function StoreCashierVariancesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Cashier Shift Variances"
-        subtitle="Review close-count mismatches from cashier shifts."
+        subtitle="Review close-count mismatches."
         backTo="/store"
         backLabel="Dashboard"
       />
@@ -315,7 +315,7 @@ export default function StoreCashierVariancesPage() {
                 {pageTitle}
               </div>
               <div className="text-xs text-slate-500">
-                Final close still happens in Shift Manager.
+                Final close stays in Shift Manager.
               </div>
               <SoTActionBar
                 className="mb-0"
@@ -474,7 +474,7 @@ export default function StoreCashierVariancesPage() {
                       <SoTTd>
                         <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                            Open evidence
+                            Evidence
                           </summary>
                           <div className="mt-3 space-y-3 text-[11px] text-slate-600">
                             <DenomsTable denoms={v.shift.closingDenoms} />
