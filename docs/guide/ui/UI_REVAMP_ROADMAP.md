@@ -93,7 +93,7 @@ A route may leave the active tracker only when all of these are true:
 3. loading, empty, locked, and pending states are explicit
 4. repeated helper text has been trimmed to the current noise budget
 5. shared SoT primitives were used or extracted when the pattern repeated
-6. desktop and mobile fit were reviewed for the changed surface
+6. desktop and mobile fit were reviewed for the changed surface on a confirmed runtime target, per `docs/Governance SOP/QA Testing Architecture Standard.md`
 7. `UI_CONFORMANCE_MATRIX.md` was updated in the same objective
 8. docs impact was reported in the task summary
 
