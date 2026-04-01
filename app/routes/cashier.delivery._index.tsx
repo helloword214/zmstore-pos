@@ -296,6 +296,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function CashierDeliveryIndexPage() {
   const { rows } = useLoaderData<typeof loader>();
+  const lockedCount = rows.filter((row) => row.lockedByMe || row.lockedByOther).length;
+  const readyCount = rows.filter(
+    (row) => !row.lockedByMe && !row.lockedByOther,
+  ).length;
+  const totalCashToRemit = rows.reduce((sum, row) => sum + row.openOrderTotal, 0);
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -319,15 +324,29 @@ export default function CashierDeliveryIndexPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Delivery Remit — Closed Runs"
-        subtitle="Select a closed run to continue cashier turnover remit."
+        subtitle="Open a closed run for remit."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-5xl"
       />
 
-      <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="mb-3 text-xs text-slate-500">
-          {rows.length} run(s)
+      <div className="mx-auto max-w-5xl space-y-3 px-5 py-6">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Runs <span className="font-semibold text-slate-900">{rows.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Ready <span className="font-semibold text-slate-900">{readyCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Locked <span className="font-semibold text-slate-900">{lockedCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Cash to remit{" "}
+            <span className="font-semibold text-slate-900">
+              {peso(totalCashToRemit)}
+            </span>
+          </span>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -365,11 +384,18 @@ export default function CashierDeliveryIndexPage() {
                       </SoTTd>
                       <SoTTd>
                         <SoTStatusBadge tone={status.tone}>{status.label}</SoTStatusBadge>
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          {r.lockedByOther
+                            ? "Waiting on another cashier"
+                            : r.lockedByMe
+                              ? "Resume remit"
+                              : "Ready"}
+                        </div>
                       </SoTTd>
                       <SoTTd align="right">
                         {r.lockedByOther ? (
                           <span className="inline-flex cursor-not-allowed items-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">
-                            Open Remit
+                            Locked
                           </span>
                         ) : (
                           <Link

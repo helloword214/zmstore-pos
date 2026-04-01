@@ -38,28 +38,30 @@ export default function ProductEditRoute() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Edit Product"
-        subtitle={`Product #${initialProduct.id} - ${initialProduct.name}`}
+        subtitle="Update pricing, stock, and assignments."
         backTo={`/products/${initialProduct.id}`}
         backLabel="Product Detail"
         maxWidthClassName="max-w-5xl"
       />
       <div className="mx-auto w-full max-w-5xl space-y-4 px-5 py-6">
         <SoTActionBar
+          left={
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                {initialProduct.name}
+              </h2>
+              <p className="text-xs text-slate-500">
+                Catalog ID #{initialProduct.id}
+              </p>
+            </div>
+          }
           right={
-            <>
-              <Link
-                to={`/products/${initialProduct.id}`}
-                className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                View Detail
-              </Link>
-              <Link
-                to="/products"
-                className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Back to List
-              </Link>
-            </>
+            <Link
+              to={`/products/${initialProduct.id}`}
+              className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            >
+              View
+            </Link>
           }
         />
 

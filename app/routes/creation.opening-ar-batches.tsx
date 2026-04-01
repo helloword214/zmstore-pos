@@ -9,6 +9,7 @@ import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import {
   SoTTable,
@@ -489,6 +490,8 @@ export default function CreationOpeningArBatchesPage() {
   const actionData = useActionData<ActionData>();
   const nav = useNavigation();
   const busy = nav.state !== "idle";
+  const pendingIntent = String(nav.formData?.get("intent") ?? "");
+  const submitBatchBusy = busy && pendingIntent === "submitBatch";
   const invalidRows = actionData?.invalidRows ?? [];
 
   const [rowsText, setRowsText] = React.useState("");
@@ -707,7 +710,7 @@ export default function CreationOpeningArBatchesPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Opening Balance Batch Encode"
-        subtitle="Admin staging lane only. Manager approval is still required before AR creation."
+        subtitle="Stage one batch for manager approval."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -715,7 +718,7 @@ export default function CreationOpeningArBatchesPage() {
 
       <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
         <SoTAlert tone="info">
-          Encode per customer and submit one batch. First column accepts
+          Submit one batch per upload. The first column accepts
           <span className="mx-1 font-mono">customerId</span>
           or
           <span className="mx-1 font-mono">phone</span>
@@ -729,12 +732,7 @@ export default function CreationOpeningArBatchesPage() {
         {actionData?.ok ? (
           <SoTAlert tone="success">
             Batch <span className="font-mono">{actionData.batchRef}</span> submitted.
-            {" "}
-            Created {actionData.createdCount} pending cases.
-            {" "}
-            Manager should process this at
-            {" "}
-            <span className="font-mono">/store/clearance-opening-batches</span>.
+            {" "}Created {actionData.createdCount} pending case(s) for manager review.
           </SoTAlert>
         ) : null}
 
@@ -773,7 +771,7 @@ export default function CreationOpeningArBatchesPage() {
               <div>
                 <h3 className="text-sm font-medium text-slate-900">Quick Add Row (Select Customer)</h3>
                 <p className="text-xs text-slate-600">
-                  Use this when encoding per customer. It appends rows directly to the batch textarea.
+                  Use this for one-off customer rows. Each save appends directly to the batch textarea.
                 </p>
               </div>
 
@@ -834,7 +832,7 @@ export default function CreationOpeningArBatchesPage() {
                   <div>
                     <p className="text-sm font-medium text-slate-900">Itemization (optional)</p>
                     <p className="text-xs text-slate-600">
-                      Add item lines if record book has details. Leave empty for balance-only rows.
+                      Add item lines only when the source record has item details.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -943,10 +941,10 @@ export default function CreationOpeningArBatchesPage() {
                   Cancel Row Draft
                 </SoTButton>
                 <span className="text-xs text-slate-600">
-                  Staged rows: <span className="font-semibold text-slate-800">{stagedRowCount}</span>
+                  Rows staged: <span className="font-semibold text-slate-800">{stagedRowCount}</span>
                 </span>
                 {hasItemInputs ? (
-                  <span className="text-xs text-slate-600">Itemization attached</span>
+                  <span className="text-xs text-slate-600">Itemized</span>
                 ) : null}
               </div>
             </div>
@@ -968,8 +966,15 @@ export default function CreationOpeningArBatchesPage() {
             </SoTFormField>
 
             <div className="flex flex-wrap items-center gap-2">
+              {submitBatchBusy ? (
+                <SoTLoadingState
+                  variant="inline"
+                  label="Submitting opening balance batch"
+                  hint="Validating rows and creating pending cases."
+                />
+              ) : null}
               <SoTButton type="submit" variant="primary" disabled={busy}>
-                {busy ? "Submitting..." : "Submit Batch"}
+                {submitBatchBusy ? "Submitting..." : "Submit Batch"}
               </SoTButton>
               <SoTButton
                 type="button"
@@ -1019,7 +1024,7 @@ export default function CreationOpeningArBatchesPage() {
 
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-800">
-            Recent Opening Balance Batches
+            Recent Batches
           </div>
           <SoTTable>
             <SoTTableHead>

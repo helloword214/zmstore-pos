@@ -198,7 +198,7 @@ export default function ProductDetailRoute() {
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Product Detail"
-        subtitle={`Product #${product.id}`}
+        subtitle="Pricing, stock, and assignments."
         backTo="/products"
         backLabel="Product List"
         maxWidthClassName="max-w-5xl"
@@ -212,25 +212,17 @@ export default function ProductDetailRoute() {
                 {product.name}
               </h2>
               <p className="text-xs text-slate-500">
-                {product.brandName} - {product.categoryName}
+                {product.brandName} · {product.categoryName}
               </p>
             </div>
           }
           right={
-            <>
-              <Link
-                to="/products"
-                className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Back to List
-              </Link>
-              <Link
-                to={`/products/${product.id}/edit`}
-                className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Edit Product
-              </Link>
-            </>
+            <Link
+              to={`/products/${product.id}/edit`}
+              className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            >
+              Edit
+            </Link>
           }
         />
 
@@ -239,37 +231,7 @@ export default function ProductDetailRoute() {
         ) : null}
 
         <SoTCard>
-          <SoTSectionHeader title="Operations" />
-          <p className="text-sm text-slate-600">
-            Run stock conversion and destructive actions from this isolated section.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {canOpenPack ? (
-              <button
-                type="button"
-                onClick={handleOpenPack}
-                className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Open Pack
-              </button>
-            ) : (
-              <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                Open Pack unavailable (requires pack sale, stock, and packing size).
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="inline-flex items-center rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors duration-150 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:ring-offset-1"
-            >
-              Delete Product
-            </button>
-          </div>
-        </SoTCard>
-
-        <SoTCard>
-          <SoTSectionHeader title="Commercial and Inventory Snapshot" />
+          <SoTSectionHeader title="Catalog Snapshot" />
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <SoTDataRow
               label="Status"
@@ -364,7 +326,7 @@ export default function ProductDetailRoute() {
         </SoTCard>
 
         <SoTCard>
-          <SoTSectionHeader title="Photos (max 4)" />
+          <SoTSectionHeader title="Photos" />
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {PRODUCT_PHOTO_SLOTS.map((slot) => {
@@ -395,6 +357,36 @@ export default function ProductDetailRoute() {
             {product.imageTag ? (
               <div className="mt-2 text-xs text-slate-500">Tag: {product.imageTag}</div>
             ) : null}
+          </div>
+        </SoTCard>
+
+        <SoTCard>
+          <SoTSectionHeader title="Operations" />
+          <p className="text-xs text-slate-500">
+            Use only for pack conversion or permanent removal.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {canOpenPack ? (
+              <button
+                type="button"
+                onClick={handleOpenPack}
+                className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              >
+                Open Pack
+              </button>
+            ) : (
+              <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Requires pack sale, stock, and packing size.
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="inline-flex items-center rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors duration-150 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:ring-offset-1"
+            >
+              Delete Product
+            </button>
           </div>
         </SoTCard>
       </div>

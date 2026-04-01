@@ -115,6 +115,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function RunsIndexPage() {
   const { rows, mine, role } = useLoaderData<LoaderData>();
+  const plannedCount = rows.filter((row) => row.status === "PLANNED").length;
+  const activeCount = rows.filter(
+    (row) => row.status === "DISPATCHED" || row.status === "CHECKED_IN",
+  ).length;
+  const closedCount = rows.filter((row) => row.status === "CLOSED").length;
 
   const backHref = role === "EMPLOYEE" ? "/rider" : "/store";
   const backLabel = "Dashboard";
@@ -127,6 +132,15 @@ export default function RunsIndexPage() {
     if (status === "DISPATCHED" || status === "PLANNED") return "warning";
     if (status === "CANCELLED") return "danger";
     return "neutral";
+  };
+  const nextStepLabel = (r: Row) => {
+    if (mine && role === "EMPLOYEE") {
+      return r.status === "DISPATCHED" ? "Check-in next" : "Summary";
+    }
+    if (r.status === "PLANNED") return "Dispatch staging";
+    if (r.status === "DISPATCHED") return "Awaiting check-in";
+    if (r.status === "CHECKED_IN") return "Manager remit";
+    return "Summary";
   };
 
   const nextHref = (r: Row) => {
@@ -154,15 +168,29 @@ export default function RunsIndexPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title={pageTitle}
-        subtitle="Track run status and continue to dispatch, summary, check-in, or remit."
+        subtitle="Open the next step for each run."
         backTo={backHref}
         backLabel={backLabel}
         maxWidthClassName="max-w-5xl"
       />
 
-      <div className="mx-auto max-w-5xl p-5">
+      <div className="mx-auto max-w-5xl space-y-3 p-5">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Total <span className="font-semibold text-slate-900">{rows.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Planned <span className="font-semibold text-slate-900">{plannedCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Active <span className="font-semibold text-slate-900">{activeCount}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Closed <span className="font-semibold text-slate-900">{closedCount}</span>
+          </span>
+        </div>
         <SoTActionBar
-          left={<h2 className="text-sm font-medium text-slate-800">{pageTitle}</h2>}
+          left={<p className="text-xs text-slate-500">Choose the next step from each row.</p>}
           right={
             !mine && role !== "EMPLOYEE" ? (
               <Link to="/runs/new">
@@ -180,7 +208,7 @@ export default function RunsIndexPage() {
                 <SoTTh>Rider</SoTTh>
                 <SoTTh>Status</SoTTh>
                 <SoTTh>Created</SoTTh>
-                <SoTTh>Dispatched</SoTTh>
+                <SoTTh>Next Step</SoTTh>
                 <SoTTh align="right"></SoTTh>
               </tr>
             </SoTTableHead>
@@ -190,8 +218,18 @@ export default function RunsIndexPage() {
               ) : (
                 rows.map((r) => (
                   <SoTTableRow key={r.id}>
-                    <SoTTd className="font-mono">{r.runCode}</SoTTd>
-                    <SoTTd>{r.riderLabel ?? "—"}</SoTTd>
+                    <SoTTd>
+                      <div className="font-mono text-slate-900">{r.runCode}</div>
+                      <div className="text-[11px] text-slate-500">Run #{r.id}</div>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="text-slate-900">{r.riderLabel ?? "Unassigned"}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {r.dispatchedAt
+                          ? `Dispatched ${new Date(r.dispatchedAt).toLocaleString()}`
+                          : "Not dispatched yet"}
+                      </div>
+                    </SoTTd>
                     <SoTTd>
                       <SoTStatusBadge tone={statusTone(r.status)}>{r.status}</SoTStatusBadge>
                     </SoTTd>
@@ -199,16 +237,14 @@ export default function RunsIndexPage() {
                       {new Date(r.createdAt).toLocaleString()}
                     </SoTTd>
                     <SoTTd className="text-slate-500">
-                      {r.dispatchedAt
-                        ? new Date(r.dispatchedAt).toLocaleString()
-                        : "—"}
+                      {nextStepLabel(r)}
                     </SoTTd>
                     <SoTTd align="right">
                       <Link
                         to={nextHref(r)}
                         className="text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       >
-                        Open
+                        Open Run
                       </Link>
                     </SoTTd>
                   </SoTTableRow>

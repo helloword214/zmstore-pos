@@ -277,8 +277,8 @@ export default function RidersPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Creation - Riders"
-        subtitle="Scalable rider directory for assignment and dispatch readiness."
+        title="Riders"
+        subtitle="Rider directory for assignment and dispatch."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -288,13 +288,13 @@ export default function RidersPage() {
         <SoTCard interaction="static">
           <SoTActionBar
             left={
-              <Form method="get" className="flex flex-wrap items-end gap-2">
+              <Form method="get" className="flex flex-wrap items-end gap-2 md:gap-3">
                 <SoTFormField label="Search">
                   <SoTSearchInput
                     name="q"
                     defaultValue={q}
                     placeholder="Search rider"
-                    className="w-56"
+                    className="w-52 sm:w-60"
                   />
                 </SoTFormField>
                 <SoTFormField label="Status">
@@ -329,20 +329,20 @@ export default function RidersPage() {
                 variant="primary"
                 onClick={() => setShowCreate((v) => !v)}
               >
-                {showCreate ? "Hide Add Form" : "Add Rider"}
+                {showCreate ? "Hide Form" : "New Rider"}
               </SoTButton>
             }
           />
 
-          <SoTAlert tone="info">
+          <p className="text-xs text-slate-500">
             Showing {start}-{end} of {total} rider entries.
-          </SoTAlert>
+          </p>
         </SoTCard>
 
         {showCreate ? (
           <SoTCard interaction="form">
-            <SoTSectionHeader title="Create Rider" />
-            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <SoTSectionHeader title="New Rider" />
+            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="create" />
 
               <div className="md:col-span-3">
@@ -396,7 +396,7 @@ export default function RidersPage() {
                 />
               </div>
 
-              <div className="md:col-span-4">
+              <div className="md:col-span-6 lg:col-span-4">
                 <SoTFormField label="Default Vehicle">
                   <SelectInput
                     name="defaultVehicleId"
@@ -418,7 +418,7 @@ export default function RidersPage() {
                 </SoTFormField>
               </div>
 
-              <div className="md:col-span-2 md:flex md:items-end">
+              <div className="md:col-span-6 lg:col-span-2 md:flex md:items-end">
                 <SoTButton type="submit" variant="primary" className="w-full">
                   Save
                 </SoTButton>
@@ -430,7 +430,7 @@ export default function RidersPage() {
         {editing ? (
           <SoTCard interaction="form">
             <SoTSectionHeader title={`Edit Rider #${editing.id}`} />
-            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <fetcher.Form method="post" className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
               <input type="hidden" name="intent" value="update" />
               <input type="hidden" name="id" value={editing.id} />
 
@@ -485,7 +485,7 @@ export default function RidersPage() {
                 />
               </div>
 
-              <div className="md:col-span-4">
+              <div className="md:col-span-6 lg:col-span-4">
                 <SoTFormField label="Default Vehicle">
                   <SelectInput
                     name="defaultVehicleId"
@@ -507,7 +507,7 @@ export default function RidersPage() {
                 </SoTFormField>
               </div>
 
-              <div className="md:col-span-4 flex items-end gap-2">
+              <div className="md:col-span-6 lg:col-span-4 flex flex-wrap items-end gap-2 sm:flex-nowrap">
                 <SoTButton type="submit" variant="primary" className="w-full">
                   Update
                 </SoTButton>
@@ -555,16 +555,23 @@ export default function RidersPage() {
                       <div className="font-medium text-slate-900">
                         {r.lastName}, {r.firstName}
                       </div>
-                      {r.alias ? <p className="text-xs text-slate-500">Alias: {r.alias}</p> : null}
+                      {r.alias ? <p className="text-xs text-slate-500">{r.alias}</p> : null}
                     </SoTTd>
                     <SoTTd>
                       <p>{r.phone ?? "-"}</p>
                       <p className="text-xs text-slate-500">{r.email ?? "-"}</p>
                     </SoTTd>
                     <SoTTd>
-                      {r.defaultVehicle
-                        ? `${r.defaultVehicle.name} - ${r.defaultVehicle.type}`
-                        : "-"}
+                      {r.defaultVehicle ? (
+                        <div className="space-y-0.5">
+                          <div>{r.defaultVehicle.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {r.defaultVehicle.type}
+                          </div>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
                     </SoTTd>
                     <SoTTd>
                       <span
@@ -578,11 +585,12 @@ export default function RidersPage() {
                       </span>
                     </SoTTd>
                     <SoTTd align="right">
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-1.5 sm:flex-nowrap">
                         <SoTButton
                           type="button"
                           variant="secondary"
                           size="compact"
+                          className="sm:min-w-[5.5rem] justify-center"
                           onClick={() => setEditing(r)}
                         >
                           Edit
@@ -595,6 +603,7 @@ export default function RidersPage() {
                             type="submit"
                             variant="secondary"
                             size="compact"
+                            className="sm:min-w-[5.5rem] justify-center"
                           >
                             {r.active ? "Disable" : "Enable"}
                           </SoTButton>
@@ -614,6 +623,7 @@ export default function RidersPage() {
                             type="submit"
                             variant="danger"
                             size="compact"
+                            className="sm:min-w-[5.5rem] justify-center"
                           >
                             Delete
                           </SoTButton>
@@ -626,7 +636,7 @@ export default function RidersPage() {
             </tbody>
           </SoTTable>
 
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
             <p className="text-xs text-slate-500">
               Page {page} of {totalPages}
             </p>

@@ -1128,12 +1128,20 @@ export default function ProductsPage() {
       ),
     [sortedProducts, currentPage]
   );
+  const targetFilterSummary = filterTarget
+    ? targetOptions.find((option) => option.value === filterTarget)?.label ??
+      "1 selected"
+    : "All targets";
+  const indicationFilterSummary =
+    filterIndications.length > 0
+      ? `${filterIndications.length} selected`
+      : "All indications";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb] text-slate-900">
       <SoTNonDashboardHeader
         title="Product List"
-        subtitle="Catalog list, operational filters, and deep-link product actions."
+        subtitle="Catalog filters, stock, and product actions."
         backTo="/"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
@@ -1143,7 +1151,7 @@ export default function ProductsPage() {
         <SoTActionBar
           left={
             <p className="text-xs text-slate-500">
-              Showing {paginatedProducts.length} of {sortedProducts.length} products
+              Page {paginatedProducts.length} of {sortedProducts.length} matching
             </p>
           }
           right={
@@ -1171,20 +1179,20 @@ export default function ProductsPage() {
           }
         />
 
-        <SoTCard className="space-y-5 sm:p-6">
+        <SoTCard className="space-y-4 sm:p-5">
           <section className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-12">
               <div className="space-y-1 lg:col-span-8">
                 <label
                   htmlFor="product-search"
                   className="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                 >
-                  Search
+                  Search catalog
                 </label>
                 <SoTSearchInput
                   id="product-search"
                   type="text"
-                  placeholder="Search product name, description, or brand"
+                  placeholder="Search name, description, or brand"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -1207,7 +1215,7 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-12">
               <div className="xl:col-span-3">
                 <SelectInput
                   label="Category"
@@ -1301,11 +1309,16 @@ export default function ProductsPage() {
 
           <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <details className="group rounded-xl border border-slate-200 bg-white">
-              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
-                <span>Target Filter</span>
-                <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
-                  ▼
-                </span>
+              <summary className="flex min-h-10 list-none cursor-pointer flex-col items-start gap-1 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-row sm:items-center sm:justify-between">
+                <span>Target</span>
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                  <span className="max-w-full truncate text-xs font-normal text-slate-500 sm:max-w-[12rem]">
+                    {targetFilterSummary}
+                  </span>
+                  <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
+                    ▼
+                  </span>
+                </div>
               </summary>
               <div className="space-y-3 border-t border-slate-200 px-3 py-3">
                 <div className="flex flex-wrap gap-2">
@@ -1336,11 +1349,16 @@ export default function ProductsPage() {
             </details>
 
             <details className="group rounded-xl border border-slate-200 bg-white">
-              <summary className="flex h-10 list-none cursor-pointer items-center justify-between px-3 text-sm font-medium text-slate-700">
-                <span>Indication Filters</span>
-                <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
-                  ▼
-                </span>
+              <summary className="flex min-h-10 list-none cursor-pointer flex-col items-start gap-1 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-row sm:items-center sm:justify-between">
+                <span>Indications</span>
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                  <span className="max-w-full truncate text-xs font-normal text-slate-500 sm:max-w-[12rem]">
+                    {indicationFilterSummary}
+                  </span>
+                  <span className="text-slate-500 transition-transform duration-150 group-open:rotate-180">
+                    ▼
+                  </span>
+                </div>
               </summary>
               <div className="space-y-3 border-t border-slate-200 px-3 py-3">
                 <div className="max-h-[300px] overflow-y-auto overscroll-contain pr-1">
@@ -1386,7 +1404,7 @@ export default function ProductsPage() {
             {!paginatedProducts.length ? (
               <SoTEmptyState
                 title="No products available."
-                hint="Try adjusting filters or add a new product."
+                hint="Clear filters or add a product."
                 className="mt-1"
               />
             ) : (

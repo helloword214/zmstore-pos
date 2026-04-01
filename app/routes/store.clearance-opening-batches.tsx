@@ -360,29 +360,56 @@ export default function StoreClearanceOpeningBatchesPage() {
   const [sp] = useSearchParams();
   const batchRefFromUrl = String(sp.get("batchRef") || "").trim();
   const activeBatchRef = selectedBatchRef || batchRefFromUrl || null;
+  const selectedPendingBalance = selectedRows.reduce(
+    (sum, row) => sum + row.balance,
+    0,
+  );
+  const selectedAutoRejectCount = selectedRows.filter(
+    (row) => Boolean(row.autoRejectReason),
+  ).length;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Opening Balance Clearance Batches"
-        subtitle="Manager bulk lane: approve valid rows by default, reject only exceptions."
+        subtitle="Approve valid rows and reject only exceptions."
         backTo="/store/clearance"
         backLabel="Clearance Inbox"
         maxWidthClassName="max-w-6xl"
       />
 
       <div className="mx-auto max-w-6xl space-y-4 px-5 py-6">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Batches{" "}
+            <span className="font-semibold text-slate-900">{batches.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Selected rows{" "}
+            <span className="font-semibold text-slate-900">{selectedRows.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Pending balance{" "}
+            <span className="font-semibold text-slate-900">
+              {peso(selectedPendingBalance)}
+            </span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Auto-reject{" "}
+            <span className="font-semibold text-slate-900">
+              {selectedAutoRejectCount}
+            </span>
+          </span>
+        </div>
+
         <SoTAlert tone="info">
-          Default behavior: all valid rows in the selected batch are approved as
-          {" "}
-          <span className="font-mono">APPROVE_OPEN_BALANCE</span>.
-          {" "}
-          Checked rows and invalid rows are rejected.
+          Valid rows are approved by default. Checked rows and invalid rows are rejected.
         </SoTAlert>
 
         {flash ? (
           <SoTAlert tone="success">
-            Processed {flash.processed} row(s): approved {flash.approved}, rejected {flash.rejected}.
+            Processed {flash.processed} row(s): approved {flash.approved}, rejected{" "}
+            {flash.rejected}.
           </SoTAlert>
         ) : null}
 
@@ -406,7 +433,16 @@ export default function StoreClearanceOpeningBatchesPage() {
               ) : (
                 batches.map((batch) => (
                   <SoTTableRow key={batch.batchRef}>
-                    <SoTTd className="font-mono text-xs">{batch.batchRef}</SoTTd>
+                    <SoTTd>
+                      <div className="font-mono text-xs text-slate-800">
+                        {batch.batchRef}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {batch.latestAt
+                          ? `Latest ${new Date(batch.latestAt).toLocaleString()}`
+                          : "No timestamp"}
+                      </div>
+                    </SoTTd>
                     <SoTTd align="right" className="tabular-nums">
                       {batch.pendingCount}
                     </SoTTd>
@@ -423,7 +459,7 @@ export default function StoreClearanceOpeningBatchesPage() {
                         )}`}
                         className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                       >
-                        Open
+                        Review Batch
                       </Link>
                     </SoTTd>
                   </SoTTableRow>
@@ -452,9 +488,13 @@ export default function StoreClearanceOpeningBatchesPage() {
                   <SoTLoadingState
                     variant="panel"
                     label="Processing opening balance batch"
-                    hint="Approving valid rows and rejecting the selected or invalid exceptions."
+                    hint="Approving valid rows and rejecting the selected exceptions."
                   />
                 ) : null}
+
+                <div className="text-xs text-slate-600">
+                  Auto-reject rows are already marked and do not need manual selection.
+                </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <SoTFormField label="Approval note">
@@ -489,7 +529,7 @@ export default function StoreClearanceOpeningBatchesPage() {
                       <SoTTableEmptyRow colSpan={6} message="No rows in selected batch." />
                     ) : (
                       selectedRows.map((row) => (
-                        <SoTTableRow key={row.caseId}>
+                      <SoTTableRow key={row.caseId}>
                           <SoTTd>
                             {row.autoRejectReason ? (
                               <span className="text-xs text-rose-700">auto</span>
@@ -505,21 +545,25 @@ export default function StoreClearanceOpeningBatchesPage() {
                           </SoTTd>
                           <SoTTd>
                             <div className="font-mono text-xs">{row.receiptKey}</div>
-                            <div className="text-[11px] text-slate-500">Case #{row.caseId}</div>
+                            <div className="text-[11px] text-slate-500">
+                              Case #{row.caseId}
+                            </div>
                           </SoTTd>
                           <SoTTd>
                             <div className="text-sm text-slate-800">{row.customerLabel}</div>
                             <div className="text-[11px] text-slate-500">
-                              customerId: {row.customerId ?? "—"}
+                              Customer #{row.customerId ?? "—"}
                             </div>
                           </SoTTd>
                           <SoTTd align="right" className="tabular-nums font-semibold text-amber-700">
                             {peso(row.balance)}
                           </SoTTd>
-                          <SoTTd className="text-xs text-slate-600">
-                            {row.dueDate ? `due ${row.dueDate}` : "no due date"}
-                            {row.refNo ? ` • ref ${row.refNo}` : ""}
-                            {row.lineNote ? ` • ${row.lineNote}` : ""}
+                          <SoTTd className="space-y-1 text-xs text-slate-600">
+                            <div>
+                              {row.dueDate ? `Due ${row.dueDate}` : "No due date"}
+                              {row.refNo ? ` • Ref ${row.refNo}` : ""}
+                            </div>
+                            {row.lineNote ? <div>{row.lineNote}</div> : null}
                           </SoTTd>
                           <SoTTd className="text-xs">
                             {row.autoRejectReason ? (

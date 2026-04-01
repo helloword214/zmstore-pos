@@ -106,6 +106,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function RiderVariancesListPage() {
   const { pending } = useLoaderData<LoaderData>();
+  const totalShortage = pending.reduce(
+    (sum, item) => sum + Math.abs(item.variance),
+    0,
+  );
 
   const peso = (n: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -117,24 +121,36 @@ export default function RiderVariancesListPage() {
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Pending Variances"
-        subtitle="Review and accept manager-tagged rider variances."
+        subtitle="Review shortages waiting for your acceptance."
         backTo="/rider"
         backLabel="Dashboard"
       />
 
-      <div className="mx-auto max-w-6xl px-5 py-6">
+      <div className="mx-auto max-w-6xl px-5 py-6 space-y-3">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Pending{" "}
+            <span className="font-semibold text-slate-900">{pending.length}</span>
+          </span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+            Total shortage{" "}
+            <span className="font-semibold text-slate-900">
+              {peso(totalShortage)}
+            </span>
+          </span>
+        </div>
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3">
             <SoTActionBar
               className="mb-0"
               left={
                 <div className="text-sm font-medium text-slate-800">
-                  Needs your acceptance (Charge rider)
+                  Awaiting your review
                 </div>
               }
               right={
                 <div className="text-xs text-slate-500">
-                  {pending.length} item(s)
+                  Showing {pending.length} item(s)
                 </div>
               }
             />
@@ -145,27 +161,29 @@ export default function RiderVariancesListPage() {
               <SoTTableRow className="border-t-0">
                 <SoTTh>Run</SoTTh>
                 <SoTTh align="right">Variance</SoTTh>
-                <SoTTh>Note</SoTTh>
+                <SoTTh>Summary</SoTTh>
                 <SoTTh align="right">Action</SoTTh>
               </SoTTableRow>
             </SoTTableHead>
             <tbody>
               {pending.length === 0 ? (
-                <SoTTableEmptyRow
-                  colSpan={4}
-                  message={
-                    <SoTEmptyState
-                      title="No pending acceptances."
-                      hint="New charge acceptance requests will appear here."
+                    <SoTTableEmptyRow
+                      colSpan={4}
+                      message={
+                        <SoTEmptyState
+                          title="No pending acceptances."
+                          hint="New rider requests will appear here."
+                        />
+                      }
                     />
-                  }
-                />
               ) : (
                 pending.map((v) => (
                   <SoTTableRow key={v.id}>
                     <SoTTd>
                       <div className="font-mono text-slate-800">{v.run.runCode}</div>
-                      <div className="text-[11px] text-slate-500">ref #{v.id}</div>
+                      <div className="text-[11px] text-slate-500">
+                        Variance #{v.id}
+                      </div>
                     </SoTTd>
                     <SoTTd align="right" className="tabular-nums">
                       <span className="text-rose-700">{peso(Math.abs(v.variance))}</span>
@@ -173,11 +191,17 @@ export default function RiderVariancesListPage() {
                         <SoTStatusBadge tone="danger">SHORT</SoTStatusBadge>
                       </div>
                     </SoTTd>
-                    <SoTTd className="text-xs text-slate-600">{v.note ?? "—"}</SoTTd>
+                    <SoTTd className="space-y-1 text-xs text-slate-600">
+                      <div>
+                        Expected {peso(v.expected)} · Actual {peso(v.actual)}
+                      </div>
+                      <div>{new Date(v.createdAt).toLocaleString()}</div>
+                      {v.note ? <div>Note: {v.note}</div> : null}
+                    </SoTTd>
                     <SoTTd align="right">
                       <Link to={`/rider/variance/${v.id}`}>
                         <SoTButton variant="primary" className="text-sm">
-                          Open
+                          Open Review
                         </SoTButton>
                       </Link>
                     </SoTTd>
