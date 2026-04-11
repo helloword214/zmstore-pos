@@ -95,6 +95,11 @@ Component gap rule:
 3. `inline` variant is for compact busy feedback near buttons, filters, or row actions.
 4. Prefer `SoTLoadingState` over route-local animated dots, ad hoc loading chips, or opacity-only pending presentation.
 5. Loading labels must say what the app is doing in plain language, for example `Creating delivery run` or `Checking your sign-in`.
+6. App-shell route transitions should use a quiet shell-level handoff with a top loading bar and a plain-language label.
+7. Route transitions should prefer route-aware labels and short hints rather than dense preview markup.
+8. Overlay loading should read as a route handoff layer, not a blocking modal; avoid oversized framing and long explanation copy for short transitions.
+9. If a route needs richer loading feedback than the shell-level handoff, prefer route-local `panel` or `inline` loading inside the destination page.
+10. If 2 or more routes share the same richer in-page loading structure, keep that loading pattern in a shared SoT component instead of duplicating route-local markup.
 
 ## 3.4 Dashboard Revamp Contract (Mandatory)
 
@@ -218,7 +223,9 @@ Refer To:
 3. The table or list is the work surface and must outrank filter chrome.
 4. Summary counts and state chips should stay compact and scan-first.
 5. Repeated helper text around filters, row actions, and list summaries is not allowed by default.
-6. Example routes:
+6. When terminal history exists, actionable rows must stay in the default inbox and history must move to an explicit secondary mode or section.
+7. Long operational lists should progressively reveal older rows with low-noise pagination or load-more controls instead of dumping every row at once.
+8. Example routes:
    `app/routes/store.dispatch.tsx`
    `app/routes/runs._index.tsx`
    `app/routes/ar._index.tsx`

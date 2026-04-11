@@ -26,6 +26,16 @@ export type ApplyWorkerSuspensionRecordInput = {
   appliedById?: number | null;
 };
 
+export type UpdateWorkerSuspensionRecordInput = {
+  suspensionRecordId: number;
+  workerId: number;
+  startDate: Date | string;
+  endDate: Date | string;
+  reasonType: string;
+  managerNote?: string | null;
+  updatedById?: number | null;
+};
+
 const toDateOnly = (value: Date | string) => {
   const parsed = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -264,6 +274,70 @@ export async function applyWorkerSuspensionRecordAndOverlay(
     );
 
     return { record, ...overlay };
+  });
+}
+
+export async function updateWorkerSuspensionRecordAndOverlay(
+  input: UpdateWorkerSuspensionRecordInput,
+  prisma: WorkforceRootDbClient = db,
+) {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const record = await tx.suspensionRecord.findUnique({
+      where: { id: input.suspensionRecordId },
+    });
+
+    if (!record) {
+      throw new Error("Suspension record not found.");
+    }
+    if (record.workerId !== input.workerId) {
+      throw new Error("Suspension record does not match the selected worker.");
+    }
+    if (record.status !== SuspensionRecordStatus.ACTIVE) {
+      throw new Error("Only active suspension records can be edited.");
+    }
+
+    const startDate = toDateOnly(input.startDate);
+    const endDate = toDateOnly(input.endDate);
+
+    if (endDate < startDate) {
+      throw new Error("endDate must be on or after startDate.");
+    }
+    if (!input.reasonType.trim()) {
+      throw new Error("reasonType is required.");
+    }
+
+    const updated = await tx.suspensionRecord.update({
+      where: { id: input.suspensionRecordId },
+      data: {
+        startDate,
+        endDate,
+        reasonType: input.reasonType.trim(),
+        managerNote: input.managerNote?.trim() || null,
+      },
+    });
+
+    const taggedAttendance = await tx.attendanceDutyResult.findMany({
+      where: {
+        workerId: record.workerId,
+        attendanceResult: AttendanceResult.SUSPENDED_NO_WORK,
+        note: { contains: buildSuspensionRecordTag(record.id) },
+      },
+      select: { id: true },
+    });
+
+    if (taggedAttendance.length > 0) {
+      await tx.attendanceDutyResult.deleteMany({
+        where: { id: { in: taggedAttendance.map((row) => row.id) } },
+      });
+    }
+
+    const overlay = await overlayWorkerSuspensionAttendanceInTx(
+      updated,
+      input.updatedById ?? null,
+      tx,
+    );
+
+    return { record: updated, ...overlay };
   });
 }
 

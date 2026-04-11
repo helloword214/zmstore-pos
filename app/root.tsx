@@ -5,6 +5,7 @@ import {
   Meta,
   Outlet,
   Scripts,
+  useLocation,
   ScrollRestoration,
   useNavigation,
   useRouteError,
@@ -30,14 +31,106 @@ export const links: LinksFunction = () => [
   },
 ];
 
+type LoadingPreviewTarget = {
+  label: string;
+  hint: string;
+};
+
+function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTarget {
+  if (!pathname) {
+    return {
+      label: "Loading page",
+      hint: "Preparing the next workspace and the latest UI state.",
+    };
+  }
+
+  if (pathname === "/") {
+    return {
+      label: "Opening admin dashboard",
+      hint: "Preparing your launchpad, shortcuts, and setup signals.",
+    };
+  }
+
+  if (pathname === "/store") {
+    return {
+      label: "Opening manager dashboard",
+      hint: "Loading queues, dispatch counts, and today's signals.",
+    };
+  }
+
+  if (pathname === "/cashier") {
+    return {
+      label: "Opening cashier dashboard",
+      hint: "Preparing your shift workspace and priority lanes.",
+    };
+  }
+
+  if (pathname === "/rider") {
+    return {
+      label: "Opening rider dashboard",
+      hint: "Loading your runs, acceptance items, and daily signals.",
+    };
+  }
+
+  if (pathname === "/runs") {
+    return {
+      label: "Loading runs list",
+      hint: "Refreshing run statuses and the next-step work surface.",
+    };
+  }
+
+  if (/^\/runs\/[^/]+\/summary$/.test(pathname)) {
+    return {
+      label: "Loading run summary",
+      hint: "Preparing recap totals, stock notes, and closeout details.",
+    };
+  }
+
+  if (/^\/runs\/[^/]+\/rider-checkin$/.test(pathname)) {
+    return {
+      label: "Loading rider check-in",
+      hint: "Preparing receipts, blockers, and check-in actions.",
+    };
+  }
+
+  if (pathname === "/store/dispatch") {
+    return {
+      label: "Loading dispatch queue",
+      hint: "Preparing triage counts, filters, and order rows.",
+    };
+  }
+
+  if (pathname === "/ar" || pathname.startsWith("/ar/")) {
+    return {
+      label: "Loading receivables list",
+      hint: "Refreshing customer balances and review rows.",
+    };
+  }
+
+  if (pathname === "/cashier/delivery" || pathname.startsWith("/cashier/delivery/")) {
+    return {
+      label: "Loading cashier remit queue",
+      hint: "Preparing remit rows and the next cashier actions.",
+    };
+  }
+
+  return {
+    label: "Loading page",
+    hint: "Preparing the next workspace and the latest UI state.",
+  };
+}
+
 export function Layout({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
   const loading = navigation.state === "loading";
-  const pendingLabel =
-    navigation.formData || navigation.state === "submitting"
-      ? "Opening next page..."
-      : "Loading page...";
+  const pathnameChanged =
+    navigation.location?.pathname != null &&
+    navigation.location.pathname !== location.pathname;
+  const showOverlay = loading && pathnameChanged;
+  const loadingTarget = resolveLoadingPreviewTarget(navigation.location?.pathname);
+  const pendingLabel = loadingTarget.label;
 
   return (
     <html lang="en">
@@ -48,11 +141,11 @@ export function Layout({ children }: { children: ReactNode }) {
         <Links />
       </head>
       <body className="bg-[#f7f7fb] text-slate-900" aria-busy={busy}>
-        {loading ? (
+        {showOverlay ? (
           <SoTLoadingState
             variant="overlay"
             label={pendingLabel}
-            hint="Please wait a moment."
+            hint={loadingTarget.hint}
           />
         ) : null}
         {children}

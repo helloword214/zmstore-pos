@@ -167,6 +167,13 @@ If you violate the gate (project mode), I may reply:
 - Stop at first error and report status.
 - If `CHECK` fails, no commit unless user says `FORCE-COMMIT`.
 
+### UI Patch Validation Stop Rule
+
+- For UI or UX patches, do not declare the patch fixed, recommend commit, or move route progress forward until post-patch live validation has been run on the confirmed runtime target.
+- If multiple local servers or previews exist, identify which target reflects the current patch before reporting a browser result.
+- If browser tooling, auth/session state, or runtime targeting is unreliable, report `blocked` or `untrusted validation` instead of a visual pass.
+- Validation trust rules are owned by `docs/Governance SOP/QA Testing Architecture Standard.md`.
+
 ---
 
 ## 12) Working Directory Rule (Manual vs Automation)

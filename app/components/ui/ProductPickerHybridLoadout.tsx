@@ -249,7 +249,7 @@ export function ProductPickerHybridLoadout({
 
         <button
           type="button"
-          className="shrink-0 h-11 rounded-xl border px-3 text-xs bg-white hover:bg-slate-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+          className="shrink-0 h-9 rounded-xl border border-slate-200 px-2.5 text-[11px] text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
           onClick={() => {
             setShowModal(true);
             setPage(1);

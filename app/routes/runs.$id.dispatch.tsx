@@ -131,16 +131,8 @@ type LoaderData = {
   // Parent orders (PAD) linked to this run (read-only clarity)
   parentOrdersSummary: {
     orderCount: number;
-    uniqueItemCount: number; // unique productIds across linked orders
     totalQty: number; // sum of qty across linked order items
   } | null;
-
-  // Optional small preview list (top few items)
-  parentOrderTopItems: Array<{
-    productId: number;
-    name: string;
-    qty: number;
-  }>;
   linkedParentOrders: LinkedParentOrderRow[];
 };
 
@@ -351,11 +343,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const uniqueIds = new Set<number>();
   let totalQty = 0;
 
-  // aggregate by productId for preview
-  const agg = new Map<
-    number,
-    { productId: number; name: string; qty: number }
-  >();
   for (const it of orderItems) {
     const pid = Number(it.productId);
     if (!Number.isFinite(pid)) continue;
@@ -363,28 +350,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (q <= 0) continue;
     uniqueIds.add(pid);
     totalQty += q;
-    const cur = agg.get(pid);
-    if (cur) cur.qty += q;
-    else
-      agg.set(pid, {
-        productId: pid,
-        name: it.product?.name ?? `#${pid}`,
-        qty: q,
-      });
   }
 
   const parentOrdersSummary =
     orderCount > 0
       ? {
           orderCount,
-          uniqueItemCount: uniqueIds.size,
           totalQty,
         }
       : null;
-
-  const parentOrderTopItems = Array.from(agg.values())
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 8);
 
   const dispatchAvailabilityById: Record<number, DispatchAvailabilityRow> = {};
   const dispatchProducts =
@@ -483,7 +457,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     categories: categoryRows.map((c) => c.name).filter(Boolean),
     readOnly,
     parentOrdersSummary,
-    parentOrderTopItems,
     linkedParentOrders,
   };
 
@@ -1329,7 +1302,6 @@ export default function RunDispatchPage() {
     vehicles,
     readOnly,
     parentOrdersSummary,
-    parentOrderTopItems,
     linkedParentOrders,
   } = useLoaderData<LoaderData>();
   const nav = useNavigation();
@@ -1498,11 +1470,21 @@ export default function RunDispatchPage() {
 
   const runDraftShortageByKey = React.useMemo(() => {
     const demandByKey = new Map<string, number>();
+    const demandSourceByKey = new Map<
+      string,
+      { linkedOrder: boolean; extraLoadout: boolean }
+    >();
 
     for (const order of linkedParentOrders) {
       for (const item of order.items) {
         const demandKey = makeDispatchDemandKey(item.productId, item.unitKind);
         demandByKey.set(demandKey, (demandByKey.get(demandKey) ?? 0) + item.qty);
+        const currentSource = demandSourceByKey.get(demandKey) ?? {
+          linkedOrder: false,
+          extraLoadout: false,
+        };
+        currentSource.linkedOrder = true;
+        demandSourceByKey.set(demandKey, currentSource);
       }
     }
 
@@ -1513,6 +1495,12 @@ export default function RunDispatchPage() {
         demandKey,
         (demandByKey.get(demandKey) ?? 0) + qtyNum(row.qty)
       );
+      const currentSource = demandSourceByKey.get(demandKey) ?? {
+        linkedOrder: false,
+        extraLoadout: false,
+      };
+      currentSource.extraLoadout = true;
+      demandSourceByKey.set(demandKey, currentSource);
     }
 
     const shortages = new Map<
@@ -1522,6 +1510,8 @@ export default function RunDispatchPage() {
         available: number;
         required: number;
         shortage: number;
+        fromLinkedOrder: boolean;
+        fromExtraLoadout: boolean;
       }
     >();
 
@@ -1530,10 +1520,14 @@ export default function RunDispatchPage() {
       const productId = Number(productIdRaw);
       const unitKind = unitKindRaw === "RETAIL" ? "RETAIL" : "PACK";
       const availability = dispatchAvailabilityMap.get(productId);
+      const source = demandSourceByKey.get(demandKey) ?? {
+        linkedOrder: false,
+        extraLoadout: false,
+      };
       const available =
         unitKind === "RETAIL"
           ? Number(availability?.retail ?? 0)
-          : Number(availability?.pack ?? 0);
+          : Number(availability?.pack ?? stockMap.get(productId) ?? 0);
 
       if (required > available) {
         shortages.set(demandKey, {
@@ -1541,315 +1535,179 @@ export default function RunDispatchPage() {
           available,
           required,
           shortage: required - available,
+          fromLinkedOrder: source.linkedOrder,
+          fromExtraLoadout: source.extraLoadout,
         });
       }
     }
 
     return shortages;
-  }, [aggregatedLoadout, dispatchAvailabilityMap, linkedParentOrders]);
+  }, [aggregatedLoadout, dispatchAvailabilityMap, linkedParentOrders, stockMap]);
 
   const hasRunDraftShortage = runDraftShortageByKey.size > 0;
+  const hasLinkedOrderShortage = React.useMemo(
+    () =>
+      Array.from(runDraftShortageByKey.values()).some(
+        (shortage) => shortage.fromLinkedOrder
+      ),
+    [runDraftShortageByKey]
+  );
+  const hasExtraLoadoutShortage = React.useMemo(
+    () =>
+      Array.from(runDraftShortageByKey.values()).some(
+        (shortage) => shortage.fromExtraLoadout
+      ),
+    [runDraftShortageByKey]
+  );
+  const linkedOrderCount = parentOrdersSummary?.orderCount ?? 0;
+  const dispatchBlockers = React.useMemo(() => {
+    if (readOnly) return [];
+
+    const blockers: string[] = [];
+    if (!hasRider) blockers.push("Assign a rider before dispatch.");
+    if (overCapacity) {
+      blockers.push(
+        "Reduce the loadout or choose a vehicle with more capacity."
+      );
+    }
+    if (overStock) {
+      blockers.push("One or more extra loadout rows exceed live stock.");
+    }
+    if (hasRunDraftShortage) {
+      if (hasLinkedOrderShortage && hasExtraLoadoutShortage) {
+        blockers.push("Linked order demand plus extra loadout exceed live stock.");
+      } else if (hasLinkedOrderShortage) {
+        blockers.push(
+          "Linked order demand exceed live stock. Release or rebalance before dispatch."
+        );
+      } else if (hasExtraLoadoutShortage && !overStock) {
+        blockers.push("Combined extra loadout demand exceed live stock.");
+      }
+    }
+    if (!canDispatchByQty) {
+      blockers.push(
+        linkedOrderCount > 0
+          ? "Keep at least one linked order or add manual extra load."
+          : "Add manual extra load or link an order before dispatch."
+      );
+    }
+
+    return blockers;
+  }, [
+    canDispatchByQty,
+    hasExtraLoadoutShortage,
+    hasRider,
+    hasLinkedOrderShortage,
+    hasRunDraftShortage,
+    linkedOrderCount,
+    overCapacity,
+    overStock,
+    readOnly,
+  ]);
+  const loadoutGuidance =
+    linkedOrderCount > 0
+      ? "Only add manual extra load here."
+      : "Use this only for manual stock.";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Dispatch Staging"
         subtitle={`Run ${run.runCode} · ${
-          readOnly
-            ? "Dispatched already. Review only."
-            : "Set rider, vehicle, and extra loadout."
+          readOnly ? "Review only." : "Set rider, vehicle, and loadout."
         }`}
         backTo="/runs"
         backLabel="Runs"
       />
 
       <div className="mx-auto max-w-6xl space-y-3 px-5 py-6">
-        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Status{" "}
-            <span className="font-semibold text-slate-900">{run.status}</span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Rider{" "}
-            <span className="font-semibold text-slate-900">
-              {riderName || "Not set"}
-            </span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Vehicle{" "}
-            <span className="font-semibold text-slate-900">
-              {selectedVehicleName}
-            </span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Linked orders{" "}
-            <span className="font-semibold text-slate-900">
-              {parentOrdersSummary?.orderCount ?? 0}
-            </span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Extra loadout{" "}
-            <span className="font-semibold text-slate-900">{totalLoadUnits}</span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Capacity{" "}
-            <span className="font-semibold text-slate-900">
-              {Math.round(usedCapacityKg)}
-              {capacityKg != null ? ` / ${capacityKg} kg` : " kg"}
-            </span>
-          </span>
-        </div>
-
-        {/* Parent orders clarity box */}
-        {parentOrdersSummary && (
-          <SoTCard>
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-medium text-slate-800">
-                Linked Orders
-              </div>
-              <div className="text-xs text-slate-600">
-                {parentOrdersSummary.orderCount} order(s) ·{" "}
-                {parentOrdersSummary.uniqueItemCount} item(s) ·{" "}
-                {parentOrdersSummary.totalQty} total qty
-              </div>
-            </div>
-            <div className="mt-1 text-xs text-slate-600">
-              Linked order items are already part of the stock deduction. `Extra loadout`
-              below is only for added physical stock.
-            </div>
-            {parentOrderTopItems.length > 0 && (
-              <div className="mt-2 grid gap-1">
-                {parentOrderTopItems.map((it) => (
-                  <div key={it.productId} className="text-xs text-slate-700">
-                    <span className="font-mono text-slate-500">
-                      #{it.productId}
-                    </span>{" "}
-                    {it.name} — <span className="font-semibold">{it.qty}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!readOnly && hasRunDraftShortage ? (
-              <SoTAlert tone="warning" className="mt-3 text-sm">
-                The current draft exceeds live stock on one or more linked items.
-                Release the affected order or rebalance before dispatch.
-              </SoTAlert>
-            ) : null}
-            {linkedParentOrders.length > 0 && (
-              <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
-                {linkedParentOrders.map((order) => {
-                  const orderHasShortage = order.items.some((item) =>
-                    runDraftShortageByKey.has(
-                      makeDispatchDemandKey(item.productId, item.unitKind)
-                    )
-                  );
-
-                  return (
-                    <div
-                      key={order.orderId}
-                      className={`rounded-xl border px-3 py-3 ${
-                        orderHasShortage
-                          ? "border-rose-200 bg-rose-50/70"
-                          : "border-slate-200 bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="text-sm font-medium text-slate-800">
-                              {order.orderCode}
-                            </div>
-                            {orderHasShortage ? (
-                              <SoTStatusBadge tone="danger">
-                                Contains insufficient item
-                              </SoTStatusBadge>
-                            ) : null}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-600">
-                            {order.customerLabel ?? "Walk-in / unnamed delivery"}{" "}
-                            · {order.itemCount} item(s) · {order.totalQty} total
-                            qty
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-500">
-                            Order {order.status} · Fulfillment{" "}
-                            {order.fulfillmentStatus ?? "—"}
-                          </div>
-                        </div>
-
-                        {!readOnly ? (
-                          <Form method="post" replace className="shrink-0 space-y-2">
-                            <input
-                              type="hidden"
-                              name="releaseOrderId"
-                              value={order.orderId}
-                            />
-                            {releaseBusy && pendingReleaseOrderId === order.orderId ? (
-                              <SoTLoadingState
-                                variant="inline"
-                                label="Releasing linked order"
-                                hint="Returning this order to the queue."
-                              />
-                            ) : null}
-                            <SoTButton
-                              name="intent"
-                              value="release-order"
-                              type="submit"
-                              variant="secondary"
-                              disabled={busy}
-                              className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                            >
-                              {releaseBusy && pendingReleaseOrderId === order.orderId
-                                ? "Releasing…"
-                                : "Release Order"}
-                            </SoTButton>
-                          </Form>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-3 grid gap-2">
-                        {order.items.map((item) => {
-                          const shortage = runDraftShortageByKey.get(
-                            makeDispatchDemandKey(item.productId, item.unitKind)
-                          );
-
-                          return (
-                            <div
-                              key={`${order.orderId}-${item.productId}-${item.unitKind}`}
-                              className={`rounded-lg border px-3 py-2 ${
-                                shortage
-                                  ? "border-rose-200 bg-white"
-                                  : "border-slate-200 bg-white/80"
-                              }`}
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm text-slate-800">
-                                  #{item.productId} {item.name}
-                                </span>
-                                <SoTStatusBadge tone="neutral">
-                                  {item.unitKind}
-                                </SoTStatusBadge>
-                                {shortage ? (
-                                  <SoTStatusBadge tone="danger">
-                                    Insufficient stock
-                                  </SoTStatusBadge>
-                                ) : null}
-                              </div>
-                              <div
-                                className={`mt-1 text-[11px] ${
-                                  shortage ? "text-rose-700" : "text-slate-500"
-                                }`}
-                              >
-                                Qty: {item.qty}
-                                {shortage
-                                  ? ` · Needs ${shortage.required} ${shortage.unitKind.toLowerCase()}, only ${shortage.available} available (short ${shortage.shortage}).`
-                                  : ""}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </SoTCard>
-        )}
-
         {savedFlag ? (
-          <SoTAlert tone="success" className="mb-3 text-sm">
+          <SoTAlert tone="success" className="text-sm">
             Staging saved.
           </SoTAlert>
         ) : null}
 
         {Number.isFinite(releasedOrderId) && releasedOrderId > 0 ? (
-          <SoTAlert tone="success" className="mb-3 text-sm">
+          <SoTAlert tone="success" className="text-sm">
             Linked order #{releasedOrderId} was released back to the dispatch
             queue.
           </SoTAlert>
         ) : null}
 
         {actionData && !actionData.ok ? (
-          <SoTAlert tone="danger" className="mb-3 text-sm">
+          <SoTAlert tone="danger" className="text-sm">
             {actionData.error}
           </SoTAlert>
         ) : null}
 
         <div className="grid gap-4">
-          {/* Rider */}
-          <SoTCard>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-800">
-                Rider <span className="text-rose-600">*</span>
+          <SoTCard compact>
+            <div className="text-sm font-medium text-slate-800">Assignment</div>
+            <div className="mt-3 grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Rider <span className="text-rose-600">*</span>
+                </div>
+                {readOnly ? (
+                  <div className="text-sm text-slate-800">
+                    {riderFromServer ?? "—"}
+                  </div>
+                ) : (
+                  <SelectInput
+                    options={[
+                      { value: "__", label: "— Select driver —" },
+                      ...riderOptions.map((r) => ({ value: r, label: r })),
+                    ]}
+                    value={riderName || "__"}
+                    onChange={(val) => {
+                      setRiderName(val === "__" ? "" : String(val));
+                    }}
+                    className={disableAll ? "opacity-70 pointer-events-none" : ""}
+                  />
+                )}
               </div>
-              {!readOnly && (
-                <span
-                  className={`text-xs ${
-                    hasRider ? "text-emerald-700" : "text-slate-500"
-                  }`}
-                >
-                  {hasRider ? "Ready" : "Required to dispatch"}
-                </span>
-              )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                    Vehicle
+                  </div>
+                  {vehicleId != null && capacityKg != null ? (
+                    <span className="text-xs text-slate-500">{capacityKg} kg</span>
+                  ) : null}
+                </div>
+                {readOnly ? (
+                  <div className="text-sm text-slate-800">
+                    {vehicleId != null
+                      ? vehicles.find((v) => v.id === vehicleId)?.name ?? "—"
+                      : "—"}
+                  </div>
+                ) : (
+                  <SelectInput
+                    options={vehicleSelectOptions}
+                    value={vehicleId == null ? "" : String(vehicleId)}
+                    onChange={(val) => setVehicleId(val ? Number(val) : null)}
+                    className={disableAll ? "opacity-70 pointer-events-none" : ""}
+                  />
+                )}
+              </div>
             </div>
-            {readOnly ? (
-              <div className="text-sm text-slate-800">
-                {riderFromServer ?? "—"}
-              </div>
-            ) : (
-              <div className="grid gap-1">
-                <SelectInput
-                  options={[
-                    { value: "__", label: "— Select driver —" },
-                    ...riderOptions.map((r) => ({ value: r, label: r })),
-                  ]}
-                  value={riderName || "__"}
-                  onChange={(val) => {
-                    setRiderName(val === "__" ? "" : String(val));
-                  }}
-                  className={disableAll ? "opacity-70 pointer-events-none" : ""}
-                />
-              </div>
-            )}
           </SoTCard>
 
-          {/* Vehicle + capacity */}
-          <SoTCard>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-800">
-                Vehicle <span className="text-slate-400">(optional)</span>
-              </div>
-              {vehicleId != null && capacityKg != null && (
-                <span className="text-xs text-slate-600">
-                  Capacity: {capacityKg} kg
-                </span>
-              )}
-            </div>
-            {readOnly ? (
-              <div className="text-sm text-slate-800">
-                {vehicleId != null
-                  ? vehicles.find((v) => v.id === vehicleId)?.name ?? "—"
-                  : "—"}
-              </div>
-            ) : (
-              <SelectInput
-                options={vehicleSelectOptions}
-                value={vehicleId == null ? "" : String(vehicleId)}
-                onChange={(val) => setVehicleId(val ? Number(val) : null)}
-                className={disableAll ? "opacity-70 pointer-events-none" : ""}
-              />
-            )}
-          </SoTCard>
-
-          {/* Loadout */}
+          {/* Load plan */}
           <SoTCard className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <div className="text-sm font-medium text-slate-800">
-                Extra Loadout
+                Load Plan
               </div>
               <div className="text-xs text-slate-600">
-                Total units:{" "}
-                <span className="font-semibold">{totalLoadUnits}</span>
+                {linkedOrderCount > 0 ? (
+                  <>
+                    Orders: <span className="font-semibold">{linkedOrderCount}</span>
+                    {" · "}
+                  </>
+                ) : null}
+                Extra: <span className="font-semibold">{totalLoadUnits}</span>
                 {" · "}
                 Used KG:{" "}
                 <span
@@ -1865,10 +1723,162 @@ export default function RunDispatchPage() {
               </div>
             </div>
             <div className="space-y-3 px-4 py-4">
-              <div className="text-xs text-slate-600">
-                Add only the manual extra load for this run. Linked order items are
-                already counted above.
-              </div>
+              {parentOrdersSummary ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Linked Orders
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {parentOrdersSummary.orderCount} order(s) ·{" "}
+                      {parentOrdersSummary.totalQty} qty
+                    </div>
+                  </div>
+                  {!readOnly && hasLinkedOrderShortage ? (
+                    <SoTAlert tone="warning" className="text-sm">
+                      Linked items exceed live stock. Release or rebalance before dispatch.
+                    </SoTAlert>
+                  ) : null}
+                  {linkedParentOrders.length > 0 ? (
+                    <div className="space-y-2">
+                      {linkedParentOrders.map((order) => {
+                        const orderHasShortage = order.items.some((item) =>
+                          runDraftShortageByKey.has(
+                            makeDispatchDemandKey(item.productId, item.unitKind)
+                          )
+                        );
+
+                        return (
+                          <details
+                            key={order.orderId}
+                            className={`group rounded-xl border px-3 py-3 ${
+                              orderHasShortage
+                                ? "border-rose-200 bg-rose-50/70"
+                                : "border-slate-200 bg-slate-50"
+                            }`}
+                          >
+                            <summary className="flex list-none flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="text-sm font-medium text-slate-800">
+                                    {order.orderCode}
+                                  </div>
+                                  {orderHasShortage ? (
+                                    <SoTStatusBadge tone="danger">
+                                      Stock issue
+                                    </SoTStatusBadge>
+                                  ) : null}
+                                  <span className="text-[11px] text-slate-500 group-open:hidden">
+                                    View items
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-600">
+                                  {order.customerLabel ?? "Walk-in / unnamed delivery"}{" "}
+                                  · {order.totalQty} qty
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  {order.status} · {order.fulfillmentStatus ?? "—"}
+                                </div>
+                              </div>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                <span className="text-[11px] text-slate-500 group-open:hidden">
+                                  {order.items.length} item{order.items.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </summary>
+
+                            <div className="mt-3 grid gap-1.5 border-t border-slate-100 pt-3">
+                              {order.items.map((item) => {
+                                const shortage = runDraftShortageByKey.get(
+                                  makeDispatchDemandKey(item.productId, item.unitKind)
+                                );
+
+                                return (
+                                  <div
+                                    key={`${order.orderId}-${item.productId}-${item.unitKind}`}
+                                    className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-1 py-1 text-sm ${
+                                      shortage
+                                        ? "text-rose-800"
+                                        : "text-slate-700"
+                                    }`}
+                                  >
+                                    <span className="text-slate-800">
+                                      #{item.productId} {item.name}
+                                    </span>
+                                    <SoTStatusBadge tone="neutral">
+                                      {item.unitKind}
+                                    </SoTStatusBadge>
+                                    <span className="text-[11px] text-slate-500">
+                                      Qty {item.qty}
+                                    </span>
+                                    {shortage ? (
+                                      <span className="text-[11px] text-rose-700">
+                                        Needs {shortage.required}, only {shortage.available}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+
+                              {!readOnly ? (
+                                <div className="mt-2 flex justify-end border-t border-slate-100 pt-3">
+                                  <Form method="post" replace className="space-y-2">
+                                    <input
+                                      type="hidden"
+                                      name="releaseOrderId"
+                                      value={order.orderId}
+                                    />
+                                    {releaseBusy && pendingReleaseOrderId === order.orderId ? (
+                                      <SoTLoadingState
+                                        variant="inline"
+                                        label="Releasing linked order"
+                                        hint="Returning this order to the queue."
+                                      />
+                                    ) : null}
+                                    <SoTButton
+                                      name="intent"
+                                      value="release-order"
+                                      type="submit"
+                                      variant="secondary"
+                                      size="compact"
+                                      disabled={busy}
+                                      className="border-slate-200 text-slate-600"
+                                      onClick={(event) => {
+                                        const confirmed = window.confirm(
+                                          `Release ${order.orderCode} from this run?`
+                                        );
+                                        if (!confirmed) {
+                                          event.preventDefault();
+                                        }
+                                      }}
+                                    >
+                                      {releaseBusy && pendingReleaseOrderId === order.orderId
+                                        ? "Releasing…"
+                                        : "Release from Run"}
+                                    </SoTButton>
+                                  </Form>
+                                </div>
+                              ) : null}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className={parentOrdersSummary ? "border-t border-slate-100 pt-3" : ""}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Extra Loadout
+                  </div>
+                </div>
+
+                {linkedOrderCount === 0 ? (
+                  <div className="mb-3 text-xs text-slate-600">{loadoutGuidance}</div>
+                ) : null}
               {overCapacity ? (
                 <SoTAlert tone="danger">
                   Capacity exceeded (kg). Adjust loadout or choose a different
@@ -1896,13 +1906,15 @@ export default function RunDispatchPage() {
                       ])
                   }
                   variant="secondary"
+                  size="compact"
+                  className="border-slate-200 text-slate-600"
                   disabled={disableAll}
                 >
                   + Add row
                 </SoTButton>
               )}
 
-              <div className="grid gap-2">
+              <div className="mt-3 grid gap-2">
                 {loadout.length === 0 ? (
                   <div className="text-sm text-slate-500">
                     {readOnly ? "No loadout data." : "No loadout yet."}
@@ -2037,7 +2049,7 @@ export default function RunDispatchPage() {
                                   }, [])
                                 );
                               }}
-                              className="h-10 w-full max-w-[7rem] rounded-xl border border-slate-200 bg-white px-3 text-sm text-right outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                              className="h-9 w-full max-w-[5.5rem] rounded-xl border border-slate-200 bg-white px-2.5 text-sm text-right outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                             />
                           )}
                           {isOver && (
@@ -2068,130 +2080,105 @@ export default function RunDispatchPage() {
                   })
                 )}
               </div>
+              </div>
+              <Form method="post" replace className="border-t border-slate-100 pt-3">
+                <input type="hidden" name="riderName" value={riderName} />
+                <input type="hidden" name="vehicleId" value={vehicleId ?? ""} />
+                <input type="hidden" name="loadoutJson" value={serializedLoadout} />
+
+                {actionBusy ? (
+                  <SoTLoadingState
+                    variant="panel"
+                    className="mb-3"
+                    label={
+                      dispatchBusy
+                        ? "Dispatching run"
+                        : saveExitBusy
+                          ? "Saving and leaving staging"
+                          : saveBusy
+                            ? "Saving staging"
+                            : cancelBusy
+                              ? "Cancelling run"
+                              : "Reverting run to planned"
+                    }
+                    hint={
+                      dispatchBusy
+                        ? "Locking the loadout and moving the run to dispatch."
+                        : saveExitBusy
+                          ? "Saving the current staging details before returning."
+                          : saveBusy
+                            ? "Keeping the current staging details on this page."
+                            : cancelBusy
+                              ? "Closing this staging flow and returning to the run list."
+                              : "Unlocking the run so it can be staged again."
+                    }
+                  />
+                ) : null}
+
+                {!readOnly && dispatchBlockers.length > 0 ? (
+                  <SoTAlert tone="warning" className="mb-3 text-sm" title="Before dispatch">
+                    <div className="grid gap-1">
+                      {dispatchBlockers.map((blocker) => (
+                        <div key={blocker}>{blocker}</div>
+                      ))}
+                    </div>
+                  </SoTAlert>
+                ) : null}
+
+                <fieldset
+                  disabled={busy}
+                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {!readOnly ? (
+                    <>
+                      <SoTButton
+                        name="intent"
+                        value="dispatch"
+                        type="submit"
+                        disabled={
+                          busy ||
+                          !hasRider ||
+                          overCapacity ||
+                          overStock ||
+                          hasRunDraftShortage ||
+                          !canDispatchByQty
+                        }
+                        title={
+                          !hasRider
+                            ? "Choose a driver first"
+                              : overCapacity
+                                ? "Capacity exceeded (kg)"
+                                : overStock
+                                  ? "One or more lines exceed available stock"
+                                  : hasRunDraftShortage
+                                    ? hasLinkedOrderShortage
+                                      ? "Linked order items exceed available stock for the current run draft"
+                                      : "Combined extra loadout demand exceed available stock"
+                                    : !canDispatchByQty
+                                      ? "Add extra loadout or link parent orders (PAD)"
+                                      : "Ready to dispatch"
+                        }
+                        variant="primary"
+                        className="disabled:cursor-not-allowed"
+                      >
+                        {dispatchBusy ? "Dispatching…" : "Dispatch Run"}
+                      </SoTButton>
+                    </>
+                  ) : (
+                    <SoTButton
+                      name="intent"
+                      value="revert-planned"
+                      type="submit"
+                      variant="secondary"
+                      className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    >
+                      {revertBusy ? "Reverting…" : "Reopen Staging"}
+                    </SoTButton>
+                  )}
+                </fieldset>
+              </Form>
             </div>
           </SoTCard>
-
-          {/* Actions */}
-          <Form
-            method="post"
-            replace
-            className="mt-3"
-          >
-            <input type="hidden" name="riderName" value={riderName} />
-            <input type="hidden" name="vehicleId" value={vehicleId ?? ""} />
-            <input type="hidden" name="loadoutJson" value={serializedLoadout} />
-
-            {actionBusy ? (
-              <SoTLoadingState
-                variant="panel"
-                className="mb-3"
-                label={
-                  dispatchBusy
-                    ? "Dispatching run"
-                    : saveExitBusy
-                      ? "Saving and leaving staging"
-                      : saveBusy
-                        ? "Saving staging"
-                        : cancelBusy
-                          ? "Cancelling run"
-                          : "Reverting run to planned"
-                }
-                hint={
-                  dispatchBusy
-                    ? "Locking the loadout and moving the run to dispatch."
-                    : saveExitBusy
-                      ? "Saving the current staging details before returning."
-                      : saveBusy
-                        ? "Keeping the current staging details on this page."
-                        : cancelBusy
-                          ? "Closing this staging flow and returning to the run list."
-                          : "Unlocking the run so it can be staged again."
-                }
-              />
-            ) : null}
-
-            <div className="mb-3 text-xs text-slate-600">
-              {readOnly
-                ? "This run is already dispatched. Reopen staging only if you need to adjust it."
-                : "Save staging or dispatch when rider, stock, and capacity are ready."}
-            </div>
-
-            <fieldset
-              disabled={busy}
-              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <SoTButton
-                name="intent"
-                value="cancel"
-                variant="secondary"
-                type="submit"
-              >
-                {cancelBusy ? "Closing…" : "Back to Runs"}
-              </SoTButton>
-
-              {!readOnly ? (
-                <>
-                  <SoTButton
-                    name="intent"
-                    value="save"
-                    type="submit"
-                    variant="secondary"
-                    className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                  >
-                    {saveBusy ? "Saving…" : "Save Staging"}
-                  </SoTButton>
-                  <SoTButton
-                    name="intent"
-                    value="save-exit"
-                    type="submit"
-                    variant="secondary"
-                  >
-                    {saveExitBusy ? "Saving…" : "Save and Exit"}
-                  </SoTButton>
-                  <SoTButton
-                    name="intent"
-                    value="dispatch"
-                    type="submit"
-                    disabled={
-                      busy ||
-                      !hasRider ||
-                      overCapacity ||
-                      overStock ||
-                      hasRunDraftShortage ||
-                      !canDispatchByQty
-                    }
-                    title={
-                      !hasRider
-                        ? "Choose a driver first"
-                        : overCapacity
-                        ? "Capacity exceeded (kg)"
-                        : overStock
-                        ? "One or more lines exceed available stock"
-                        : hasRunDraftShortage
-                        ? "Linked order items exceed available stock for the current run draft"
-                        : !canDispatchByQty
-                        ? "Add extra loadout or link parent orders (PAD)"
-                        : "Ready to dispatch"
-                    }
-                    variant="primary"
-                    className="disabled:cursor-not-allowed"
-                  >
-                    {dispatchBusy ? "Dispatching…" : "Dispatch Run"}
-                  </SoTButton>
-                </>
-              ) : (
-                <SoTButton
-                  name="intent"
-                  value="revert-planned"
-                  type="submit"
-                  variant="secondary"
-                  className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                >
-                  {revertBusy ? "Reverting…" : "Reopen Staging"}
-                </SoTButton>
-              )}
-            </fieldset>
-          </Form>
         </div>
       </div>
     </main>

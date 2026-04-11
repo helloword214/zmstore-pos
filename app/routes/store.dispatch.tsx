@@ -13,7 +13,6 @@ import * as React from "react";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { Button } from "~/components/ui/Button";
-import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTEmptyState } from "~/components/ui/SoTEmptyState";
 import { SoTFormField } from "~/components/ui/SoTFormField";
@@ -271,39 +270,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       };
     });
 
-  // PLANNED runs only (pwede pag-assign-an)
-  const plannedRuns = await db.deliveryRun.findMany({
-    where: { status: "PLANNED" },
-    orderBy: [{ id: "desc" }],
-    take: 30,
-    select: {
-      id: true,
-      runCode: true,
-      rider: { select: { alias: true, firstName: true, lastName: true } },
-      vehicle: { select: { name: true } },
-    },
-  });
-
-  const runOptions = plannedRuns.map((r) => {
-    const riderLabel =
-      r.rider?.alias?.trim() ||
-      [r.rider?.firstName, r.rider?.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim() ||
-      null;
-    const vehicleLabel = r.vehicle?.name ?? null;
-    const label = [
-      r.runCode,
-      riderLabel ? `• ${riderLabel}` : null,
-      vehicleLabel ? `• ${vehicleLabel}` : null,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return { id: r.id, label };
-  });
-
-  return json({ forDispatch, runOptions, q, sort, dir, take });
+  return json({ forDispatch, q, sort, dir, take });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -413,58 +380,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect(`/runs/${run.id}/dispatch`);
   }
 
-  if (intent === "assign-run") {
-    const runId = Number(fd.get("runId") || NaN);
-    if (!Number.isFinite(runId) || runId <= 0) {
-      return json<ActionData>(
-        { ok: false, error: "Select a PLANNED run." },
-        { status: 400 }
-      );
-    }
-
-    const run = await db.deliveryRun.findUnique({
-      where: { id: runId },
-      select: { id: true, status: true },
-    });
-    if (!run || run.status !== "PLANNED") {
-      return json<ActionData>(
-        { ok: false, error: "Run must be PLANNED." },
-        { status: 400 }
-      );
-    }
-
-    await db.$transaction(async (tx) => {
-      await tx.deliveryRunOrder.createMany({
-        data: finalIds.map((orderId) => ({ runId, orderId })),
-        skipDuplicates: true,
-      });
-
-      const pendingLinks = await loadPendingFailedDeliveryLinks(tx, finalIds);
-      for (const orderId of finalIds) {
-        const pendingLink = pendingLinks.get(orderId);
-        if (!pendingLink) continue;
-        await tx.deliveryRunOrder.update({
-          where: {
-            runId_orderId: {
-              runId: pendingLink.runId,
-              orderId,
-            },
-          },
-          data: {
-            attemptOutcome: "NO_RELEASE_REATTEMPT",
-            attemptFinalizedAt: new Date(),
-            attemptFinalizedById:
-              managerApprovedById && managerApprovedById > 0
-                ? managerApprovedById
-                : null,
-          },
-        });
-      }
-    });
-
-    return redirect(`/runs/${runId}/dispatch`);
-  }
-
   if (intent === "cancel-failed-delivery") {
     const targetOrderId = finalIds[0];
     const targetOrder = await db.order.findUnique({
@@ -544,15 +459,36 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function StoreDispatchQueuePage() {
-  const { forDispatch, runOptions, q, sort, dir, take } = useLoaderData<
-    typeof loader
-  >();
+  const { forDispatch, q, sort, dir, take } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const [sp] = useSearchParams();
   const needAssignOrderId = Number(sp.get("needAssignOrderId") || NaN);
+  const requestedView = sp.get("view");
 
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
-  const [runId, setRunId] = React.useState<string>("");
+  const freshRows = React.useMemo(
+    () => forDispatch.filter((order) => order.failedAttemptCount === 0),
+    [forDispatch],
+  );
+  const failedRows = React.useMemo(
+    () => forDispatch.filter((order) => order.failedAttemptCount > 0),
+    [forDispatch],
+  );
+  const highlightedRow = React.useMemo(
+    () => forDispatch.find((order) => order.id === needAssignOrderId) ?? null,
+    [forDispatch, needAssignOrderId],
+  );
+  const queueView =
+    requestedView === "failed" ||
+    (!requestedView && highlightedRow?.failedAttemptCount)
+      ? "failed"
+      : "new";
+  const visibleRows = queueView === "failed" ? failedRows : freshRows;
+  const visibleIds = React.useMemo(
+    () => visibleRows.map((order) => order.id),
+    [visibleRows],
+  );
+  const visibleIdSet = React.useMemo(() => new Set(visibleIds), [visibleIds]);
 
   // Auto-select/highlight when redirected back from /orders/:id/dispatch
   React.useEffect(() => {
@@ -565,37 +501,31 @@ export default function StoreDispatchQueuePage() {
     }
   }, [needAssignOrderId]);
 
-  const allIds = forDispatch.map((o) => o.id);
+  React.useEffect(() => {
+    setSelected((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => visibleIdSet.has(id)));
+      if (next.size === prev.size) {
+        let same = true;
+        for (const id of prev) {
+          if (!next.has(id)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [visibleIdSet]);
+
+  const allIds = visibleIds;
   const selectedCount = selected.size;
   const selectedCsv = Array.from(selected).join(",");
-  const pendingFailedReviewCount = forDispatch.filter(
-    (order) => order.pendingFailedReview,
-  ).length;
   const allChecked =
     allIds.length > 0 && allIds.every((id: number) => selected.has(id));
-  const selectedFailedReviewCount = forDispatch.filter(
+  const selectedFailedReviewCount = visibleRows.filter(
     (o) => selected.has(o.id) && o.pendingFailedReview,
   ).length;
-
-  const toggleSelectedOrder = React.useCallback(
-    (orderId: number, force?: boolean) => {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        const shouldSelect = force ?? !next.has(orderId);
-        if (shouldSelect) next.add(orderId);
-        else next.delete(orderId);
-        return next;
-      });
-    },
-    [],
-  );
-
-  const sortLabel = (k: string) => {
-    if (k === "printedAt") return "Printed time";
-    if (k === "stagedAt") return "Staged time";
-    if (k === "amount") return "Amount";
-    return "Newest";
-  };
 
   const customerLabel = (
     c:
@@ -615,78 +545,39 @@ export default function StoreDispatchQueuePage() {
     ).trim();
     return name || "—";
   };
+  const sortLabel = (k: string) => {
+    if (k === "printedAt") return "Printed time";
+    if (k === "stagedAt") return "Staged time";
+    if (k === "amount") return "Amount";
+    return "Newest";
+  };
+  const buildViewHref = React.useCallback(
+    (nextView: "new" | "failed") => {
+      const params = new URLSearchParams(sp);
+      if (nextView === "failed") params.set("view", "failed");
+      else params.delete("view");
+      const query = params.toString();
+      return query ? `?${query}` : ".";
+    },
+    [sp],
+  );
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Dispatch Queue"
-        subtitle="Delivery orders waiting for run assignment or failed-delivery review."
+        subtitle="Review staged delivery orders and failed-delivery returns."
         maxWidthClassName="max-w-5xl"
       />
 
       {/* Body */}
       <div className="mx-auto max-w-5xl px-5 py-6">
-        <SoTActionBar
-          left={
-            <div className="text-sm text-slate-600">
-              Review staged delivery orders and send them to planned runs.
-            </div>
-          }
-          right={
-            <Link to="/runs/new">
-              <Button variant="primary">+ New Run</Button>
-            </Link>
-          }
-        />
-
-        <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SoTCard compact>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Visible Queue
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {forDispatch.length}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Showing up to {take || 50} orders
-            </div>
-          </SoTCard>
-          <SoTCard compact tone={selectedCount > 0 ? "info" : "default"}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Selected
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {selectedCount}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Ready for assign or create-run
-            </div>
-          </SoTCard>
-          <SoTCard compact tone={runOptions.length > 0 ? "success" : "warning"}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Planned Runs
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {runOptions.length}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Available for assignment
-            </div>
-          </SoTCard>
-          <SoTCard
-            compact
-            tone={pendingFailedReviewCount > 0 ? "warning" : "default"}
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Re-dispatch Review
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {pendingFailedReviewCount}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Orders needing re-dispatch or cancel
-            </div>
-          </SoTCard>
+        <div className="mb-3 flex justify-end">
+          <Link to="/runs/new">
+            <Button variant="tertiary" size="sm">
+              Create Empty Run
+            </Button>
+          </Link>
         </div>
 
         {actionData && !actionData.ok && (
@@ -735,25 +626,19 @@ export default function StoreDispatchQueuePage() {
             </SoTFormField>
 
             <div className="sm:col-span-1">
-              <Button
-                type="submit"
-                variant="secondary"
-                className="w-full"
-              >
+              <Button type="submit" variant="secondary" size="sm" className="w-full">
                 Apply
               </Button>
             </div>
 
             {/* keep take stable if user set it */}
             <input type="hidden" name="take" value={String(take || 50)} />
+            {queueView === "failed" ? (
+              <input type="hidden" name="view" value="failed" />
+            ) : null}
           </Form>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
-              Queue:{" "}
-              <span className="font-semibold">{forDispatch.length}</span> /{" "}
-              {take || 50}
-            </span>
             <span className="rounded-full border border-slate-200 bg-white px-2 py-1">
               Sort:{" "}
               <span className="font-semibold">{sortLabel(sort || "id")}</span> •{" "}
@@ -776,277 +661,253 @@ export default function StoreDispatchQueuePage() {
           </div>
         </SoTCard>
 
-        {/* Bulk actions */}
-        <SoTCard compact className="mb-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <SoTStatusBadge tone={selectedCount > 0 ? "info" : "neutral"}>
-                {selectedCount} selected
-              </SoTStatusBadge>
-              <Button
-                type="button"
-                variant="tertiary"
-                size="sm"
-                onClick={() => {
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (allChecked) {
-                      for (const id of allIds) next.delete(id);
-                    } else {
-                      for (const id of allIds) next.add(id);
-                    }
-                    return next;
-                  });
-                }}
-                disabled={allIds.length === 0}
-              >
-                {allChecked ? "Unselect all" : "Select all"}
-              </Button>
-              {selectedFailedReviewCount > 0 ? (
-                <SoTStatusBadge tone="warning">
-                  {selectedFailedReviewCount} re-dispatch review
-                </SoTStatusBadge>
-              ) : null}
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="mr-1 text-sm font-medium tracking-wide text-slate-700">
+                  Dispatch Inbox
+                </h2>
+                <Link to={buildViewHref("new")} preventScrollReset>
+                  <Button
+                    variant={queueView === "new" ? "secondary" : "tertiary"}
+                    size="sm"
+                  >
+                    New
+                    <span className="ml-1 text-[11px] text-slate-500">
+                      {freshRows.length}
+                    </span>
+                  </Button>
+                </Link>
+                <Link to={buildViewHref("failed")} preventScrollReset>
+                  <Button
+                    variant={queueView === "failed" ? "secondary" : "tertiary"}
+                    size="sm"
+                  >
+                    Failed
+                    <span className="ml-1 text-[11px] text-slate-500">
+                      {failedRows.length}
+                    </span>
+                  </Button>
+                </Link>
+                <span className="text-[11px] text-slate-500">
+                  {visibleRows.length} item(s)
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedCount > 0 ? (
+                  <SoTStatusBadge tone="info">{selectedCount} selected</SoTStatusBadge>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="tertiary"
+                  size="sm"
+                  onClick={() => {
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      if (allChecked) {
+                        for (const id of allIds) next.delete(id);
+                      } else {
+                        for (const id of allIds) next.add(id);
+                      }
+                      return next;
+                    });
+                  }}
+                  disabled={allIds.length === 0}
+                >
+                  {allChecked ? "Unselect all" : "Select all"}
+                </Button>
+                {selectedCount > 0 ? (
+                  <Form method="post" className="flex">
+                    <input type="hidden" name="orderIds" value={selectedCsv} />
+                    <Button
+                      type="submit"
+                      name="intent"
+                      value="create-run"
+                      variant="primary"
+                      size="sm"
+                      title="Create a new run from the selected orders"
+                    >
+                      {selectedFailedReviewCount > 0
+                        ? "Create Re-dispatch Run"
+                        : "Create Run"}
+                    </Button>
+                  </Form>
+                ) : null}
+              </div>
             </div>
 
-            <Form
-              method="post"
-              className="flex flex-col gap-2 sm:flex-row sm:items-center"
-            >
-              <input type="hidden" name="orderIds" value={selectedCsv} />
-
-              <div className="flex items-center gap-2">
-                <SelectInput
-                  name="runId"
-                  value={runId}
-                  onChange={(value) => setRunId(String(value))}
-                  className="w-56"
-                  options={[
-                    { label: "— Assign to PLANNED run —", value: "" },
-                    ...runOptions.map((r) => ({
-                      label: r.label,
-                      value: String(r.id),
-                    })),
-                  ]}
-                />
-
-                <Button
-                  type="submit"
-                  name="intent"
-                  value="assign-run"
-                  variant="primary"
-                  disabled={selectedCount === 0 || !runId}
-                  title={
-                    !runId
-                      ? "Choose a PLANNED run"
-                      : "Assign selected orders to this run"
-                  }
-                >
-                  {selectedFailedReviewCount > 0 ? "Re-dispatch to Run" : "Assign"}
-                </Button>
-
-                <Button
-                  type="submit"
-                  name="intent"
-                  value="create-run"
-                  variant="secondary"
-                  disabled={selectedCount === 0}
-                  title="Create a new run from the selected orders"
-                >
-                  {selectedFailedReviewCount > 0 ? "Create Re-dispatch Run" : "Create Run"}
-                </Button>
+            {selectedFailedReviewCount > 0 ? (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Creating a run will finalize {selectedFailedReviewCount} failed-delivery{" "}
+                {selectedFailedReviewCount > 1 ? "reports" : "report"} as ready
+                for dispatch again.
               </div>
-            </Form>
-          </div>
+            ) : null}
 
-          {selectedFailedReviewCount > 0 ? (
-            <SoTAlert tone="warning" className="mt-3">
-              Assigning or creating a run will finalize{" "}
-              {selectedFailedReviewCount} failed-delivery{" "}
-              {selectedFailedReviewCount > 1 ? "reports" : "report"} as ready
-              for dispatch again.
-            </SoTAlert>
-          ) : null}
-
-          {Number.isFinite(needAssignOrderId) && needAssignOrderId > 0 ? (
-            <SoTAlert tone="info" className="mt-3">
-              Highlighted order returned from dispatch detail and is ready for
-              run assignment.
-            </SoTAlert>
-          ) : null}
-        </SoTCard>
-
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-medium tracking-wide text-slate-700">
-              Dispatch Inbox
-            </h2>
-            <span className="text-[11px] text-slate-500">
-              {forDispatch.length} item(s)
-            </span>
+            {Number.isFinite(needAssignOrderId) && needAssignOrderId > 0 ? (
+              <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                Highlighted order returned from dispatch detail and is ready for
+                run assignment.
+              </div>
+            ) : null}
           </div>
 
           <div className="divide-y divide-slate-100">
-            {forDispatch.length === 0 ? (
+            {visibleRows.length === 0 ? (
               <SoTEmptyState
-                title="Nothing to dispatch right now."
-                hint="New delivery orders will appear here once staged."
+                title={
+                  queueView === "failed"
+                    ? "No failed-delivery orders need review."
+                    : "Nothing to dispatch right now."
+                }
+                hint={
+                  queueView === "failed"
+                    ? "Failed delivery history and re-dispatch review rows will appear here."
+                    : "New delivery orders will appear here once staged."
+                }
               />
-            ) : (
-              forDispatch.map((r) => (
-                <div
-                  key={r.id}
-                  className={`px-4 py-3 hover:bg-slate-50/60 ${
-                    Number.isFinite(needAssignOrderId) &&
-                    r.id === needAssignOrderId
-                      ? "bg-amber-50/60"
-                      : ""
-                  }`}
-                >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        checked={selected.has(r.id)}
-                        onChange={(e) => {
-                          const on = e.currentTarget.checked;
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (on) next.add(r.id);
-                            else next.delete(r.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-mono text-sm text-slate-700">
-                            {r.orderCode}
-                          </div>
-                          <SoTStatusBadge tone="neutral">
-                            {r.fulfillmentStatus || "—"}
-                          </SoTStatusBadge>
-                          {r.failedAttemptCount > 0 ? (
-                            <SoTStatusBadge
-                              tone={r.pendingFailedReview ? "warning" : "neutral"}
-                            >
-                              {r.pendingFailedReview
-                                ? "Failed review"
-                                : "Failed history"}
-                            </SoTStatusBadge>
-                          ) : null}
+            ) : null}
+
+            {visibleRows.map((r) => (
+              <div
+                key={r.id}
+                className={`px-4 py-3 hover:bg-slate-50/60 ${
+                  selected.has(r.id) ? "bg-indigo-50/40" : ""
+                } ${
+                  Number.isFinite(needAssignOrderId) &&
+                  r.id === needAssignOrderId
+                    ? "bg-amber-50/60"
+                    : ""
+                }`}
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                      checked={selected.has(r.id)}
+                      onChange={(e) => {
+                        const on = e.currentTarget.checked;
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(r.id);
+                          else next.delete(r.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-mono text-sm text-slate-700">
+                          {r.orderCode}
                         </div>
-                        <div className="mt-1 text-sm font-medium text-slate-900">
-                          {customerLabel(r.customer)}
-                          {r.customer?.phone ? (
-                            <span className="font-normal text-slate-500">
-                              {" "}
-                              • {r.customer.phone}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                          <span>Rider: {r.riderName || "—"}</span>
-                          <span>Printed {formatDateTime(r.printedAt)}</span>
-                          <span className="font-medium text-slate-700">
-                            {formatPeso(r.totalBeforeDiscount ?? r.subtotal)}
-                          </span>
-                        </div>
+                        <SoTStatusBadge tone="neutral">
+                          {r.fulfillmentStatus || "—"}
+                        </SoTStatusBadge>
                         {r.failedAttemptCount > 0 ? (
-                          <SoTAlert
-                            tone={r.pendingFailedReview ? "warning" : "info"}
-                            className="mt-2"
+                          <SoTStatusBadge
+                            tone={r.pendingFailedReview ? "warning" : "neutral"}
+                          >
+                            {r.pendingFailedReview
+                              ? "Failed review"
+                              : "Failed history"}
+                          </SoTStatusBadge>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-slate-900">
+                        {customerLabel(r.customer)}
+                        {r.customer?.phone ? (
+                          <span className="font-normal text-slate-500">
+                            {" "}
+                            • {r.customer.phone}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <span>Rider: {r.riderName || "—"}</span>
+                        <span>Printed {formatDateTime(r.printedAt)}</span>
+                        <span className="font-medium text-slate-700">
+                          {formatPeso(r.totalBeforeDiscount ?? r.subtotal)}
+                        </span>
+                      </div>
+                      {r.failedAttemptCount > 0 ? (
+                        <div
+                          className={`mt-2 rounded-xl border px-3 py-2 text-xs ${
+                            r.pendingFailedReview
+                              ? "border-amber-200 bg-amber-50 text-amber-900"
+                              : "border-slate-200 bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            <span>
+                              Attempts:{" "}
+                              <span className="font-semibold">
+                                {r.failedAttemptCount}
+                              </span>
+                            </span>
+                            {r.latestFailedRunCode ? (
+                              <span>Last run: {r.latestFailedRunCode}</span>
+                            ) : null}
+                            {r.latestFailedReportedAt ? (
+                              <span>
+                                Reported {formatDateTime(r.latestFailedReportedAt)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {r.latestFailedReason ? (
+                            <div className="mt-1">
+                              Rider reason: {r.latestFailedReason}
+                            </div>
+                          ) : null}
+                          {r.pendingFailedReview ? (
+                            <div className="mt-1">Ready for re-dispatch review.</div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {r.failedAttemptCount > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-end">
+                      {r.pendingFailedReview ? (
+                        <Form method="post" className="flex flex-col items-start gap-1 lg:items-end">
+                          <input type="hidden" name="orderIds" value={String(r.id)} />
+                          <Button
+                            type="submit"
+                            name="intent"
+                            value="cancel-failed-delivery"
+                            variant="tertiary"
+                            disabled={!r.canCancelFailedReview}
                             title={
-                              r.pendingFailedReview
-                                ? "Failed delivery review"
-                                : "Failed delivery history"
+                              r.canCancelFailedReview
+                                ? "Cancel this failed delivery order from the queue"
+                                : "Partially paid orders need refund/void before cancellation."
                             }
                           >
-                            <div className="flex flex-wrap gap-x-3 gap-y-1">
-                              <span>
-                                Attempts:{" "}
-                                <span className="font-semibold">
-                                  {r.failedAttemptCount}
-                                </span>
-                              </span>
-                              {r.latestFailedRunCode ? (
-                                <span>Last run: {r.latestFailedRunCode}</span>
-                              ) : null}
-                              {r.latestFailedReportedAt ? (
-                                <span>
-                                  Reported {formatDateTime(r.latestFailedReportedAt)}
-                                </span>
-                              ) : null}
-                            </div>
-                            {r.latestFailedReason ? (
-                              <div className="mt-1">
-                                Rider reason: {r.latestFailedReason}
-                              </div>
-                            ) : null}
-                            {r.pendingFailedReview ? (
-                              <div className="mt-1">
-                                Choose re-dispatch or cancel here.
-                              </div>
-                            ) : null}
-                          </SoTAlert>
-                        ) : null}
-                      </div>
+                            Cancel order
+                          </Button>
+                          {!r.canCancelFailedReview ? (
+                            <span className="text-[11px] text-slate-500">
+                              Refund/void required first.
+                            </span>
+                          ) : null}
+                        </Form>
+                      ) : null}
                     </div>
-
-                    {r.failedAttemptCount > 0 ? (
-                      <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-end">
-                        <Button
-                          type="button"
-                          variant={
-                            selected.has(r.id) ? "secondary" : "primary"
-                          }
-                          onClick={() =>
-                            toggleSelectedOrder(r.id, !selected.has(r.id))
-                          }
-                        >
-                          {selected.has(r.id)
-                            ? "Selected for Re-dispatch"
-                            : "Select Re-dispatch"}
-                        </Button>
-                        {r.pendingFailedReview ? (
-                          <Form method="post" className="flex flex-col items-start gap-1 lg:items-end">
-                            <input type="hidden" name="orderIds" value={String(r.id)} />
-                            <Button
-                              type="submit"
-                              name="intent"
-                              value="cancel-failed-delivery"
-                              variant="tertiary"
-                              disabled={!r.canCancelFailedReview}
-                              title={
-                                r.canCancelFailedReview
-                                  ? "Cancel this failed delivery order from the queue"
-                                  : "Partially paid orders need refund/void before cancellation."
-                              }
-                            >
-                              Cancel order
-                            </Button>
-                            {!r.canCancelFailedReview ? (
-                              <span className="text-[11px] text-slate-500">
-                                Refund/void required first.
-                              </span>
-                            ) : null}
-                          </Form>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <Link
-                        to={`/orders/${r.id}/dispatch`}
-                        className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        title="Open dispatch detail"
-                      >
-                        Open Dispatch
-                      </Link>
-                    )}
-                  </div>
+                  ) : (
+                    <Link
+                      to={`/orders/${r.id}/dispatch`}
+                      className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                      title="Open dispatch detail"
+                    >
+                      Open Dispatch
+                    </Link>
+                  )}
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

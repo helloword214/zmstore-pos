@@ -249,6 +249,17 @@ For local browser QA in this repo:
 3. keep selectors accessibility-first when practical, especially `getByRole()` and `getByLabel()` once the UI exposes real semantics
 4. if the flow needs repeated authenticated browser access, prefer a named local QA browser-session helper over repeated OTP log scraping
 
+## Live UI Validation Safety Rule
+
+For UI or UX validation that will be used to judge a patch result:
+
+1. confirm the exact runtime target first when more than one local server or build is available
+2. for uncommitted UI work, prefer the current working-tree runtime target over an older built server or stale preview target
+3. run desktop and mobile validation on the same confirmed runtime target that will be cited in the result
+4. treat auth/session setup as part of validation trust; if the browser is not verifiably on the intended authenticated route, do not report a pass
+5. if the runtime target, auth state, or browser tooling is uncertain, report validation as `blocked` or `untrusted` instead of claiming the route is fixed
+6. a UI patch should not be marked visually resolved from code inspection alone when the change was meant to fix live layout, interaction, or responsive behavior
+
 ## Local QA Auth Helper Rule
 
 Local QA auth or browser-session helpers are allowed when they:
@@ -263,6 +274,11 @@ Use setup and cleanup scripts when:
 1. the scenario needs prerequisite data
 2. manual data preparation is slow or error-prone
 3. the same QA path will be repeated across objectives
+
+Validation ownership note:
+
+1. this document owns the trust rule for live UI validation
+2. execution flow docs may enforce a stop gate, but should point back here for the validation standard
 
 ## Documentation Routing Rule
 

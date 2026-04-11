@@ -143,7 +143,11 @@ Chronology must be preserved instead of silently overwriting staffing history.
 
 ### 3. Recurring Schedule Template
 
-`Recurring Schedule Template` is the reusable planning pattern layer.
+`Recurring Schedule Template` is the system model for the reusable planning pattern layer.
+
+Manager-facing product language may call this a `Named Staffing Pattern` or `Named Staffing Pattern Library`.
+That UI wording is preferred because it is more operationally clear, but the canonical stored model remains
+`Recurring Schedule Template`.
 
 It answers:
 
@@ -153,6 +157,12 @@ It answers:
 4. what future schedule entries should be generated without rewriting history
 
 Template rules must stay separate from the final generated schedule rows.
+The named pattern itself stays weekly; longer planning windows belong to the planner generation step, not to
+the pattern definition.
+Saving or editing a pattern does not create dated planner rows by itself.
+Managers apply named staffing patterns from the planner worker-date context, then the planner generates dated draft rows for the chosen window.
+If the manager applies a pattern midweek, only the remaining matching days from that selected date forward are generated inside that window.
+Occupied worker-date cells remain untouched.
 
 ### 4. Attendance / Duty Result
 
@@ -304,8 +314,16 @@ Planning rules:
 11. clearing a cell returns it to `BLANK`
 12. `OFF` rows remain publishable and auditable schedule rows even though they do not represent worked time
 13. shift presets may accelerate entry, but custom time entry must remain available
+14. worker-scoped planner cleanup may clear only `DRAFT` rows inside the selected visible window; it must not erase `PUBLISHED` rows
 
 ## Recurring Schedule Template Canonical Model
+
+Manager-facing terminology:
+
+1. use `Named Staffing Pattern` or `Named Staffing Pattern Library` in manager UI copy
+2. keep `Recurring Schedule Template` as the canonical model name for docs, schema, and services
+3. use pattern names that describe the staffing lane or shift purpose, for example `Opening Duty`, `Closing Duty`, `Workforce 1`, or `Rider AM`
+4. explain in manager UI copy that patterns become dated schedule rows only after planner application for the selected window
 
 Recommended template fields:
 
@@ -359,6 +377,14 @@ Recurring template rules:
 8. generated schedule rows remain the per-date source of truth for attendance, payroll input, and audit history
 9. template creation must start from a blank create lane; editing an existing template requires explicit manager selection and must not silently auto-open another template
 10. templates are optional helper lanes and must never be mandatory before a manager can create or edit a schedule row
+11. planner generation windows such as `next week`, `next 2 weeks`, `next 4 weeks`, and `next month` are planner controls, not template cadence rules
+12. once rows are generated, date-specific revisions belong in the planner rows themselves rather than back in the named staffing pattern
+13. manager-facing pattern routes should define reusable weekly patterns only; the planner owns when and where a pattern is applied to actual worker-date slots
+14. planner-side pattern application belongs on the worker row, not inside a one-day cell editor
+15. planner-side pattern application may apply to the selected visible planner window and replace existing `DRAFT` rows on matching pattern days inside that window
+16. planner-side pattern application must never overwrite `PUBLISHED` rows; managers keep manual authority over those dates through direct cell edits
+17. cell editors remain single-date exception lanes for presets, custom time, `OFF`, notes, and manual overrides
+18. once a manager manually edits a date cell, that saved row becomes a direct planner row for that date instead of remaining pattern-owned
 
 ## Attendance / Duty Result Canonical Model
 
@@ -409,14 +435,19 @@ V1 leave scope:
 
 Key rules:
 
-1. `OFF` rows should default to `REST_DAY / NOT_REQUIRED` in attendance review unless a manager is recording a deliberate exception
+1. `OFF` rows should default to `REST_DAY / NOT_REQUIRED` in attendance review
 2. `BLANK` dates may also default to `REST_DAY / NOT_REQUIRED` because no work row exists yet
-3. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
-4. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
-5. `LEAVE` is separate from `ABSENT`
-6. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
-7. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
-8. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+3. attendance review must not silently turn an `OFF` row into `REPLACEMENT`
+4. attendance review must not silently turn a `BLANK` date into `ON_CALL`
+5. replacement and on-call authority belongs to the schedule planner and must be represented by a same-date `REPLACEMENT_ASSIGNED` or `ON_CALL_ASSIGNED` planner event before worked attendance can be approved for an off/no-schedule worker
+6. when a same-date planner event records `REPLACEMENT_ASSIGNED` or `ON_CALL_ASSIGNED` for the covering worker, attendance review should use that planner signal as the `workContext`
+7. `OFF` or `BLANK` workers without planner coverage must be sent back to schedule planner before saving a worked attendance result
+8. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
+9. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
+10. `LEAVE` is separate from `ABSENT`
+11. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
+12. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
+13. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 
 ## Suspension Record Canonical Model
 
@@ -447,6 +478,7 @@ Suspension rules:
 4. existing schedule rows must not be deleted because of suspension
 5. affected scheduled dates must preserve the original plan and record `attendanceResult = SUSPENDED_NO_WORK`
 6. suspension reasons and manager notes must remain auditable for later employee and manager performance review
+7. manager UI may keep a default inline create-suspension workbench visible, but editing an existing `ACTIVE` suspension should open in a separate dedicated edit modal rather than mutating the create form into edit mode
 
 ## Schedule Event Log Canonical Model
 

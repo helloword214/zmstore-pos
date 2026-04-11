@@ -8,17 +8,8 @@ import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
-import {
-  SoTTable,
-  SoTTableEmptyRow,
-  SoTTableHead,
-  SoTTableRow,
-  SoTTh,
-  SoTTd,
-} from "~/components/ui/SoTTable";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
-import { db } from "~/utils/db.server";
 import {
   assignWorkerScheduleTemplateToWorkers,
   listWorkerScheduleTemplates,
@@ -96,12 +87,6 @@ type DayConfig = {
   label: string;
 };
 
-type WorkerOption = {
-  id: number;
-  label: string;
-  lane: string;
-};
-
 const DAY_CONFIGS: DayConfig[] = [
   { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.MONDAY, label: "Monday" },
   { dayOfWeek: WORKER_SCHEDULE_TEMPLATE_DAY_OF_WEEK.TUESDAY, label: "Tuesday" },
@@ -117,12 +102,6 @@ const TEMPLATE_ROLE_OPTIONS = [
   { value: WORKER_SCHEDULE_ROLE.CASHIER, label: "Cashier" },
   { value: WORKER_SCHEDULE_ROLE.STORE_MANAGER, label: "Store manager" },
   { value: WORKER_SCHEDULE_ROLE.EMPLOYEE, label: "Employee" },
-];
-
-const ASSIGNMENT_STATUS_OPTIONS = [
-  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.ACTIVE, label: "Active" },
-  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.PAUSED, label: "Paused" },
-  { value: WORKER_SCHEDULE_ASSIGNMENT_STATUS.ENDED, label: "Ended" },
 ];
 
 function parseOptionalInt(value: string | null) {
@@ -156,15 +135,27 @@ function minuteToTimeInput(value: number) {
   return `${hour}:${minute}`;
 }
 
-function buildEmployeeLabel(args: {
-  firstName: string;
-  lastName: string;
-  alias: string | null;
-  role: string | null;
-}) {
-  const fullName = `${args.firstName} ${args.lastName}`.trim();
-  const aliasPart = args.alias ? ` (${args.alias})` : "";
-  return `${fullName}${aliasPart}`;
+function humanizeEnumLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatRoleLabel(value: string | null) {
+  if (!value) return "Any role";
+  if (value === "UNASSIGNED") return "Unassigned";
+  return humanizeEnumLabel(value);
+}
+
+function formatDayShortLabel(dayOfWeek: WorkerScheduleTemplateDayOfWeekValue) {
+  const label = DAY_CONFIGS.find((config) => config.dayOfWeek === dayOfWeek)?.label;
+  return label ? label.slice(0, 3) : humanizeEnumLabel(dayOfWeek).slice(0, 3);
+}
+
+function formatMinuteRange(startMinute: number, endMinute: number) {
+  return `${minuteToTimeInput(startMinute)} - ${minuteToTimeInput(endMinute)}`;
 }
 
 function statusTone(status: string) {
@@ -198,48 +189,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireRole(request, ["STORE_MANAGER"]);
   const url = new URL(request.url);
   const selectedTemplateId = parseOptionalInt(url.searchParams.get("templateId"));
+  const isCreateMode = url.searchParams.get("create") === "1";
   const saved = url.searchParams.get("saved");
 
-  const [templates, workers] = await Promise.all([
-    listWorkerScheduleTemplates(),
-    db.employee.findMany({
-      where: {
-        active: true,
-        user: {
-          is: { active: true },
-        },
-      },
-      include: {
-        user: {
-          select: { role: true },
-        },
-      },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    }),
-  ]);
+  const templates = await listWorkerScheduleTemplates();
 
   const selectedTemplate =
     selectedTemplateId == null
       ? null
       : templates.find((template) => template.id === selectedTemplateId) ?? null;
 
-  const workerOptions: WorkerOption[] = workers.map((worker) => ({
-    id: worker.id,
-    label: buildEmployeeLabel({
-      firstName: worker.firstName,
-      lastName: worker.lastName,
-      alias: worker.alias ?? null,
-      role: worker.user?.role ?? null,
-    }),
-    lane: worker.user?.role ?? "UNASSIGNED",
-  }));
-
   return json({
     templates,
     selectedTemplate,
-    workers: workerOptions,
     saved,
     today: new Date().toISOString().slice(0, 10),
+    isCreateMode,
   });
 }
 
@@ -292,9 +257,9 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "set-template-status") {
       const templateId = parseOptionalInt(String(fd.get("templateId") || ""));
       const status = String(fd.get("status") || "");
-      if (!templateId) throw new Error("Template is required.");
+      if (!templateId) throw new Error("Pattern is required.");
       if (!isWorkerScheduleTemplateStatusValue(status)) {
-        throw new Error("Invalid template status.");
+        throw new Error("Invalid pattern status.");
       }
 
       await setWorkerScheduleTemplateStatus(templateId, status, me.userId);
@@ -312,7 +277,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value) && value > 0);
 
-      if (!templateId) throw new Error("Select a template first.");
+      if (!templateId) throw new Error("Select a pattern first.");
 
       await assignWorkerScheduleTemplateToWorkers({
         templateId,
@@ -361,493 +326,397 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function WorkforceScheduleTemplatesRoute() {
-  const { templates, selectedTemplate, workers, saved, today } =
+  const { templates, selectedTemplate, saved, today, isCreateMode } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   const selectedDays = new Map(
     (selectedTemplate?.days ?? []).map((day) => [day.dayOfWeek, day]),
   );
+  const editorOpen = isCreateMode || Boolean(selectedTemplate);
+  const baseHref = "/store/workforce/schedule-templates";
+  const savedMessage =
+    saved === "template"
+      ? "Staffing pattern saved."
+      : saved === "status"
+        ? "Pattern status updated."
+        : null;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Workforce Schedule Templates"
-        subtitle="Optional helper for repeated weekly patterns. Direct scheduling now starts in the planner board."
+        title="Named Staffing Pattern Library"
+        subtitle="Reusable weekly staffing patterns for repeat shifts."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
 
       <div className="mx-auto max-w-6xl space-y-5 px-5 py-6">
-        {saved ? (
-          <SoTAlert tone="success">
-            {saved === "template" && "Schedule template saved."}
-            {saved === "status" && "Template status updated."}
-            {saved === "assignment" && "Workers assigned to template."}
-            {saved === "assignment-status" && "Assignment status updated."}
-          </SoTAlert>
+        {savedMessage && !editorOpen ? (
+          <SoTAlert tone="success">{savedMessage}</SoTAlert>
         ) : null}
-        {actionData && !actionData.ok ? (
+        {actionData && !actionData.ok && !editorOpen ? (
           <SoTAlert tone="warning">{actionData.error}</SoTAlert>
         ) : null}
 
-        <SoTCard className="border border-amber-200 bg-amber-50/80">
+        <SoTCard className="border border-slate-200 bg-white">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-                Template helper only
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Pattern helper
               </div>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">
-                Use templates only when a weekly pattern repeats
-              </h2>
               <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                Most managers should stay in the planner board. Come here only when the
-                same weekday pattern shows up often enough that saving a reusable helper
-                becomes faster than scheduling manually each week.
+                Use this only for repeat staffing patterns. Apply them later from the planner for
+                the week window you want to build.
               </p>
             </div>
 
-            <Link
-              to="/store/workforce/schedule-planner?preset=next-week"
-              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Open planner board
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`${baseHref}?create=1`}
+                className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Create pattern
+              </Link>
+              <Link
+                to="/store/workforce/schedule-planner?preset=next-week"
+                className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Open planner to apply
+              </Link>
+            </div>
           </div>
         </SoTCard>
 
-        <div className="grid gap-5 lg:grid-cols-12">
-          <section className="space-y-5 lg:col-span-7">
-            <SoTCard interaction="form" className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Step 1
-                  </div>
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    {selectedTemplate ? "Template editor" : "Create template helper"}
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    {selectedTemplate
-                      ? "Keep this focused on reusable weekday patterns. Generated rows remain separate and auditable."
-                      : "Save only the weekly pattern you expect to reuse. One-off weekly planning still belongs in the board."}
-                  </p>
-                </div>
-                {selectedTemplate ? (
-                  <SoTStatusBadge tone={statusTone(selectedTemplate.status)}>
-                    {selectedTemplate.status}
-                  </SoTStatusBadge>
-                ) : null}
+        <SoTCard className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Pattern library</h2>
+              <p className="text-xs text-slate-500">
+                Keep reusable shift patterns here, then adjust exceptions in the planner.
+              </p>
+            </div>
+            <SoTStatusBadge tone="info">{templates.length} patterns</SoTStatusBadge>
+          </div>
+
+          {templates.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+              <div>No staffing patterns yet.</div>
+              <div className="mt-3">
+                <Link
+                  to={`${baseHref}?create=1`}
+                  className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Create pattern
+                </Link>
               </div>
+            </div>
+          ) : (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className={`rounded-2xl border p-4 ${
+                    template.id === selectedTemplate?.id
+                      ? "border-indigo-200 bg-indigo-50/50"
+                      : "border-slate-200 bg-slate-50/70"
+                  }`.trim()}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-slate-900">{template.templateName}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {formatRoleLabel(template.role)} · {template.days.length} work day(s)
+                      </div>
+                    </div>
+                    <SoTStatusBadge tone={statusTone(template.status)}>
+                      {template.status}
+                    </SoTStatusBadge>
+                  </div>
 
-              <Form
-                key={selectedTemplate?.id ?? "new"}
-                method="post"
-                className="space-y-4"
-              >
-                <input type="hidden" name="_intent" value="save-template" />
-                <input
-                  type="hidden"
-                  name="templateId"
-                  value={selectedTemplate?.id ?? ""}
-                />
+                  {template.days.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {template.days.map((day) => (
+                        <span
+                          key={day.id}
+                          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                        >
+                          {formatDayShortLabel(day.dayOfWeek)} ·{" "}
+                          {formatMinuteRange(day.startMinute, day.endMinute)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-slate-500">No days configured yet.</div>
+                  )}
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <SoTFormField label="Template name">
-                    <SoTInput
-                      name="templateName"
-                      defaultValue={selectedTemplate?.templateName ?? ""}
-                      placeholder="Example: Cashier Weekday AM"
-                      required
-                    />
-                  </SoTFormField>
-
-                  <SoTFormField label="Role scope">
-                    <SelectInput
-                      name="role"
-                      defaultValue={selectedTemplate?.role ?? ""}
-                      options={TEMPLATE_ROLE_OPTIONS}
-                    />
-                  </SoTFormField>
-
-                  <SoTFormField label="Effective from">
-                    <SoTInput
-                      type="date"
-                      name="effectiveFrom"
-                      defaultValue={
-                        selectedTemplate?.effectiveFrom?.slice?.(0, 10) ??
-                        selectedTemplate?.effectiveFrom?.toString?.().slice(0, 10) ??
-                        today
-                      }
-                      required
-                    />
-                  </SoTFormField>
-
-                  <SoTFormField label="Effective to">
-                    <SoTInput
-                      type="date"
-                      name="effectiveTo"
-                      defaultValue={
-                        selectedTemplate?.effectiveTo
-                          ? String(selectedTemplate.effectiveTo).slice(0, 10)
-                          : ""
-                      }
-                    />
-                  </SoTFormField>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link
+                      to={`${baseHref}?templateId=${template.id}`}
+                      className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      {template.id === selectedTemplate?.id ? "Editing" : "Edit"}
+                    </Link>
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="set-template-status" />
+                      <input type="hidden" name="templateId" value={template.id} />
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={
+                          template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                            ? WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED
+                            : WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                        }
+                      />
+                      <SoTButton type="submit" size="compact">
+                        {template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
+                          ? "Pause"
+                          : "Activate"}
+                      </SoTButton>
+                    </Form>
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="set-template-status" />
+                      <input type="hidden" name="templateId" value={template.id} />
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED}
+                      />
+                      <SoTButton type="submit" size="compact" variant="danger">
+                        End
+                      </SoTButton>
+                    </Form>
+                  </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </SoTCard>
+      </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Weekly work days
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Turn on only the weekdays this helper should generate.
+      {editorOpen ? (
+        <>
+          <Link
+            to={baseHref}
+            aria-label="Close pattern editor"
+            className="fixed inset-0 z-40 bg-slate-900/35"
+          />
+
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="staffing-pattern-editor-title"
+              className="relative max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="max-w-2xl">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                      Named staffing pattern
+                    </div>
+                    <h2
+                      id="staffing-pattern-editor-title"
+                      className="mt-1 text-xl font-semibold text-slate-900"
+                    >
+                      {selectedTemplate ? "Edit staffing pattern" : "Create staffing pattern"}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Build the weekly shift pattern here. Apply it later from the planner where
+                      the actual worker and date window are chosen.
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    {DAY_CONFIGS.map((config) => {
-                      const current = selectedDays.get(config.dayOfWeek);
-                      return (
-                        <div
-                          key={config.dayOfWeek}
-                          className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[120px,1fr,1fr,2fr]"
-                        >
-                          <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                            <input
-                              type="checkbox"
-                              name={`day_${config.dayOfWeek}_enabled`}
-                              value="1"
-                              defaultChecked={Boolean(current)}
-                              className="h-4 w-4 rounded border-slate-300"
-                            />
-                            {config.label}
-                          </label>
-
-                          <SoTFormField label="Start">
-                            <SoTInput
-                              type="time"
-                              name={`day_${config.dayOfWeek}_start`}
-                              defaultValue={
-                                current ? minuteToTimeInput(current.startMinute) : "08:00"
-                              }
-                            />
-                          </SoTFormField>
-
-                          <SoTFormField label="End">
-                            <SoTInput
-                              type="time"
-                              name={`day_${config.dayOfWeek}_end`}
-                              defaultValue={
-                                current ? minuteToTimeInput(current.endMinute) : "17:00"
-                              }
-                            />
-                          </SoTFormField>
-
-                          <SoTFormField label="Note">
-                            <SoTInput
-                              name={`day_${config.dayOfWeek}_note`}
-                              defaultValue={current?.note ?? ""}
-                              placeholder="Optional note for this generated day"
-                            />
-                          </SoTFormField>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <SoTButton type="submit" variant="primary">
-                    {selectedTemplate ? "Save template" : "Create template"}
-                  </SoTButton>
-                  {selectedTemplate ? (
+                  <div className="flex items-center gap-3">
+                    {selectedTemplate ? (
+                      <SoTStatusBadge tone={statusTone(selectedTemplate.status)}>
+                        {selectedTemplate.status}
+                      </SoTStatusBadge>
+                    ) : null}
                     <Link
-                      to="/store/workforce/schedule-templates"
-                      className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      to="/store/workforce/schedule-planner?preset=next-week"
+                      className="inline-flex h-10 items-center rounded-full border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      New template
+                      Open planner
                     </Link>
-                  ) : null}
-                </div>
-              </Form>
-            </SoTCard>
-
-            <SoTCard interaction="form" className="space-y-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Step 2
-                </div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Optional worker links
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Use this only when one helper should repeatedly prefill the same named
-                  workers. Skip it if the board changes week to week.
-                </p>
-              </div>
-
-              {selectedTemplate ? (
-                <>
-                  <Form method="post" className="space-y-4">
-                    <input type="hidden" name="_intent" value="assign-workers" />
-                    <input type="hidden" name="templateId" value={selectedTemplate.id} />
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <SoTFormField label="Assignment effective from">
-                        <SoTInput type="date" name="effectiveFrom" defaultValue={today} required />
-                      </SoTFormField>
-
-                      <SoTFormField label="Assignment effective to">
-                        <SoTInput type="date" name="effectiveTo" />
-                      </SoTFormField>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Workers
-                      </div>
-                      <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
-                        {workers.map((worker) => {
-                          const checkboxId = `assign-worker-${worker.id}`;
-                          const labelId = `${checkboxId}-label`;
-                          return (
-                            <div
-                              key={worker.id}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                            >
-                              <div className="flex items-start gap-2">
-                                <input
-                                  id={checkboxId}
-                                  aria-labelledby={labelId}
-                                  type="checkbox"
-                                  name="workerIds"
-                                  value={worker.id}
-                                  className="mt-1 h-4 w-4 rounded border-slate-300"
-                                />
-                                <label htmlFor={checkboxId} id={labelId}>
-                                  <span className="block font-medium">{worker.label}</span>
-                                  <span className="block text-xs text-slate-500">
-                                    {worker.lane}
-                                  </span>
-                                </label>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <SoTButton type="submit" variant="primary">
-                      Assign selected workers
-                    </SoTButton>
-                  </Form>
-
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Current assignments
-                    </h3>
-                    <SoTTable>
-                      <SoTTableHead>
-                        <SoTTableRow>
-                          <SoTTh>Worker</SoTTh>
-                          <SoTTh>Role</SoTTh>
-                          <SoTTh>Effective range</SoTTh>
-                          <SoTTh>Status</SoTTh>
-                          <SoTTh>Action</SoTTh>
-                        </SoTTableRow>
-                      </SoTTableHead>
-                      <tbody>
-                        {selectedTemplate.assignments.length === 0 ? (
-                          <SoTTableEmptyRow
-                            colSpan={5}
-                            message="No worker assignments yet."
-                          />
-                        ) : (
-                          selectedTemplate.assignments.map((assignment) => (
-                            <SoTTableRow key={assignment.id}>
-                              <SoTTd>
-                                {buildEmployeeLabel({
-                                  firstName: assignment.worker.firstName,
-                                  lastName: assignment.worker.lastName,
-                                  alias: assignment.worker.alias ?? null,
-                                  role: assignment.worker.user?.role ?? null,
-                                })}
-                              </SoTTd>
-                              <SoTTd>{assignment.worker.user?.role ?? "UNASSIGNED"}</SoTTd>
-                              <SoTTd>
-                                {String(assignment.effectiveFrom).slice(0, 10)}
-                                {" -> "}
-                                {assignment.effectiveTo
-                                  ? String(assignment.effectiveTo).slice(0, 10)
-                                  : "open"}
-                              </SoTTd>
-                              <SoTTd>
-                                <SoTStatusBadge tone={statusTone(assignment.status)}>
-                                  {assignment.status}
-                                </SoTStatusBadge>
-                              </SoTTd>
-                              <SoTTd>
-                                <Form method="post" className="flex items-center gap-2">
-                                  <input
-                                    type="hidden"
-                                    name="_intent"
-                                    value="set-assignment-status"
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="assignmentId"
-                                    value={assignment.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="templateId"
-                                    value={selectedTemplate.id}
-                                  />
-                                  <SelectInput
-                                    name="status"
-                                    defaultValue={assignment.status}
-                                    options={ASSIGNMENT_STATUS_OPTIONS}
-                                  />
-                                  <SoTButton type="submit" size="compact">
-                                    Save
-                                  </SoTButton>
-                                </Form>
-                              </SoTTd>
-                            </SoTTableRow>
-                          ))
-                        )}
-                      </tbody>
-                    </SoTTable>
+                    <Link
+                      to={baseHref}
+                      className="inline-flex h-10 items-center rounded-full border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Close
+                    </Link>
                   </div>
-                </>
-              ) : (
-                <p className="text-sm text-slate-600">
-                  Create or select a template first before assigning workers.
-                </p>
-              )}
-            </SoTCard>
-          </section>
-
-          <aside className="space-y-5 lg:col-span-5">
-            <SoTCard className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Pattern library
-                </h2>
-                <SoTStatusBadge tone="info">{templates.length} templates</SoTStatusBadge>
-              </div>
-              <p className="text-xs text-slate-500">
-                Open one helper when you need to edit it. Keep this page lean and return to
-                the planner board for normal weekly scheduling.
-              </p>
-
-              {templates.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                  No schedule templates yet.
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {templates.map((template) => (
-                    <div
-                      key={template.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="font-medium text-slate-900">
-                            {template.templateName}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {template.role ?? "ANY ROLE"} · {template.days.length} work day(s)
-                          </div>
-                        </div>
-                        <SoTStatusBadge tone={statusTone(template.status)}>
-                          {template.status}
-                        </SoTStatusBadge>
-                      </div>
 
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Link
-                          to={`/store/workforce/schedule-templates?templateId=${template.id}`}
-                          className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Open
-                        </Link>
-                        <Form method="post">
-                          <input type="hidden" name="_intent" value="set-template-status" />
-                          <input type="hidden" name="templateId" value={template.id} />
-                          <input
-                            type="hidden"
-                            name="status"
-                            value={
-                              template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                                ? WORKER_SCHEDULE_TEMPLATE_STATUS.PAUSED
-                                : WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                            }
-                          />
-                          <SoTButton type="submit" size="compact">
-                            {template.status === WORKER_SCHEDULE_TEMPLATE_STATUS.ACTIVE
-                              ? "Pause"
-                              : "Activate"}
-                          </SoTButton>
-                        </Form>
-                        <Form method="post">
-                          <input type="hidden" name="_intent" value="set-template-status" />
-                          <input type="hidden" name="templateId" value={template.id} />
-                          <input
-                            type="hidden"
-                            name="status"
-                            value={WORKER_SCHEDULE_TEMPLATE_STATUS.ENDED}
-                          />
-                          <SoTButton type="submit" size="compact" variant="danger">
-                            End
-                          </SoTButton>
-                        </Form>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SoTCard>
-
-            {selectedTemplate ? (
-              <SoTCard className="space-y-3">
-                <h2 className="text-sm font-semibold text-slate-900">Selected helper preview</h2>
-                <div className="flex flex-wrap gap-2">
-                  {selectedTemplate.days.map((day) => (
-                    <div
-                      key={day.id}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <span className="font-medium">{day.dayOfWeek}</span>
-                      <span className="mx-2 text-slate-400">·</span>
-                      <span className="text-xs text-slate-500">
-                        {minuteToTimeInput(day.startMinute)} - {minuteToTimeInput(day.endMinute)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {selectedTemplate.days.some((day) => Boolean(day.note)) ? (
-                  <div className="space-y-2">
-                    {selectedTemplate.days
-                      .filter((day) => Boolean(day.note))
-                      .map((day) => (
-                        <div
-                          key={`${day.id}-note`}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                        >
-                          <span className="font-semibold text-slate-800">{day.dayOfWeek}:</span>{" "}
-                          {day.note}
-                        </div>
-                      ))}
+                {savedMessage ? (
+                  <div className="mt-4">
+                    <SoTAlert tone="success">{savedMessage}</SoTAlert>
                   </div>
                 ) : null}
-              </SoTCard>
-            ) : null}
-          </aside>
-        </div>
-      </div>
+                {actionData && !actionData.ok ? (
+                  <div className="mt-4">
+                    <SoTAlert tone="warning">{actionData.error}</SoTAlert>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="max-h-[calc(100vh-10rem)] overflow-y-auto px-5 py-5 sm:px-6">
+                <Form
+                  key={selectedTemplate?.id ?? "new"}
+                  method="post"
+                  className="space-y-5"
+                >
+                  <input type="hidden" name="_intent" value="save-template" />
+                  <input type="hidden" name="templateId" value={selectedTemplate?.id ?? ""} />
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <SoTFormField label="Pattern name">
+                      <SoTInput
+                        name="templateName"
+                        defaultValue={selectedTemplate?.templateName ?? ""}
+                        placeholder="Example: Opening Duty"
+                        required
+                      />
+                    </SoTFormField>
+
+                    <SoTFormField label="Role scope">
+                      <SelectInput
+                        name="role"
+                        defaultValue={selectedTemplate?.role ?? ""}
+                        options={TEMPLATE_ROLE_OPTIONS}
+                      />
+                    </SoTFormField>
+
+                    <SoTFormField label="Effective from">
+                      <SoTInput
+                        type="date"
+                        name="effectiveFrom"
+                        defaultValue={
+                          selectedTemplate?.effectiveFrom?.slice?.(0, 10) ??
+                          selectedTemplate?.effectiveFrom?.toString?.().slice(0, 10) ??
+                          today
+                        }
+                        required
+                      />
+                    </SoTFormField>
+
+                    <SoTFormField label="Effective to">
+                      <SoTInput
+                        type="date"
+                        name="effectiveTo"
+                        defaultValue={
+                          selectedTemplate?.effectiveTo
+                            ? String(selectedTemplate.effectiveTo).slice(0, 10)
+                            : ""
+                        }
+                      />
+                    </SoTFormField>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Weekly pattern</h3>
+                      <p className="text-xs text-slate-500">
+                        Turn on only the shift days this pattern should generate.
+                      </p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+                      {DAY_CONFIGS.map((config, index) => {
+                        const current = selectedDays.get(config.dayOfWeek);
+                        return (
+                          <div
+                            key={config.dayOfWeek}
+                            className={`px-4 py-4 ${
+                              index > 0 ? "border-t border-slate-200" : ""
+                            }`.trim()}
+                          >
+                            <div className="grid gap-4 lg:grid-cols-[140px,1fr] lg:items-start">
+                              <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                  <input
+                                    type="checkbox"
+                                    name={`day_${config.dayOfWeek}_enabled`}
+                                    value="1"
+                                    defaultChecked={Boolean(current)}
+                                    className="h-4 w-4 rounded border-slate-300"
+                                  />
+                                  {config.label}
+                                </label>
+                                <div className="pl-6">
+                                  <span
+                                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      current
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-slate-100 text-slate-500"
+                                    }`}
+                                  >
+                                    {current ? "Shift day" : "Off"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-4">
+                                <div className="grid gap-3 md:grid-cols-[140px,140px] md:items-end">
+                                  <SoTFormField label="Start time">
+                                    <SoTInput
+                                      type="time"
+                                      name={`day_${config.dayOfWeek}_start`}
+                                      defaultValue={
+                                        current ? minuteToTimeInput(current.startMinute) : "08:00"
+                                      }
+                                    />
+                                  </SoTFormField>
+
+                                  <SoTFormField label="End time">
+                                    <SoTInput
+                                      type="time"
+                                      name={`day_${config.dayOfWeek}_end`}
+                                      defaultValue={
+                                        current ? minuteToTimeInput(current.endMinute) : "17:00"
+                                      }
+                                    />
+                                  </SoTFormField>
+                                </div>
+
+                                <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    Shift note
+                                  </div>
+                                  <div className="mt-2">
+                                    <SoTInput
+                                      name={`day_${config.dayOfWeek}_note`}
+                                      defaultValue={current?.note ?? ""}
+                                      placeholder="Optional note"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
+                    <SoTButton type="submit" variant="primary">
+                      {selectedTemplate ? "Save pattern" : "Create pattern"}
+                    </SoTButton>
+                    <Link
+                      to={baseHref}
+                      className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </Link>
+                  </div>
+                </Form>
+
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
     </main>
   );
 }

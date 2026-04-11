@@ -26,6 +26,18 @@ const PLAN_TAG = "PLAN:PAYROLL_DEDUCTION";
 const CLEARANCE_CASE_STATUS = {
   NEEDS_CLEARANCE: "NEEDS_CLEARANCE",
 } as const;
+
+const DATE_ONLY_SAFE_HOUR = 12;
+
+function toDateOnly(value: Date) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Invalid date input.");
+  }
+  parsed.setHours(DATE_ONLY_SAFE_HOUR, 0, 0, 0);
+  return parsed;
+}
+
 type LoaderData = {
   me: {
     id: number;
@@ -58,9 +70,13 @@ type LoaderData = {
 
   workforce: {
     activeTemplates: number;
-    activeAssignments: number;
-    scheduledToday: number;
-    attendanceRecordedToday: number;
+    dutyToday: number;
+    notCheckedToday: number;
+    checkedToday: number;
+    absentToday: number;
+    replacementToday: number;
+    offToday: number;
+    actualStrengthToday: number;
     draftSchedulesNext14Days: number;
     activeSuspensionsToday: number;
   };
@@ -93,7 +109,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const planningWindowEnd = new Date(todayStart);
+  const todayDate = toDateOnly(new Date());
+  const planningWindowEnd = new Date(todayDate);
   planningWindowEnd.setDate(planningWindowEnd.getDate() + 13);
 
   const [
@@ -115,9 +132,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     // Workforce ops
     activeWorkforceTemplates,
-    activeWorkforceAssignments,
-    scheduledToday,
-    attendanceRecordedToday,
+    dutyToday,
+    replacementToday,
+    offToday,
+    actualStrengthToday,
     draftSchedulesNext14Days,
     activeSuspensionsToday,
 
@@ -183,35 +201,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
         OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
       },
     }),
-    db.scheduleTemplateAssignment.count({
-      where: {
-        status: "ACTIVE",
-        effectiveFrom: { lte: todayStart },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
-        template: {
-          is: {
-            status: "ACTIVE",
-            effectiveFrom: { lte: todayStart },
-            OR: [{ effectiveTo: null }, { effectiveTo: { gte: todayStart } }],
-          },
-        },
-      },
-    }),
     db.workerSchedule.count({
       where: {
-        scheduleDate: todayStart,
+        scheduleDate: todayDate,
         status: { not: "CANCELLED" },
+        entryType: "WORK",
       },
     }),
     db.attendanceDutyResult.count({
       where: {
-        dutyDate: todayStart,
+        dutyDate: todayDate,
+        attendanceResult: { in: ["WHOLE_DAY", "HALF_DAY"] },
+        workContext: "REPLACEMENT",
+      },
+    }),
+    db.workerSchedule.count({
+      where: {
+        scheduleDate: todayDate,
+        status: { not: "CANCELLED" },
+        entryType: "OFF",
+      },
+    }),
+    db.attendanceDutyResult.count({
+      where: {
+        dutyDate: todayDate,
+        attendanceResult: { in: ["WHOLE_DAY", "HALF_DAY"] },
       },
     }),
     db.workerSchedule.count({
       where: {
         scheduleDate: {
-          gte: todayStart,
+          gte: todayDate,
           lte: planningWindowEnd,
         },
         status: "DRAFT",
@@ -256,6 +276,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     }),
   ]);
+
+  const [todayWorkSchedules, todayAttendanceFacts] = await Promise.all([
+    db.workerSchedule.findMany({
+      where: {
+        scheduleDate: todayDate,
+        status: { not: "CANCELLED" },
+        entryType: "WORK",
+      },
+      select: {
+        workerId: true,
+      },
+    }),
+    db.attendanceDutyResult.findMany({
+      where: {
+        dutyDate: todayDate,
+      },
+      select: {
+        workerId: true,
+        attendanceResult: true,
+      },
+    }),
+  ]);
+
+  const dutyWorkerIds = new Set(todayWorkSchedules.map((row) => row.workerId));
+  const checkedDutyWorkerIds = new Set<number>();
+  let absentToday = 0;
+
+  for (const row of todayAttendanceFacts) {
+    if (!dutyWorkerIds.has(row.workerId)) continue;
+    if (checkedDutyWorkerIds.has(row.workerId)) continue;
+
+    checkedDutyWorkerIds.add(row.workerId);
+    if (row.attendanceResult === "ABSENT") {
+      absentToday += 1;
+    }
+  }
+
+  const notCheckedToday = Math.max(dutyWorkerIds.size - checkedDutyWorkerIds.size, 0);
+  const checkedToday = checkedDutyWorkerIds.size;
 
   const cashSalesToday = r2(toNum(cashSalesTodayAgg._sum.amount));
   const drawerTxnsToday = r2(
@@ -353,9 +412,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     workforce: {
       activeTemplates: activeWorkforceTemplates,
-      activeAssignments: activeWorkforceAssignments,
-      scheduledToday,
-      attendanceRecordedToday,
+      dutyToday,
+      notCheckedToday,
+      checkedToday,
+      absentToday,
+      replacementToday,
+      offToday,
+      actualStrengthToday,
       draftSchedulesNext14Days,
       activeSuspensionsToday,
     },
@@ -384,20 +447,16 @@ export default function StoreManagerDashboard() {
     payrollTaggedCount +
     exceptions.clearancePending +
     runs.needsManagerReview;
-  const attendancePendingToday = Math.max(
-    workforce.scheduledToday - workforce.attendanceRecordedToday,
-    0,
-  );
   const attendanceStatusLabel =
-    attendancePendingToday > 0
-      ? `${attendancePendingToday} pending today`
-      : workforce.scheduledToday > 0
+    workforce.notCheckedToday > 0
+      ? `${workforce.notCheckedToday} not checked`
+      : workforce.dutyToday > 0
         ? "Attendance up to date"
-        : "No schedule";
+        : "No duty";
   const attendanceStatusTone =
-    attendancePendingToday > 0
+    workforce.notCheckedToday > 0
       ? "warning"
-      : workforce.scheduledToday > 0
+      : workforce.dutyToday > 0
         ? "success"
         : "default";
 
@@ -549,11 +608,17 @@ export default function StoreManagerDashboard() {
                 />
                 <SoTDashboardSignal
                   label="Attendance"
-                  value={attendancePendingToday}
+                  value={
+                    workforce.dutyToday > 0
+                      ? `${workforce.dutyToday} duty / ${workforce.checkedToday} checked`
+                      : "No duty"
+                  }
                   meta={
-                    workforce.scheduledToday > 0
-                      ? `${workforce.attendanceRecordedToday} recorded`
-                      : "No schedule"
+                    workforce.notCheckedToday > 0
+                      ? `${workforce.notCheckedToday} not checked`
+                      : workforce.dutyToday > 0
+                        ? "Up to date"
+                        : "No check needed"
                   }
                   tone={attendanceStatusTone}
                 />
@@ -644,15 +709,19 @@ export default function StoreManagerDashboard() {
 
             <SoTDashboardPanel
               title="Workforce"
-              subtitle="Coverage and schedule readiness"
-              badge={attendanceStatusLabel}
-              tone={attendanceStatusTone}
+              subtitle="Duty and attendance today"
+              badge={`${workforce.actualStrengthToday} actual`}
+              tone={workforce.actualStrengthToday > 0 ? "success" : attendanceStatusTone}
             >
               <div className="grid gap-2 sm:grid-cols-2">
-                <SoTDataRow label="Assignments live" value={workforce.activeAssignments} />
+                <SoTDataRow label="Duty today" value={workforce.dutyToday} />
+                <SoTDataRow label="Not checked" value={workforce.notCheckedToday} />
+                <SoTDataRow label="Checked" value={workforce.checkedToday} />
+                <SoTDataRow label="Absent" value={workforce.absentToday} />
+                <SoTDataRow label="Replacement" value={workforce.replacementToday} />
+                <SoTDataRow label="Off today" value={workforce.offToday} />
+                <SoTDataRow label="Actual strength" value={workforce.actualStrengthToday} />
                 <SoTDataRow label="Active templates" value={workforce.activeTemplates} />
-                <SoTDataRow label="Scheduled today" value={workforce.scheduledToday} />
-                <SoTDataRow label="Recorded today" value={workforce.attendanceRecordedToday} />
               </div>
             </SoTDashboardPanel>
           </div>

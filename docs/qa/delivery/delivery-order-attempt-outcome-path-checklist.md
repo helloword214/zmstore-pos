@@ -72,7 +72,7 @@ Then:
 
 1. Open the dispatch queue.
 2. Confirm the failed-delivery row shows rider reason and attempt count.
-3. Re-dispatch the order by assigning it to a planned run or creating a new run from selection.
+3. Re-dispatch the order by creating a new run from the queue selection.
 
 Expected:
 

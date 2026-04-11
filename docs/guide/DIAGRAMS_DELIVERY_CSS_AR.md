@@ -51,7 +51,7 @@ flowchart TD
     M1 -- "No" --> M3["Variance/charge path for missing returned stock"]
     M --> N["Run CLOSED"]
     N --> N1{"Dispatch review for failed delivery?"}
-    N1 -- "Re-dispatch" --> N2["Assign order to a new PLANNED run"]
+    N1 -- "Re-dispatch" --> N2["Create a new PLANNED run from queue selection"]
     N1 -- "Cancel" --> N3["Cancel parent order before cashier turnover"]
     N --> O["Cashier collections (walk-in + delivery remit + AR payment)"]
     O --> P{"Delivery turnover short?"}

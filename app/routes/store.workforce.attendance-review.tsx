@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigate } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTCard } from "~/components/ui/SoTCard";
@@ -8,14 +9,6 @@ import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTInput } from "~/components/ui/SoTInput";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
-import {
-  SoTTable,
-  SoTTableEmptyRow,
-  SoTTableHead,
-  SoTTableRow,
-  SoTTh,
-  SoTTd,
-} from "~/components/ui/SoTTable";
 import { SelectInput } from "~/components/ui/SelectInput";
 import { requireRole } from "~/utils/auth.server";
 import { db } from "~/utils/db.server";
@@ -23,12 +16,33 @@ import {
   listWorkerAttendanceDutyResultsForDate,
   recordWorkerAttendanceDutyResult,
 } from "~/services/worker-attendance-duty-result.server";
-import { appendWorkerScheduleEvent } from "~/services/worker-schedule-event.server";
+import {
+  appendWorkerScheduleEvent,
+  listWorkerScheduleEventsForSchedules,
+} from "~/services/worker-schedule-event.server";
 
 type ActionData = {
   ok: false;
   error: string;
   action?: string;
+};
+
+type PlannedDutyStateValue = "WORK" | "OFF" | "BLANK";
+type PlannerCoverageHint = {
+  workContext: AttendanceWorkContextValue;
+  coveringForLabel: string;
+  eventLabel: string;
+  note: string | null;
+};
+type PlannerCoverageEventSource = {
+  eventType: string;
+  relatedWorkerId: number | null;
+  subjectWorker: {
+    firstName: string;
+    lastName: string;
+    alias: string | null;
+  } | null;
+  note: string | null;
 };
 
 const ATTENDANCE_DAY_TYPE = {
@@ -93,15 +107,11 @@ const ATTENDANCE_WORK_CONTEXT = {
 type AttendanceWorkContextValue =
   (typeof ATTENDANCE_WORK_CONTEXT)[keyof typeof ATTENDANCE_WORK_CONTEXT];
 
-const ATTENDANCE_WORK_CONTEXT_VALUES = [
-  ATTENDANCE_WORK_CONTEXT.REGULAR,
-  ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
-  ATTENDANCE_WORK_CONTEXT.ON_CALL,
-] as const;
-
 const WORKER_SCHEDULE_EVENT_TYPE = {
   MARKED_ABSENT: "MARKED_ABSENT",
   EMERGENCY_LEAVE_RECORDED: "EMERGENCY_LEAVE_RECORDED",
+  REPLACEMENT_ASSIGNED: "REPLACEMENT_ASSIGNED",
+  ON_CALL_ASSIGNED: "ON_CALL_ASSIGNED",
 } as const;
 
 const WORKER_SCHEDULE_ENTRY_TYPE = {
@@ -139,17 +149,63 @@ const LATE_FLAG_OPTIONS = [
   { value: ATTENDANCE_LATE_FLAG.YES, label: "Yes" },
 ];
 
+function optionLabel(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string | null | undefined,
+  fallback = "—",
+) {
+  if (!value) return fallback;
+  return options.find((option) => option.value === value)?.label ?? fallback;
+}
+
+function laneLabel(value: string | null | undefined) {
+  if (value === "STORE_MANAGER") return "Store manager";
+  if (value === "CASHIER") return "Cashier";
+  if (value === "EMPLOYEE") return "Staff";
+  if (value === "ADMIN") return "Admin";
+  return "Team member";
+}
+
 function parseOptionalInt(value: string | null) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+const DATE_ONLY_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_ONLY_SAFE_HOUR = 12;
+
 function toDateOnly(value: Date | string) {
+  if (typeof value === "string") {
+    const match = DATE_ONLY_INPUT_PATTERN.exec(value.trim());
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const parsed = new Date(
+        year,
+        month - 1,
+        day,
+        DATE_ONLY_SAFE_HOUR,
+        0,
+        0,
+        0,
+      );
+      if (
+        parsed.getFullYear() !== year ||
+        parsed.getMonth() !== month - 1 ||
+        parsed.getDate() !== day
+      ) {
+        throw new Error("Invalid date input.");
+      }
+      return parsed;
+    }
+  }
+
   const parsed = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
+  parsed.setHours(DATE_ONLY_SAFE_HOUR, 0, 0, 0);
   return parsed;
 }
 
@@ -196,6 +252,85 @@ function statusTone(status: string) {
   return "danger" as const;
 }
 
+function plannerCoverageEventLabel(workContext: AttendanceWorkContextValue) {
+  if (workContext === ATTENDANCE_WORK_CONTEXT.REPLACEMENT) {
+    return "Replacement cover";
+  }
+  if (workContext === ATTENDANCE_WORK_CONTEXT.ON_CALL) {
+    return "On-call cover";
+  }
+  return "Coverage";
+}
+
+function buildPlannerCoverageByWorkerId(
+  scheduleEvents: ReadonlyArray<PlannerCoverageEventSource>,
+) {
+  const plannerCoverageByWorkerId = new Map<number, PlannerCoverageHint>();
+
+  for (const event of scheduleEvents) {
+    if (!event.relatedWorkerId || plannerCoverageByWorkerId.has(event.relatedWorkerId)) {
+      continue;
+    }
+
+    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED) {
+      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
+        workContext: ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
+        coveringForLabel: event.subjectWorker
+          ? buildWorkerLabel(event.subjectWorker)
+          : "scheduled worker",
+        eventLabel: "Replacement cover",
+        note: event.note ?? null,
+      });
+    }
+
+    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED) {
+      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
+        workContext: ATTENDANCE_WORK_CONTEXT.ON_CALL,
+        coveringForLabel: event.subjectWorker
+          ? buildWorkerLabel(event.subjectWorker)
+          : "scheduled worker",
+        eventLabel: "On-call cover",
+        note: event.note ?? null,
+      });
+    }
+  }
+
+  return plannerCoverageByWorkerId;
+}
+
+function plannedDutySummary(
+  schedule:
+    | {
+        entryType: string;
+        startAt?: Date | string;
+        endAt?: Date | string;
+      }
+    | null
+    | undefined,
+) {
+  if (isOffSchedule(schedule)) {
+    return {
+      label: "Off day",
+      tone: "warning" as const,
+      detail: "Intentional day off in planner",
+    };
+  }
+
+  if (isWorkSchedule(schedule) && schedule?.startAt && schedule?.endAt) {
+    return {
+      label: "Regular duty",
+      tone: "info" as const,
+      detail: formatTimeWindow(schedule.startAt, schedule.endAt),
+    };
+  }
+
+  return {
+    label: "No schedule",
+    tone: "neutral" as const,
+    detail: "No planner row for this date",
+  };
+}
+
 function isOffSchedule(
   schedule:
     | {
@@ -216,6 +351,73 @@ function isWorkSchedule(
     | undefined,
 ) {
   return schedule?.entryType === WORKER_SCHEDULE_ENTRY_TYPE.WORK;
+}
+
+function getPlannedDutyState(
+  schedule:
+    | {
+        entryType: string;
+      }
+    | null
+    | undefined,
+): PlannedDutyStateValue {
+  if (isWorkSchedule(schedule)) return "WORK";
+  if (isOffSchedule(schedule)) return "OFF";
+  return "BLANK";
+}
+
+function isWorkedAttendanceResult(result: string | null | undefined) {
+  return (
+    result === ATTENDANCE_RESULT.WHOLE_DAY ||
+    result === ATTENDANCE_RESULT.HALF_DAY
+  );
+}
+
+function deriveDefaultWorkContext(
+  plannedDutyState: PlannedDutyStateValue,
+  attendanceResult: AttendanceResultValue,
+  plannerCoverageWorkContext?: AttendanceWorkContextValue | null,
+) {
+  if (!isWorkedAttendanceResult(attendanceResult)) {
+    return ATTENDANCE_WORK_CONTEXT.REGULAR;
+  }
+
+  if (plannerCoverageWorkContext) {
+    return plannerCoverageWorkContext;
+  }
+
+  return ATTENDANCE_WORK_CONTEXT.REGULAR;
+}
+
+function workContextSummaryHint(
+  plannedDutyState: PlannedDutyStateValue,
+  plannerCoverage: PlannerCoverageHint | null | undefined,
+) {
+  if (plannerCoverage) {
+    return `${plannerCoverage.eventLabel} from planner`;
+  }
+
+  if (plannedDutyState === "OFF") {
+    return "Planner setup required";
+  }
+
+  if (plannedDutyState === "BLANK") {
+    return "Planner setup required";
+  }
+
+  return "Auto-detected from regular duty";
+}
+
+function canRecordWorkedAttendance(
+  plannedDutyState: PlannedDutyStateValue,
+  plannerCoverage: PlannerCoverageHint | null | undefined,
+) {
+  return plannedDutyState === "WORK" || Boolean(plannerCoverage);
+}
+
+function buildPlannerSetupHref(dutyDate: string, workerId: number) {
+  const encodedDate = encodeURIComponent(dutyDate);
+  return `/store/workforce/schedule-planner?rangeStart=${encodedDate}&rangeEnd=${encodedDate}&workerId=${workerId}&scheduleDate=${encodedDate}`;
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -255,6 +457,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: [{ startDate: "desc" }, { id: "desc" }],
     }),
   ]);
+  const scheduleEvents = await listWorkerScheduleEventsForSchedules(
+    schedules.map((schedule) => schedule.id),
+  );
 
   const scheduleByWorkerId = new Map(schedules.map((schedule) => [schedule.workerId, schedule]));
   const attendanceByWorkerId = new Map(
@@ -263,6 +468,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const suspensionByWorkerId = new Map(
     activeSuspensions.map((record) => [record.workerId, record]),
   );
+  const plannerCoverageByWorkerId = buildPlannerCoverageByWorkerId(scheduleEvents);
 
   const rows = workers
     .map((worker) => ({
@@ -272,6 +478,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       schedule: scheduleByWorkerId.get(worker.id) ?? null,
       attendance: attendanceByWorkerId.get(worker.id) ?? null,
       suspension: suspensionByWorkerId.get(worker.id) ?? null,
+      plannerCoverage: plannerCoverageByWorkerId.get(worker.id) ?? null,
     }))
     .sort((left, right) => {
       const leftRank = isWorkSchedule(left.schedule)
@@ -289,9 +496,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
 
   const selectedRow =
-    rows.find((row) => row.id === selectedWorkerId) ??
-    rows[0] ??
-    null;
+    selectedWorkerId
+      ? rows.find((row) => row.id === selectedWorkerId) ?? null
+      : null;
 
   return json({
     rows,
@@ -315,11 +522,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const workerId = parseOptionalInt(String(fd.get("workerId") || ""));
-    const scheduleId = parseOptionalInt(String(fd.get("scheduleId") || ""));
     const dutyDate = String(fd.get("dutyDate") || "");
     const dayType = String(fd.get("dayType") || "");
     const attendanceResult = String(fd.get("attendanceResult") || "");
-    const workContext = String(fd.get("workContext") || "");
     const leaveTypeRaw = String(fd.get("leaveType") || "");
     const lateFlag = String(fd.get("lateFlag") || "");
     const note = String(fd.get("note") || "");
@@ -332,24 +537,51 @@ export async function action({ request }: ActionFunctionArgs) {
       throw new Error("Invalid attendance result.");
     }
     if (
-      !ATTENDANCE_WORK_CONTEXT_VALUES.includes(workContext as AttendanceWorkContextValue)
-    ) {
-      throw new Error("Invalid work context.");
-    }
-    if (
       lateFlag !== ATTENDANCE_LATE_FLAG.NO &&
       lateFlag !== ATTENDANCE_LATE_FLAG.YES
     ) {
       throw new Error("Invalid late flag.");
     }
 
+    const schedulesForDate = await db.workerSchedule.findMany({
+      where: {
+        scheduleDate: toDateOnly(dutyDate),
+        status: { not: "CANCELLED" },
+      },
+      orderBy: [{ startAt: "asc" }, { worker: { lastName: "asc" } }],
+    });
+    const scheduleEvents = await listWorkerScheduleEventsForSchedules(
+      schedulesForDate.map((schedule) => schedule.id),
+    );
+    const workerSchedule =
+      schedulesForDate.find((schedule) => schedule.workerId === workerId) ??
+      null;
+    const serverPlannedDutyState = getPlannedDutyState(workerSchedule);
+    const plannerCoverage =
+      buildPlannerCoverageByWorkerId(scheduleEvents).get(workerId) ?? null;
+    const workedResult = isWorkedAttendanceResult(attendanceResult);
+
+    if (
+      workedResult &&
+      !canRecordWorkedAttendance(serverPlannedDutyState, plannerCoverage)
+    ) {
+      throw new Error(
+        "Add this worker in schedule planner as replacement/on-call before saving worked attendance.",
+      );
+    }
+
+    const normalizedWorkContext = workedResult
+      ? plannerCoverage?.workContext ?? ATTENDANCE_WORK_CONTEXT.REGULAR
+      : ATTENDANCE_WORK_CONTEXT.REGULAR;
+
     await recordWorkerAttendanceDutyResult({
       workerId,
-      scheduleId,
+      scheduleId: workerSchedule?.id ?? null,
       dutyDate,
       dayType: dayType as AttendanceDayTypeValue,
       attendanceResult: attendanceResult as AttendanceResultValue,
-      workContext: workContext as AttendanceWorkContextValue,
+      plannedDutyState: serverPlannedDutyState,
+      workContext: normalizedWorkContext,
       leaveType:
         leaveTypeRaw === ATTENDANCE_LEAVE_TYPE.SICK_LEAVE
           ? (ATTENDANCE_LEAVE_TYPE.SICK_LEAVE as AttendanceLeaveTypeValue)
@@ -359,10 +591,10 @@ export async function action({ request }: ActionFunctionArgs) {
       recordedById: me.userId,
     });
 
-    if (scheduleId) {
+    if (workerSchedule?.id) {
       if (attendanceResult === ATTENDANCE_RESULT.ABSENT) {
         await appendWorkerScheduleEvent({
-          scheduleId,
+          scheduleId: workerSchedule.id,
           eventType: WORKER_SCHEDULE_EVENT_TYPE.MARKED_ABSENT,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
@@ -372,7 +604,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if (attendanceResult === ATTENDANCE_RESULT.LEAVE) {
         await appendWorkerScheduleEvent({
-          scheduleId,
+          scheduleId: workerSchedule.id,
           eventType: WORKER_SCHEDULE_EVENT_TYPE.EMERGENCY_LEAVE_RECORDED,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
@@ -386,7 +618,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect(
       `/store/workforce/attendance-review?date=${encodeURIComponent(
         dutyDate,
-      )}&workerId=${workerId}&saved=attendance`,
+      )}&saved=attendance`,
     );
   } catch (error) {
     return json<ActionData>(
@@ -403,12 +635,20 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function WorkforceAttendanceReviewRoute() {
   const { rows, selectedRow, dutyDate, saved } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
+  const navigate = useNavigate();
+  const selectedPlannedDutyState = getPlannedDutyState(selectedRow?.schedule);
+  const attendanceReviewBaseHref =
+    `/store/workforce/attendance-review?date=${encodeURIComponent(dutyDate)}`;
 
   const defaultDayType =
     selectedRow?.attendance?.dayType ??
     (selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
       ? ATTENDANCE_DAY_TYPE.WORK_DAY
       : ATTENDANCE_DAY_TYPE.REST_DAY);
+  const baselineDayType =
+    selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
+      ? ATTENDANCE_DAY_TYPE.WORK_DAY
+      : ATTENDANCE_DAY_TYPE.REST_DAY;
   const defaultAttendanceResult =
     selectedRow?.attendance?.attendanceResult ??
     (selectedRow?.suspension && selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
@@ -416,21 +656,66 @@ export default function WorkforceAttendanceReviewRoute() {
       : selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
         ? ATTENDANCE_RESULT.WHOLE_DAY
         : ATTENDANCE_RESULT.NOT_REQUIRED);
-  const defaultWorkContext =
-    selectedRow?.attendance?.workContext ?? ATTENDANCE_WORK_CONTEXT.REGULAR;
   const defaultLeaveType = selectedRow?.attendance?.leaveType ?? "";
   const defaultLateFlag = selectedRow?.attendance?.lateFlag ?? ATTENDANCE_LATE_FLAG.NO;
-  const selectedPlannedRowLabel = selectedRow?.schedule
-    ? isOffSchedule(selectedRow.schedule)
-      ? "intentional OFF day"
-      : formatTimeWindow(selectedRow.schedule.startAt, selectedRow.schedule.endAt)
-    : "none";
+  const selectedPlannedSummary = plannedDutySummary(selectedRow?.schedule);
+  const [dayTypeValue, setDayTypeValue] =
+    useState<AttendanceDayTypeValue>(defaultDayType);
+  const [attendanceResultValue, setAttendanceResultValue] =
+    useState<AttendanceResultValue>(defaultAttendanceResult);
+  const [leaveTypeValue, setLeaveTypeValue] = useState<
+    AttendanceLeaveTypeValue | ""
+  >(defaultLeaveType as AttendanceLeaveTypeValue | "");
+  const [lateFlagValue, setLateFlagValue] =
+    useState<AttendanceLateFlagValue>(defaultLateFlag);
+  const [showDetails, setShowDetails] = useState(
+    Boolean(
+      selectedRow?.attendance?.note?.trim() ||
+        defaultDayType !== baselineDayType,
+    ),
+  );
+  const workedAttendance = isWorkedAttendanceResult(attendanceResultValue);
+  const leaveAttendance = attendanceResultValue === ATTENDANCE_RESULT.LEAVE;
+  const suggestedWorkContext = deriveDefaultWorkContext(
+    selectedPlannedDutyState,
+    attendanceResultValue,
+    selectedRow?.plannerCoverage?.workContext ?? null,
+  );
+  const effectiveWorkContext = workedAttendance
+    ? suggestedWorkContext
+    : ATTENDANCE_WORK_CONTEXT.REGULAR;
+  const workedAttendanceNeedsPlannerSetup =
+    workedAttendance &&
+    !canRecordWorkedAttendance(selectedPlannedDutyState, selectedRow?.plannerCoverage);
+  const plannerSetupHref = selectedRow
+    ? buildPlannerSetupHref(dutyDate, selectedRow.id)
+    : "/store/workforce/schedule-planner";
+
+  useEffect(() => {
+    setDayTypeValue(defaultDayType);
+    setAttendanceResultValue(defaultAttendanceResult);
+    setLeaveTypeValue(defaultLeaveType as AttendanceLeaveTypeValue | "");
+    setLateFlagValue(defaultLateFlag);
+    setShowDetails(
+      Boolean(
+        selectedRow?.attendance?.note?.trim() ||
+          defaultDayType !== baselineDayType,
+      ),
+    );
+  }, [
+    baselineDayType,
+    defaultDayType,
+    defaultAttendanceResult,
+    defaultLeaveType,
+    defaultLateFlag,
+    selectedRow?.id,
+  ]);
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Workforce Attendance Review"
-        subtitle="Record the factual attendance layer payroll will later consume: day type, duty result, work context, leave, and late flag."
+        subtitle="Check the duty list and record the day."
         backTo="/store"
         backLabel="Manager Dashboard"
       />
@@ -439,228 +724,450 @@ export default function WorkforceAttendanceReviewRoute() {
         {saved === "attendance" ? (
           <SoTAlert tone="success">Attendance record saved.</SoTAlert>
         ) : null}
-        {actionData && !actionData.ok ? (
+        {actionData && !actionData.ok && !selectedRow ? (
           <SoTAlert tone="warning">{actionData.error}</SoTAlert>
         ) : null}
 
-        <SoTCard interaction="form" className="space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Review date</h2>
-            <p className="text-xs text-slate-500">
-              Current attendance review date: {formatDateLabel(dutyDate)}
-            </p>
+        <SoTCard interaction="form" className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-900">Attendance date</h2>
+            <span className="text-xs text-slate-500">{formatDateLabel(dutyDate)}</span>
           </div>
 
           <Form method="get" className="grid gap-3 md:grid-cols-[1fr,auto]">
-            <SoTFormField label="Duty date">
+            <SoTFormField label="Date">
               <SoTInput type="date" name="date" defaultValue={dutyDate} required />
             </SoTFormField>
             {selectedRow ? <input type="hidden" name="workerId" value={selectedRow.id} /> : null}
             <div className="flex items-end">
-              <SoTButton type="submit" variant="primary">
-                Load date
+              <SoTButton type="submit" variant="primary" size="compact">
+                Load
               </SoTButton>
             </div>
           </Form>
         </SoTCard>
 
-        <div className="grid gap-5 lg:grid-cols-12">
-          <section className="lg:col-span-7">
-            <SoTCard className="space-y-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Worker list for the day
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Work rows are listed first, intentional OFF rows next, and blank days last.
-                  Select one row to review the factual attendance inputs.
-                </p>
-              </div>
+        <SoTCard className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Attendance board</h2>
+            <p className="text-xs text-slate-500">
+              Planned duty and recorded attendance stay on one row. Open a worker only when you need to record or adjust the day.
+            </p>
+          </div>
 
-              <SoTTable>
-                <SoTTableHead>
-                  <SoTTableRow>
-                    <SoTTh>Worker</SoTTh>
-                    <SoTTh>Schedule</SoTTh>
-                    <SoTTh>Attendance</SoTTh>
-                    <SoTTh>Review</SoTTh>
-                  </SoTTableRow>
-                </SoTTableHead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <SoTTableEmptyRow
-                      colSpan={4}
-                      message="No active workers found."
-                    />
-                  ) : (
-                    rows.map((row) => (
-                      <SoTTableRow key={row.id}>
-                        <SoTTd>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">{row.label}</div>
-                            <div className="text-xs text-slate-500">{row.lane}</div>
+          {rows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              No active workers found.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {rows.map((row) => {
+                const selected = selectedRow?.id === row.id;
+                const plannedSummary = plannedDutySummary(row.schedule);
+                const actualLabel = row.attendance
+                  ? optionLabel(
+                      ATTENDANCE_RESULT_OPTIONS,
+                      row.attendance.attendanceResult,
+                      row.attendance.attendanceResult,
+                    )
+                  : "Pending";
+                const actualTone = row.attendance
+                  ? statusTone(row.attendance.attendanceResult)
+                  : "neutral";
+                const actualDetail = row.attendance
+                  ? [
+                      optionLabel(
+                        DAY_TYPE_OPTIONS,
+                        row.attendance.dayType,
+                        row.attendance.dayType,
+                      ),
+                      optionLabel(
+                        WORK_CONTEXT_OPTIONS,
+                        row.attendance.workContext,
+                        row.attendance.workContext,
+                      ),
+                    ].join(" · ")
+                  : row.plannerCoverage
+                    ? `${row.plannerCoverage.eventLabel} for ${row.plannerCoverage.coveringForLabel}`
+                    : "Not recorded yet";
+
+                return (
+                  <Link
+                    key={row.id}
+                    to={`${attendanceReviewBaseHref}&workerId=${row.id}`}
+                    preventScrollReset
+                    className={`block rounded-2xl border px-4 py-3 transition-colors duration-150 ${
+                      selected
+                        ? "border-indigo-300 bg-indigo-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`font-medium ${
+                                selected ? "text-indigo-700" : "text-slate-900"
+                              }`}
+                            >
+                              {row.label}
+                            </span>
+                            <SoTStatusBadge tone="neutral">
+                              {laneLabel(row.lane)}
+                            </SoTStatusBadge>
+                            {selected ? (
+                              <SoTStatusBadge tone="info">Open</SoTStatusBadge>
+                            ) : null}
                           </div>
-                        </SoTTd>
-                        <SoTTd>
-                          {row.schedule ? (
-                            isOffSchedule(row.schedule) ? (
-                              <div className="space-y-1">
-                                <SoTStatusBadge tone="warning">OFF</SoTStatusBadge>
-                                <div className="text-xs text-slate-500">
-                                  Intentional planner day off
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-1">
-                                <SoTStatusBadge tone="info">Scheduled</SoTStatusBadge>
-                                <div className="text-xs text-slate-500">
-                                  {formatTimeWindow(row.schedule.startAt, row.schedule.endAt)}
-                                </div>
-                              </div>
-                            )
-                          ) : (
-                            <span className="text-sm text-slate-500">No planned row</span>
-                          )}
-                          {row.suspension ? (
-                            <div className="mt-1">
-                              <SoTStatusBadge tone="warning">Suspended</SoTStatusBadge>
-                            </div>
-                          ) : null}
-                        </SoTTd>
-                        <SoTTd>
-                          {row.attendance ? (
-                            <div className="space-y-1">
-                              <SoTStatusBadge tone={statusTone(row.attendance.attendanceResult)}>
-                                {row.attendance.attendanceResult}
-                              </SoTStatusBadge>
-                              <div className="text-xs text-slate-500">
-                                {row.attendance.dayType} · {row.attendance.workContext}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-slate-500">Not recorded yet</span>
-                          )}
-                        </SoTTd>
-                        <SoTTd>
-                          <Link
-                            to={`/store/workforce/attendance-review?date=${encodeURIComponent(
-                              dutyDate,
-                            )}&workerId=${row.id}`}
-                            className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                          >
-                            {selectedRow?.id === row.id ? "Selected" : "Open"}
-                          </Link>
-                        </SoTTd>
-                      </SoTTableRow>
-                    ))
-                  )}
-                </tbody>
-              </SoTTable>
-            </SoTCard>
-          </section>
+                        </div>
 
-          <aside className="space-y-5 lg:col-span-5">
-            {selectedRow ? (
-              <SoTCard interaction="form" className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Selected worker</h2>
-                    <p className="text-xs text-slate-500">
-                      {selectedRow.label} · {selectedRow.lane}
-                    </p>
-                  </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {row.suspension ? (
+                            <SoTStatusBadge tone="warning">Suspended</SoTStatusBadge>
+                          ) : null}
+                          {row.attendance?.lateFlag === ATTENDANCE_LATE_FLAG.YES ? (
+                            <SoTStatusBadge tone="warning">Late</SoTStatusBadge>
+                          ) : null}
+                          {(row.attendance?.workContext &&
+                            row.attendance.workContext !== ATTENDANCE_WORK_CONTEXT.REGULAR) ||
+                          (!row.attendance && row.plannerCoverage) ? (
+                            <SoTStatusBadge tone="info">
+                              {optionLabel(
+                                WORK_CONTEXT_OPTIONS,
+                                row.attendance?.workContext ??
+                                  row.plannerCoverage?.workContext,
+                                row.attendance?.workContext ??
+                                  row.plannerCoverage?.workContext,
+                              )}
+                            </SoTStatusBadge>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Planned
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <SoTStatusBadge tone={plannedSummary.tone}>
+                              {plannedSummary.label}
+                            </SoTStatusBadge>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {plannedSummary.detail}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Recorded
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <SoTStatusBadge tone={actualTone}>{actualLabel}</SoTStatusBadge>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">{actualDetail}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </SoTCard>
+
+        {selectedRow ? (
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/55 px-4 py-6 backdrop-blur-md sm:py-10"
+            onClick={() => navigate(attendanceReviewBaseHref)}
+          >
+            <div
+              className="mx-auto w-full max-w-2xl rounded-[28px] border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900">Record attendance</h2>
+                  <p className="text-sm text-slate-500">
+                    {selectedRow.label} · {laneLabel(selectedRow.lane)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
                   {selectedRow.attendance ? (
                     <SoTStatusBadge tone={statusTone(selectedRow.attendance.attendanceResult)}>
-                      {selectedRow.attendance.attendanceResult}
+                      {optionLabel(
+                        ATTENDANCE_RESULT_OPTIONS,
+                        selectedRow.attendance.attendanceResult,
+                        selectedRow.attendance.attendanceResult,
+                      )}
                     </SoTStatusBadge>
+                  ) : (
+                    <SoTStatusBadge tone="neutral">Pending</SoTStatusBadge>
+                  )}
+                  <SoTButton
+                    type="button"
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => navigate(attendanceReviewBaseHref)}
+                  >
+                    Close
+                  </SoTButton>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SoTStatusBadge tone={selectedPlannedSummary.tone}>
+                    {selectedPlannedSummary.label}
+                  </SoTStatusBadge>
+                  <span className="text-sm text-slate-600">
+                    {selectedPlannedSummary.detail}
+                  </span>
+                  {selectedRow.suspension ? (
+                    <SoTStatusBadge tone="warning">Suspended</SoTStatusBadge>
                   ) : null}
                 </div>
+                {selectedRow.plannerCoverage ? (
+                  <div className="mt-2 text-sm text-slate-600">
+                    {`${plannerCoverageEventLabel(
+                      selectedRow.plannerCoverage.workContext,
+                    )} for ${selectedRow.plannerCoverage.coveringForLabel}`}
+                    {selectedRow.plannerCoverage.note
+                      ? ` · ${selectedRow.plannerCoverage.note}`
+                      : ""}
+                  </div>
+                ) : selectedRow.suspension ? (
+                  <div className="mt-2 text-sm text-slate-600">
+                    {`${formatDateLabel(
+                      selectedRow.suspension.startDate,
+                    )} -> ${formatDateLabel(selectedRow.suspension.endDate)}`}
+                  </div>
+                ) : null}
+              </div>
 
-                <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  <div>Planned row: {selectedPlannedRowLabel}</div>
-                  <div>
-                    Active suspension:{" "}
-                    {selectedRow.suspension
-                      ? `${formatDateLabel(selectedRow.suspension.startDate)} -> ${formatDateLabel(selectedRow.suspension.endDate)}`
-                      : "none"}
+              {actionData && !actionData.ok ? (
+                <div className="mb-4">
+                  <SoTAlert tone="warning">{actionData.error}</SoTAlert>
+                </div>
+              ) : null}
+
+              <Form method="post" className="space-y-4">
+                <input type="hidden" name="_intent" value="record-attendance" />
+                <input type="hidden" name="workerId" value={selectedRow.id} />
+                <input
+                  type="hidden"
+                  name="scheduleId"
+                  value={selectedRow.schedule?.id ?? ""}
+                />
+                <input
+                  type="hidden"
+                  name="plannedDutyState"
+                  value={selectedPlannedDutyState}
+                />
+                <input type="hidden" name="dutyDate" value={dutyDate} />
+                <input type="hidden" name="dayType" value={dayTypeValue} />
+                <input
+                  type="hidden"
+                  name="attendanceResult"
+                  value={attendanceResultValue}
+                />
+                <input
+                  type="hidden"
+                  name="workContext"
+                  value={effectiveWorkContext}
+                />
+                <input
+                  type="hidden"
+                  name="lateFlag"
+                  value={
+                    workedAttendance ? lateFlagValue : ATTENDANCE_LATE_FLAG.NO
+                  }
+                />
+                {leaveAttendance ? (
+                  <input type="hidden" name="leaveType" value={leaveTypeValue} />
+                ) : null}
+
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Attendance result
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {ATTENDANCE_RESULT_OPTIONS.map((option) => {
+                      const selected = attendanceResultValue === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            setAttendanceResultValue(
+                              option.value as AttendanceResultValue,
+                            )
+                          }
+                          className={`rounded-2xl border px-3 py-3 text-left text-sm font-medium transition-colors ${
+                            selected
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <Form method="post" className="space-y-3">
-                  <input type="hidden" name="_intent" value="record-attendance" />
-                  <input type="hidden" name="workerId" value={selectedRow.id} />
-                  <input
-                    type="hidden"
-                    name="scheduleId"
-                    value={selectedRow.schedule?.id ?? ""}
-                  />
-                  <input type="hidden" name="dutyDate" value={dutyDate} />
+                {workedAttendance ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Work details
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm text-slate-600">Context</span>
+                          <SoTStatusBadge tone="info">
+                            {optionLabel(
+                              WORK_CONTEXT_OPTIONS,
+                              effectiveWorkContext,
+                              effectiveWorkContext,
+                            )}
+                          </SoTStatusBadge>
+                          <span className="text-xs text-slate-500">
+                            {workContextSummaryHint(
+                              selectedPlannedDutyState,
+                              selectedRow?.plannerCoverage,
+                            )}
+                          </span>
+                        </div>
+                      </div>
 
-                  <SoTFormField label="Day type">
-                    <SelectInput
-                      name="dayType"
-                      defaultValue={defaultDayType}
-                      options={DAY_TYPE_OPTIONS}
-                    />
-                  </SoTFormField>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-slate-600">Late</span>
+                        {LATE_FLAG_OPTIONS.map((option) => {
+                          const selected = lateFlagValue === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() =>
+                                setLateFlagValue(
+                                  option.value as AttendanceLateFlagValue,
+                                )
+                              }
+                              className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                selected
+                                  ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                  <SoTFormField label="Attendance result">
-                    <SelectInput
-                      name="attendanceResult"
-                      defaultValue={defaultAttendanceResult}
-                      options={ATTENDANCE_RESULT_OPTIONS}
-                    />
-                  </SoTFormField>
+                    {workedAttendanceNeedsPlannerSetup ? (
+                      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <div className="font-semibold">Add in planner first</div>
+                        <p className="mt-1 text-xs leading-5 text-amber-800">
+                          This worker is off or has no schedule for this date. Assign
+                          replacement/on-call coverage in the planner before saving worked
+                          attendance.
+                        </p>
+                        <Link
+                          to={plannerSetupHref}
+                          className="mt-2 inline-flex text-xs font-semibold text-amber-900 underline underline-offset-2"
+                        >
+                          Open schedule planner
+                        </Link>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
-                  <SoTFormField label="Work context">
-                    <SelectInput
-                      name="workContext"
-                      defaultValue={defaultWorkContext}
-                      options={WORK_CONTEXT_OPTIONS}
-                    />
-                  </SoTFormField>
-
+                {leaveAttendance ? (
                   <SoTFormField label="Leave type">
                     <SelectInput
-                      name="leaveType"
-                      defaultValue={defaultLeaveType}
+                      value={leaveTypeValue}
+                      onChange={(value) =>
+                        setLeaveTypeValue(value as AttendanceLeaveTypeValue | "")
+                      }
                       options={[
                         { value: "", label: "None" },
                         { value: ATTENDANCE_LEAVE_TYPE.SICK_LEAVE, label: "Sick leave" },
                       ]}
                     />
                   </SoTFormField>
+                ) : null}
 
-                  <SoTFormField label="Late flag">
-                    <SelectInput
-                      name="lateFlag"
-                      defaultValue={defaultLateFlag}
-                      options={LATE_FLAG_OPTIONS}
-                    />
-                  </SoTFormField>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Details
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Day type and manager note only when needed.
+                      </div>
+                    </div>
+                    <SoTButton
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      onClick={() => setShowDetails((current) => !current)}
+                    >
+                      {showDetails ? "Hide" : "Show"}
+                    </SoTButton>
+                  </div>
 
-                  <SoTFormField label="Manager note">
-                    <SoTInput
-                      name="note"
-                      defaultValue={selectedRow.attendance?.note ?? ""}
-                      placeholder="Reason, clarification, or attendance context"
-                    />
-                  </SoTFormField>
+                  {showDetails ? (
+                    <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3">
+                      <SoTFormField label="Day type">
+                        <SelectInput
+                          value={dayTypeValue}
+                          onChange={(value) =>
+                            setDayTypeValue(value as AttendanceDayTypeValue)
+                          }
+                          options={DAY_TYPE_OPTIONS}
+                        />
+                      </SoTFormField>
 
-                  <SoTButton type="submit" variant="primary">
-                    Save attendance fact
+                      <SoTFormField label="Manager note">
+                        <SoTInput
+                          name="note"
+                          defaultValue={selectedRow.attendance?.note ?? ""}
+                          placeholder="Optional note"
+                        />
+                      </SoTFormField>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                  <SoTButton
+                    type="button"
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => navigate(attendanceReviewBaseHref)}
+                  >
+                    Cancel
                   </SoTButton>
-                </Form>
-              </SoTCard>
-            ) : (
-              <SoTCard>
-                <p className="text-sm text-slate-600">
-                  Select a worker row to review attendance facts.
-                </p>
-              </SoTCard>
-            )}
-          </aside>
-        </div>
+                  <SoTButton
+                    type="submit"
+                    variant="primary"
+                    size="compact"
+                    disabled={workedAttendanceNeedsPlannerSetup}
+                  >
+                    Save attendance
+                  </SoTButton>
+                </div>
+              </Form>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );
