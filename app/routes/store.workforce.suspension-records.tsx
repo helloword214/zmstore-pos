@@ -131,10 +131,14 @@ function statusTone(status: string) {
 function buildSuspensionRedirect(args: {
   workerId?: number | null;
   saved?: string;
+  mode?: "edit" | null;
 }) {
   const params = new URLSearchParams();
   if (args.workerId) {
     params.set("workerId", String(args.workerId));
+  }
+  if (args.mode) {
+    params.set("mode", args.mode);
   }
   if (args.saved) {
     params.set("saved", args.saved);
@@ -165,6 +169,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const selectedWorkerId = parseOptionalInt(url.searchParams.get("workerId"));
   const saved = url.searchParams.get("saved");
+  const mode = url.searchParams.get("mode") === "edit" ? "edit" : null;
   const today = toDateOnly(new Date());
 
   const workers = await db.employee.findMany({
@@ -222,6 +227,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     upcomingSchedules,
     activeSuspension,
     saved,
+    mode,
     today: formatDateInput(today),
     defaultEndDate: formatDateInput(addDays(today, 6)),
   });
@@ -232,6 +238,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const {
     applyWorkerSuspensionRecordAndOverlay,
     liftWorkerSuspensionRecord,
+    updateWorkerSuspensionRecordAndOverlay,
   } = await import("~/services/worker-suspension-record.server");
   const fd = await request.formData();
   const intent = String(fd.get("_intent") || "");
@@ -289,6 +296,43 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    if (intent === "update-suspension") {
+      const suspensionRecordId = parseOptionalInt(
+        String(fd.get("suspensionRecordId") || ""),
+      );
+      const workerId = parseOptionalInt(String(fd.get("workerId") || ""));
+      const startDate = String(fd.get("startDate") || "");
+      const endDate = String(fd.get("endDate") || "");
+      const reasonType = String(fd.get("reasonType") || "").trim();
+      const managerNote = String(fd.get("managerNote") || "");
+
+      if (!suspensionRecordId) throw new Error("Suspension record is required.");
+      if (!workerId) throw new Error("Worker is required.");
+      if (!startDate || !endDate) {
+        throw new Error("Start and end dates are required.");
+      }
+      if (!reasonType) {
+        throw new Error("Reason type is required.");
+      }
+
+      await updateWorkerSuspensionRecordAndOverlay({
+        suspensionRecordId,
+        workerId,
+        startDate,
+        endDate,
+        reasonType,
+        managerNote,
+        updatedById: me.userId,
+      });
+
+      return redirect(
+        buildSuspensionRedirect({
+          workerId,
+          saved: "updated",
+        }),
+      );
+    }
+
     return json<ActionData>(
       { ok: false, error: "Unsupported action.", action: intent },
       { status: 400 },
@@ -316,6 +360,7 @@ export default function WorkforceSuspensionRecordsRoute() {
     upcomingSchedules,
     activeSuspension,
     saved,
+    mode,
     today,
     defaultEndDate,
   } = useLoaderData<typeof loader>();
@@ -324,6 +369,9 @@ export default function WorkforceSuspensionRecordsRoute() {
     (schedule): schedule is NonNullable<(typeof upcomingSchedules)[number]> =>
       schedule != null,
   );
+  const isEditMode = mode === "edit" && Boolean(activeSuspension);
+  const showEditModalError =
+    isEditMode && actionData != null && !actionData.ok && actionData.action === "update-suspension";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
@@ -345,16 +393,18 @@ export default function WorkforceSuspensionRecordsRoute() {
             Suspension lifted and future overlay rows were cleared for the remaining range.
           </SoTAlert>
         ) : null}
-        {actionData && !actionData.ok ? (
+        {saved === "updated" ? (
+          <SoTAlert tone="success">
+            Active suspension updated and overlay rows were refreshed for the edited range.
+          </SoTAlert>
+        ) : null}
+        {actionData && !actionData.ok && actionData.action !== "update-suspension" ? (
           <SoTAlert tone="warning">{actionData.error}</SoTAlert>
         ) : null}
 
-        <SoTCard interaction="form" className="space-y-4">
+        <SoTCard interaction="form" className="space-y-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Worker focus</h2>
-            <p className="text-xs text-slate-500">
-              Filter the audit table and preload the apply form for one worker at a time.
-            </p>
+            <h2 className="text-sm font-semibold text-slate-900">Choose worker</h2>
           </div>
 
           <Form method="get" className="grid gap-3 md:grid-cols-[1fr,auto]">
@@ -377,137 +427,13 @@ export default function WorkforceSuspensionRecordsRoute() {
         </SoTCard>
 
         <div className="grid gap-5 lg:grid-cols-12">
-          <section className="lg:col-span-7">
-            <SoTCard className="space-y-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Suspension record history
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {selectedWorker
-                    ? `Showing records for ${selectedWorker.firstName} ${selectedWorker.lastName}.`
-                    : "Showing all recorded suspension windows."}
-                </p>
-              </div>
-
-              <SoTTable>
-                <SoTTableHead>
-                  <SoTTableRow>
-                    <SoTTh>Worker</SoTTh>
-                    <SoTTh>Window</SoTTh>
-                    <SoTTh>Reason</SoTTh>
-                    <SoTTh>Status</SoTTh>
-                    <SoTTh>Audit</SoTTh>
-                    <SoTTh>Action</SoTTh>
-                  </SoTTableRow>
-                </SoTTableHead>
-                <tbody>
-                  {records.length === 0 ? (
-                    <SoTTableEmptyRow
-                      colSpan={6}
-                      message="No suspension records found for the current filter."
-                    />
-                  ) : (
-                    records.map((record) => (
-                      <SoTTableRow key={record.id}>
-                        <SoTTd>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">
-                              {buildWorkerLabel(record.worker)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {record.worker.user?.role ?? "UNASSIGNED"}
-                            </div>
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="space-y-1 text-sm text-slate-700">
-                            <div>
-                              {formatDateLabel(record.startDate)} to{" "}
-                              {formatDateLabel(record.endDate)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Applied {formatDateTimeLabel(record.appliedAt)}
-                            </div>
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">
-                              {record.reasonType}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {record.managerNote || "No manager note"}
-                            </div>
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <SoTStatusBadge tone={statusTone(record.status)}>
-                            {record.status}
-                          </SoTStatusBadge>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="space-y-1 text-xs text-slate-500">
-                            <div>Applied by {actorLabel(record.appliedBy)}</div>
-                            {record.liftedAt ? (
-                              <div>
-                                Lifted by {actorLabel(record.liftedBy)} on{" "}
-                                {formatDateTimeLabel(record.liftedAt)}
-                              </div>
-                            ) : (
-                              <div>Lift not recorded yet</div>
-                            )}
-                          </div>
-                        </SoTTd>
-                        <SoTTd>
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              to={buildSuspensionRedirect({ workerId: record.workerId })}
-                              className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                              Open worker
-                            </Link>
-                            {record.status === SUSPENSION_RECORD_STATUS.ACTIVE ? (
-                              <Form method="post">
-                                <input
-                                  type="hidden"
-                                  name="_intent"
-                                  value="lift-suspension"
-                                />
-                                <input
-                                  type="hidden"
-                                  name="suspensionRecordId"
-                                  value={record.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="workerId"
-                                  value={record.workerId}
-                                />
-                                <SoTButton type="submit" variant="danger">
-                                  Lift
-                                </SoTButton>
-                              </Form>
-                            ) : null}
-                          </div>
-                        </SoTTd>
-                      </SoTTableRow>
-                    ))
-                  )}
-                </tbody>
-              </SoTTable>
-            </SoTCard>
-          </section>
-
-          <aside className="space-y-5 lg:col-span-5">
+          <section className="space-y-5 lg:col-span-7">
             {selectedWorker ? (
               <>
                 <SoTCard interaction="form" className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-slate-900">
-                        Selected worker
-                      </h2>
+                      <h2 className="text-sm font-semibold text-slate-900">Apply suspension</h2>
                       <p className="text-xs text-slate-500">
                         {buildWorkerLabel(selectedWorker)} ·{" "}
                         {selectedWorker.user?.role ?? "UNASSIGNED"}
@@ -520,20 +446,56 @@ export default function WorkforceSuspensionRecordsRoute() {
                     )}
                   </div>
 
-                  <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <div>
-                      Current active suspension:{" "}
-                      {activeSuspension
-                        ? `${formatDateLabel(activeSuspension.startDate)} to ${formatDateLabel(activeSuspension.endDate)}`
-                        : "none"}
+                  {activeSuspension ? (
+                    <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
+                      <div>
+                        Active suspension: {formatDateLabel(activeSuspension.startDate)} to{" "}
+                        {formatDateLabel(activeSuspension.endDate)}
+                      </div>
+                      <div>Reason: {activeSuspension.reasonType}</div>
+                      {activeSuspension.managerNote ? (
+                        <div>Note: {activeSuspension.managerNote}</div>
+                      ) : null}
                     </div>
-                    <div>
-                      Reason: {activeSuspension?.reasonType ?? "n/a"}
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      No active suspension.
                     </div>
-                    <div>
-                      Note: {activeSuspension?.managerNote ?? "No active manager note"}
+                  )}
+
+                  {activeSuspension ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={buildSuspensionRedirect({
+                          workerId: selectedWorker.id,
+                          mode: "edit",
+                        })}
+                        className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Edit suspension
+                      </Link>
+                      <Form method="post">
+                        <input
+                          type="hidden"
+                          name="_intent"
+                          value="lift-suspension"
+                        />
+                        <input
+                          type="hidden"
+                          name="suspensionRecordId"
+                          value={activeSuspension.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="workerId"
+                          value={selectedWorker.id}
+                        />
+                        <SoTButton type="submit" variant="danger">
+                          Lift suspension
+                        </SoTButton>
+                      </Form>
                     </div>
-                  </div>
+                  ) : null}
 
                   <Form method="post" className="space-y-3">
                     <input type="hidden" name="_intent" value="apply-suspension" />
@@ -588,15 +550,27 @@ export default function WorkforceSuspensionRecordsRoute() {
                     </div>
                   </Form>
                 </SoTCard>
+              </>
+            ) : (
+              <SoTCard>
+                <p className="text-sm text-slate-600">
+                  No active workers were found, so suspension operations are unavailable.
+                </p>
+              </SoTCard>
+            )}
+          </section>
 
+          <aside className="space-y-5 lg:col-span-5">
+            {selectedWorker ? (
+              <>
                 <SoTCard className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-semibold text-slate-900">
-                        Upcoming scheduled work rows
+                        Upcoming work
                       </h2>
                       <p className="text-xs text-slate-500">
-                        Preview of the next 30 days of planned work that could be affected by a suspension overlay.
+                        Next planned rows that may be affected.
                       </p>
                     </div>
                     <Link
@@ -653,9 +627,11 @@ export default function WorkforceSuspensionRecordsRoute() {
                                     ? "SUSPENSION RANGE"
                                     : schedule.status}
                                 </SoTStatusBadge>
-                                <div className="text-xs text-slate-500">
-                                  {schedule.note || "No schedule note"}
-                                </div>
+                                {schedule.note ? (
+                                  <div className="text-xs text-slate-500">
+                                    {schedule.note}
+                                  </div>
+                                ) : null}
                               </div>
                             </SoTTd>
                           </SoTTableRow>
@@ -674,6 +650,231 @@ export default function WorkforceSuspensionRecordsRoute() {
             )}
           </aside>
         </div>
+
+        {isEditMode && activeSuspension && selectedWorker ? (
+          <>
+            <Link
+              to={buildSuspensionRedirect({ workerId: selectedWorker.id })}
+              aria-label="Close edit suspension"
+              className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[2px]"
+            />
+
+            <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6">
+              <div className="relative max-h-[calc(100vh-1rem)] w-full max-w-2xl overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-xl sm:max-h-[calc(100vh-2rem)] sm:rounded-[28px]">
+                <div className="border-b border-slate-200 px-5 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="max-w-xl">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                        Edit suspension
+                      </div>
+                      <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                        {buildWorkerLabel(selectedWorker)}
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Update the active suspension without changing the create form on the page.
+                      </p>
+                    </div>
+
+                    <Link
+                      to={buildSuspensionRedirect({ workerId: selectedWorker.id })}
+                      className="inline-flex h-10 items-center rounded-full border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Close
+                    </Link>
+                  </div>
+
+                  {showEditModalError ? (
+                    <div className="mt-4">
+                      <SoTAlert tone="warning">{actionData?.error}</SoTAlert>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto px-5 py-4">
+                  <Form method="post" className="space-y-3">
+                    <input type="hidden" name="_intent" value="update-suspension" />
+                    <input type="hidden" name="workerId" value={selectedWorker.id} />
+                    <input
+                      type="hidden"
+                      name="suspensionRecordId"
+                      value={activeSuspension.id}
+                    />
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <SoTFormField label="Start date">
+                        <SoTInput
+                          type="date"
+                          name="startDate"
+                          defaultValue={formatDateInput(activeSuspension.startDate)}
+                          required
+                        />
+                      </SoTFormField>
+                      <SoTFormField label="End date">
+                        <SoTInput
+                          type="date"
+                          name="endDate"
+                          defaultValue={formatDateInput(activeSuspension.endDate)}
+                          required
+                        />
+                      </SoTFormField>
+                    </div>
+
+                    <SoTFormField label="Reason type">
+                      <SoTInput
+                        name="reasonType"
+                        placeholder="Policy violation, misconduct, administrative hold"
+                        defaultValue={activeSuspension.reasonType}
+                        required
+                      />
+                    </SoTFormField>
+
+                    <SoTFormField label="Manager note">
+                      <SoTInput
+                        name="managerNote"
+                        placeholder="Why the suspension was applied and any handling notes"
+                        defaultValue={activeSuspension.managerNote ?? ""}
+                      />
+                    </SoTFormField>
+
+                    <div className="flex flex-wrap gap-2">
+                      <SoTButton type="submit" variant="primary">
+                        Save suspension
+                      </SoTButton>
+                      <Link
+                        to={buildSuspensionRedirect({ workerId: selectedWorker.id })}
+                        className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Cancel
+                      </Link>
+                    </div>
+                  </Form>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        <SoTCard className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Suspension history
+            </h2>
+            <p className="text-xs text-slate-500">
+              {selectedWorker
+                ? `Showing records for ${selectedWorker.firstName} ${selectedWorker.lastName}.`
+                : "Showing all recorded suspension windows."}
+            </p>
+          </div>
+
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow>
+                <SoTTh>Worker</SoTTh>
+                <SoTTh>Window</SoTTh>
+                <SoTTh>Reason</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh>Audit</SoTTh>
+                <SoTTh>Action</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
+            <tbody>
+              {records.length === 0 ? (
+                <SoTTableEmptyRow
+                  colSpan={6}
+                  message="No suspension records found for the current filter."
+                />
+              ) : (
+                records.map((record) => (
+                  <SoTTableRow key={record.id}>
+                    <SoTTd>
+                      <div className="space-y-1">
+                        <div className="font-medium text-slate-900">
+                          {buildWorkerLabel(record.worker)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {record.worker.user?.role ?? "UNASSIGNED"}
+                        </div>
+                      </div>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <div>
+                          {formatDateLabel(record.startDate)} to{" "}
+                          {formatDateLabel(record.endDate)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Applied {formatDateTimeLabel(record.appliedAt)}
+                        </div>
+                      </div>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="space-y-1">
+                        <div className="font-medium text-slate-900">
+                          {record.reasonType}
+                        </div>
+                        {record.managerNote ? (
+                          <div className="text-xs text-slate-500">
+                            {record.managerNote}
+                          </div>
+                        ) : null}
+                      </div>
+                    </SoTTd>
+                    <SoTTd>
+                      <SoTStatusBadge tone={statusTone(record.status)}>
+                        {record.status}
+                      </SoTStatusBadge>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="space-y-1 text-xs text-slate-500">
+                        <div>Applied by {actorLabel(record.appliedBy)}</div>
+                        {record.liftedAt ? (
+                          <div>
+                            Lifted by {actorLabel(record.liftedBy)} on{" "}
+                            {formatDateTimeLabel(record.liftedAt)}
+                          </div>
+                        ) : (
+                          <div>Lift not recorded yet</div>
+                        )}
+                      </div>
+                    </SoTTd>
+                    <SoTTd>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          to={buildSuspensionRedirect({ workerId: record.workerId })}
+                          className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Open worker
+                        </Link>
+                        {record.status === SUSPENSION_RECORD_STATUS.ACTIVE ? (
+                          <Form method="post">
+                            <input
+                              type="hidden"
+                              name="_intent"
+                              value="lift-suspension"
+                            />
+                            <input
+                              type="hidden"
+                              name="suspensionRecordId"
+                              value={record.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="workerId"
+                              value={record.workerId}
+                            />
+                            <SoTButton type="submit" variant="danger">
+                              Lift
+                            </SoTButton>
+                          </Form>
+                        ) : null}
+                      </div>
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
+        </SoTCard>
       </div>
     </main>
   );

@@ -19,6 +19,7 @@ export type RecordWorkerAttendanceDutyResultInput = {
   dutyDate: Date | string;
   dayType: AttendanceDayType;
   attendanceResult: AttendanceResult;
+  plannedDutyState?: "WORK" | "OFF" | "BLANK";
   workContext?: AttendanceWorkContext;
   leaveType?: AttendanceLeaveType | null;
   lateFlag?: AttendanceLateFlag;
@@ -86,6 +87,28 @@ const normalizeLeaveType = (
   return null;
 };
 
+const deriveAttendanceWorkContext = (
+  attendanceResult: AttendanceResult,
+  plannedDutyState: RecordWorkerAttendanceDutyResultInput["plannedDutyState"],
+) => {
+  if (
+    attendanceResult !== AttendanceResult.WHOLE_DAY &&
+    attendanceResult !== AttendanceResult.HALF_DAY
+  ) {
+    return AttendanceWorkContext.REGULAR;
+  }
+
+  if (plannedDutyState === "OFF") {
+    return AttendanceWorkContext.REPLACEMENT;
+  }
+
+  if (plannedDutyState === "BLANK") {
+    return AttendanceWorkContext.ON_CALL;
+  }
+
+  return AttendanceWorkContext.REGULAR;
+};
+
 export async function recordWorkerAttendanceDutyResult(
   input: RecordWorkerAttendanceDutyResultInput,
   prisma: WorkforceDbClient = db,
@@ -115,7 +138,9 @@ export async function recordWorkerAttendanceDutyResult(
         : {}),
       dayType: input.dayType,
       attendanceResult: input.attendanceResult,
-      workContext: input.workContext ?? AttendanceWorkContext.REGULAR,
+      workContext:
+        input.workContext ??
+        deriveAttendanceWorkContext(input.attendanceResult, input.plannedDutyState),
       leaveType: normalizeLeaveType(input.attendanceResult, input.leaveType),
       lateFlag: input.lateFlag ?? AttendanceLateFlag.NO,
       note: input.note?.trim() || null,
@@ -134,7 +159,9 @@ export async function recordWorkerAttendanceDutyResult(
       dutyDate,
       dayType: input.dayType,
       attendanceResult: input.attendanceResult,
-      workContext: input.workContext ?? AttendanceWorkContext.REGULAR,
+      workContext:
+        input.workContext ??
+        deriveAttendanceWorkContext(input.attendanceResult, input.plannedDutyState),
       leaveType: normalizeLeaveType(input.attendanceResult, input.leaveType),
       lateFlag: input.lateFlag ?? AttendanceLateFlag.NO,
       note: input.note?.trim() || null,

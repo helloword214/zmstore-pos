@@ -33,12 +33,41 @@ export type AssignWorkerScheduleTemplateInput = {
   actorUserId?: number | null;
 };
 
+const DATE_ONLY_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_ONLY_SAFE_HOUR = 12;
+
 const toDateOnly = (value: Date | string) => {
+  if (typeof value === "string") {
+    const match = DATE_ONLY_INPUT_PATTERN.exec(value.trim());
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const parsed = new Date(
+        year,
+        month - 1,
+        day,
+        DATE_ONLY_SAFE_HOUR,
+        0,
+        0,
+        0,
+      );
+      if (
+        parsed.getFullYear() !== year ||
+        parsed.getMonth() !== month - 1 ||
+        parsed.getDate() !== day
+      ) {
+        throw new Error("Invalid date input.");
+      }
+      return parsed;
+    }
+  }
+
   const parsed = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
+  parsed.setHours(DATE_ONLY_SAFE_HOUR, 0, 0, 0);
   return parsed;
 };
 
@@ -306,5 +335,75 @@ export async function listWorkerScheduleTemplateAssignments(
       },
     },
     orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function listWorkerScheduleTemplatesForPlanner(
+  args: {
+    rangeStart: Date | string;
+    rangeEnd: Date | string;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const rangeStart = toDateOnly(args.rangeStart);
+  const rangeEnd = toDateOnly(args.rangeEnd);
+
+  if (rangeEnd < rangeStart) {
+    throw new Error("rangeEnd must be on or after rangeStart.");
+  }
+
+  return prisma.scheduleTemplate.findMany({
+    where: {
+      status: WorkerScheduleTemplateStatus.ACTIVE,
+      effectiveFrom: { lte: rangeEnd },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: rangeStart } }],
+    },
+    include: {
+      days: { orderBy: { dayOfWeek: "asc" } },
+    },
+    orderBy: [{ templateName: "asc" }, { id: "asc" }],
+  });
+}
+
+export async function listWorkerScheduleTemplateAssignmentsForPlanner(
+  args: {
+    rangeStart: Date | string;
+    rangeEnd: Date | string;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const rangeStart = toDateOnly(args.rangeStart);
+  const rangeEnd = toDateOnly(args.rangeEnd);
+
+  if (rangeEnd < rangeStart) {
+    throw new Error("rangeEnd must be on or after rangeStart.");
+  }
+
+  return prisma.scheduleTemplateAssignment.findMany({
+    where: {
+      status: WorkerScheduleAssignmentStatus.ACTIVE,
+      effectiveFrom: { lte: rangeEnd },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: rangeStart } }],
+      template: {
+        is: {
+          status: WorkerScheduleTemplateStatus.ACTIVE,
+          effectiveFrom: { lte: rangeEnd },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: rangeStart } }],
+        },
+      },
+    },
+    include: {
+      template: {
+        include: {
+          days: { orderBy: { dayOfWeek: "asc" } },
+        },
+      },
+    },
+    orderBy: [
+      { workerId: "asc" },
+      { effectiveFrom: "asc" },
+      { template: { templateName: "asc" } },
+      { id: "asc" },
+    ],
   });
 }

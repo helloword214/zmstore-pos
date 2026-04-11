@@ -57,6 +57,9 @@ export async function listWorkerScheduleEventsForSchedules(
           },
         },
       },
+      subjectWorker: {
+        select: { id: true, firstName: true, lastName: true, alias: true },
+      },
       relatedWorker: {
         select: { id: true, firstName: true, lastName: true, alias: true },
       },

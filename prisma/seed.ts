@@ -2385,7 +2385,7 @@ async function seedWorkforcePayrollAndScheduleBaseline(args: {
 
   const templateSpecs = [
     {
-      templateName: "Seed Rider Delivery Week",
+      templateName: "Delivery Coverage",
       role: WorkerScheduleRole.EMPLOYEE,
       workerIds: args.riderWorkerIds,
       days: buildTemplateDays({
@@ -2403,7 +2403,7 @@ async function seedWorkforcePayrollAndScheduleBaseline(args: {
       }),
     },
     {
-      templateName: "Seed Cashier Counter Week",
+      templateName: "Opening Duty",
       role: WorkerScheduleRole.CASHIER,
       workerIds: args.cashierWorkerIds,
       days: buildTemplateDays({
@@ -2421,7 +2421,7 @@ async function seedWorkforcePayrollAndScheduleBaseline(args: {
       }),
     },
     {
-      templateName: "Seed Manager Store Week",
+      templateName: "Store Supervision",
       role: WorkerScheduleRole.STORE_MANAGER,
       workerIds: args.managerWorkerIds,
       days: buildTemplateDays({

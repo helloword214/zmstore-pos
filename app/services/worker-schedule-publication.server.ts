@@ -9,6 +9,10 @@ import {
 import { db } from "~/utils/db.server";
 import type { WorkforceDbClient } from "~/services/worker-payroll-policy.server";
 import { appendWorkerScheduleEvent } from "~/services/worker-schedule-event.server";
+import {
+  enumerateDatesInclusive,
+  toDateOnly,
+} from "~/services/workforce-schedule-planner-date-helpers";
 
 const DAY_OF_WEEK_INDEX: Record<WorkerScheduleTemplateDayOfWeek, number> = {
   SUNDAY: 0,
@@ -18,54 +22,6 @@ const DAY_OF_WEEK_INDEX: Record<WorkerScheduleTemplateDayOfWeek, number> = {
   THURSDAY: 4,
   FRIDAY: 5,
   SATURDAY: 6,
-};
-
-const DATE_ONLY_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DATE_ONLY_SAFE_HOUR = 12;
-
-const toDateOnly = (value: Date | string) => {
-  if (typeof value === "string") {
-    const match = DATE_ONLY_INPUT_PATTERN.exec(value.trim());
-    if (match) {
-      const year = Number(match[1]);
-      const month = Number(match[2]);
-      const day = Number(match[3]);
-      const parsed = new Date(
-        year,
-        month - 1,
-        day,
-        DATE_ONLY_SAFE_HOUR,
-        0,
-        0,
-        0,
-      );
-      if (
-        parsed.getFullYear() !== year ||
-        parsed.getMonth() !== month - 1 ||
-        parsed.getDate() !== day
-      ) {
-        throw new Error("Invalid date input.");
-      }
-      return parsed;
-    }
-  }
-
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error("Invalid date input.");
-  }
-  parsed.setHours(DATE_ONLY_SAFE_HOUR, 0, 0, 0);
-  return parsed;
-};
-
-const enumerateDatesInclusive = (start: Date, end: Date) => {
-  const dates: Date[] = [];
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    dates.push(new Date(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return dates;
 };
 
 const combineDateAndMinute = (date: Date, minute: number) => {
@@ -147,6 +103,8 @@ export async function generateWorkerSchedulesFromTemplateAssignments(
     rangeEnd: Date | string;
     actorUserId?: number | null;
     branchId?: number;
+    workerId?: number;
+    templateId?: number;
   },
   prisma: WorkforceDbClient = db,
 ) {
@@ -159,6 +117,8 @@ export async function generateWorkerSchedulesFromTemplateAssignments(
 
   const assignments = await prisma.scheduleTemplateAssignment.findMany({
     where: {
+      ...(args.workerId ? { workerId: args.workerId } : {}),
+      ...(args.templateId ? { templateId: args.templateId } : {}),
       status: "ACTIVE",
       effectiveFrom: { lte: rangeEnd },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: rangeStart } }],
@@ -284,6 +244,170 @@ export async function generateWorkerSchedulesFromTemplateAssignments(
   });
 
   return { createdCount: created.count };
+}
+
+export async function applyWorkerSchedulePatternToRange(
+  args: {
+    templateId: number;
+    workerId: number;
+    rangeStart: Date | string;
+    rangeEnd: Date | string;
+    actorUserId: number;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const rangeStart = toDateOnly(args.rangeStart);
+  const rangeEnd = toDateOnly(args.rangeEnd);
+
+  if (rangeEnd < rangeStart) {
+    throw new Error("rangeEnd must be on or after rangeStart.");
+  }
+
+  const [template, worker, existingRows] = await Promise.all([
+    prisma.scheduleTemplate.findFirst({
+      where: {
+        id: args.templateId,
+        status: "ACTIVE",
+        effectiveFrom: { lte: rangeEnd },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: rangeStart } }],
+      },
+      include: {
+        days: { orderBy: { dayOfWeek: "asc" } },
+      },
+    }),
+    prisma.employee.findUnique({
+      where: { id: args.workerId },
+      include: {
+        user: {
+          select: { role: true },
+        },
+      },
+    }),
+    prisma.workerSchedule.findMany({
+      where: {
+        workerId: args.workerId,
+        status: { not: WorkerScheduleStatus.CANCELLED },
+        scheduleDate: {
+          gte: rangeStart,
+          lte: rangeEnd,
+        },
+      },
+      orderBy: [{ scheduleDate: "asc" }, { publishedAt: "desc" }, { startAt: "asc" }, { id: "asc" }],
+    }),
+  ]);
+
+  if (!template) {
+    throw new Error("Named staffing pattern not found or inactive.");
+  }
+
+  if (!worker) {
+    throw new Error("Worker not found.");
+  }
+
+  const existingByDate = new Map<string, (typeof existingRows)[number]>();
+  for (const row of existingRows) {
+    const key = buildWorkerDateKey(row.workerId, row.scheduleDate);
+    if (existingByDate.has(key)) {
+      throw new Error(
+        "Planner board supports one active schedule row per worker per date. Resolve duplicate rows first.",
+      );
+    }
+    existingByDate.set(key, row);
+  }
+
+  const dates = enumerateDatesInclusive(rangeStart, rangeEnd);
+  const role = deriveWorkerScheduleRole(template.role, worker.user?.role);
+  let createdCount = 0;
+  let replacedDraftCount = 0;
+  let skippedPublishedCount = 0;
+
+  await runInWorkforceTransaction(prisma, async (tx) => {
+    for (const date of dates) {
+      if (!fallsWithinEffectiveRange(date, template.effectiveFrom, template.effectiveTo)) {
+        continue;
+      }
+
+      const matchingDay = template.days.find(
+        (day) => DAY_OF_WEEK_INDEX[day.dayOfWeek] === date.getDay(),
+      );
+      if (!matchingDay) continue;
+
+      const workerDateKey = buildWorkerDateKey(args.workerId, date);
+      const existing = existingByDate.get(workerDateKey) ?? null;
+
+      if (existing?.status === WorkerScheduleStatus.PUBLISHED) {
+        skippedPublishedCount += 1;
+        continue;
+      }
+
+      const nextStartAt = combineDateAndMinute(date, matchingDay.startMinute);
+      const nextEndAt = combineDateAndMinute(date, matchingDay.endMinute);
+
+      if (existing) {
+        await cancelWorkerSchedule(
+          {
+            scheduleId: existing.id,
+            actorUserId: args.actorUserId,
+            note: `Planner replaced this draft row with ${template.templateName} for the selected window.`,
+          },
+          tx,
+        );
+        replacedDraftCount += 1;
+      }
+
+      const cancelledWorkMatch = await findCancelledScheduleForExactWindow(
+        {
+          workerId: worker.id,
+          scheduleDate: date,
+          startAt: nextStartAt,
+          endAt: nextEndAt,
+        },
+        tx,
+      );
+
+      if (cancelledWorkMatch) {
+        await reviveCancelledBoardSchedule(
+          {
+            cancelledScheduleId: cancelledWorkMatch.id,
+            actorUserId: args.actorUserId,
+            role,
+            branchId: template.branchId ?? null,
+            templateAssignmentId: null,
+            scheduleDate: new Date(date),
+            entryType: WorkerScheduleEntryType.WORK,
+            startAt: nextStartAt,
+            endAt: nextEndAt,
+            status: WorkerScheduleStatus.DRAFT,
+            publishedById: null,
+            publishedAt: null,
+            note: matchingDay.note ?? null,
+          },
+          tx,
+        );
+      } else {
+        await tx.workerSchedule.create({
+          data: {
+            workerId: worker.id,
+            role,
+            branchId: template.branchId ?? null,
+            scheduleDate: new Date(date),
+            entryType: WorkerScheduleEntryType.WORK,
+            startAt: nextStartAt,
+            endAt: nextEndAt,
+            status: WorkerScheduleStatus.DRAFT,
+            templateAssignmentId: null,
+            note: matchingDay.note ?? null,
+            createdById: args.actorUserId,
+            updatedById: args.actorUserId,
+          },
+        });
+      }
+
+      createdCount += 1;
+    }
+  });
+
+  return { createdCount, replacedDraftCount, skippedPublishedCount };
 }
 
 type SetWorkerScheduleBoardCellInput = {
@@ -545,7 +669,7 @@ export async function setWorkerScheduleBoardCell(
             actorUserId: input.actorUserId,
             role,
             branchId: existing.branchId,
-            templateAssignmentId: existing.templateAssignmentId,
+            templateAssignmentId: null,
             scheduleDate,
             entryType: WorkerScheduleEntryType.OFF,
             startAt: offWindow.startAt,
@@ -579,6 +703,7 @@ export async function setWorkerScheduleBoardCell(
       where: { id: existing.id },
       data: {
         role,
+        templateAssignmentId: null,
         entryType: WorkerScheduleEntryType.OFF,
         startAt: offWindow.startAt,
         endAt: offWindow.endAt,
@@ -715,7 +840,7 @@ export async function setWorkerScheduleBoardCell(
           actorUserId: input.actorUserId,
           role,
           branchId: existing.branchId,
-          templateAssignmentId: existing.templateAssignmentId,
+          templateAssignmentId: null,
           scheduleDate,
           entryType: WorkerScheduleEntryType.WORK,
           startAt: nextStartAt,
@@ -749,6 +874,7 @@ export async function setWorkerScheduleBoardCell(
     where: { id: existing.id },
     data: {
       role,
+      templateAssignmentId: null,
       entryType: WorkerScheduleEntryType.WORK,
       startAt: nextStartAt,
       endAt: nextEndAt,
@@ -839,6 +965,73 @@ export async function listWorkerSchedulesForRange(
     },
     orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }, { workerId: "asc" }],
   });
+}
+
+export async function clearWorkerDraftSchedulesInRange(
+  args: {
+    workerId: number;
+    rangeStart: Date | string;
+    rangeEnd: Date | string;
+    actorUserId: number;
+    note?: string | null;
+  },
+  prisma: WorkforceDbClient = db,
+) {
+  const rangeStart = toDateOnly(args.rangeStart);
+  const rangeEnd = toDateOnly(args.rangeEnd);
+
+  if (rangeEnd < rangeStart) {
+    throw new Error("rangeEnd must be on or after rangeStart.");
+  }
+
+  const draftSchedules = await prisma.workerSchedule.findMany({
+    where: {
+      workerId: args.workerId,
+      status: WorkerScheduleStatus.DRAFT,
+      scheduleDate: {
+        gte: rangeStart,
+        lte: rangeEnd,
+      },
+    },
+    select: {
+      id: true,
+      templateAssignmentId: true,
+      scheduleDate: true,
+      startAt: true,
+    },
+    orderBy: [{ scheduleDate: "asc" }, { startAt: "asc" }, { id: "asc" }],
+  });
+
+  if (draftSchedules.length === 0) {
+    return { clearedCount: 0, generatedCount: 0 };
+  }
+
+  const note =
+    args.note?.trim() ||
+    "Planner cleared this worker's draft rows inside the selected window.";
+  let generatedCount = 0;
+
+  await runInWorkforceTransaction(prisma, async (tx) => {
+    for (const schedule of draftSchedules) {
+      if (schedule.templateAssignmentId != null) {
+        generatedCount += 1;
+      }
+
+      await cancelWorkerSchedule(
+        {
+          scheduleId: schedule.id,
+          actorUserId: args.actorUserId,
+          note,
+        },
+        tx,
+      );
+    }
+  });
+
+  return {
+    clearedCount: draftSchedules.length,
+    generatedCount,
+  };
 }
 
 export async function updateWorkerScheduleOneOff(

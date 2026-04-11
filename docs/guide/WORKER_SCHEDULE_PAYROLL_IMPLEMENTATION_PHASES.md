@@ -46,7 +46,7 @@ This guide does not own:
 4. V1 remains day-based only:
    - no hourly math
    - no late-minute deductions
-   - no rotating schedule templates
+   - no rotating staffing patterns
    - no leave families beyond `SICK_LEAVE`
    - no government deduction formulas
 
@@ -74,7 +74,7 @@ These are suggested implementation buckets, not final canonical route authority.
 
 | Concern | Suggested route/page bucket | Notes |
 | --- | --- | --- |
-| Manager schedule templates | `/store/workforce/schedule-templates` | Create, pause, end, and assign reusable weekly templates |
+| Manager staffing pattern library | `/store/workforce/schedule-templates` | Create, pause, end, and assign reusable weekly named staffing patterns |
 | Manager schedule planner / publication | `/store/workforce/schedule-planner` | Generate future schedules, review one-off edits, publish |
 | Manager attendance review | `/store/workforce/attendance-review` | Record `WHOLE_DAY`, `HALF_DAY`, `ABSENT`, `LEAVE`, `NOT_REQUIRED`, `SUSPENDED_NO_WORK`, and `lateFlag` |
 | Manager suspension records | `/store/workforce/suspension-records` | Apply/lift suspension without deleting planned schedules |
@@ -111,7 +111,7 @@ Must-have deliverables:
 2. add attendance-time snapshot fields for employee pay basis
 3. add payroll-time snapshot fields for gross pay, additions, deductions, and net pay
 4. add service modules for:
-   - schedule generation from templates
+   - schedule generation from named staffing patterns
    - attendance recording
    - suspension overlay
    - gross-pay computation
@@ -146,8 +146,8 @@ Make store-manager schedule planning and attendance recording real.
 
 Must-have deliverables:
 
-1. schedule template create/edit/pause/end UI
-2. template assignment UI for many employees
+1. staffing pattern create/edit/pause/end UI
+2. staffing pattern assignment UI for many employees
 3. schedule generation UI for next week / next cutoff / next month
 4. schedule review and publish flow
 5. one-off daily schedule edit/cancel flow that preserves event history
@@ -231,7 +231,7 @@ Must-have deliverables:
 
 ## V1 Must-Have Summary
 
-1. manager can create weekly schedule templates and assign them to many employees
+1. manager can create weekly named staffing patterns and assign them to many employees
 2. manager can generate and publish real work schedules
 3. manager can record attendance, late flag, and suspension
 4. payroll can compute day-based gross pay from attendance facts
@@ -244,7 +244,7 @@ Must-have deliverables:
 1. hourly payroll math
 2. late-minute deductions
 3. undertime/grace rules
-4. rotating/alternating templates
+4. rotating/alternating staffing patterns
 5. leave families beyond `SICK_LEAVE`
 6. tax and government remittance formulas
 7. final self-service payroll portal polish
@@ -255,7 +255,7 @@ Must-have deliverables:
 
 1. finish Phase 1 foundation
 2. include cashier payroll identity normalization in the same foundation work
-3. start Phase 2 manager schedule template and planner flows if schema/services finish early
+3. start Phase 2 manager staffing pattern library and planner flows if schema/services finish early
 
 ### Day 2
 

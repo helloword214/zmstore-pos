@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Owner: POS Platform
-Last Updated: 2026-04-01
+Last Updated: 2026-04-08
 
 ## 1. Purpose
 
@@ -150,7 +150,7 @@ Goal:
 | Route | Family | Status | Current focus |
 | --- | --- | --- | --- |
 | `app/routes/_index.tsx` | Dashboard | ACTIVE | admin launchpad hierarchy and entry clarity |
-| `app/routes/store._index.tsx` | Dashboard | ACTIVE | manager control-tower hierarchy and non-generic first viewport |
+| `app/routes/store._index.tsx` | Dashboard | ACTIVE | manager control-tower hierarchy, non-generic first viewport, and a simple planner-aligned workforce snapshot for duty, check status, absence, replacement, off-day, and actual strength keyed to day-level attendance facts |
 | `app/routes/cashier._index.tsx` | Dashboard | ACTIVE | shift-first focus and quiet reference balance |
 | `app/routes/rider._index.tsx` | Dashboard | ACTIVE | do-now task board clarity and reduced helper noise |
 | `app/routes/login.tsx` | Public / Auth | ACTIVE | auth screen clarity, wait states, and non-generic public entry feel |
@@ -183,6 +183,10 @@ Goal:
 | `app/routes/cashier.shift.tsx` | Console / Workspace | QUEUE | current-state strip, workbench dominance, and exception placement |
 | `app/routes/store.cashier-shifts.tsx` | Console / Workspace | QUEUE | manager shift console hierarchy and row-summary density |
 | `app/routes/store.payroll.tsx` | Console / Workspace | QUEUE | blocker-first payroll workbench and detail density audit |
+| `app/routes/store.workforce.schedule-planner.tsx` | Console / Workspace | ACTIVE | planner-owned named staffing pattern application now lives only on the worker row for the visible window, replaces matching `DRAFT` rows only, keeps `PUBLISHED` rows under direct manual cell control, preserves a planner-first `window -> board -> publish` flow, demotes work presets into a secondary drawer below the board, keeps a sticky employee column for horizontal scan, strips non-essential row meta and repeated pattern-name noise out of the board, and reserves the cell sheet for single-date preset/custom/manual edits plus secondary-only history/staffing/cleanup actions |
+| `app/routes/store.workforce.schedule-templates.tsx` | Console / Workspace | ACTIVE | pure named staffing pattern library with a focused modal weekly editor, while the planner owns worker/date application and forward-only window generation |
+| `app/routes/store.workforce.suspension-records.tsx` | Console / Workspace | ACTIVE | compact worker-first suspension workbench with an always-inline create lane, active-suspension summary/actions above it, a dedicated edit modal for active record changes, a quieter upcoming-work preview, and history moved below the work surface so audit does not compete with the action flow |
+| `app/routes/store.workforce.attendance-review.tsx` | Console / Workspace | ACTIVE | single attendance board with explicit planned states (`Regular duty`, `Off day`, `No schedule`), planner-safe same-date alignment, planner-aware `Replacement` / `On-call` auto-detection, anomaly-friendly markers (`Late`, `Replacement`, `Suspended`), and a larger result-first modal with flatter hierarchy, inline late toggle, and secondary-only work-context override |
 | `app/routes/cashier.pos._index.tsx` | Console / Workspace | QUEUE | walk-in queue focus and fast-action rhythm |
 
 ### Wave 3 - Decision / Detail / Settlement
