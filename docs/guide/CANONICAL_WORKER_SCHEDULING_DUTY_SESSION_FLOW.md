@@ -435,17 +435,19 @@ V1 leave scope:
 
 Key rules:
 
-1. `OFF` rows should default to `REST_DAY / NOT_REQUIRED` in attendance review unless a manager is recording a deliberate exception
+1. `OFF` rows should default to `REST_DAY / NOT_REQUIRED` in attendance review
 2. `BLANK` dates may also default to `REST_DAY / NOT_REQUIRED` because no work row exists yet
-3. when a manager changes an `OFF` row to a worked result, attendance review should default `workContext` to `REPLACEMENT`
-4. when a manager records a worked result on a `BLANK` date, attendance review should default `workContext` to `ON_CALL`
-5. when a same-date planner event already records `REPLACEMENT_ASSIGNED` or `ON_CALL_ASSIGNED` for the covering worker, attendance review should use that planner signal as the first `workContext` default
-6. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
-7. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
-8. `LEAVE` is separate from `ABSENT`
-8. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
-9. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
-10. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
+3. attendance review must not silently turn an `OFF` row into `REPLACEMENT`
+4. attendance review must not silently turn a `BLANK` date into `ON_CALL`
+5. replacement and on-call authority belongs to the schedule planner and must be represented by a same-date `REPLACEMENT_ASSIGNED` or `ON_CALL_ASSIGNED` planner event before worked attendance can be approved for an off/no-schedule worker
+6. when a same-date planner event records `REPLACEMENT_ASSIGNED` or `ON_CALL_ASSIGNED` for the covering worker, attendance review should use that planner signal as the `workContext`
+7. `OFF` or `BLANK` workers without planner coverage must be sent back to schedule planner before saving a worked attendance result
+8. `REST_DAY` or holiday not worked must be recorded as `NOT_REQUIRED`, not `ABSENT`
+9. replacement or on-call coverage must preserve the original `dayType` and use `workContext` to explain the staffing exception
+10. `LEAVE` is separate from `ABSENT`
+11. `SUSPENDED_NO_WORK` is separate from `ABSENT` and preserves the original planned schedule for audit
+12. `lateFlag` is a simple `YES` / `NO` attendance fact for discipline and incentive eligibility only; it does not yet drive minute-based pay math
+13. payroll consumes this factual record, but pay treatment is owned by `CANONICAL_WORKER_PAYROLL_POLICY_AND_RUN_FLOW.md`
 
 ## Suspension Record Canonical Model
 

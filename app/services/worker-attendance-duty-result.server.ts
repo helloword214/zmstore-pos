@@ -98,14 +98,6 @@ const deriveAttendanceWorkContext = (
     return AttendanceWorkContext.REGULAR;
   }
 
-  if (plannedDutyState === "OFF") {
-    return AttendanceWorkContext.REPLACEMENT;
-  }
-
-  if (plannedDutyState === "BLANK") {
-    return AttendanceWorkContext.ON_CALL;
-  }
-
   return AttendanceWorkContext.REGULAR;
 };
 

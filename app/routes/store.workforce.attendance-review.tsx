@@ -34,6 +34,16 @@ type PlannerCoverageHint = {
   eventLabel: string;
   note: string | null;
 };
+type PlannerCoverageEventSource = {
+  eventType: string;
+  relatedWorkerId: number | null;
+  subjectWorker: {
+    firstName: string;
+    lastName: string;
+    alias: string | null;
+  } | null;
+  note: string | null;
+};
 
 const ATTENDANCE_DAY_TYPE = {
   WORK_DAY: "WORK_DAY",
@@ -96,12 +106,6 @@ const ATTENDANCE_WORK_CONTEXT = {
 
 type AttendanceWorkContextValue =
   (typeof ATTENDANCE_WORK_CONTEXT)[keyof typeof ATTENDANCE_WORK_CONTEXT];
-
-const ATTENDANCE_WORK_CONTEXT_VALUES = [
-  ATTENDANCE_WORK_CONTEXT.REGULAR,
-  ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
-  ATTENDANCE_WORK_CONTEXT.ON_CALL,
-] as const;
 
 const WORKER_SCHEDULE_EVENT_TYPE = {
   MARKED_ABSENT: "MARKED_ABSENT",
@@ -258,6 +262,42 @@ function plannerCoverageEventLabel(workContext: AttendanceWorkContextValue) {
   return "Coverage";
 }
 
+function buildPlannerCoverageByWorkerId(
+  scheduleEvents: ReadonlyArray<PlannerCoverageEventSource>,
+) {
+  const plannerCoverageByWorkerId = new Map<number, PlannerCoverageHint>();
+
+  for (const event of scheduleEvents) {
+    if (!event.relatedWorkerId || plannerCoverageByWorkerId.has(event.relatedWorkerId)) {
+      continue;
+    }
+
+    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED) {
+      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
+        workContext: ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
+        coveringForLabel: event.subjectWorker
+          ? buildWorkerLabel(event.subjectWorker)
+          : "scheduled worker",
+        eventLabel: "Replacement cover",
+        note: event.note ?? null,
+      });
+    }
+
+    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED) {
+      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
+        workContext: ATTENDANCE_WORK_CONTEXT.ON_CALL,
+        coveringForLabel: event.subjectWorker
+          ? buildWorkerLabel(event.subjectWorker)
+          : "scheduled worker",
+        eventLabel: "On-call cover",
+        note: event.note ?? null,
+      });
+    }
+  }
+
+  return plannerCoverageByWorkerId;
+}
+
 function plannedDutySummary(
   schedule:
     | {
@@ -346,39 +386,38 @@ function deriveDefaultWorkContext(
     return plannerCoverageWorkContext;
   }
 
-  if (plannedDutyState === "OFF") {
-    return ATTENDANCE_WORK_CONTEXT.REPLACEMENT;
-  }
-
-  if (plannedDutyState === "BLANK") {
-    return ATTENDANCE_WORK_CONTEXT.ON_CALL;
-  }
-
   return ATTENDANCE_WORK_CONTEXT.REGULAR;
 }
 
 function workContextSummaryHint(
   plannedDutyState: PlannedDutyStateValue,
   plannerCoverage: PlannerCoverageHint | null | undefined,
-  manualOverride: boolean,
 ) {
-  if (manualOverride) {
-    return "Manual override";
-  }
-
   if (plannerCoverage) {
     return `${plannerCoverage.eventLabel} from planner`;
   }
 
   if (plannedDutyState === "OFF") {
-    return "Auto-detected from off day";
+    return "Planner setup required";
   }
 
   if (plannedDutyState === "BLANK") {
-    return "Auto-detected from no schedule";
+    return "Planner setup required";
   }
 
   return "Auto-detected from regular duty";
+}
+
+function canRecordWorkedAttendance(
+  plannedDutyState: PlannedDutyStateValue,
+  plannerCoverage: PlannerCoverageHint | null | undefined,
+) {
+  return plannedDutyState === "WORK" || Boolean(plannerCoverage);
+}
+
+function buildPlannerSetupHref(dutyDate: string, workerId: number) {
+  const encodedDate = encodeURIComponent(dutyDate);
+  return `/store/workforce/schedule-planner?rangeStart=${encodedDate}&rangeEnd=${encodedDate}&workerId=${workerId}&scheduleDate=${encodedDate}`;
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -429,35 +468,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const suspensionByWorkerId = new Map(
     activeSuspensions.map((record) => [record.workerId, record]),
   );
-  const plannerCoverageByWorkerId = new Map<number, PlannerCoverageHint>();
-
-  for (const event of scheduleEvents) {
-    if (!event.relatedWorkerId || plannerCoverageByWorkerId.has(event.relatedWorkerId)) {
-      continue;
-    }
-
-    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.REPLACEMENT_ASSIGNED) {
-      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
-        workContext: ATTENDANCE_WORK_CONTEXT.REPLACEMENT,
-        coveringForLabel: event.subjectWorker
-          ? buildWorkerLabel(event.subjectWorker)
-          : "scheduled worker",
-        eventLabel: "Replacement cover",
-        note: event.note ?? null,
-      });
-    }
-
-    if (event.eventType === WORKER_SCHEDULE_EVENT_TYPE.ON_CALL_ASSIGNED) {
-      plannerCoverageByWorkerId.set(event.relatedWorkerId, {
-        workContext: ATTENDANCE_WORK_CONTEXT.ON_CALL,
-        coveringForLabel: event.subjectWorker
-          ? buildWorkerLabel(event.subjectWorker)
-          : "scheduled worker",
-        eventLabel: "On-call cover",
-        note: event.note ?? null,
-      });
-    }
-  }
+  const plannerCoverageByWorkerId = buildPlannerCoverageByWorkerId(scheduleEvents);
 
   const rows = workers
     .map((worker) => ({
@@ -511,12 +522,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const workerId = parseOptionalInt(String(fd.get("workerId") || ""));
-    const scheduleId = parseOptionalInt(String(fd.get("scheduleId") || ""));
     const dutyDate = String(fd.get("dutyDate") || "");
     const dayType = String(fd.get("dayType") || "");
     const attendanceResult = String(fd.get("attendanceResult") || "");
-    const workContext = String(fd.get("workContext") || "");
-    const plannedDutyState = String(fd.get("plannedDutyState") || "");
     const leaveTypeRaw = String(fd.get("leaveType") || "");
     const lateFlag = String(fd.get("lateFlag") || "");
     const note = String(fd.get("note") || "");
@@ -529,32 +537,51 @@ export async function action({ request }: ActionFunctionArgs) {
       throw new Error("Invalid attendance result.");
     }
     if (
-      !ATTENDANCE_WORK_CONTEXT_VALUES.includes(workContext as AttendanceWorkContextValue)
-    ) {
-      throw new Error("Invalid work context.");
-    }
-    if (
-      plannedDutyState !== "WORK" &&
-      plannedDutyState !== "OFF" &&
-      plannedDutyState !== "BLANK"
-    ) {
-      throw new Error("Invalid planned duty state.");
-    }
-    if (
       lateFlag !== ATTENDANCE_LATE_FLAG.NO &&
       lateFlag !== ATTENDANCE_LATE_FLAG.YES
     ) {
       throw new Error("Invalid late flag.");
     }
 
+    const schedulesForDate = await db.workerSchedule.findMany({
+      where: {
+        scheduleDate: toDateOnly(dutyDate),
+        status: { not: "CANCELLED" },
+      },
+      orderBy: [{ startAt: "asc" }, { worker: { lastName: "asc" } }],
+    });
+    const scheduleEvents = await listWorkerScheduleEventsForSchedules(
+      schedulesForDate.map((schedule) => schedule.id),
+    );
+    const workerSchedule =
+      schedulesForDate.find((schedule) => schedule.workerId === workerId) ??
+      null;
+    const serverPlannedDutyState = getPlannedDutyState(workerSchedule);
+    const plannerCoverage =
+      buildPlannerCoverageByWorkerId(scheduleEvents).get(workerId) ?? null;
+    const workedResult = isWorkedAttendanceResult(attendanceResult);
+
+    if (
+      workedResult &&
+      !canRecordWorkedAttendance(serverPlannedDutyState, plannerCoverage)
+    ) {
+      throw new Error(
+        "Add this worker in schedule planner as replacement/on-call before saving worked attendance.",
+      );
+    }
+
+    const normalizedWorkContext = workedResult
+      ? plannerCoverage?.workContext ?? ATTENDANCE_WORK_CONTEXT.REGULAR
+      : ATTENDANCE_WORK_CONTEXT.REGULAR;
+
     await recordWorkerAttendanceDutyResult({
       workerId,
-      scheduleId,
+      scheduleId: workerSchedule?.id ?? null,
       dutyDate,
       dayType: dayType as AttendanceDayTypeValue,
       attendanceResult: attendanceResult as AttendanceResultValue,
-      plannedDutyState: plannedDutyState as PlannedDutyStateValue,
-      workContext: workContext as AttendanceWorkContextValue,
+      plannedDutyState: serverPlannedDutyState,
+      workContext: normalizedWorkContext,
       leaveType:
         leaveTypeRaw === ATTENDANCE_LEAVE_TYPE.SICK_LEAVE
           ? (ATTENDANCE_LEAVE_TYPE.SICK_LEAVE as AttendanceLeaveTypeValue)
@@ -564,10 +591,10 @@ export async function action({ request }: ActionFunctionArgs) {
       recordedById: me.userId,
     });
 
-    if (scheduleId) {
+    if (workerSchedule?.id) {
       if (attendanceResult === ATTENDANCE_RESULT.ABSENT) {
         await appendWorkerScheduleEvent({
-          scheduleId,
+          scheduleId: workerSchedule.id,
           eventType: WORKER_SCHEDULE_EVENT_TYPE.MARKED_ABSENT,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
@@ -577,7 +604,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if (attendanceResult === ATTENDANCE_RESULT.LEAVE) {
         await appendWorkerScheduleEvent({
-          scheduleId,
+          scheduleId: workerSchedule.id,
           eventType: WORKER_SCHEDULE_EVENT_TYPE.EMERGENCY_LEAVE_RECORDED,
           actorUserId: me.userId,
           subjectWorkerId: workerId,
@@ -629,17 +656,6 @@ export default function WorkforceAttendanceReviewRoute() {
       : selectedRow?.schedule && isWorkSchedule(selectedRow.schedule)
         ? ATTENDANCE_RESULT.WHOLE_DAY
         : ATTENDANCE_RESULT.NOT_REQUIRED);
-  const defaultSuggestedWorkContext = deriveDefaultWorkContext(
-    selectedPlannedDutyState,
-    defaultAttendanceResult,
-    selectedRow?.plannerCoverage?.workContext ?? null,
-  );
-  const hasSavedWorkContextOverride = Boolean(
-    selectedRow?.attendance?.workContext &&
-      selectedRow.attendance.workContext !== defaultSuggestedWorkContext,
-  );
-  const defaultWorkContext =
-    selectedRow?.attendance?.workContext ?? defaultSuggestedWorkContext;
   const defaultLeaveType = selectedRow?.attendance?.leaveType ?? "";
   const defaultLateFlag = selectedRow?.attendance?.lateFlag ?? ATTENDANCE_LATE_FLAG.NO;
   const selectedPlannedSummary = plannedDutySummary(selectedRow?.schedule);
@@ -647,19 +663,11 @@ export default function WorkforceAttendanceReviewRoute() {
     useState<AttendanceDayTypeValue>(defaultDayType);
   const [attendanceResultValue, setAttendanceResultValue] =
     useState<AttendanceResultValue>(defaultAttendanceResult);
-  const [workContextValue, setWorkContextValue] =
-    useState<AttendanceWorkContextValue>(defaultWorkContext);
   const [leaveTypeValue, setLeaveTypeValue] = useState<
     AttendanceLeaveTypeValue | ""
   >(defaultLeaveType as AttendanceLeaveTypeValue | "");
   const [lateFlagValue, setLateFlagValue] =
     useState<AttendanceLateFlagValue>(defaultLateFlag);
-  const [workContextDirty, setWorkContextDirty] = useState(
-    hasSavedWorkContextOverride,
-  );
-  const [showWorkContextOverride, setShowWorkContextOverride] = useState(
-    hasSavedWorkContextOverride,
-  );
   const [showDetails, setShowDetails] = useState(
     Boolean(
       selectedRow?.attendance?.note?.trim() ||
@@ -674,19 +682,20 @@ export default function WorkforceAttendanceReviewRoute() {
     selectedRow?.plannerCoverage?.workContext ?? null,
   );
   const effectiveWorkContext = workedAttendance
-    ? workContextDirty
-      ? workContextValue
-      : suggestedWorkContext
+    ? suggestedWorkContext
     : ATTENDANCE_WORK_CONTEXT.REGULAR;
+  const workedAttendanceNeedsPlannerSetup =
+    workedAttendance &&
+    !canRecordWorkedAttendance(selectedPlannedDutyState, selectedRow?.plannerCoverage);
+  const plannerSetupHref = selectedRow
+    ? buildPlannerSetupHref(dutyDate, selectedRow.id)
+    : "/store/workforce/schedule-planner";
 
   useEffect(() => {
     setDayTypeValue(defaultDayType);
     setAttendanceResultValue(defaultAttendanceResult);
-    setWorkContextValue(defaultWorkContext);
     setLeaveTypeValue(defaultLeaveType as AttendanceLeaveTypeValue | "");
     setLateFlagValue(defaultLateFlag);
-    setWorkContextDirty(hasSavedWorkContextOverride);
-    setShowWorkContextOverride(hasSavedWorkContextOverride);
     setShowDetails(
       Boolean(
         selectedRow?.attendance?.note?.trim() ||
@@ -697,19 +706,9 @@ export default function WorkforceAttendanceReviewRoute() {
     baselineDayType,
     defaultDayType,
     defaultAttendanceResult,
-    defaultWorkContext,
     defaultLeaveType,
     defaultLateFlag,
-    hasSavedWorkContextOverride,
     selectedRow?.id,
-  ]);
-
-  useEffect(() => {
-    if (workContextDirty) return;
-    setWorkContextValue(suggestedWorkContext);
-  }, [
-    suggestedWorkContext,
-    workContextDirty,
   ]);
 
   return (
@@ -1039,7 +1038,6 @@ export default function WorkforceAttendanceReviewRoute() {
                             {workContextSummaryHint(
                               selectedPlannedDutyState,
                               selectedRow?.plannerCoverage,
-                              workContextDirty,
                             )}
                           </span>
                         </div>
@@ -1068,58 +1066,23 @@ export default function WorkforceAttendanceReviewRoute() {
                             </button>
                           );
                         })}
-                        {!showWorkContextOverride ? (
-                          <button
-                            type="button"
-                            className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700"
-                            onClick={() => {
-                              setWorkContextDirty(true);
-                              setShowWorkContextOverride(true);
-                            }}
-                          >
-                            Change context
-                          </button>
-                        ) : null}
                       </div>
                     </div>
 
-                    {showWorkContextOverride ? (
-                      <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-                        <SoTFormField label="Override context">
-                          <SelectInput
-                            value={workContextValue}
-                            onChange={(value) => {
-                              setWorkContextDirty(true);
-                              setWorkContextValue(
-                                value as AttendanceWorkContextValue,
-                              );
-                            }}
-                            options={WORK_CONTEXT_OPTIONS}
-                          />
-                        </SoTFormField>
-
-                        <div className="flex flex-wrap gap-2">
-                          <SoTButton
-                            type="button"
-                            variant="secondary"
-                            size="compact"
-                            onClick={() => {
-                              setWorkContextDirty(false);
-                              setWorkContextValue(suggestedWorkContext);
-                              setShowWorkContextOverride(false);
-                            }}
-                          >
-                            Use detected context
-                          </SoTButton>
-                          <SoTButton
-                            type="button"
-                            variant="secondary"
-                            size="compact"
-                            onClick={() => setShowWorkContextOverride(false)}
-                          >
-                            Done
-                          </SoTButton>
-                        </div>
+                    {workedAttendanceNeedsPlannerSetup ? (
+                      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <div className="font-semibold">Add in planner first</div>
+                        <p className="mt-1 text-xs leading-5 text-amber-800">
+                          This worker is off or has no schedule for this date. Assign
+                          replacement/on-call coverage in the planner before saving worked
+                          attendance.
+                        </p>
+                        <Link
+                          to={plannerSetupHref}
+                          className="mt-2 inline-flex text-xs font-semibold text-amber-900 underline underline-offset-2"
+                        >
+                          Open schedule planner
+                        </Link>
                       </div>
                     ) : null}
                   </div>
@@ -1192,7 +1155,12 @@ export default function WorkforceAttendanceReviewRoute() {
                   >
                     Cancel
                   </SoTButton>
-                  <SoTButton type="submit" variant="primary" size="compact">
+                  <SoTButton
+                    type="submit"
+                    variant="primary"
+                    size="compact"
+                    disabled={workedAttendanceNeedsPlannerSetup}
+                  >
                     Save attendance
                   </SoTButton>
                 </div>
