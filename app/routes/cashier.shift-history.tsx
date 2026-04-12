@@ -508,6 +508,7 @@ export default function ShiftHistory() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Cash In</th>
                 <th className="px-4 py-3 text-right">Drawer</th>
+                <th className="px-4 py-3 text-right">Variance</th>
                 <th className="px-4 py-3 text-right">Expected</th>
                 <th className="px-4 py-3 text-right">Counted</th>
               </tr>
@@ -610,20 +611,26 @@ export default function ShiftHistory() {
                     </div>
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
-                    <div className="text-xs text-slate-500">
-                      Bridge{" "}
-                      <span className="font-medium text-slate-700">
-                        {s.varianceBridgeAmount > 0
-                          ? peso(s.varianceBridgeAmount)
-                          : "—"}
-                      </span>
-                    </div>
                     <div className="text-slate-900">
-                      In {peso(s.drawerDeposits)}
+                      Add {peso(s.drawerDeposits)}
                     </div>
                     <div className="text-xs text-slate-500">
-                      Out {peso(s.drawerOut + s.drawerDrops)}
+                      Take {peso(s.drawerOut + s.drawerDrops)}
                     </div>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {s.varianceBridgeAmount > 0 ? (
+                      <div>
+                        <div className="font-medium text-amber-700">
+                          {peso(s.varianceBridgeAmount)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Rider shortage
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
                     {peso(s.drawerBalance)}
@@ -688,7 +695,7 @@ export default function ShiftHistory() {
               {shifts.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-6 text-center text-slate-500"
                   >
                     No shifts found.

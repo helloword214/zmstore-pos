@@ -104,6 +104,8 @@ This map is the primary route-level reference for canonical target behavior.
 | --- | --- | --- | --- | --- |
 | Order Pad | Cashier/Manager/Employee | `app/routes/pad-order._index.tsx` | Build cart, capture customer/channel, submit order create request | Client preflight only, no pricing authority |
 | Order create + pricing freeze | Server action | `app/routes/orders.new.tsx` | Validate payload, apply customer policy discount engine, freeze pricing snapshots | `order` + `orderItem` pricing freeze authority + creator audit (`createdById`, `createdByRole`) |
+| Walk-in cashier queue | Cashier | `app/routes/cashier.pos._index.tsx` | List unpaid pickup/walk-in slips, open settlement, and delete accidental unpaid slips only | No paid void, refund, return, or cancellation authority |
+| Walk-in cashier settlement | Cashier | `app/routes/cashier.$id.tsx` | Claim the cashier lock, collect walk-in payment, route shortage to clearance, and print settlement proof | Payment posting authority; drawer, clearance, and submit actions stay gated until cashier owns the active lock |
 | Dispatch queue | Manager | `app/routes/store.dispatch.tsx` | Select delivery orders, review failed-delivery returns, start a manual run via `/runs/new`, or create a new planned run from selected queue orders | Order eligibility plus failed-delivery redispatch/cancel authority; no AR authority |
 | Run staging | Manager | `app/routes/runs.$id.dispatch.tsx` | Assign rider/vehicle/loadout, inspect item-level stock blockers, release linked parent orders before dispatch, and dispatch run | `deliveryRun`, `deliveryRunOrder`, `runReceipt` bootstrap |
 | Runs inbox | Manager/Rider | `app/routes/runs._index.tsx` | Open actionable runs by default and switch to optional terminal history when recap/audit is needed; run creation starts in the dispatch queue, not this inbox | Operational run-state visibility only; cashier turnover for closed runs stays in `cashier.delivery._index.tsx` |
@@ -174,12 +176,20 @@ This retirement does not change AR authority: `customerAr` remains decision-back
    - pickup lane: order slip
    - delivery lane: order ticket
 
+## Paid Void, Refund, And Return Gap
+
+1. Paid order voids, customer cash refunds, and product return intake are not owned by `cashier.pos._index.tsx`.
+2. `cashier.pos._index.tsx` handles unpaid pickup/walk-in slips only and may delete accidental unpaid slips before settlement.
+3. A future dedicated void/refund/return flow must preserve payment history, customer cash movement, stock return decisions, and audit approvals.
+
 ## Route SoT Guardrails
 
 | Route file | Must never do |
 | --- | --- |
 | `app/routes/pad-order._index.tsx` | Finalize payable totals without `/orders/new` server validation/freeze |
 | `app/routes/orders.new.tsx` | Reprice an already-created order or mix CSS override discount into policy discount freeze |
+| `app/routes/cashier.pos._index.tsx` | Void/cancel paid orders, issue refunds, process returns, or delete anything except unpaid pickup/walk-in slips |
+| `app/routes/cashier.$id.tsx` | Show normal drawer/clearance submit actions before the cashier owns a fresh settlement lock or release balance without manager-backed clearance |
 | `app/routes/runs.$id.rider-checkin.tsx` | Auto-approve AR/discount without manager decision or let the rider finalize re-dispatch/cancel for a failed parent delivery |
 | `app/routes/creation.opening-ar-batches.tsx` | Create `customerAr` directly or issue manager decision outcomes |
 | `app/routes/store.clearance-opening-batches.tsx` | Skip per-row decision artifacts when processing batch approvals |

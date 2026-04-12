@@ -9,26 +9,27 @@ import {
   useRevalidator,
 } from "@remix-run/react";
 import React from "react";
-import { SoTActionBar } from "~/components/ui/SoTActionBar";
 import { SoTAlert } from "~/components/ui/SoTAlert";
 import { SoTButton } from "~/components/ui/SoTButton";
 import { SoTFormField } from "~/components/ui/SoTFormField";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
-import {
-  SoTTable,
-  SoTTableEmptyRow,
-  SoTTableHead,
-  SoTTableRow,
-  SoTTh,
-  SoTTd,
-} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { assertActiveShiftWritable } from "~/utils/shiftGuards.server";
 
 // Lock TTL: how long a cashier can hold an order before it becomes claimable again
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function formatPrintedAt(value: string | Date | null) {
+  if (!value) return "Not printed";
+  return new Date(value).toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // ✅ use same identity source as action (prevents "locked by you" mismatch)
@@ -85,44 +86,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const fd = await request.formData();
   const action = String(fd.get("_action") || "");
   const id = Number(fd.get("id") || 0);
-  // 🔒 Follow delivery lock format: lockedBy = userId (string)
   const meId = String(me.userId);
 
-  // Cancel an UNPAID slip (safe, reversible by reprinting later if needed)
-  if (action === "cancelSlip") {
-    if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
-    const reason = String(fd.get("cancelReason") || "").trim();
-    if (!reason) {
-      return json(
-        { ok: false, error: "Reason is required to cancel a ticket." },
-        { status: 400 },
-      );
-    }
-    const ttlAgo = new Date(Date.now() - LOCK_TTL_MS);
-    const updated = await db.order.updateMany({
-      where: {
-        id,
-        status: "UNPAID",
-        OR: [
-          { lockedAt: null },
-          { lockedAt: { lt: ttlAgo } },
-          { lockedBy: meId },
-        ],
-      },
-      data: { status: "CANCELLED", lockedAt: null, lockedBy: null },
-    });
-
-    if (updated.count !== 1) {
-      return json(
-        {
-          ok: false,
-          error: "Unable to cancel (already locked by another or processed).",
-        },
-        { status: 423 },
-      );
-    }
-    return redirect("/cashier");
-  }
   // Hard delete an accidental UNPAID slip (irreversible)
   if (action === "deleteSlip") {
     if (!id) return json({ ok: false, error: "Invalid id" }, { status: 400 });
@@ -130,16 +95,37 @@ export async function action({ request }: ActionFunctionArgs) {
       await db.$transaction(async (tx) => {
         const o = await tx.order.findUnique({
           where: { id },
-          select: { status: true },
+          select: {
+            channel: true,
+            status: true,
+            isOnCredit: true,
+            lockedAt: true,
+            lockedBy: true,
+            _count: { select: { payments: true } },
+          },
         });
-        if (!o || o.status !== "UNPAID") {
-          throw new Error("Only UNPAID slips can be deleted.");
+        if (!o || o.channel !== "PICKUP" || o.status !== "UNPAID") {
+          throw new Error("Only unpaid walk-in slips can be deleted here.");
+        }
+        if (o.isOnCredit) {
+          throw new Error("Credit slips cannot be deleted from cashier queue.");
+        }
+        if (o._count.payments > 0) {
+          throw new Error("Slip already has payment history. Void/refund flow is required.");
+        }
+
+        const freshLockByOther =
+          !!o.lockedAt &&
+          Date.now() - o.lockedAt.getTime() < LOCK_TTL_MS &&
+          String(o.lockedBy ?? "") !== meId;
+
+        if (freshLockByOther) {
+          throw new Error("Slip is being handled by another cashier.");
         }
         await tx.orderItem.deleteMany({ where: { orderId: id } });
-        await tx.payment.deleteMany({ where: { orderId: id } }).catch(() => {});
         await tx.order.delete({ where: { id } });
       });
-      return redirect("/cashier");
+      return redirect("/cashier/pos");
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : "Delete failed";
       return json(
@@ -224,6 +210,9 @@ export default function CashierQueue() {
   const MY_ID = String(meId || "");
   const nav = useNavigation();
   const actionData = useActionData<typeof action>();
+  const [openActionOrderId, setOpenActionOrderId] = React.useState<number | null>(
+    null,
+  );
 
   const revalidator = useRevalidator();
   // Revalidate on focus + every 5s while visible
@@ -244,38 +233,42 @@ export default function CashierQueue() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Cashier Queue"
-        subtitle="Pickup tickets only."
+        title="Walk-in Cashier Queue"
+        subtitle="Unpaid walk-in orders."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-4xl"
       />
 
-      <div className="mx-auto max-w-4xl px-5 py-6">
-        <SoTActionBar
-          right={
-            <Link to="/pad-order">
-              <SoTButton variant="primary">Open Order Pad</SoTButton>
-            </Link>
-          }
-        />
-
-        {/* Open by code (PICKUP only) */}
-        <Form method="post" className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-end gap-2">
-            <SoTFormField label="Pickup Code" className="min-w-[260px] flex-1">
+      <div className="mx-auto max-w-4xl space-y-3 px-4 py-4 sm:px-5">
+        <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1fr_auto] lg:items-end">
+          <Form method="post" className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <SoTFormField label="Order code" className="min-w-[220px] flex-1">
               <input
                 name="code"
-                placeholder="Scan or type pickup code"
+                placeholder="Scan or type walk-in order code"
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
               />
             </SoTFormField>
             <input type="hidden" name="_action" value="openByCode" />
-            <SoTButton type="submit" disabled={nav.state !== "idle"}>
+            <SoTButton
+              type="submit"
+              disabled={nav.state !== "idle"}
+              className="w-full sm:w-auto"
+            >
               Open
             </SoTButton>
-          </div>
-        </Form>
+          </Form>
+          <Link to="/pad-order" className="block">
+            <SoTButton
+              type="button"
+              variant="secondary"
+              className="w-full lg:w-auto"
+            >
+              Create Walk-in Order
+            </SoTButton>
+          </Link>
+        </div>
 
         {actionData && "error" in actionData && (
           <SoTAlert tone="danger" className="mb-4 text-sm">
@@ -284,108 +277,118 @@ export default function CashierQueue() {
         )}
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-medium tracking-wide text-slate-700">
-              Pickup queue
-            </h2>
-            <span className="text-[11px] text-slate-500">
-              {pickups.length} item(s)
-            </span>
+          <div className="border-b border-slate-100 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">
+                Ready for settlement
+              </h2>
+              <p className="text-xs text-slate-500">
+                {pickups.length} unpaid walk-in order
+                {pickups.length === 1 ? "" : "s"}
+              </p>
+            </div>
           </div>
 
-          <SoTTable>
-            <SoTTableHead>
-              <tr>
-                <SoTTh>Ticket</SoTTh>
-                <SoTTh>Printed</SoTTh>
-                <SoTTh>Lock</SoTTh>
-                <SoTTh align="right">Actions</SoTTh>
-              </tr>
-            </SoTTableHead>
-            <tbody>
-              {pickups.length === 0 ? (
-                <SoTTableEmptyRow colSpan={4} message="No pickup tickets." />
-              ) : (
-                pickups.map((r) => {
-                  const isMineLock = r.isLocked && String(r.lockedBy) === MY_ID;
-                  const lockedByOther = r.isLocked && !isMineLock;
-                  const lockTone = lockedByOther
-                    ? "warning"
-                    : isMineLock
-                      ? "info"
-                      : "success";
-                  const lockLabel = lockedByOther
-                    ? `LOCKED · ${r.lockRemainingSec}s`
-                    : isMineLock
-                      ? `LOCKED (you) · ${r.lockRemainingSec}s`
-                      : "OPEN";
+          <div className="divide-y divide-slate-100">
+            {pickups.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-slate-500">
+                No walk-in orders waiting for cashier.
+              </div>
+            ) : (
+              pickups.map((r) => {
+                const isMineLock = r.isLocked && String(r.lockedBy) === MY_ID;
+                const lockedByOther = r.isLocked && !isMineLock;
+                const lockTone = lockedByOther
+                  ? "warning"
+                  : isMineLock
+                    ? "info"
+                    : "success";
+                const lockLabel = lockedByOther
+                  ? `In use · ${r.lockRemainingSec}s`
+                  : isMineLock
+                    ? `In use by you · ${r.lockRemainingSec}s`
+                    : "Available";
+                const actionRailOpen = openActionOrderId === r.id;
 
-                  return (
-                    <SoTTableRow key={r.id}>
-                      <SoTTd>
+                return (
+                  <div
+                    key={r.id}
+                    className="px-4 py-3"
+                  >
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-semibold tracking-wide text-slate-900">
+                            {r.orderCode}
+                          </span>
+                          <SoTStatusBadge tone={lockTone}>{lockLabel}</SoTStatusBadge>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                          <span>Ticket #{r.printCount}</span>
+                          <span>Printed {formatPrintedAt(r.printedAt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                         <Form method="post">
                           <input type="hidden" name="_action" value="openById" />
                           <input type="hidden" name="id" value={r.id} />
-                          <button
+                          <SoTButton
                             type="submit"
-                            className="text-left disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                            variant="primary"
+                            size="compact"
                             disabled={lockedByOther}
                             title={
                               r.isLocked
                                 ? isMineLock
-                                  ? "Locked by YOU (re-open allowed)"
-                                  : `Locked by ${r.lockedBy ?? "someone"}`
-                                : "Open at cashier"
+                                  ? "Locked by you. Re-open allowed."
+                                  : `Locked by ${r.lockedBy ?? "another cashier"}`
+                                : "Open cashier settlement"
                             }
                           >
-                            <div className="font-mono text-slate-700">{r.orderCode}</div>
-                            <div className="text-[11px] text-slate-500">
-                              Ticket #{r.printCount}
-                            </div>
-                          </button>
+                            {isMineLock ? "Resume" : "Settle"}
+                          </SoTButton>
                         </Form>
-                      </SoTTd>
-                      <SoTTd className="text-xs text-slate-500">
-                        {new Date(r.printedAt).toLocaleString()}
-                      </SoTTd>
-                      <SoTTd>
-                        <SoTStatusBadge tone={lockTone}>{lockLabel}</SoTStatusBadge>
-                      </SoTTd>
-                      <SoTTd align="right">
-                        <div className="flex justify-end gap-2">
-                          <Form
-                            method="post"
-                            onSubmit={(e) => {
-                              const reason = prompt("Reason for cancelling this ticket?");
-                              if (!reason) {
-                                e.preventDefault();
-                                return;
-                              }
-                              const input = document.createElement("input");
-                              input.type = "hidden";
-                              input.name = "cancelReason";
-                              input.value = reason;
-                              e.currentTarget.appendChild(input);
-                            }}
-                          >
-                            <input type="hidden" name="_action" value="cancelSlip" />
-                            <input type="hidden" name="id" value={r.id} />
-                            <SoTButton
-                              type="submit"
-                              disabled={lockedByOther}
-                              className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                              title="Cancel this ticket (moves to CANCELLED; auto-purges later)"
-                            >
-                              Cancel
-                            </SoTButton>
-                          </Form>
 
+                        <SoTButton
+                          type="button"
+                          size="compact"
+                          disabled={lockedByOther}
+                          onClick={() =>
+                            setOpenActionOrderId((current) =>
+                              current === r.id ? null : r.id,
+                            )
+                          }
+                          className={
+                            actionRailOpen
+                              ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                              : ""
+                          }
+                          aria-expanded={actionRailOpen}
+                        >
+                          Options
+                        </SoTButton>
+                      </div>
+                    </div>
+
+                    {actionRailOpen ? (
+                      <div className="mt-3 rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="text-xs font-semibold text-rose-700">
+                              Delete unpaid slip
+                            </div>
+                            <div className="text-[11px] text-rose-600">
+                              Use only for accidental walk-in tickets with no payment.
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 sm:justify-end">
                           <Form
                             method="post"
                             onSubmit={(e) => {
                               if (
                                 !confirm(
-                                  `Delete ticket ${r.orderCode}? This cannot be undone.`,
+                                  `Delete unpaid slip ${r.orderCode}? This cannot be undone.`,
                                 )
                               ) {
                                 e.preventDefault();
@@ -397,20 +400,23 @@ export default function CashierQueue() {
                             <SoTButton
                               type="submit"
                               variant="danger"
+                              size="compact"
                               disabled={lockedByOther}
-                              title="Permanently delete this UNPAID ticket"
+                              className="h-8 rounded-lg px-3 text-[11px]"
+                              title="Permanently delete this unpaid ticket"
                             >
-                              Delete
+                              Delete slip
                             </SoTButton>
                           </Form>
+                          </div>
                         </div>
-                      </SoTTd>
-                    </SoTTableRow>
-                  );
-                })
-              )}
-            </tbody>
-          </SoTTable>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </main>
