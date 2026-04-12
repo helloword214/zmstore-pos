@@ -10,6 +10,7 @@ import {
   useActionData,
   Form,
   useNavigation,
+  Link,
   useRouteError,
   isRouteErrorResponse,
 } from "@remix-run/react";
@@ -447,7 +448,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       where: { id },
       data: { lockedAt: null, lockedBy: null },
     });
-    return redirect("/cashier");
+    return redirect("/cashier/pos");
   }
 
   if (act === "claimLock") {
@@ -1269,6 +1270,10 @@ export default function CashierOrder() {
   const waitingManagerDecision = clearance.status === "NEEDS_CLEARANCE";
   const submitBlockedByLock =
     isStale || !order.lockedBy || !isMineLock(order.lockedBy, meId);
+  const lockedByMe =
+    !!order.lockedBy && !isStale && isMineLock(order.lockedBy, meId);
+  const lockedByOther =
+    !!order.lockedBy && !isStale && !isMineLock(order.lockedBy, meId);
   const canSendForClearance =
     needsClearanceForSubmit &&
     !clearance.status &&
@@ -1285,59 +1290,96 @@ export default function CashierOrder() {
     waitingManagerDecision ||
     blockedByClearance ||
     (projectedNeedsCustomerForAr && !hasCustomer);
+  const cashSnapshotEntered = cashGiven.trim().length > 0;
+  const showClearancePanel =
+    lockedByMe &&
+    (hasClearanceCase || (cashSnapshotEntered && balanceAfterThisPayment > EPS));
+  const showReleaseWithBalance =
+    clearance.status === "DECIDED" && projectedDecisionAr > EPS;
+  const isApprovedUtangSettlement =
+    clearance.status === "DECIDED" &&
+    clearance.decisionKind !== "REJECT" &&
+    projectedDecisionAr > EPS;
+  const lockStateLabel = lockedByMe
+    ? "Settlement active"
+    : lockedByOther
+    ? "In use"
+    : isStale
+    ? "Lock expired"
+    : "Ready to start";
+  const lockStateTone = lockedByMe
+    ? "emerald"
+    : lockedByOther
+    ? "amber"
+    : isStale
+    ? "amber"
+    : "slate";
+  const lockStateClass =
+    lockStateTone === "emerald"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : lockStateTone === "amber"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : "border-slate-200 bg-slate-50 text-slate-700";
+  const claimButtonLabel = isStale
+    ? "Restart settlement"
+    : lockedByOther
+    ? "Waiting for cashier"
+    : "Start settlement";
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       {/* Page header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-4xl px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                Order{" "}
-                <span className="font-mono text-indigo-700">
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 backdrop-blur">
+        <div className="mx-auto max-w-5xl px-4 py-3 sm:px-5">
+          <div>
+            <div className="min-w-0">
+              <Link
+                to="/cashier/pos"
+                className="mb-2 inline-flex text-sm font-medium text-slate-700 transition-colors hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+              >
+                {"<-"} Cashier Queue
+              </Link>
+              <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950">
+                Cashier settlement
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono font-medium text-slate-700">
                   {order.orderCode}
                 </span>
-              </h1>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
                 <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ring-1 ${
-                    order.lockedBy
-                      ? "bg-amber-50 text-amber-700 ring-amber-200"
-                      : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                  }`}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${lockStateClass}`}
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                  {order.lockedBy
-                    ? `Locked by ${lockedByLabel ?? order.lockedBy}`
-                    : "Unlocked"}
-                  {!!order.lockedAt && isStale && (
-                    <span className="ml-1 opacity-70">• stale</span>
-                  )}
+                  {lockStateLabel}
                 </span>
-
-                {!isStale && typeof remaining === "number" && remaining > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 ring-1 ring-slate-200">
-                    Lock expires in{" "}
+                {lockedByOther ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">
+                    {lockedByLabel ?? order.lockedBy}
+                  </span>
+                ) : null}
+                {lockedByMe && typeof remaining === "number" && remaining > 0 ? (
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">
+                    Lock{" "}
                     <span className="font-mono tabular-nums">
-                      {String(
-                        Math.max(0, Math.floor(remaining / 60000)),
-                      ).padStart(2, "0")}
+                      {String(Math.max(0, Math.floor(remaining / 60000))).padStart(
+                        2,
+                        "0",
+                      )}
                       :
                       {String(
                         Math.max(0, Math.floor((remaining % 60000) / 1000)),
                       ).padStart(2, "0")}
                     </span>
                   </span>
-                )}
-                {clearance.status ? (
+                ) : null}
+                {clearance.status && clearance.status !== "DECIDED" ? (
                   <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ring-1 ${
+                    className={`rounded-full border px-2.5 py-1 font-medium ${
                       clearance.status === "NEEDS_CLEARANCE"
-                        ? "bg-amber-50 text-amber-800 ring-amber-200"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
                         : clearance.decisionKind === "REJECT"
-                        ? "bg-rose-50 text-rose-700 ring-rose-200"
-                        : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
                     }`}
                   >
                     {clearance.status === "NEEDS_CLEARANCE"
@@ -1349,40 +1391,11 @@ export default function CashierOrder() {
                 ) : null}
               </div>
             </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <Form method="post">
-                <input type="hidden" name="_action" value="claimLock" />
-                <button
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                  disabled={!canClaim || nav.state !== "idle"}
-                  title={
-                    !canClaim
-                      ? "Locked by another cashier"
-                      : "Claim lock to start settlement"
-                  }
-                >
-                  Start settlement
-                </button>
-              </Form>
-              <Form method="post">
-                <input type="hidden" name="_action" value="reprint" />
-                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
-                  Reprint
-                </button>
-              </Form>
-              <Form method="post">
-                <input type="hidden" name="_action" value="release" />
-                <button className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
-                  Release
-                </button>
-              </Form>
-            </div>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-5 py-6">
+      <div className="mx-auto max-w-5xl px-4 py-4 sm:px-5">
         {missingLineTotals ? (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Missing frozen line totals on one or more items. Cashier settlement
@@ -1401,7 +1414,7 @@ export default function CashierOrder() {
                     Items
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Frozen pricing only: base → final unit → line total.
+                    Confirm items before taking payment.
                   </p>
                 </div>
                 <div className="text-right text-xs text-slate-600">
@@ -1427,11 +1440,10 @@ export default function CashierOrder() {
                   </div>
                 ) : (
                   rows.map((r) => {
-                    const hasDisc = Number(r.perUnitDisc || 0) > 0.009;
                     return (
                       <div
                         key={r.id}
-                        className="px-4 py-3 hover:bg-slate-50/60"
+                        className="px-4 py-2.5 hover:bg-slate-50/60"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
@@ -1452,48 +1464,7 @@ export default function CashierOrder() {
                             <div className="text-sm font-semibold text-slate-900 font-mono">
                               {peso(r.lineFinal)}
                             </div>
-                            <div className="text-[11px] text-slate-500">
-                              {r.qty} × {peso(r.effUnit)}
-                            </div>
                           </div>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
-                          <span>
-                            Base{" "}
-                            <span className="font-mono font-semibold">
-                              {peso(r.origUnit)}
-                            </span>
-                          </span>
-
-                          {hasDisc ? (
-                            <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
-                              Disc −
-                              <span className="ml-1 font-mono font-semibold">
-                                {peso(r.perUnitDisc)}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
-                              No discount
-                            </span>
-                          )}
-
-                          <span>
-                            Final unit{" "}
-                            <span className="font-mono font-semibold text-slate-800">
-                              {peso(r.effUnit)}
-                            </span>
-                          </span>
-
-                          {hasDisc ? (
-                            <span className="text-slate-500">
-                              Line disc{" "}
-                              <span className="font-mono font-semibold text-rose-700">
-                                −{peso(r.lineDisc)}
-                              </span>
-                            </span>
-                          ) : null}
                         </div>
                       </div>
                     );
@@ -1538,109 +1509,172 @@ export default function CashierOrder() {
                   Payment
                 </h3>
                 <span className="text-xs text-slate-500">
-                  Use clearance for shortages or balance.
+                  {lockedByMe ? "Collect and complete sale." : "Start first."}
                 </span>
               </div>
 
-              <section className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
-                {hasClearanceCase ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-700">Clearance</span>
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${
-                          clearance.status === "NEEDS_CLEARANCE"
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : clearance.decisionKind === "REJECT"
-                            ? "border-rose-200 bg-rose-50 text-rose-700"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        }`}
-                      >
-                        {clearance.status === "NEEDS_CLEARANCE"
-                          ? "Pending"
-                          : clearance.decisionKind === "REJECT"
-                          ? "Rejected"
-                          : "Decided"}
-                      </span>
-                    </div>
-                    <div className="text-slate-600">
-                      {clearance.decisionKind ? (
-                        <>
-                          {clearance.decisionKind} • Disc {peso(clearance.approvedBargainDiscount)} • A/R{" "}
-                          {peso(clearance.approvedArAmount)}
-                        </>
-                      ) : (
-                        <>Waiting for manager decision</>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600">
-                      <div>
-                        Frozen
-                        <div className="font-mono text-slate-800">
-                          {peso(clearance.snapshotFrozenTotal)}
-                        </div>
-                      </div>
-                      <div>
-                        Cash
-                        <div className="font-mono text-slate-800">
-                          {peso(clearance.snapshotCashCollected)}
-                        </div>
-                      </div>
-                      <div>
-                        Remaining
-                        <div className="font-mono text-slate-800">
-                          {peso(snapshotRemaining)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      #{clearance.caseId} • {clearanceIntentLabel}
-                    </div>
+              {!lockedByMe ? (
+                <div className="mx-4 my-4 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-3">
+                  <div className="text-sm font-semibold text-indigo-900">
+                    Start settlement to take payment
                   </div>
-                ) : (
-                  <Form method="post" className="space-y-2">
-                    <input type="hidden" name="_action" value="sendClearance" />
-                    <input
-                      type="hidden"
-                      name="sendCashGiven"
-                      value={Number.isFinite(entered) ? entered.toFixed(2) : "0.00"}
-                    />
-                    <div className="text-slate-700">Send clearance request</div>
-                    <div className="grid grid-cols-1 gap-2">
-                      <SelectInput
-                        name="clearanceIntent"
-                        defaultValue={hasCustomer ? "OPEN_BALANCE" : "PRICE_BARGAIN"}
-                        className="rounded-md"
-                        disabled={!canSendForClearance}
-                        options={[
-                          { label: "Open balance (utang)", value: "OPEN_BALANCE" },
-                          { label: "Price bargain", value: "PRICE_BARGAIN" },
-                        ]}
-                      />
-                      <textarea
-                        name="clearanceReason"
-                        rows={2}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                        placeholder="Reason"
-                        required
-                        disabled={!canSendForClearance}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="text-[11px] text-slate-500">
-                        Cash {peso(snapshotCashNow)} • Remaining {peso(snapshotRemaining)}
-                      </div>
-                      <button
-                        type="submit"
-                        className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-                        disabled={!canSendForClearance}
-                      >
-                        Send
-                      </button>
-                    </div>
+                  <p className="mt-1 text-xs text-indigo-700">
+                    This claims the order for your cashier session and unlocks
+                    cash, clearance, and receipt actions.
+                  </p>
+                  <Form method="post" className="mt-3">
+                    <input type="hidden" name="_action" value="claimLock" />
+                    <button
+                      className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                      disabled={!canClaim || nav.state !== "idle"}
+                    >
+                      {claimButtonLabel}
+                    </button>
                   </Form>
-                )}
-              </section>
+                  {lockedByOther ? (
+                    <div className="mt-2 text-[11px] text-amber-800">
+                      Currently handled by {lockedByLabel ?? order.lockedBy}.
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  {isApprovedUtangSettlement ? (
+                    <section className="mx-4 mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold">Approved utang</div>
+                          <div className="mt-1 text-xs text-emerald-800">
+                            Cash {peso(snapshotCashNow)} · Utang{" "}
+                            {peso(projectedDecisionAr)}
+                          </div>
+                        </div>
+                        <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                          Approved
+                        </span>
+                      </div>
+                    </section>
+                  ) : showClearancePanel ? (
+                    <section className="mx-4 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
+                      {hasClearanceCase ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-700">Clearance</span>
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${
+                                clearance.status === "NEEDS_CLEARANCE"
+                                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                                  : clearance.decisionKind === "REJECT"
+                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              }`}
+                            >
+                              {clearance.status === "NEEDS_CLEARANCE"
+                                ? "Pending"
+                                : clearance.decisionKind === "REJECT"
+                                ? "Rejected"
+                                : "Decided"}
+                            </span>
+                          </div>
+                          <div className="text-slate-600">
+                            {clearance.decisionKind ? (
+                              <>
+                                {clearance.decisionKind} • Disc{" "}
+                                {peso(clearance.approvedBargainDiscount)} • A/R{" "}
+                                {peso(clearance.approvedArAmount)}
+                              </>
+                            ) : (
+                              <>Waiting for manager decision</>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600">
+                            <div>
+                              Frozen
+                              <div className="font-mono text-slate-800">
+                                {peso(clearance.snapshotFrozenTotal)}
+                              </div>
+                            </div>
+                            <div>
+                              Cash
+                              <div className="font-mono text-slate-800">
+                                {peso(clearance.snapshotCashCollected)}
+                              </div>
+                            </div>
+                            <div>
+                              Remaining
+                              <div className="font-mono text-slate-800">
+                                {peso(snapshotRemaining)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            #{clearance.caseId} • {clearanceIntentLabel}
+                          </div>
+                        </div>
+                      ) : (
+                        <Form method="post" className="space-y-2">
+                          <input
+                            type="hidden"
+                            name="_action"
+                            value="sendClearance"
+                          />
+                          <input
+                            type="hidden"
+                            name="sendCashGiven"
+                            value={
+                              Number.isFinite(entered)
+                                ? entered.toFixed(2)
+                                : "0.00"
+                            }
+                          />
+                          <div className="text-slate-700">
+                            Send clearance request
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <SelectInput
+                              name="clearanceIntent"
+                              defaultValue={
+                                hasCustomer ? "OPEN_BALANCE" : "PRICE_BARGAIN"
+                              }
+                              className="rounded-md"
+                              disabled={!canSendForClearance}
+                              options={[
+                                {
+                                  label: "Open balance (utang)",
+                                  value: "OPEN_BALANCE",
+                                },
+                                {
+                                  label: "Price bargain",
+                                  value: "PRICE_BARGAIN",
+                                },
+                              ]}
+                            />
+                            <textarea
+                              name="clearanceReason"
+                              rows={2}
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                              placeholder="Reason"
+                              required
+                              disabled={!canSendForClearance}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-[11px] text-slate-500">
+                              Cash {peso(snapshotCashNow)} • Remaining{" "}
+                              {peso(snapshotRemaining)}
+                            </div>
+                            <button
+                              type="submit"
+                              className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              disabled={!canSendForClearance}
+                            >
+                              Send
+                            </button>
+                          </div>
+                        </Form>
+                      )}
+                    </section>
+                  ) : null}
 
               {actionErrors.length ? (
                 <div className="mx-4 mt-2 text-[11px] text-rose-700">
@@ -1665,28 +1699,32 @@ export default function CashierOrder() {
               >
                 <input type="hidden" name="_action" value="settlePayment" />
                 {/* Totals strip */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    <div className="text-[11px] text-slate-600">Due now</div>
-                    <div className="mt-0.5 text-lg font-semibold tabular-nums">
-                      {new Intl.NumberFormat("en-PH", {
-                        style: "currency",
-                        currency: "PHP",
-                      }).format(dueBefore)}
+                {isApprovedUtangSettlement ? (
+                  <input type="hidden" name="cashGiven" value={cashGiven} />
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-600">Due now</div>
+                      <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                        {new Intl.NumberFormat("en-PH", {
+                          style: "currency",
+                          currency: "PHP",
+                        }).format(dueBefore)}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-600">
+                        Already paid
+                      </div>
+                      <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                        {new Intl.NumberFormat("en-PH", {
+                          style: "currency",
+                          currency: "PHP",
+                        }).format(alreadyPaid)}
+                      </div>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    <div className="text-[11px] text-slate-600">
-                      Already paid
-                    </div>
-                    <div className="mt-0.5 text-lg font-semibold tabular-nums">
-                      {new Intl.NumberFormat("en-PH", {
-                        style: "currency",
-                        currency: "PHP",
-                      }).format(alreadyPaid)}
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Customer (READ-ONLY at cashier) */}
                 <div>
@@ -1705,29 +1743,40 @@ export default function CashierOrder() {
 
                 {/* Cash input + print toggle */}
                 <div className="grid grid-cols-1 gap-3">
-                  <label className="block">
-                    <span className="block text-sm text-slate-700">
-                      {hasClearanceCase
-                        ? "Cash received (snapshot locked)"
-                        : "Cash received"}
-                    </span>
-                    <input
-                      name="cashGiven"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={cashGiven}
-                      onChange={(e) => setCashGiven(e.target.value)}
-                      className={`mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 ${
-                        hasClearanceCase
-                          ? "border-slate-200 bg-slate-100 text-slate-500"
-                          : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
-                      }`}
-                      placeholder="0.00"
-                      inputMode="decimal"
-                      readOnly={hasClearanceCase}
-                    />
-                  </label>
+                  {isApprovedUtangSettlement ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-600">
+                        Cash to record
+                      </div>
+                      <div className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">
+                        {peso(snapshotCashNow)}
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="block">
+                      <span className="block text-sm text-slate-700">
+                        {hasClearanceCase
+                          ? "Cash received (snapshot locked)"
+                          : "Cash received"}
+                      </span>
+                      <input
+                        name="cashGiven"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={cashGiven}
+                        onChange={(e) => setCashGiven(e.target.value)}
+                        className={`mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200 ${
+                          hasClearanceCase
+                            ? "border-slate-200 bg-slate-100 text-slate-500"
+                            : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
+                        }`}
+                        placeholder="0.00"
+                        inputMode="decimal"
+                        readOnly={hasClearanceCase}
+                      />
+                    </label>
+                  )}
                   <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                     <input
                       type="checkbox"
@@ -1743,38 +1792,36 @@ export default function CashierOrder() {
                 </div>
 
                 {/* Live previews */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                    <div className="text-[11px] text-slate-600">
-                      Change (preview)
+                {!isApprovedUtangSettlement ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <div className="text-[11px] text-slate-600">
+                        Change (preview)
+                      </div>
+                      <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                        {new Intl.NumberFormat("en-PH", {
+                          style: "currency",
+                          currency: "PHP",
+                        }).format(changePreview)}
+                      </div>
                     </div>
-                    <div className="mt-0.5 text-lg font-semibold tabular-nums">
-                      {new Intl.NumberFormat("en-PH", {
-                        style: "currency",
-                        currency: "PHP",
-                      }).format(changePreview)}
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <div className="text-[11px] text-slate-600">
+                        {balanceAfterLabel}
+                      </div>
+                      <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                        {new Intl.NumberFormat("en-PH", {
+                          style: "currency",
+                          currency: "PHP",
+                        }).format(balanceAfterDisplay)}
+                      </div>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                    <div className="text-[11px] text-slate-600">
-                      {balanceAfterLabel}
-                    </div>
-                    <div className="mt-0.5 text-lg font-semibold tabular-nums">
-                      {new Intl.NumberFormat("en-PH", {
-                        style: "currency",
-                        currency: "PHP",
-                      }).format(balanceAfterDisplay)}
-                    </div>
-                  </div>
-                </div>
+                ) : null}
 
-                {/* Advanced options */}
-                <details className="rounded-xl border border-slate-200 bg-white">
-                  <summary className="cursor-pointer select-none list-none px-3 py-2 text-sm text-slate-800">
-                    Release with balance
-                  </summary>
-                  <div className="px-3 pb-3 space-y-3">
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                {showReleaseWithBalance ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <label className="inline-flex items-center gap-2 text-sm font-medium text-amber-900">
                       <input
                         type="checkbox"
                         name="releaseWithBalance"
@@ -1782,20 +1829,20 @@ export default function CashierOrder() {
                         className="h-4 w-4 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
                         disabled={waitingManagerDecision}
                       />
-                      <span>Release goods now (with balance)</span>
+                      <span>Release goods now</span>
                     </label>
-                    <label className="block text-xs text-slate-600">
-                      Manager PIN/Name (for release)
+                    <label className="mt-2 block text-xs text-amber-900">
+                      Manager PIN/Name
                       <input
                         name="releaseApprovedBy"
                         type="text"
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
+                        className="mt-1 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
                         placeholder="e.g. 1234 or MGR-ANA"
                         disabled={waitingManagerDecision}
                       />
                     </label>
                   </div>
-                </details>
+                ) : null}
 
                 {/* Primary submit */}
                 <button
@@ -1833,12 +1880,21 @@ export default function CashierOrder() {
                     : "Complete Sale"}
                 </button>
               </Form>
+              <Form method="post" className="px-4 pb-4">
+                <input type="hidden" name="_action" value="release" />
+                <button className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
+                  Release lock
+                </button>
+              </Form>
+                </>
+              )}
             </div>
           </aside>
         </div>
       </div>
 
       {/* Sticky action footer for mobile comfort */}
+      {lockedByMe ? (
       <div className="lg:hidden fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur px-5 py-3">
         <div className="mx-auto max-w-4xl">
           <button
@@ -1880,6 +1936,7 @@ export default function CashierOrder() {
           </button>
         </div>
       </div>
+      ) : null}
     </main>
   );
 }
