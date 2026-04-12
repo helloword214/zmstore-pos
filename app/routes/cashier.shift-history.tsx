@@ -7,6 +7,18 @@ import { requireRole } from "~/utils/auth.server";
 import type { Prisma } from "@prisma/client";
 import { CashDrawerTxnType, CashierShiftStatus } from "@prisma/client";
 import { SelectInput } from "~/components/ui/SelectInput";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTd,
+  SoTTh,
+} from "~/components/ui/SoTTable";
 
 const CASH_COUNT_MARKER = "CASH_COUNT_JSON:";
 const DENOMS: Array<{ key: string; label: string; value: number }> = [
@@ -381,142 +393,108 @@ function peso(n: number) {
 export default function ShiftHistory() {
   const { role, shifts, filters, cashiers } = useLoaderData<LoaderData>();
   const [params] = useSearchParams();
-  const openCount = shifts.filter((shift) => shift.status !== "FINAL_CLOSED").length;
-  const countedCount = shifts.filter((shift) => shift.closingTotal != null).length;
-  const disputedCount = shifts.filter(
-    (shift) => shift.status === "OPENING_DISPUTED",
-  ).length;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
-      <div className="mx-auto max-w-6xl px-5 py-6">
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Shift History
-            </h1>
-            <p className="text-sm text-slate-600">
-              {role === "ADMIN"
-                ? "Review cashier shifts and drawer summaries."
-                : "Review your shift and drawer summaries."}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/cashier/shift"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              Open Shift Console
-            </Link>
-            <Link
-              to="/cashier"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              ← Back
-            </Link>
-          </div>
-        </div>
-        <div className="mb-4 flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Results <span className="font-semibold text-slate-900">{shifts.length}</span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Open <span className="font-semibold text-slate-900">{openCount}</span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Counted{" "}
-            <span className="font-semibold text-slate-900">{countedCount}</span>
-          </span>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-            Disputed{" "}
-            <span className="font-semibold text-slate-900">{disputedCount}</span>
-          </span>
-        </div>
-        {/* Filters */}
-        <Form
-          method="get"
-          className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5"
-        >
-          <div className="text-sm">
-            <SelectInput
-              name="status"
-              label="Status"
-              defaultValue={filters.status}
-              options={[
-                { value: "open", label: "Open" },
-                { value: "closed", label: "Closed" },
-                { value: "all", label: "All" },
-              ]}
-            />
-          </div>
-          <label className="text-sm">
-            <span className="block text-slate-700 mb-1">From</span>
-            <input
-              type="date"
-              name="from"
-              defaultValue={filters.from ?? ""}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="block text-slate-700 mb-1">To</span>
-            <input
-              type="date"
-              name="to"
-              defaultValue={filters.to ?? ""}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            />
-          </label>
+      <SoTNonDashboardHeader
+        title="Shift history"
+        subtitle={
+          role === "ADMIN"
+            ? "Cashier drawer counts, cash movement, and rider variance."
+            : "Your drawer counts, cash movement, and rider variance."
+        }
+        backTo="/cashier"
+        backLabel="Cashier"
+      />
 
-          {role === "ADMIN" ? (
-            <div className="text-sm">
-              <SelectInput
-                name="cashierId"
-                label="Cashier"
-                defaultValue={filters.cashierId ?? ""}
-                options={[
-                  { value: "", label: "All" },
-                  ...cashiers.map((c) => ({ value: c.id, label: c.label })),
-                ]}
-              />
+      <div className="mx-auto max-w-6xl space-y-3 px-5 py-6">
+        <SoTCard compact interaction="form">
+          <Form method="get">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(10rem,12rem)_repeat(2,minmax(9rem,11rem))_1fr_auto] md:items-end">
+              <div className="text-sm">
+                <SelectInput
+                  name="status"
+                  label="Status"
+                  defaultValue={filters.status}
+                  options={[
+                    { value: "open", label: "Open" },
+                    { value: "closed", label: "Closed" },
+                    { value: "all", label: "All" },
+                  ]}
+                />
+              </div>
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">From</span>
+                <input
+                  type="date"
+                  name="from"
+                  defaultValue={filters.from ?? ""}
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">To</span>
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={filters.to ?? ""}
+                  className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                />
+              </label>
+
+              {role === "ADMIN" ? (
+                <div className="text-sm">
+                  <SelectInput
+                    name="cashierId"
+                    label="Cashier"
+                    defaultValue={filters.cashierId ?? ""}
+                    options={[
+                      { value: "", label: "All cashiers" },
+                      ...cashiers.map((c) => ({ value: c.id, label: c.label })),
+                    ]}
+                  />
+                </div>
+              ) : (
+                <div className="hidden md:block" />
+              )}
+              <div className="flex items-center justify-start gap-2 md:justify-end">
+                <SoTButton type="submit" variant="primary" size="compact">
+                  Apply
+                </SoTButton>
+                {params.toString() ? (
+                  <Link
+                    to="/cashier/shift-history"
+                    className="inline-flex h-9 items-center rounded-xl px-3 text-sm font-medium text-indigo-700 transition-colors duration-150 hover:bg-indigo-50 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                  >
+                    Reset
+                  </Link>
+                ) : null}
+              </div>
             </div>
-          ) : (
-            <div className="hidden md:block" />
-          )}
-          <div className="flex flex-wrap items-center gap-3 md:col-span-5">
-            <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
-              Apply
-            </button>
-            {params.toString() && (
-              <Link
-                to="/cashier/shift-history"
-                className="ml-2 text-sm text-slate-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-              >
-                Reset
-              </Link>
-            )}
-          </div>
-        </Form>
+          </Form>
+        </SoTCard>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50">
-              <tr className="text-left text-slate-700">
-                <th className="px-4 py-3">Shift</th>
-                <th className="px-4 py-3">Cashier</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Cash In</th>
-                <th className="px-4 py-3 text-right">Drawer</th>
-                <th className="px-4 py-3 text-right">Variance</th>
-                <th className="px-4 py-3 text-right">Expected</th>
-                <th className="px-4 py-3 text-right">Counted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
+            Shift audit
+          </div>
+          <SoTTable>
+            <SoTTableHead>
+              <SoTTableRow className="border-t-0">
+                <SoTTh>Shift</SoTTh>
+                <SoTTh>Cashier</SoTTh>
+                <SoTTh>Status</SoTTh>
+                <SoTTh align="right">Cash In</SoTTh>
+                <SoTTh align="right">Drawer</SoTTh>
+                <SoTTh align="right">Variance</SoTTh>
+                <SoTTh align="right">Expected</SoTTh>
+                <SoTTh align="right">Counted</SoTTh>
+              </SoTTableRow>
+            </SoTTableHead>
+            <tbody>
               {shifts.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50/60">
-                  <td className="px-4 py-2">
+                <SoTTableRow key={s.id} className="hover:bg-slate-50/60">
+                  <SoTTd>
                     <div className="text-slate-900">
                       {new Date(s.openedAt).toLocaleString()}
                     </div>
@@ -529,24 +507,22 @@ export default function ShiftHistory() {
                         </>
                       ) : null}
                     </div>
-                  </td>
-                  <td className="px-4 py-2">{s.cashier.displayName}</td>
-                  <td className="px-4 py-2">
+                  </SoTTd>
+                  <SoTTd>{s.cashier.displayName}</SoTTd>
+                  <SoTTd>
                     {(() => {
                       const st = s.status;
                       if (st === "OPEN") {
                         return (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 ring-1 ring-emerald-200">
-                            OPEN
-                          </span>
+                          <SoTStatusBadge tone="success">OPEN</SoTStatusBadge>
                         );
                       }
                       if (st === "PENDING_ACCEPT") {
                         return (
                           <div>
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-slate-200">
+                            <SoTStatusBadge tone="neutral">
                               PENDING ACCEPT
-                            </span>
+                            </SoTStatusBadge>
                             <div className="mt-1 text-xs text-slate-500">
                               Waiting opening
                             </div>
@@ -556,9 +532,9 @@ export default function ShiftHistory() {
                       if (st === "OPENING_DISPUTED") {
                         return (
                           <div>
-                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700 ring-1 ring-rose-200">
+                            <SoTStatusBadge tone="danger">
                               OPENING DISPUTED
-                            </span>
+                            </SoTStatusBadge>
                             <div className="mt-1 text-xs text-slate-500">
                               Opening mismatch
                             </div>
@@ -568,9 +544,9 @@ export default function ShiftHistory() {
                       if (st === "SUBMITTED") {
                         return (
                           <div>
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 ring-1 ring-amber-200">
+                            <SoTStatusBadge tone="warning">
                               SUBMITTED
-                            </span>
+                            </SoTStatusBadge>
                             <div className="mt-1 text-xs text-slate-500">
                               Waiting close
                             </div>
@@ -580,9 +556,9 @@ export default function ShiftHistory() {
                       if (st === "RECOUNT_REQUIRED") {
                         return (
                           <div>
-                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700 ring-1 ring-rose-200">
+                            <SoTStatusBadge tone="danger">
                               LEGACY RECOUNT
-                            </span>
+                            </SoTStatusBadge>
                             <div className="mt-1 text-xs text-slate-500">
                               Legacy
                             </div>
@@ -592,9 +568,7 @@ export default function ShiftHistory() {
                       // FINAL_CLOSED (or anything else)
                       return (
                         <div>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-slate-200">
-                            CLOSED
-                          </span>
+                          <SoTStatusBadge tone="neutral">CLOSED</SoTStatusBadge>
                           {s.closedAt ? (
                             <div className="mt-1 text-xs text-slate-500">
                               {new Date(s.closedAt).toLocaleString()}
@@ -603,22 +577,22 @@ export default function ShiftHistory() {
                         </div>
                       );
                     })()}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </SoTTd>
+                  <SoTTd align="right" className="tabular-nums">
                     <div className="text-slate-900">{peso(s.cashInTotal)}</div>
                     <div className="text-xs text-slate-500">
                       Sales {peso(s.cashSalesIn)} • A/R {peso(s.arCashIn)}
                     </div>
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </SoTTd>
+                  <SoTTd align="right" className="tabular-nums">
                     <div className="text-slate-900">
                       Add {peso(s.drawerDeposits)}
                     </div>
                     <div className="text-xs text-slate-500">
                       Take {peso(s.drawerOut + s.drawerDrops)}
                     </div>
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </SoTTd>
+                  <SoTTd align="right" className="tabular-nums">
                     {s.varianceBridgeAmount > 0 ? (
                       <div>
                         <div className="font-medium text-amber-700">
@@ -631,11 +605,11 @@ export default function ShiftHistory() {
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </SoTTd>
+                  <SoTTd align="right" className="tabular-nums">
                     {peso(s.drawerBalance)}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </SoTTd>
+                  <SoTTd align="right" className="tabular-nums">
                     {s.closingTotal ? (
                       (() => {
                         const counted = Number(s.closingTotal);
@@ -689,21 +663,14 @@ export default function ShiftHistory() {
                     ) : (
                       <span className="text-slate-500">—</span>
                     )}
-                  </td>
-                </tr>
+                  </SoTTd>
+                </SoTTableRow>
               ))}
-              {shifts.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-6 text-center text-slate-500"
-                  >
-                    No shifts found.
-                  </td>
-                </tr>
-              )}
+              {shifts.length === 0 ? (
+                <SoTTableEmptyRow colSpan={8} message="No shifts found." />
+              ) : null}
             </tbody>
-          </table>
+          </SoTTable>
         </div>
       </div>
     </main>
