@@ -1,6 +1,20 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Form, useLoaderData, useSearchParams } from "@remix-run/react";
+import { SoTButton } from "~/components/ui/SoTButton";
+import { SoTCard } from "~/components/ui/SoTCard";
+import { SoTFormField } from "~/components/ui/SoTFormField";
+import { SoTInput } from "~/components/ui/SoTInput";
+import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
+import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
+import {
+  SoTTable,
+  SoTTableEmptyRow,
+  SoTTableHead,
+  SoTTableRow,
+  SoTTh,
+  SoTTd,
+} from "~/components/ui/SoTTable";
 import { db } from "~/utils/db.server";
 import { requireOpenShift } from "~/utils/auth.server";
 import { r2, peso } from "~/utils/money";
@@ -9,6 +23,7 @@ type Txn = {
   kind: "charge" | "settlement";
   date: string;
   label: string;
+  detail: string | null;
   debit: number;
   credit: number;
   running: number;
@@ -148,20 +163,21 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   for (const ar of customer.customerAr) {
     const principal = r2(Math.max(0, Number(ar.principal ?? 0)));
     const orderPart = ar.order?.orderCode
-      ? ` • ${ar.order.orderCode}${ar.order.channel ? ` (${ar.order.channel})` : ""}`
-      : "";
-    const decisionPart = ar.clearanceDecision?.kind
-      ? ` • ${String(ar.clearanceDecision.kind)}`
+      ? `Order ${ar.order.orderCode}${ar.order.channel ? ` (${ar.order.channel})` : ""}`
       : "";
     const receiptPart = ar.clearanceDecision?.clearanceCase?.receiptKey
-      ? ` • ${String(ar.clearanceDecision.clearanceCase.receiptKey)}`
+      ? `Receipt ${String(ar.clearanceDecision.clearanceCase.receiptKey)}`
       : "";
+    const chargeDetail = [`Balance #${ar.id}`, orderPart, receiptPart]
+      .filter(Boolean)
+      .join(" • ");
 
     if (ar.createdAt >= start && ar.createdAt < endExclusive) {
       txnsRaw.push({
         kind: "charge",
         date: ar.createdAt.toISOString(),
-        label: `A/R #${ar.id}${orderPart}${decisionPart}${receiptPart}`,
+        label: "Balance added",
+        detail: chargeDetail,
         debit: principal,
         credit: 0,
       });
@@ -169,12 +185,18 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     for (const p of ar.payments ?? []) {
       if (p.createdAt >= start && p.createdAt < endExclusive) {
+        const paymentDetail = [
+          `Balance #${ar.id}`,
+          p.refNo ? `Ref ${p.refNo}` : "",
+          p.note ?? "",
+        ]
+          .filter(Boolean)
+          .join(" • ");
         txnsRaw.push({
           kind: "settlement",
           date: p.createdAt.toISOString(),
-          label: `Payment (A/R #${ar.id})${p.refNo ? ` • ${p.refNo}` : ""}${
-            p.note ? ` • ${p.note}` : ""
-          }`,
+          label: "Payment received",
+          detail: paymentDetail,
           debit: 0,
           credit: r2(Math.max(0, Number(p.amount ?? 0))),
         });
@@ -226,168 +248,139 @@ export default function CustomerStatementPage() {
   const { customer, period, openingBalance, txns, totals, closingBalance } =
     useLoaderData<LoaderData>();
   const [sp] = useSearchParams();
+  const customerLabel = `${customer.name}${customer.alias ? ` (${customer.alias})` : ""}`;
+  const hasActivity = txns.length > 0;
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef2ff_0%,_#f8fafc_45%,_#f3f4f6_100%)]">
-      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/85 backdrop-blur no-print">
-        <div className="mx-auto max-w-6xl px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Statement of Account
-            </h1>
-            <div className="text-sm text-slate-600">
-              {customer.name}
-              {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"}
-            </div>
-            <div className="text-xs text-slate-500">
-              SoT: customerAr debits + customerArPayment credits
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to={`/ar/customers/${customer.id}`}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-            >
-              Back
-            </Link>
-            <button
-              onClick={() => window.print()}
-              className="rounded-xl bg-indigo-600 text-white px-3 py-2 text-sm hover:bg-indigo-700"
-            >
-              Print
-            </button>
-          </div>
-        </div>
+    <main className="min-h-screen bg-[#f7f7fb]">
+      <div className="no-print">
+        <SoTNonDashboardHeader
+          title="Customer Statement"
+          subtitle={
+            <>
+              {customerLabel} • {customer.phone ?? "No phone"}
+            </>
+          }
+          backTo={`/ar/customers/${customer.id}`}
+          backLabel="Customer Balance"
+          maxWidthClassName="max-w-5xl"
+        />
       </div>
 
-      <div className="mx-auto max-w-6xl px-5 py-6 space-y-4">
-        <Form
-          method="get"
-          className="rounded-2xl border border-slate-200 bg-white/90 shadow-sm p-3 flex flex-wrap items-end gap-3 no-print"
-        >
-          <label className="text-sm">
-            <span className="text-slate-700">Start</span>
-            <input
-              type="date"
-              name="start"
-              defaultValue={sp.get("start") ?? period.start}
-              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-700">End</span>
-            <input
-              type="date"
-              name="end"
-              defaultValue={sp.get("end") ?? period.end}
-              className="mt-1 block rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
-            />
-          </label>
-          <button className="h-[38px] rounded-xl bg-indigo-600 text-white px-3 text-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1">
-            Apply
-          </button>
-        </Form>
+      <div className="mx-auto max-w-5xl space-y-3 px-5 py-6">
+        <SoTCard compact tone={closingBalance > 0 ? "info" : "default"}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Closing Balance
+              </div>
+              <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-950">
+                {peso(closingBalance)}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {period.start} to {period.end}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 text-xs sm:min-w-[360px] sm:grid-cols-3 sm:text-right">
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <div className="text-slate-500">Opening</div>
+                <div className="mt-1 font-semibold tabular-nums text-slate-900">
+                  {peso(openingBalance)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <div className="text-slate-500">Charges</div>
+                <div className="mt-1 font-semibold tabular-nums text-slate-900">
+                  {peso(totals.debits)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <div className="text-slate-500">Payments</div>
+                <div className="mt-1 font-semibold tabular-nums text-emerald-700">
+                  {peso(totals.credits)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </SoTCard>
 
-        <section className="grid gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <div className="text-xs text-slate-500">Opening Balance</div>
-            <div className="mt-1 text-lg font-semibold text-slate-900 tabular-nums">
-              {peso(openingBalance)}
+        <SoTCard compact className="no-print">
+          <Form method="get" className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <SoTFormField label="Start" className="sm:w-44">
+              <SoTInput
+                type="date"
+                name="start"
+                defaultValue={sp.get("start") ?? period.start}
+              />
+            </SoTFormField>
+            <SoTFormField label="End" className="sm:w-44">
+              <SoTInput
+                type="date"
+                name="end"
+                defaultValue={sp.get("end") ?? period.end}
+              />
+            </SoTFormField>
+            <div className="flex flex-wrap items-center gap-2">
+              <SoTButton type="submit" variant="primary">
+                Apply
+              </SoTButton>
+              <SoTButton type="button" onClick={() => window.print()}>
+                Print
+              </SoTButton>
             </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <div className="text-xs text-slate-500">Charges (Period)</div>
-            <div className="mt-1 text-lg font-semibold text-slate-900 tabular-nums">
-              {peso(totals.debits)}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <div className="text-xs text-slate-500">Settlements (Period)</div>
-            <div className="mt-1 text-lg font-semibold text-emerald-700 tabular-nums">
-              {peso(totals.credits)}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm">
-            <div className="text-xs text-indigo-700">Closing Balance</div>
-            <div className="mt-1 text-lg font-semibold text-indigo-900 tabular-nums">
-              {peso(closingBalance)}
-            </div>
-          </div>
-        </section>
+          </Form>
+        </SoTCard>
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-            <div className="text-sm font-medium text-slate-800">
-              Statement • {period.start} → {period.end}
+        <SoTCard className="overflow-hidden p-0">
+          <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-slate-800">
+                Statement Activity
+              </div>
+              <div className="text-xs text-slate-500">{customerLabel}</div>
             </div>
-            <div className="text-xs text-slate-500">
+            <SoTStatusBadge tone={hasActivity ? "neutral" : "warning"}>
               {txns.length} transaction{txns.length === 1 ? "" : "s"}
-            </div>
+            </SoTStatusBadge>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Date / Details</th>
-                  <th className="px-4 py-2 text-right font-medium">Charges</th>
-                  <th className="px-4 py-2 text-right font-medium">Settlements</th>
-                  <th className="px-4 py-2 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txns.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-6 text-sm text-slate-600">
-                      No transactions in this period.
-                    </td>
-                  </tr>
-                ) : (
-                  txns.map((t, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-slate-700">
-                        <div>{new Date(t.date).toLocaleString()}</div>
-                        <div className="text-xs text-slate-500">{t.label}</div>
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {t.debit ? `+ ${peso(t.debit)}` : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums text-emerald-700">
-                        {t.credit ? `− ${peso(t.credit)}` : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium text-slate-900">
-                        {peso(t.running)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="px-4 py-3 text-sm space-y-1 border-t border-slate-100 bg-slate-50/60">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Opening</span>
-              <span className="font-medium">{peso(openingBalance)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">+ Charges</span>
-              <span className="font-medium">{peso(totals.debits)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">- Settlements</span>
-              <span className="font-medium">{peso(totals.credits)}</span>
-            </div>
-            <div className="flex justify-between font-semibold text-slate-900">
-              <span>Closing Balance</span>
-              <span>{peso(closingBalance)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="no-print rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-          This statement is generated from approved customer A/R entries and A/R payment records only.
-        </div>
+          <SoTTable>
+            <SoTTableHead>
+              <tr>
+                <SoTTh>Date / Details</SoTTh>
+                <SoTTh align="right">Charges</SoTTh>
+                <SoTTh align="right">Payments</SoTTh>
+                <SoTTh align="right">Balance</SoTTh>
+              </tr>
+            </SoTTableHead>
+            <tbody>
+              {txns.length === 0 ? (
+                <SoTTableEmptyRow colSpan={4} message="No transactions in this period." />
+              ) : (
+                txns.map((t, i) => (
+                  <SoTTableRow key={`${t.date}-${i}`}>
+                    <SoTTd className="text-slate-700">
+                      <div className="font-medium text-slate-900">{t.label}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {new Date(t.date).toLocaleString()}
+                        {t.detail ? ` • ${t.detail}` : ""}
+                      </div>
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums text-slate-900">
+                      {t.debit ? `+ ${peso(t.debit)}` : "—"}
+                    </SoTTd>
+                    <SoTTd align="right" className="tabular-nums text-emerald-700">
+                      {t.credit ? `− ${peso(t.credit)}` : "—"}
+                    </SoTTd>
+                    <SoTTd align="right" className="font-semibold tabular-nums text-slate-900">
+                      {peso(t.running)}
+                    </SoTTd>
+                  </SoTTableRow>
+                ))
+              )}
+            </tbody>
+          </SoTTable>
+        </SoTCard>
       </div>
 
       <style>{`
