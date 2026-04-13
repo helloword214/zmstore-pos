@@ -1,9 +1,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useLoaderData, useNavigation } from "@remix-run/react";
 import * as React from "react";
 import { SoTAlert } from "~/components/ui/SoTAlert";
-import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTLoadingState } from "~/components/ui/SoTLoadingState";
 import { SoTNonDashboardHeader } from "~/components/ui/SoTNonDashboardHeader";
 import { SoTStatusBadge } from "~/components/ui/SoTStatusBadge";
@@ -783,7 +782,7 @@ export default function ShiftConsole() {
       ? "Opening float is disputed, so the shift stays locked."
       : activeShift?.status === "SUBMITTED"
         ? "Waiting for manager audit and final close."
-        : "Finish the shift by entering the physical cash count.";
+        : "Enter the physical drawer count.";
   const drawerAccessLabel = !activeShift
     ? "Waiting"
     : drawerLocked
@@ -811,7 +810,13 @@ export default function ShiftConsole() {
   }, [activeShift?.id, activeShift?.openingFloat]);
 
   // Denomination mode
-  const [useDenoms, setUseDenoms] = React.useState<boolean>(true);
+  const [useDenoms, setUseDenoms] = React.useState<boolean>(false);
+  const [activePanel, setActivePanel] = React.useState<
+    "drawer" | "count" | null
+  >(null);
+  const [drawerAction, setDrawerAction] = React.useState<
+    "drawer:deposit" | "drawer:withdraw"
+  >("drawer:deposit");
   const [cashCount, setCashCount] = React.useState<CashCount>(() => {
     const base: CashCount = {};
     for (const d of DENOMS) base[d.key] = 0;
@@ -859,37 +864,27 @@ export default function ShiftConsole() {
     latestCountedCashRef.current = value;
     setCountedCash(value);
   };
+  const drawerMoveBusy = depositBusy || withdrawBusy;
+  const branchName = activeShift?.branchName?.trim();
+  const shiftSubtitle = activeShift
+    ? branchName && branchName !== "—"
+      ? `Shift #${activeShift.id} • ${branchName}`
+      : `Shift #${activeShift.id}`
+    : "Waiting for manager to open your shift.";
+  const drawerDetailCount = drawer?.recent.length ?? 0;
+  const paymentDetailCount = paymentsRecent?.length ?? 0;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
         title="Shift Console"
-        subtitle={
-          activeShift
-            ? `Shift #${activeShift.id} • ${activeShift.branchName}`
-            : "Waiting for manager to open your shift."
-        }
+        subtitle={shiftSubtitle}
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-6xl"
       />
 
       <div className="mx-auto max-w-6xl px-5 py-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <Link
-            to="/cashier/shift-history"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-          >
-            Shift History
-          </Link>
-          <div className="flex flex-wrap items-center gap-2">
-            <SoTStatusBadge tone={shiftStatusTone}>{shiftStatusLabel}</SoTStatusBadge>
-            {drawer && expectedRaw < -0.005 ? (
-              <SoTStatusBadge tone="danger">Ledger error</SoTStatusBadge>
-            ) : null}
-          </div>
-        </div>
-
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           {!activeShift ? (
             <div className="px-4 py-4 space-y-3">
@@ -902,43 +897,33 @@ export default function ShiftConsole() {
             </div>
           ) : (
             <div className="px-4 py-4 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <SoTCard compact tone={shiftStatusTone === "warning" ? "warning" : shiftStatusTone === "danger" ? "danger" : shiftStatusTone === "info" ? "info" : "success"}>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Shift
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    #{activeShift.id} • {activeShift.branchName}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">{shiftStatusLabel}</div>
-                </SoTCard>
-                <SoTCard compact>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Opened
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    {new Date(activeShift.openedAt).toLocaleString()}
-                  </div>
-                </SoTCard>
-                <SoTCard compact>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Device
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    {activeShift.deviceId ? activeShift.deviceId : "No device"}
-                  </div>
-                </SoTCard>
-                <SoTCard compact tone={drawerLocked ? "warning" : "success"}>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Drawer Access
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    {drawerAccessLabel}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {drawerLocked ? "Waiting for open or manager audit" : "Cashier actions available"}
-                  </div>
-                </SoTCard>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  <SoTStatusBadge tone={shiftStatusTone}>
+                    {shiftStatusLabel}
+                  </SoTStatusBadge>
+                  <span className="text-slate-600">
+                    Shift{" "}
+                    <span className="font-medium text-slate-900">
+                      #{activeShift.id}
+                    </span>
+                  </span>
+                  <span className="text-slate-600">
+                    Opened{" "}
+                    <span className="font-medium text-slate-900">
+                      {new Date(activeShift.openedAt).toLocaleString()}
+                    </span>
+                  </span>
+                  <span className="text-slate-600">
+                    Drawer{" "}
+                    <span className="font-medium text-slate-900">
+                      {drawerAccessLabel}
+                    </span>
+                  </span>
+                  {drawer && expectedRaw < -0.005 ? (
+                    <SoTStatusBadge tone="danger">Ledger error</SoTStatusBadge>
+                  ) : null}
+                </div>
               </div>
               {openingDisputed ? (
                 <SoTAlert tone="warning" title="Opening float disputed">
@@ -951,7 +936,626 @@ export default function ShiftConsole() {
                   ) : null}
                 </SoTAlert>
               ) : null}
-              <div className="grid gap-4 lg:grid-cols-12">
+              {!openingPending ? (
+                <>
+                  <div className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm sm:p-5">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Cash drawer now
+                        </div>
+                        <div className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 tabular-nums">
+                          {peso(expectedNow)}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
+                          {drawer ? (
+                            <>
+                              <span>Opening {peso(drawer.openingFloat)}</span>
+                              <span>Cash in {peso(drawer.cashInTotal)}</span>
+                            </>
+                          ) : (
+                            <span>Drawer snapshot unavailable</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2 lg:w-[26rem]">
+                        <button
+                          type="button"
+                          onClick={() => setActivePanel("drawer")}
+                          disabled={busy || drawerLocked || !drawer}
+                          className="rounded-2xl border border-emerald-200 bg-emerald-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span className="block">Add / Take Cash</span>
+                          <span className="mt-1 block text-xs font-normal text-emerald-50">
+                            Drawer movement
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActivePanel("count")}
+                          disabled={
+                            busy ||
+                            drawerLocked ||
+                            activeShift.status !== "OPEN"
+                          }
+                          className="rounded-2xl border border-rose-200 bg-rose-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span className="block">End Shift Count</span>
+                          <span className="mt-1 block text-xs font-normal text-rose-50">
+                            Final physical count
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {activeShift.status !== "OPEN" ? (
+                      <SoTAlert tone="warning" className="mt-4">
+                        Shift is locked ({activeShift.status}). Cash movement
+                        and end-shift count are unavailable right now.
+                      </SoTAlert>
+                    ) : null}
+                  </div>
+
+                  <details className="group rounded-2xl border border-slate-200 bg-white">
+                    <summary className="flex cursor-pointer list-none flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">
+                          Shift details
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {drawerDetailCount} drawer move(s) ·{" "}
+                          {paymentDetailCount} payment(s)
+                        </div>
+                      </div>
+                      <div className="text-xs font-medium text-slate-500">
+                        <span className="group-open:hidden">Show details</span>
+                        <span className="hidden group-open:inline">
+                          Hide details
+                        </span>
+                      </div>
+                    </summary>
+                    <div className="space-y-4 border-t border-slate-100 px-4 py-4">
+                      {drawer ? (
+                        <section className="space-y-3">
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-xs text-slate-500">
+                                Opening float
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                {peso(drawer.openingFloat)}
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-xs text-slate-500">
+                                Cash in
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                {peso(drawer.cashInTotal)}
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-xs text-slate-500">
+                                Balance
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                {peso(drawer.balance)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 p-3">
+                            <div className="mb-2 text-sm font-medium text-slate-800">
+                              Recent drawer
+                            </div>
+                            <ul className="divide-y divide-slate-100">
+                              {drawer.recent.map((t) => (
+                                <li
+                                  key={t.id}
+                                  className="flex items-start justify-between gap-3 py-2 text-sm"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="text-xs text-slate-500">
+                                      {new Date(t.createdAt).toLocaleString()}
+                                    </div>
+                                    <div className="text-slate-800">
+                                      <span className="font-medium">
+                                        {t.type}
+                                      </span>
+                                      {t.note ? (
+                                        <span className="text-slate-500">
+                                          {" "}
+                                          · {t.note}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <div className="text-right font-medium tabular-nums">
+                                    {peso(t.amount)}
+                                  </div>
+                                </li>
+                              ))}
+                              {drawer.recent.length === 0 ? (
+                                <li className="py-3 text-sm text-slate-500">
+                                  No drawer transactions.
+                                </li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {totals ? (
+                        <section className="rounded-2xl border border-slate-200 p-3">
+                          <div className="mb-3 text-sm font-medium text-slate-800">
+                            Reference totals
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-xs text-slate-500">
+                                Booked revenue
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums">
+                                {peso(totals.grandAmount)}
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-xs text-slate-500">
+                                Cash drawer in
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums">
+                                {peso(totals.cashDrawerIn)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {totals.byMethod.map((m) => (
+                              <div
+                                key={m.method}
+                                className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                              >
+                                <span className="text-slate-700">
+                                  {m.method}
+                                </span>
+                                <span className="font-medium tabular-nums">
+                                  {peso(m.amount)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {paymentsRecent && paymentsRecent.length > 0 ? (
+                        <section className="rounded-2xl border border-slate-200 p-3">
+                          <div className="mb-2 text-sm font-medium text-slate-800">
+                            Payments
+                          </div>
+                          <ul className="max-h-72 divide-y divide-slate-100 overflow-auto">
+                            {paymentsRecent.map((p) => (
+                              <li key={p.id} className="py-2 text-sm">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-xs text-slate-500">
+                                      {new Date(p.createdAt).toLocaleString()}
+                                    </div>
+                                    <div className="text-slate-800">
+                                      <span className="font-medium">
+                                        Payment #{p.id}
+                                      </span>{" "}
+                                      <span className="text-slate-500">·</span>{" "}
+                                      Order #{p.orderId}{" "}
+                                      <span className="text-slate-500">·</span>{" "}
+                                      <span className="font-medium uppercase">
+                                        {p.method}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-xs tabular-nums">
+                                    <div className="font-semibold">
+                                      {peso(p.amount)}
+                                    </div>
+                                    {p.tendered != null ? (
+                                      <div className="text-slate-600">
+                                        T: {peso(p.tendered)}
+                                        {p.change != null && p.change !== 0 ? (
+                                          <> · Ch: {peso(p.change)}</>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      ) : null}
+                    </div>
+                  </details>
+
+                  {activePanel === "drawer" && drawer ? (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                      <button
+                        type="button"
+                        aria-label="Close cash drawer panel"
+                        className="absolute inset-0 bg-slate-950/40"
+                        onClick={() => setActivePanel(null)}
+                      />
+                      <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="drawer-panel-title"
+                        className="relative max-h-[90vh] w-full max-w-lg overflow-auto rounded-3xl bg-white p-4 shadow-2xl sm:p-5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h2
+                              id="drawer-panel-title"
+                              className="text-base font-semibold text-slate-900"
+                            >
+                              Add / Take Cash
+                            </h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Balance now {peso(drawer.balance)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActivePanel(null)}
+                            className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <Form method="post" className="mt-4">
+                          <fieldset
+                            disabled={busy || drawerLocked}
+                            className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            <input
+                              type="hidden"
+                              name="_action"
+                              value={drawerAction}
+                            />
+                            <input
+                              type="hidden"
+                              name="next"
+                              value={next ?? "/cashier"}
+                            />
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <label
+                                className={[
+                                  "cursor-pointer rounded-2xl border px-3 py-3 text-sm",
+                                  drawerAction === "drawer:deposit"
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                                    : "border-slate-200 bg-white text-slate-700",
+                                ].join(" ")}
+                              >
+                                <input
+                                  type="radio"
+                                  className="sr-only"
+                                  checked={drawerAction === "drawer:deposit"}
+                                  onChange={() =>
+                                    setDrawerAction("drawer:deposit")
+                                  }
+                                />
+                                <span className="block font-semibold">
+                                  Add cash
+                                </span>
+                                <span className="mt-1 block text-xs opacity-80">
+                                  Money added to drawer
+                                </span>
+                              </label>
+                              <label
+                                className={[
+                                  "cursor-pointer rounded-2xl border px-3 py-3 text-sm",
+                                  drawerAction === "drawer:withdraw"
+                                    ? "border-rose-300 bg-rose-50 text-rose-900"
+                                    : "border-slate-200 bg-white text-slate-700",
+                                ].join(" ")}
+                              >
+                                <input
+                                  type="radio"
+                                  className="sr-only"
+                                  checked={drawerAction === "drawer:withdraw"}
+                                  onChange={() =>
+                                    setDrawerAction("drawer:withdraw")
+                                  }
+                                />
+                                <span className="block font-semibold">
+                                  Take cash
+                                </span>
+                                <span className="mt-1 block text-xs opacity-80">
+                                  Money removed from drawer
+                                </span>
+                              </label>
+                            </div>
+
+                            <label className="block text-sm">
+                              <span className="mb-1 block text-slate-700">
+                                Amount
+                              </span>
+                              <input
+                                name="amount"
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                required
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                placeholder="0.00"
+                              />
+                            </label>
+
+                            <input
+                              name="note"
+                              type="text"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              placeholder="Note (optional)"
+                            />
+
+                            {drawerMoveBusy ? (
+                              <SoTLoadingState
+                                variant="inline"
+                                label={
+                                  depositBusy
+                                    ? "Posting added cash"
+                                    : "Posting taken cash"
+                                }
+                                hint="Updating the live drawer balance."
+                              />
+                            ) : null}
+
+                            <button
+                              type="submit"
+                              className={[
+                                "w-full rounded-xl px-4 py-2 text-sm font-medium text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1 disabled:opacity-50",
+                                drawerAction === "drawer:deposit"
+                                  ? "bg-emerald-600 hover:bg-emerald-700"
+                                  : "bg-rose-600 hover:bg-rose-700",
+                              ].join(" ")}
+                              disabled={busy || drawerLocked}
+                            >
+                              {drawerMoveBusy
+                                ? "Saving..."
+                                : drawerAction === "drawer:deposit"
+                                  ? "Add cash"
+                                  : "Take cash"}
+                            </button>
+                          </fieldset>
+                        </Form>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activePanel === "count" ? (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                      <button
+                        type="button"
+                        aria-label="Close end shift count panel"
+                        className="absolute inset-0 bg-slate-950/40"
+                        onClick={() => setActivePanel(null)}
+                      />
+                      <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="count-panel-title"
+                        className="relative max-h-[90vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-4 shadow-2xl sm:p-5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h2
+                              id="count-panel-title"
+                              className="text-base font-semibold text-slate-900"
+                            >
+                              End Shift Count
+                            </h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Submit only after counting the physical cash.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActivePanel(null)}
+                            className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="text-xs text-slate-500">
+                              Expected
+                            </div>
+                            <div className="text-sm font-semibold tabular-nums">
+                              {peso(expectedNow)}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="text-xs text-slate-500">
+                              Counted
+                            </div>
+                            <div className="text-sm font-semibold tabular-nums">
+                              {peso(Number.isFinite(countedNum) ? countedNum : 0)}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="text-xs text-slate-500">Diff</div>
+                            <div
+                              className={[
+                                "text-sm font-semibold tabular-nums",
+                                diffIsZero
+                                  ? "text-slate-700"
+                                  : diff > 0
+                                    ? "text-emerald-700"
+                                    : "text-rose-700",
+                              ].join(" ")}
+                            >
+                              {diff >= 0 ? "+" : ""}
+                              {peso(diff)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {activeShift.status !== "OPEN" ? (
+                          <SoTAlert tone="warning" className="mt-3">
+                            Shift is locked ({activeShift.status}). Submit is
+                            available only while the shift is open.
+                          </SoTAlert>
+                        ) : null}
+
+                        {closeBusy ? (
+                          <SoTLoadingState
+                            variant="panel"
+                            className="mt-3"
+                            label="Submitting counted cash"
+                            hint="Locking the cashier count and handing it off for manager audit."
+                          />
+                        ) : null}
+
+                        <Form
+                          method="post"
+                          className="mt-4 space-y-3"
+                          onSubmit={(e) => {
+                            const countedCashInput =
+                              e.currentTarget.querySelector<HTMLInputElement>(
+                                'input[name="countedCash"]',
+                              );
+                            if (countedCashInput) {
+                              countedCashInput.value =
+                                latestCountedCashRef.current;
+                            }
+                          }}
+                        >
+                          <fieldset
+                            disabled={busy || drawerLocked}
+                            className="space-y-3 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            <input type="hidden" name="_action" value="close" />
+                            <input
+                              type="hidden"
+                              name="next"
+                              value={next ?? "/cashier"}
+                            />
+                            <input
+                              type="hidden"
+                              name="denomsJson"
+                              value={useDenoms ? denomsJson : ""}
+                            />
+                            <input
+                              type="hidden"
+                              name="countMode"
+                              value={useDenoms ? "denoms" : "manual"}
+                            />
+
+                            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                              <div className="text-sm font-medium text-slate-800">
+                                Denomination count
+                              </div>
+                              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={useDenoms}
+                                  onChange={(e) =>
+                                    setUseDenoms(e.target.checked)
+                                  }
+                                  disabled={busy || drawerLocked}
+                                />
+                                Use
+                              </label>
+                            </div>
+
+                            {useDenoms ? (
+                              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {DENOMS.map((d) => (
+                                    <label
+                                      key={d.key}
+                                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    >
+                                      <span className="text-slate-700">
+                                        {d.label}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={cashCount[d.key] ?? 0}
+                                        onChange={(e) =>
+                                          setCashCount((prev) => ({
+                                            ...prev,
+                                            [d.key]: safeQty(e.target.value),
+                                          }))
+                                        }
+                                        className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                        aria-label={`Qty for ${d.label}`}
+                                        disabled={busy || drawerLocked}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                                <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+                                  <div className="text-sm text-slate-700">
+                                    Computed total
+                                  </div>
+                                  <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                    {peso(denomsTotal)}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <label className="block text-sm">
+                              <span className="mb-1 block text-slate-700">
+                                Counted cash
+                              </span>
+                              <input
+                                name="countedCash"
+                                value={countedCash}
+                                onChange={(e) =>
+                                  handleCountedCashChange(e.target.value)
+                                }
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                                disabled={busy || drawerLocked}
+                              />
+                            </label>
+
+                            <input
+                              name="notes"
+                              placeholder="Notes (optional)"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                              disabled={busy || drawerLocked}
+                            />
+
+                            <button
+                              type="submit"
+                              className="w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:ring-offset-1 disabled:opacity-50"
+                              disabled={
+                                busy ||
+                                drawerLocked ||
+                                activeShift.status !== "OPEN"
+                              }
+                            >
+                              {closeBusy
+                                ? "Submitting..."
+                                : "Submit end-shift count"}
+                            </button>
+                          </fieldset>
+                        </Form>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+              {openingPending ? (
+                <div className="grid gap-4 lg:grid-cols-12">
                 <div className="lg:col-span-7 space-y-4">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1174,10 +1778,7 @@ export default function ShiftConsole() {
                             <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
                               <div className="text-sm">
                                 <div className="font-medium text-slate-800">
-                                  Cash count mode
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  Use denominations for a faster count.
+                                  Denomination count
                                 </div>
                               </div>
                               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -1189,7 +1790,7 @@ export default function ShiftConsole() {
                                   }
                                   disabled={busy || drawerLocked}
                                 />
-                                Use denoms
+                                Use
                               </label>
                             </div>
 
@@ -1274,16 +1875,6 @@ export default function ShiftConsole() {
                               {closeBusy ? "Submitting…" : "Submit count"}
                             </button>
 
-                            <div className="text-xs text-slate-500">
-                              Manager audits and closes after this count is
-                              submitted.
-                            </div>
-                            {useDenoms ? (
-                              <div className="text-xs text-slate-500">
-                                Typing counted cash switches this form to manual
-                                mode.
-                              </div>
-                            ) : null}
                           </fieldset>
                         </Form>
                       </>
@@ -1297,7 +1888,7 @@ export default function ShiftConsole() {
                           Cash drawer
                         </div>
                       </div>
-                      <div className="px-4 py-4 space-y-4">
+                      <div className="px-4 py-4 space-y-3">
                         <div className="grid gap-3 sm:grid-cols-3">
                           <div className="rounded-xl bg-slate-50 p-3">
                             <div className="text-xs text-slate-500">
@@ -1336,7 +1927,7 @@ export default function ShiftConsole() {
                             >
                               <input type="hidden" name="_action" value="drawer:deposit" />
                               <input type="hidden" name="next" value={next ?? "/cashier"} />
-                              <div className="mb-2 text-sm font-medium">Deposit</div>
+                              <div className="mb-2 text-sm font-medium">Add cash</div>
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <input
                                   name="amount"
@@ -1378,7 +1969,7 @@ export default function ShiftConsole() {
                             >
                               <input type="hidden" name="_action" value="drawer:withdraw" />
                               <input type="hidden" name="next" value={next ?? "/cashier"} />
-                              <div className="mb-2 text-sm font-medium">Withdraw</div>
+                              <div className="mb-2 text-sm font-medium">Take cash</div>
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 <input
                                   name="amount"
@@ -1410,9 +2001,6 @@ export default function ShiftConsole() {
                                   hint="Recomputing the drawer cash limit."
                                 />
                               ) : null}
-                              <div className="mt-2 text-xs text-slate-500">
-                                Limited to expected drawer cash.
-                              </div>
                             </fieldset>
                           </Form>
                         </div>
@@ -1423,7 +2011,7 @@ export default function ShiftConsole() {
                         ) : null}
                         <div className="rounded-2xl border border-slate-200 p-3">
                           <div className="mb-2 text-sm font-medium text-slate-800">
-                            Recent drawer transactions
+                            Recent drawer
                           </div>
                           <ul className="divide-y divide-slate-100">
                             {drawer.recent.map((t) => (
@@ -1461,10 +2049,10 @@ export default function ShiftConsole() {
 
                 <div className="lg:col-span-5 space-y-4">
                   {totals ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white">
+                    <div className="rounded-2xl border border-slate-200 bg-white/80">
                       <div className="border-b border-slate-100 px-4 py-3">
                         <div className="text-sm font-medium text-slate-800">
-                          Running totals
+                          Reference totals
                         </div>
                       </div>
                       <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
@@ -1508,10 +2096,10 @@ export default function ShiftConsole() {
                   ) : null}
 
                   {paymentsRecent && paymentsRecent.length > 0 ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white">
+                    <div className="rounded-2xl border border-slate-200 bg-white/80">
                       <div className="border-b border-slate-100 px-4 py-3">
                         <div className="text-sm font-medium text-slate-800">
-                          Recent payments
+                          Payments
                         </div>
                       </div>
                       <div className="max-h-80 overflow-auto px-4 py-3">
@@ -1556,7 +2144,8 @@ export default function ShiftConsole() {
                     </div>
                   ) : null}
                 </div>
-              </div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
