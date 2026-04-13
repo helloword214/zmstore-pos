@@ -1,5 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import { CustomerArStatus } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { Form, Link, useLoaderData } from "@remix-run/react";
 import { SoTCard } from "~/components/ui/SoTCard";
 import { SoTButton } from "~/components/ui/SoTButton";
@@ -20,6 +22,12 @@ import { requireOpenShift } from "~/utils/auth.server";
 const r2 = (n: number) =>
   Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
+const PAGE_SIZE = 50;
+const OPEN_AR_STATUSES = [
+  CustomerArStatus.OPEN,
+  CustomerArStatus.PARTIALLY_SETTLED,
+];
+
 type Row = {
   customerId: number;
   name: string;
@@ -30,13 +38,22 @@ type Row = {
   balance: number;
 };
 
+function parsePage(raw: string | null) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || Math.floor(value) !== value || value < 1) {
+    return 1;
+  }
+  return value;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   await requireOpenShift(request, { next: `${url.pathname}${url.search}` });
 
   const q = (url.searchParams.get("q") || "").trim();
+  const requestedPage = parsePage(url.searchParams.get("page"));
 
-  const customerFilter = q
+  const customerFilter: Prisma.CustomerWhereInput | undefined = q
     ? {
         OR: [
           { firstName: { contains: q, mode: "insensitive" as const } },
@@ -47,77 +64,97 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     : undefined;
 
-  const arRows = await db.customerAr.findMany({
-    where: {
-      balance: { gt: 0 },
-      status: { in: ["OPEN", "PARTIALLY_SETTLED"] },
-      ...(customerFilter ? { customer: customerFilter } : {}),
-    },
-    select: {
-      customerId: true,
-      balance: true,
-      dueDate: true,
-      customer: {
+  const arWhere: Prisma.CustomerArWhereInput = {
+    balance: { gt: 0 },
+    status: { in: OPEN_AR_STATUSES },
+    ...(customerFilter ? { customer: customerFilter } : {}),
+  };
+  const now = new Date();
+
+  const [summary, customerGroups, overdueGroups] = await Promise.all([
+    db.customerAr.aggregate({
+      where: arWhere,
+      _sum: { balance: true },
+    }),
+    db.customerAr.groupBy({
+      by: ["customerId"],
+      where: arWhere,
+    }),
+    db.customerAr.groupBy({
+      by: ["customerId"],
+      where: {
+        ...arWhere,
+        dueDate: { lt: now },
+      },
+    }),
+  ]);
+
+  const totalCustomers = customerGroups.length;
+  const totalPages = Math.max(1, Math.ceil(totalCustomers / PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+  const skip = (page - 1) * PAGE_SIZE;
+
+  const pageGroups = await db.customerAr.groupBy({
+    by: ["customerId"],
+    where: arWhere,
+    _count: { _all: true },
+    _min: { dueDate: true },
+    _sum: { balance: true },
+    orderBy: [
+      {
+        _sum: {
+          balance: "desc",
+        },
+      },
+      { customerId: "asc" },
+    ],
+    skip,
+    take: PAGE_SIZE,
+  });
+
+  const customerIds = pageGroups.map((group) => group.customerId);
+  const customers = customerIds.length
+    ? await db.customer.findMany({
+        where: { id: { in: customerIds } },
         select: {
+          id: true,
           firstName: true,
           middleName: true,
           lastName: true,
           alias: true,
           phone: true,
         },
-      },
-    },
-    orderBy: [{ customerId: "asc" }, { createdAt: "asc" }],
-    take: 500,
+      })
+    : [];
+  const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+
+  const rows: Row[] = pageGroups.map((group) => {
+    const customer = customerById.get(group.customerId);
+    const name = `${customer?.firstName || ""}${
+      customer?.middleName ? ` ${customer.middleName}` : ""
+    } ${customer?.lastName || ""}`.trim();
+
+    return {
+      customerId: group.customerId,
+      name: name || `Customer #${group.customerId}`,
+      alias: customer?.alias ?? null,
+      phone: customer?.phone ?? null,
+      openEntries: group._count._all,
+      nextDue: group._min.dueDate ? group._min.dueDate.toISOString() : null,
+      balance: r2(Math.max(0, Number(group._sum.balance ?? 0))),
+    };
   });
 
-  const grouped = new Map<number, Row>();
-
-  for (const ar of arRows) {
-    const cid = Number(ar.customerId ?? 0);
-    if (!cid) continue;
-
-    const bal = r2(Math.max(0, Number(ar.balance ?? 0)));
-    if (bal <= 0) continue;
-
-    const existing = grouped.get(cid);
-    if (!existing) {
-      const c = ar.customer;
-      const name = `${c?.firstName || ""}${c?.middleName ? ` ${c.middleName}` : ""} ${
-        c?.lastName || ""
-      }`.trim();
-
-      grouped.set(cid, {
-        customerId: cid,
-        name: name || `Customer #${cid}`,
-        alias: c?.alias ?? null,
-        phone: c?.phone ?? null,
-        openEntries: 1,
-        nextDue: ar.dueDate ? ar.dueDate.toISOString() : null,
-        balance: bal,
-      });
-      continue;
-    }
-
-    existing.openEntries += 1;
-    existing.balance = r2(existing.balance + bal);
-
-    if (ar.dueDate) {
-      const next = existing.nextDue ? new Date(existing.nextDue) : null;
-      if (!next || ar.dueDate < next) {
-        existing.nextDue = ar.dueDate.toISOString();
-      }
-    }
-  }
-
-  const rows = Array.from(grouped.values()).sort((a, b) => {
-    if (b.balance !== a.balance) return b.balance - a.balance;
-    const ad = a.nextDue ? +new Date(a.nextDue) : Infinity;
-    const bd = b.nextDue ? +new Date(b.nextDue) : Infinity;
-    return ad - bd;
+  return json({
+    q,
+    rows,
+    page,
+    pageSize: PAGE_SIZE,
+    totalCustomers,
+    totalOpenBalance: r2(Number(summary._sum.balance ?? 0)),
+    totalPages,
+    totalPastDueCustomers: overdueGroups.length,
   });
-
-  return json({ q, rows });
 }
 
 const peso = (n: number) =>
@@ -126,75 +163,70 @@ const peso = (n: number) =>
   );
 
 export default function ARIndexPage() {
-  const { q, rows } = useLoaderData<typeof loader>();
-  const totalOpenBalance = rows.reduce((sum, row) => sum + row.balance, 0);
-  const overdueCount = rows.filter((row) => {
-    if (!row.nextDue) return false;
-    return new Date(row.nextDue).getTime() < Date.now();
-  }).length;
+  const {
+    q,
+    rows,
+    page,
+    pageSize,
+    totalCustomers,
+    totalOpenBalance,
+    totalPages,
+    totalPastDueCustomers,
+  } = useLoaderData<typeof loader>();
   const searchActive = q.trim().length > 0;
+  const pageStart = totalCustomers === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, totalCustomers);
+  const pageHref = (nextPage: number) => {
+    const params = new URLSearchParams();
+    const query = q.trim();
+    if (query) params.set("q", query);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `/ar?${qs}` : "/ar";
+  };
+  const hasPrevious = page > 1;
+  const hasNext = page < totalPages;
 
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Accounts Receivable"
-        subtitle="Customers with open receivable balance ready for review."
+        title="Customer Balances"
+        subtitle="Collect payments from customers with open balance."
         backTo="/cashier"
         backLabel="Dashboard"
         maxWidthClassName="max-w-5xl"
       />
 
-      <div className="mx-auto max-w-5xl px-5 py-6">
-        <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SoTCard compact>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Customers
+      <div className="mx-auto max-w-5xl space-y-3 px-5 py-6">
+        <SoTCard compact tone={totalOpenBalance > 0 ? "info" : "default"}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Open Balance
+              </div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+                {peso(totalOpenBalance)}
+              </div>
             </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {rows.length}
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <SoTStatusBadge tone="neutral">
+                {totalCustomers} customer(s)
+              </SoTStatusBadge>
+              <SoTStatusBadge
+                tone={totalPastDueCustomers > 0 ? "warning" : "neutral"}
+              >
+                {totalPastDueCustomers} past due
+              </SoTStatusBadge>
+              {searchActive ? (
+                <SoTStatusBadge tone="success">Filtered</SoTStatusBadge>
+              ) : null}
             </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Accounts with open balance
-            </div>
-          </SoTCard>
-          <SoTCard compact tone={totalOpenBalance > 0 ? "info" : "default"}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Open Balance
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {peso(totalOpenBalance)}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Visible receivable total
-            </div>
-          </SoTCard>
-          <SoTCard compact tone={overdueCount > 0 ? "warning" : "default"}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Past Due
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {overdueCount}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Customers with overdue balance
-            </div>
-          </SoTCard>
-          <SoTCard compact tone={searchActive ? "success" : "default"}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Search
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              {searchActive ? "Filtered" : "All"}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              {searchActive ? q : "No active query"}
-            </div>
-          </SoTCard>
-        </div>
+          </div>
+        </SoTCard>
 
-        <SoTCard compact className="mb-3">
-          <Form method="get" className="flex flex-wrap items-center gap-2">
-            <SoTFormField label="Search" className="min-w-[260px] flex-1">
+        <SoTCard compact>
+          <Form method="get" className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <SoTFormField label="Search" className="min-w-[220px] flex-1">
               <input
                 name="q"
                 defaultValue={q}
@@ -202,32 +234,37 @@ export default function ARIndexPage() {
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus-visible:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-200"
               />
             </SoTFormField>
-            <div className="pt-4">
-              <SoTButton variant="primary" type="submit">
+            <div className="flex items-center gap-2">
+              <SoTButton variant="primary" type="submit" className="h-9">
                 Search
               </SoTButton>
+              {searchActive ? (
+                <Link
+                  to="/ar"
+                  className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+                >
+                  Clear
+                </Link>
+              ) : null}
             </div>
           </Form>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <SoTStatusBadge tone="neutral">{rows.length} visible</SoTStatusBadge>
-            {searchActive ? (
-              <Link to="/ar" className="text-indigo-700 hover:text-indigo-800">
-                Clear search
-              </Link>
-            ) : null}
-          </div>
         </SoTCard>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            AR Inbox
+          <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-medium text-slate-700">
+              Open Balances
+            </div>
+            <div className="text-xs text-slate-500">
+              Showing {pageStart}-{pageEnd} of {totalCustomers}
+            </div>
           </div>
 
           <SoTTable>
             <SoTTableHead>
               <tr>
                 <SoTTh>Customer</SoTTh>
-                <SoTTh>Open Entries</SoTTh>
+                <SoTTh>Items</SoTTh>
                 <SoTTh>Next Due</SoTTh>
                 <SoTTh align="right">Balance</SoTTh>
                 <SoTTh align="right"></SoTTh>
@@ -249,7 +286,7 @@ export default function ARIndexPage() {
                       </div>
                     </SoTTd>
                     <SoTTd className="text-sm text-slate-700">
-                      {r.openEntries} open entr{r.openEntries === 1 ? "y" : "ies"}
+                      {r.openEntries} item{r.openEntries === 1 ? "" : "s"}
                     </SoTTd>
                     <SoTTd className="text-sm text-slate-700">
                       {r.nextDue
@@ -267,7 +304,7 @@ export default function ARIndexPage() {
                     </SoTTd>
                     <SoTTd align="right">
                       <Link to={`/ar/customers/${r.customerId}`}>
-                        <SoTButton>Open Ledger</SoTButton>
+                        <SoTButton>Collect Payment</SoTButton>
                       </Link>
                     </SoTTd>
                   </SoTTableRow>
@@ -275,6 +312,40 @@ export default function ARIndexPage() {
               )}
             </tbody>
           </SoTTable>
+
+          {totalPages > 1 ? (
+            <div className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                Page {page} of {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                {hasPrevious ? (
+                  <Link
+                    to={pageHref(page - 1)}
+                    className="inline-flex h-8 items-center rounded-xl border border-slate-200 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Previous
+                  </Link>
+                ) : (
+                  <span className="inline-flex h-8 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 text-slate-400">
+                    Previous
+                  </span>
+                )}
+                {hasNext ? (
+                  <Link
+                    to={pageHref(page + 1)}
+                    className="inline-flex h-8 items-center rounded-xl border border-slate-200 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Next
+                  </Link>
+                ) : (
+                  <span className="inline-flex h-8 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 text-slate-400">
+                    Next
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </main>

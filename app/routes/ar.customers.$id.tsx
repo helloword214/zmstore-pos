@@ -680,23 +680,22 @@ export default function CustomerLedgerPage() {
   return (
     <main className="min-h-screen bg-[#f7f7fb]">
       <SoTNonDashboardHeader
-        title="Customer A/R Ledger"
+        title="Customer Balance"
         subtitle={
           <>
             {customer.name}
-            {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"} •
-            {" "}SoT: customerAr debits + customerArPayment credits
+            {customer.alias ? ` (${customer.alias})` : ""} • {customer.phone ?? "—"}
           </>
         }
         backTo="/ar"
         backLabel="AR Index"
-        maxWidthClassName="max-w-5xl"
+        maxWidthClassName="max-w-4xl"
       />
 
       {lastPayment ? (
-        <div className="mx-auto max-w-5xl px-5 pt-4">
+        <div className="mx-auto max-w-4xl px-5 pt-4">
           <SoTAlert tone="success" className="text-sm">
-            <div className="font-semibold">A/R payment posted successfully.</div>
+            <div className="font-semibold">Payment saved.</div>
             <div className="mt-1 text-xs">
               Paid {peso(lastPayment.paid)} • Applied {peso(lastPayment.applied)} •
               {" "}Change {peso(lastPayment.change)}
@@ -704,7 +703,7 @@ export default function CustomerLedgerPage() {
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <SoTButton type="button" variant="primary" className="text-xs" onClick={printReceipt}>
-                Print Receipt (58mm)
+                Print Receipt
               </SoTButton>
               <Link
                 to={clearSuccessHref}
@@ -714,109 +713,46 @@ export default function CustomerLedgerPage() {
               </Link>
               {lastPayment.paymentIds.length ? (
                 <span className="text-[11px]">
-                  Payment IDs: {lastPayment.paymentIds.map((id) => `#${id}`).join(", ")}
+                  Receipt ref: {lastPayment.paymentIds.map((id) => `#${id}`).join(", ")}
                 </span>
               ) : null}
             </div>
           </SoTAlert>
         </div>
       ) : legacyChange > 0 ? (
-        <div className="mx-auto max-w-5xl px-5 pt-4">
+        <div className="mx-auto max-w-4xl px-5 pt-4">
           <SoTAlert tone="warning">
             Excess cash not applied: <b>{peso(legacyChange)}</b>
           </SoTAlert>
         </div>
       ) : null}
 
-      <div className="mx-auto grid max-w-5xl gap-6 px-5 py-6 lg:grid-cols-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 lg:col-span-3">
-          <Link
-            to={statementHref}
-            className="inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
-          >
-            Statement
-          </Link>
-          <SoTCard compact className="text-right">
-            <div className="text-xs text-slate-500">Open Balance</div>
-            <div className="text-lg font-semibold tabular-nums text-slate-900">
-              {peso(balance)}
+      <div className="mx-auto max-w-4xl space-y-4 px-5 py-6">
+        <SoTCard className="bg-gradient-to-br from-white via-white to-slate-50">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Open Balance
+              </div>
+              <div className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 tabular-nums">
+                {peso(balance)}
+              </div>
+              <div className="mt-2 text-sm text-slate-500">
+                {entries.length} open balance item(s)
+              </div>
             </div>
-          </SoTCard>
-        </div>
-
-        <SoTCard className="overflow-hidden p-0 lg:col-span-2">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            A/R Entries (Decision-backed)
+            <Link
+              to={statementHref}
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-1"
+            >
+              Statement
+            </Link>
           </div>
-
-          <SoTTable>
-            <SoTTableHead>
-              <SoTTableRow className="border-t-0">
-                <SoTTh>A/R</SoTTh>
-                <SoTTh>Created</SoTTh>
-                <SoTTh>Decision</SoTTh>
-                <SoTTh align="right">Principal</SoTTh>
-                <SoTTh align="right">Paid</SoTTh>
-                <SoTTh align="right">Remaining</SoTTh>
-                <SoTTh>Status</SoTTh>
-              </SoTTableRow>
-            </SoTTableHead>
-            <tbody>
-              {entries.length === 0 ? (
-                <SoTTableEmptyRow colSpan={7} message="No A/R entries." />
-              ) : (
-                entries.map((e) => (
-                  <SoTTableRow key={e.id}>
-                    <SoTTd>
-                      <div className="text-sm font-medium text-slate-900">A/R #{e.id}</div>
-                      {e.orderCode ? (
-                        <div className="text-xs text-slate-500">
-                          {`${e.orderCode}${e.channel ? ` (${e.channel})` : ""}`}
-                        </div>
-                      ) : null}
-                    </SoTTd>
-                    <SoTTd>
-                      <div className="text-xs text-slate-600">
-                        {new Date(e.createdAt).toLocaleString()}
-                      </div>
-                      {e.dueDate ? (
-                        <div className="text-xs text-slate-500">
-                          due {new Date(e.dueDate).toLocaleDateString()}
-                        </div>
-                      ) : null}
-                    </SoTTd>
-                    <SoTTd>
-                      <div className="text-xs text-slate-600">
-                        {e.decisionKind || "—"}
-                        {e.receiptKey ? ` • ${e.receiptKey}` : ""}
-                      </div>
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums">
-                      {peso(e.principal)}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums">
-                      {peso(e.paid)}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums font-semibold text-indigo-700">
-                      {peso(e.remaining)}
-                    </SoTTd>
-                    <SoTTd>
-                      <SoTStatusBadge
-                        tone={e.status === "SETTLED" ? "success" : "warning"}
-                      >
-                        {e.status}
-                      </SoTStatusBadge>
-                    </SoTTd>
-                  </SoTTableRow>
-                ))
-              )}
-            </tbody>
-          </SoTTable>
         </SoTCard>
 
         <SoTCard className="overflow-hidden p-0">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Record A/R Payment (CASH)
+            Record Payment
           </div>
 
           <Form method="post" className="space-y-3 p-4">
@@ -824,88 +760,166 @@ export default function CustomerLedgerPage() {
 
             {actionError ? <SoTAlert tone="danger">{actionError}</SoTAlert> : null}
 
-            <SoTFormField label="Amount">
-              <SoTInput
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="0.00"
-                inputMode="decimal"
-              />
-            </SoTFormField>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SoTFormField label="Amount paid">
+                <SoTInput
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="0.00"
+                  inputMode="decimal"
+                />
+              </SoTFormField>
 
-            <SoTFormField label="A/R Entry ID (optional)">
-              <SoTInput name="arId" type="number" placeholder="Blank = FIFO oldest" />
-            </SoTFormField>
+              <SoTFormField label="Reference / note">
+                <SoTInput name="refNo" placeholder="OR / notes" />
+              </SoTFormField>
+            </div>
 
-            <SoTFormField label="Reference (optional)">
-              <SoTInput name="refNo" placeholder="OR / notes" />
-            </SoTFormField>
+            <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                Choose specific balance
+              </summary>
+              <div className="mt-2">
+                <SoTFormField label="Balance ID">
+                  <SoTInput name="arId" type="number" placeholder="Blank = oldest balance" />
+                </SoTFormField>
+              </div>
+            </details>
 
-            <SoTButton type="submit" variant="primary" className="w-full" disabled={nav.state !== "idle"}>
+            <SoTButton type="submit" variant="primary" className="h-9 w-full" disabled={nav.state !== "idle"}>
               {nav.state !== "idle" ? "Saving…" : "Save Payment"}
             </SoTButton>
 
             <div className="text-xs text-slate-500">
-              Payments are applied to approved customerAr balances only.
+              Blank balance ID applies payment to the oldest open balance first.
             </div>
           </Form>
         </SoTCard>
 
-        <SoTCard className="overflow-hidden p-0 lg:col-span-3">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700">
-            Activity (A/R Charges + Payments)
+        <SoTCard className="overflow-hidden p-0">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <div className="text-sm font-medium text-slate-700">
+              Open Balances
+            </div>
+            <div className="text-xs text-slate-500">
+              {entries.length} item(s)
+            </div>
           </div>
-          <SoTTable>
-            <SoTTableHead>
-              <SoTTableRow className="border-t-0">
-                <SoTTh>Type</SoTTh>
-                <SoTTh>Details</SoTTh>
-                <SoTTh align="right">Amount</SoTTh>
-                <SoTTh align="right">Running</SoTTh>
-              </SoTTableRow>
-            </SoTTableHead>
-            <tbody>
-              {rows.length === 0 ? (
-                <SoTTableEmptyRow colSpan={4} message="No activity." />
-              ) : (
-                rows.map((r, i) => (
-                  <SoTTableRow key={`${r.kind}-${i}`}>
-                    <SoTTd>
-                      <SoTStatusBadge tone={r.kind === "ar" ? "neutral" : "success"}>
-                        {r.kind === "ar" ? "A/R Charge" : "Payment"}
-                      </SoTStatusBadge>
-                    </SoTTd>
-                    <SoTTd>
-                      <div className="truncate text-sm text-slate-900">{r.label}</div>
-                      <div className="text-xs text-slate-500">
-                        {new Date(r.date).toLocaleString()}
-                        {r.kind === "ar" && r.due
-                          ? ` • due ${new Date(r.due).toLocaleDateString()}`
-                          : ""}
-                        {` • A/R #${r.arId}`}
+          <div className="divide-y divide-slate-100">
+            {entries.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-slate-500">
+                No open balances.
+              </div>
+            ) : (
+              entries.map((e) => (
+                <div key={e.id} className="px-4 py-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Balance #{e.id}
                       </div>
-                    </SoTTd>
-                    <SoTTd
-                      align="right"
-                      className={`tabular-nums font-semibold ${
-                        r.kind === "ar" ? "text-slate-900" : "text-emerald-700"
-                      }`}
-                    >
-                      {r.kind === "ar"
-                        ? `+ ${peso(r.debit)}`
-                        : `− ${peso(r.creditApplied ?? r.credit)}`}
-                    </SoTTd>
-                    <SoTTd align="right" className="tabular-nums text-xs text-slate-500">
-                      {peso(r.runningAfter)}
-                    </SoTTd>
-                  </SoTTableRow>
-                ))
-              )}
-            </tbody>
-          </SoTTable>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {e.orderCode ? `From order ${e.orderCode}` : "Manual balance"}
+                        {e.dueDate
+                          ? ` · Due ${new Date(e.dueDate).toLocaleDateString()}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <div className="text-base font-semibold tabular-nums text-indigo-700">
+                        {peso(e.remaining)}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Paid {peso(e.paid)} of {peso(e.principal)}
+                      </div>
+                    </div>
+                  </div>
+                  {(e.decisionKind || e.receiptKey) ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-medium text-slate-500">
+                        Details
+                      </summary>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {e.decisionKind ? `Source ${e.decisionKind}` : ""}
+                        {e.receiptKey ? ` · Ref ${e.receiptKey}` : ""}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
         </SoTCard>
+
+        <details className="group rounded-2xl border border-slate-200 bg-white">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-slate-700">
+                Payment History
+              </div>
+              <div className="text-xs text-slate-500">
+                {rows.length} activity row(s)
+              </div>
+            </div>
+            <div className="text-xs font-medium text-slate-500">
+              <span className="group-open:hidden">Show</span>
+              <span className="hidden group-open:inline">Hide</span>
+            </div>
+          </summary>
+          <div className="border-t border-slate-100">
+            <SoTTable>
+              <SoTTableHead>
+                <SoTTableRow className="border-t-0">
+                  <SoTTh>Type</SoTTh>
+                  <SoTTh>Details</SoTTh>
+                  <SoTTh align="right">Amount</SoTTh>
+                  <SoTTh align="right">Balance</SoTTh>
+                </SoTTableRow>
+              </SoTTableHead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <SoTTableEmptyRow colSpan={4} message="No payment history." />
+                ) : (
+                  rows.map((r, i) => (
+                    <SoTTableRow key={`${r.kind}-${i}`}>
+                      <SoTTd>
+                        <SoTStatusBadge tone={r.kind === "ar" ? "neutral" : "success"}>
+                          {r.kind === "ar" ? "Balance" : "Payment"}
+                        </SoTStatusBadge>
+                      </SoTTd>
+                      <SoTTd>
+                        <div className="truncate text-sm text-slate-900">
+                          Balance #{r.arId}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {new Date(r.date).toLocaleString()}
+                          {r.kind === "ar" && r.due
+                            ? ` · Due ${new Date(r.due).toLocaleDateString()}`
+                            : ""}
+                        </div>
+                      </SoTTd>
+                      <SoTTd
+                        align="right"
+                        className={`tabular-nums font-semibold ${
+                          r.kind === "ar" ? "text-slate-900" : "text-emerald-700"
+                        }`}
+                      >
+                        {r.kind === "ar"
+                          ? `+ ${peso(r.debit)}`
+                          : `- ${peso(r.creditApplied ?? r.credit)}`}
+                      </SoTTd>
+                      <SoTTd align="right" className="tabular-nums text-xs text-slate-500">
+                        {peso(r.runningAfter)}
+                      </SoTTd>
+                    </SoTTableRow>
+                  ))
+                )}
+              </tbody>
+            </SoTTable>
+          </div>
+        </details>
       </div>
 
     </main>
