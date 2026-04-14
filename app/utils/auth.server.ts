@@ -61,7 +61,7 @@ function safeNext(raw: string | null | undefined, fallback = "/cashier") {
 }
 
 export function homePathFor(role: Role): string {
-  if (role === "ADMIN") return "/";
+  if (role === "ADMIN") return "/admin";
   if (role === "STORE_MANAGER") return "/store";
   if (role === "CASHIER") return "/cashier";
   // EMPLOYEE → frontline dashboard (seller + rider tools)

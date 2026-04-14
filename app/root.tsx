@@ -46,6 +46,13 @@ function resolveLoadingPreviewTarget(pathname?: string | null): LoadingPreviewTa
 
   if (pathname === "/") {
     return {
+      label: "Opening home",
+      hint: "Routing you to the correct workspace for your role.",
+    };
+  }
+
+  if (pathname === "/admin") {
+    return {
       label: "Opening admin dashboard",
       hint: "Preparing your launchpad, shortcuts, and setup signals.",
     };
