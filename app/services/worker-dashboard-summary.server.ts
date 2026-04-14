@@ -62,31 +62,63 @@ export type WorkerDashboardSummary = {
 const roundMoney = (value: number) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
-const toDateOnly = (value: Date | string) => {
-  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+const parseCalendarDateParts = (value: Date | string) => {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new Error("Invalid date input.");
+    }
+
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    };
+  }
+
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = dateOnlyMatch;
+    return {
+      year: Number(yearRaw),
+      month: Number(monthRaw),
+      day: Number(dayRaw),
+    };
+  }
+
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error("Invalid date input.");
   }
-  parsed.setHours(0, 0, 0, 0);
-  return parsed;
+
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+};
+
+const toDateOnly = (value: Date | string) => {
+  const { year, month, day } = parseCalendarDateParts(value);
+  return new Date(Date.UTC(year, month - 1, day));
 };
 
 const addDays = (date: Date, days: number) => {
   const next = new Date(date);
-  next.setDate(next.getDate() + days);
+  next.setUTCDate(next.getUTCDate() + days);
   return next;
 };
 
 const sameDate = (left: Date, right: Date) =>
-  left.getFullYear() === right.getFullYear() &&
-  left.getMonth() === right.getMonth() &&
-  left.getDate() === right.getDate();
+  left.getUTCFullYear() === right.getUTCFullYear() &&
+  left.getUTCMonth() === right.getUTCMonth() &&
+  left.getUTCDate() === right.getUTCDate();
 
 const startOfMonth = (value: Date) =>
-  new Date(value.getFullYear(), value.getMonth(), 1);
+  new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1));
 
 const startOfNextMonth = (value: Date) =>
-  new Date(value.getFullYear(), value.getMonth() + 1, 1);
+  new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1));
 
 const formatTimeLabel = (value: Date) =>
   value.toLocaleTimeString("en-PH", {
@@ -100,6 +132,7 @@ const formatDateLabel = (value: Date) =>
     month: "short",
     day: "2-digit",
     year: "numeric",
+    timeZone: "UTC",
   });
 
 const formatRelativeScheduleDateLabel = (
@@ -112,6 +145,7 @@ const formatRelativeScheduleDateLabel = (
     weekday: "short",
     month: "short",
     day: "2-digit",
+    timeZone: "UTC",
   });
 };
 

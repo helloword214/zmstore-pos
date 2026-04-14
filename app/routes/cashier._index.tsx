@@ -51,6 +51,18 @@ type LoaderData = {
   workforce: WorkerDashboardSummary;
 };
 
+function formatDashboardDateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Waiting";
+  return parsed.toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const me = await requireUser(request);
   const { getWorkerDashboardSummary } = await import(
@@ -131,7 +143,7 @@ export default function CashierDashboardPage() {
   );
   const shiftLocked = Boolean(activeShift && !shiftWritable);
   const openedAt = activeShift
-    ? new Date(activeShift.openedAt).toLocaleString()
+    ? formatDashboardDateTime(activeShift.openedAt)
     : null;
   const shiftStateLabel = !hasShift
     ? "No active shift"
@@ -140,8 +152,31 @@ export default function CashierDashboardPage() {
       : "Shift open";
   const nextShiftLabel = workforce.nextShift.label ?? "No schedule";
   const [nextShiftPrimary, ...nextShiftRemainder] = nextShiftLabel.split(" - ");
+  const nextShiftDisplay = nextShiftPrimary.replace(", ", " · ");
   const nextShiftSecondary =
     nextShiftRemainder.length > 0 ? nextShiftRemainder.join(" - ") : null;
+  const attendanceHasFlags =
+    workforce.attendance.absentCountThisMonth > 0 ||
+    workforce.attendance.lateCountThisMonth > 0 ||
+    workforce.attendance.suspensionCountThisMonth > 0;
+  const attendanceSignalValue = attendanceHasFlags
+    ? [
+        workforce.attendance.absentCountThisMonth > 0
+          ? `${workforce.attendance.absentCountThisMonth} absent`
+          : null,
+        workforce.attendance.lateCountThisMonth > 0
+          ? `${workforce.attendance.lateCountThisMonth} late`
+          : null,
+        workforce.attendance.suspensionCountThisMonth > 0
+          ? `${workforce.attendance.suspensionCountThisMonth} suspension`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : workforce.todayStatus.label;
+  const attendanceSignalMeta = attendanceHasFlags
+    ? "This month"
+    : workforce.todayStatus.hint;
 
   // If no shift OR shift locked, route to shift console with proper flags.
   const guardLink = (to: string) => {
@@ -278,7 +313,7 @@ export default function CashierDashboardPage() {
                   <SoTDataRow label="Shift state" value={shiftStateLabel} />
                   <SoTDataRow
                     label="Next shift"
-                    value={nextShiftPrimary}
+                    value={nextShiftDisplay}
                   />
                   {hasShift ? (
                     <SoTDataRow label="Opened" value={openedAt ?? "Waiting"} />
@@ -308,15 +343,16 @@ export default function CashierDashboardPage() {
           <div className="xl:col-span-3">
             <SoTDashboardPanel
               title="Signals"
-              subtitle="Today"
+              subtitle="Workforce"
               badge={workforce.hasLinkedEmployee ? "Linked" : "Link required"}
               tone={workforce.hasLinkedEmployee ? "default" : "warning"}
             >
               <SoTDashboardSignalGrid className="xl:grid-cols-1">
                 <SoTDashboardSignal
                   label="Attendance"
-                  value={workforce.attendance.absentCountThisMonth}
-                  meta={`${workforce.attendance.lateCountThisMonth} late · ${workforce.attendance.suspensionCountThisMonth} suspension`}
+                  value={attendanceSignalValue}
+                  meta={attendanceSignalMeta}
+                  tone={attendanceHasFlags ? "warning" : "default"}
                 />
                 <SoTDashboardSignal
                   label="Payroll"
@@ -387,26 +423,9 @@ export default function CashierDashboardPage() {
 
         <SoTDashboardSection
           title="Reference"
-          subtitle="Attendance and payroll"
+          subtitle="Payroll and deductions"
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            <SoTDashboardPanel title="Attendance" subtitle="This month">
-              <div className="grid gap-2">
-                <SoTDataRow
-                  label="Absent"
-                  value={workforce.attendance.absentCountThisMonth}
-                />
-                <SoTDataRow
-                  label="Late"
-                  value={workforce.attendance.lateCountThisMonth}
-                />
-                <SoTDataRow
-                  label="Suspension"
-                  value={workforce.attendance.suspensionCountThisMonth}
-                />
-              </div>
-            </SoTDashboardPanel>
-
+          <div className="grid gap-3">
             <SoTDashboardPanel
               title="Payroll & Charges"
               subtitle={workforce.payroll.policyLabel ?? "Not configured"}
