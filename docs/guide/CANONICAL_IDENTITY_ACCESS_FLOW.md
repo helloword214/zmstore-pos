@@ -2,7 +2,7 @@
 
 Status: LOCKED
 Owner: POS Platform
-Last Reviewed: 2026-03-13
+Last Reviewed: 2026-04-14
 
 ## Purpose
 
@@ -78,13 +78,28 @@ This document does not own:
 
 ## Route Group Authority (Canonical)
 
+### Root Role Router
+
+`/` is a role-aware authenticated home router only. It must not own a role-specific dashboard UI.
+
+Role home targets:
+
+1. `ADMIN` -> `/admin`
+2. `STORE_MANAGER` -> `/store`
+3. `CASHIER` -> `/cashier`
+4. `EMPLOYEE` -> `/rider`
+
+Representative route:
+
+1. `app/routes/_index.tsx`
+
 ### A) Admin Creation/Setup Routes
 
 Allowed role: `ADMIN` only.
 
 Representative routes:
 
-1. `app/routes/_index.tsx`
+1. `app/routes/admin._index.tsx`
 2. `app/routes/creation._index.tsx`
 3. `app/routes/creation.employees.tsx`
 4. `app/routes/creation.employees_.new.tsx`
